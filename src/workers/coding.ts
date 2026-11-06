@@ -18,7 +18,7 @@ export type CodingArtifact = z.infer<typeof codingArtifactSchema>;
 export interface CodingBase { sha: string; branch: string }
 export interface CodingRepositoryPort {
   base(): Promise<CodingBase>;
-  publish(base: CodingBase, artifact: CodingArtifact, issue: number): Promise<string>;
+  publish(base: CodingBase, artifact: CodingArtifact, issue: number, validationWorkflow?: string | null): Promise<string>;
 }
 export function validateChanges(artifact: CodingArtifact): void {
   const seen = new Set<string>();
@@ -71,7 +71,8 @@ export async function publishCoding(github: GitHubPort, config: Config, reposito
       validateChanges(artifact);
       const status = artifact.result.status === 'timed_out' ? 'failed' : artifact.result.status;
       const artifacts: string[] = [];
-      if (status === 'success' && artifact.changes.length) artifacts.push(await repository.publish(base, artifact, issue));
+      if (status === 'success' && artifact.changes.length) artifacts.push(await repository.publish(base, artifact, issue,
+        config.workers.coding ? config.workers.coding.validationWorkflow : null));
       result = workerResultSchema.parse({ contractVersion: '1.0', executionId: id, issueNumber: issue,
         status: status === 'success' && !artifact.changes.length ? 'blocked' : status,
         summary: artifact.result.summary, artifacts, error: artifact.result.error, proposedActions: [] });

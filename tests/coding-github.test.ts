@@ -33,6 +33,8 @@ function fixture(options: { moved?: boolean; truncated?: boolean; collision?: bo
     else if (path === '/pulls') {
       if (method === 'POST') prs = [{ html_url: 'https://github.com/owner/target/pull/9' }];
       value = method === 'POST' ? prs[0] : prs;
+    } else if (path === '/actions/workflows/test.yml/dispatches') {
+      expect(body.ref).toBe('sf/issue-1/' + 'a'.repeat(32)); return new Response(null, { status: 204 });
     } else throw new Error(`Unexpected API ${method} ${path}`);
     const response = new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
     Object.defineProperty(response, 'url', { value: url.href }); return response;
@@ -48,6 +50,10 @@ it('creates blobs/tree/branch and a closing PR without executing target files, i
   expect(f.calls.find(c => c.path === '/git/trees' && c.method === 'POST')!.body.tree).toEqual([
     { path: 'new.txt', mode: '100644', type: 'blob', sha: 'new-blob' },
     { path: 'delete.txt', mode: '100644', type: 'blob', sha: null }]);
+});
+it('explicitly dispatches configured product CI on the generated branch', async () => {
+  const f = fixture(); await f.repository.publish(base, artifact(), 1, 'test.yml');
+  expect(f.calls.some(c => c.path === '/actions/workflows/test.yml/dispatches' && c.method === 'POST')).toBe(true);
 });
 it.each([
   [{ moved: true }, 'moved'], [{ truncated: true }, 'truncated'], [{ treeMode: '120000' }, 'Non-regular'],

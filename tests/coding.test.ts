@@ -8,7 +8,7 @@ import { decodeEvent } from '../src/state/events.js';
 const base = { sha: 'c'.repeat(40), branch: 'main' };
 async function fixture() {
   const cfg = config(); cfg.workers.test.enabled = false;
-  cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' };
+  cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
   const gh = new MemoryGitHub(); gh.state.issues = [issue()];
   await new Manager(gh, cfg, new MockPlanner(), { correlationId: 'test' }).run();
   const intent = (await gh.comments(1)).map(c => decodeEvent(c, cfg.manager.trustedActors)).find(e => e?.data.type === 'intent')!;

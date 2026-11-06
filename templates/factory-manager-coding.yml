@@ -44,7 +44,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-      actions: read
+      actions: write
     uses: munichdeveloper/software-factory/.github/workflows/coding-worker.yml@FACTORY_COMMIT_SHA
     with:
       factory-ref: FACTORY_COMMIT_SHA

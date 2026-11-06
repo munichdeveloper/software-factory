@@ -70,6 +70,9 @@ workers:
 Codex agent and its model/effort. Coding takes precedence when both worker types
 are enabled. The default installation remains supervised with the test worker.
 The coding wrapper is required; the old single-job wrapper supports only test runs.
+Optionally set `workers.coding.validationWorkflow: test.yml` to explicitly dispatch
+product CI on the generated branch. That workflow must accept `workflow_dispatch`:
+GitHub suppresses normal push/PR workflow triggers for writes made by `GITHUB_TOKEN`.
 
 The reusable SF coding workflow has three jobs: reauthorize and freeze the base;
 execute the pinned Harness with contents-read only; reauthorize again and publish

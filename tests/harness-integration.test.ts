@@ -21,7 +21,7 @@ it('uses exactly the pinned runtime JSON contracts', async () => {
 it('passes the pinned Harness coding schemas through SF authorization and publication', async () => {
   const github = new MemoryGitHub(), cfg = config(); github.state.issues.push(issue());
   cfg.workers.test.enabled = false;
-  cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' };
+  cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
   const repository = { async base() { return { sha: 'c'.repeat(40), branch: 'main' }; }, async publish() { return 'https://github.com/owner/target/pull/2'; } };
   await new Manager(github, cfg, new MockPlanner(), { correlationId: 'integration', now: () => clock }).run();
   const id = reconstruct(github.state, cfg, clock)[0]!.latest!.input.executionId;
