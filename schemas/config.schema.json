@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "factory": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "additionalProperties": false
+    },
+    "manager": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "workflow": {
+          "default": "factory-manager.yml",
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+\\.ya?ml$"
+        },
+        "maxActions": {
+          "default": 10,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "timeoutMinutes": {
+          "default": 15,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "maxContextTasks": {
+          "default": 20,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maxContextChars": {
+          "default": 20000,
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 100000
+        },
+        "trustedActors": {
+          "default": [
+            "github-actions[bot]"
+          ],
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "autonomy": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "profile": {
+          "default": "supervised",
+          "type": "string",
+          "enum": [
+            "advisory",
+            "supervised",
+            "autonomous"
+          ]
+        },
+        "overrides": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "transition",
+              "close_issue",
+              "create_followup",
+              "prioritize",
+              "approve_task",
+              "start_worker",
+              "retry_worker",
+              "cancel_worker",
+              "expand_scope",
+              "merge_pr"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "deny",
+              "approval"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "execution": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "dryRun": {
+          "default": false,
+          "type": "boolean"
+        },
+        "maxParallelWorkers": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "maxRetries": {
+          "default": 2,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "maxNewIssues": {
+          "default": 3,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "workerTimeoutMinutes": {
+          "default": 30,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "dispatchGraceMinutes": {
+          "default": 10,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      },
+      "additionalProperties": false
+    },
+    "llm": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "provider": {
+          "default": "mock",
+          "type": "string",
+          "enum": [
+            "mock",
+            "openai"
+          ]
+        },
+        "model": {
+          "default": "gpt-4.1-mini",
+          "type": "string",
+          "minLength": 1
+        },
+        "reasoningEffort": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxOutputTokens": {
+          "default": 4000,
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 16000
+        },
+        "timeoutSeconds": {
+          "default": 60,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "maxCalls": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      },
+      "additionalProperties": false
+    },
+    "workers": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "test": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "operation": {
+              "default": "sha256",
+              "type": "string",
+              "enum": [
+                "sha256",
+                "fail",
+                "blocked"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "coding": {
+          "default": false,
+          "type": "boolean",
+          "const": false
+        },
+        "review": {
+          "default": false,
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "reporting": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "persistDecisions": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version",
+    "factory"
+  ],
+  "additionalProperties": false
+}

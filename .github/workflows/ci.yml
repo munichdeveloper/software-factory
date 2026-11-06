@@ -1,0 +1,52 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main, 'feat/**']
+permissions: {}
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: munichdeveloper/software-factory
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - id: runtime
+        run: node -e "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'ref=' + require('./runtime.json').ref + '\n')"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: munichdeveloper/dev-agent-harness
+          ref: ${{ steps.runtime.outputs.ref }}
+          path: .runtime/harness
+          persist-credentials: false
+      - working-directory: .runtime/harness
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+      - run: npm run check
+      - run: npm run test:coverage
+      - run: npm run test:integration
+        env:
+          HARNESS_ENTRYPOINT: ${{ github.workspace }}/.runtime/harness/dist/cli.js
+      - run: |
+          npm run bundle
+          git diff --exit-code -- bundle
+      - name: Verify generated contracts are committed
+        run: |
+          npm run schemas
+          git diff --exit-code -- schemas
+      - name: Validate Actions syntax with pinned actionlint
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/actionlint.tar.gz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" .github/workflows/*.yml templates/factory-manager.yml
+      - run: npm audit --audit-level=moderate

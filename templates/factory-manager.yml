@@ -1,0 +1,41 @@
+name: Software Factory
+run-name: Factory ${{ inputs.mode || 'manager' }} ${{ inputs.execution_id }}
+on:
+  schedule:
+    - cron: '17 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [manager, bootstrap, worker]
+        default: manager
+      execution_id:
+        type: string
+        default: ''
+      issue_number:
+        type: string
+        default: ''
+      dry_run:
+        type: boolean
+        default: false
+permissions: {}
+concurrency:
+  group: ${{ github.repository }}-software-factory-${{ inputs.mode == 'worker' && inputs.execution_id || 'manager' }}
+  cancel-in-progress: false
+jobs:
+  factory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+      actions: write
+    steps:
+      - uses: munichdeveloper/software-factory@FACTORY_COMMIT_SHA
+        with:
+          mode: ${{ inputs.mode || 'manager' }}
+          execution-id: ${{ inputs.execution_id || '' }}
+          issue-number: ${{ inputs.issue_number || '' }}
+          dry-run: ${{ inputs.dry_run || false }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
