@@ -9,13 +9,12 @@ import { currentAutomaticBlock } from '../state/blocks.js';
 import { permission, policyVersion } from '../policies/engine.js';
 import type { Action } from '../types.js';
 
-export async function executeDelegation(github: GitHubPort, config: Config, issueNumber: number, id: string, correlationId: string, harness: HarnessPort): Promise<WorkerResult> {
-  if (!config.factory.enabled || !config.workers.test.enabled || config.execution.dryRun || config.autonomy.profile === 'advisory') throw new Error('Worker execution disabled by configuration');
+export async function authorizeDelegation(github: GitHubPort, config: Config, issueNumber: number, id: string) {
+  if (!config.factory.enabled || config.execution.dryRun || config.autonomy.profile === 'advisory') throw new Error('Worker execution disabled by configuration');
   const issue = await github.getIssue(issueNumber);
   const comments = await github.comments(issueNumber);
   const events = comments.flatMap(c => { const e = decodeEvent(c, config.manager.trustedActors); return e ? [e] : []; });
   const previous = events.find(e => e.data.type === 'result' && e.data.result.executionId === id);
-  if (previous?.data.type === 'result') return previous.data.result;
   const event = events.find(e => e.data.type === 'intent' && e.data.input.executionId === id);
   if (event?.data.type !== 'intent') throw new Error('No trusted manager intent for this execution');
   const input = workerInputSchema.parse(event.data.input);
@@ -28,13 +27,26 @@ export async function executeDelegation(github: GitHubPort, config: Config, issu
     if (command?.[2] === event.data.actionId && await github.canApprove(c.author)) approved = command[1] === 'approve';
   }
   const rule = permission(config, original.kind);
-  const policyChanged = actionId(original, policyVersion(config)) !== event.data.actionId || rule === 'deny' || (rule === 'approval' && !approved);
+  const workerEnabled = input.worker === 'codex' ? config.workers.coding && config.workers.coding.enabled : config.workers.test.enabled;
+  const policyChanged = !workerEnabled || actionId(original, policyVersion(config)) !== event.data.actionId || rule === 'deny' || (rule === 'approval' && !approved);
   const explicitlyBlocked = issue.labels.includes('harness:blocked') && !currentAutomaticBlock(issue, events, config.manager.trustedActors);
   const stale = policyChanged || explicitlyBlocked || issue.state !== 'open' || !issue.labels.includes('harness:managed') || taskVersion(issue) !== input.taskVersion;
+  const cancelled = stale ? workerResultSchema.parse({ contractVersion: '1.0', executionId: id, issueNumber, status: 'cancelled',
+    summary: 'Task, policy or approval changed after delegation', artifacts: [], error: null, proposedActions: [] }) : null;
+  return { input, cancelled, previous: previous?.data.type === 'result' ? previous.data.result : null };
+}
+
+export async function persistResult(github: GitHubPort, result: WorkerResult, correlationId: string): Promise<void> {
+  await github.writeEvent(result.issueNumber, { version: 1, key: `result:${result.executionId}`, at: new Date().toISOString(), correlationId, data: { type: 'result', result } });
+}
+
+export async function executeDelegation(github: GitHubPort, config: Config, issueNumber: number, id: string, correlationId: string, harness: HarnessPort): Promise<WorkerResult> {
+  const { input, cancelled, previous } = await authorizeDelegation(github, config, issueNumber, id);
+  if (previous) return previous;
   let result: WorkerResult;
-  if (stale) result = workerResultSchema.parse({ contractVersion: '1.0', executionId: id, issueNumber, status: 'cancelled',
-    summary: 'Task, policy or approval changed after delegation', artifacts: [], error: null, proposedActions: [] });
+  if (cancelled) result = cancelled;
   else {
+    if (input.worker !== 'test') throw new Error('Codex delegation requires isolated coding workflow');
     try { result = workerResultSchema.parse(await harness.execute(input)); }
     catch { result = workerResultSchema.parse({ contractVersion: '1.0', executionId: id, issueNumber, status: 'failed',
       summary: 'Harness invocation failed', artifacts: [], error: 'Runtime unavailable or invalid result', proposedActions: [] }); }
@@ -42,6 +54,6 @@ export async function executeDelegation(github: GitHubPort, config: Config, issu
   }
   if (Buffer.byteLength(JSON.stringify(result)) > input.limits.maxOutputBytes) throw new Error('Worker output exceeds contract resource limit');
   // Persistence and lifecycle decisions are SF responsibilities; Harness only returned a run result.
-  await github.writeEvent(issueNumber, { version: 1, key: `result:${id}`, at: new Date().toISOString(), correlationId, data: { type: 'result', result } });
+  await persistResult(github, result, correlationId);
   return result;
 }

@@ -1,0 +1,130 @@
+name: Isolated Codex worker
+on:
+  workflow_call:
+    inputs:
+      factory-ref:
+        description: Immutable Software Factory release commit
+        type: string
+        required: true
+      harness-ref:
+        description: Immutable single-run Harness commit
+        type: string
+        required: true
+      execution-id:
+        type: string
+        required: true
+      issue-number:
+        type: string
+        required: true
+      config-path:
+        type: string
+        default: .github/software-factory.yml
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+permissions: {}
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      ready: ${{ steps.prepare.outputs.ready }}
+      request: ${{ steps.prepare.outputs.request }}
+      base-sha: ${{ steps.prepare.outputs.base-sha }}
+      base-branch: ${{ steps.prepare.outputs.base-branch }}
+    steps:
+      - name: Validate trusted invocation
+        shell: bash
+        env:
+          FACTORY_REF: ${{ inputs.factory-ref }}
+          HARNESS_REF: ${{ inputs.harness-ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          [[ "$FACTORY_REF" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$HARNESS_REF" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$GITHUB_REF_NAME" == "$DEFAULT_BRANCH" ]]
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: munichdeveloper/software-factory
+          ref: ${{ inputs.factory-ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HARNESS_EXECUTION_ID: ${{ inputs.execution-id }}
+          HARNESS_ISSUE_NUMBER: ${{ inputs.issue-number }}
+          CONFIG: ${{ inputs.config-path }}
+        run: node bundle/factory.cjs prepare-coding --config-path "$CONFIG"
+  code:
+    needs: prepare
+    if: needs.prepare.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.base-sha }}
+          path: target
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: munichdeveloper/dev-agent-harness
+          ref: ${{ inputs.harness-ref }}
+          path: .runtime/harness
+          persist-credentials: false
+      - id: codex
+        uses: ./.runtime/harness
+        with:
+          request: ${{ needs.prepare.outputs.request }}
+          execution-id: ${{ inputs.execution-id }}
+          workspace: ${{ github.workspace }}/target
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coding-result-${{ inputs.execution-id }}
+          path: ${{ steps.codex.outputs.artifact }}
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: [prepare, code]
+    if: always() && needs.prepare.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: munichdeveloper/software-factory
+          ref: ${{ inputs.factory-ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - if: needs.code.result == 'success'
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: coding-result-${{ inputs.execution-id }}
+          path: .artifact
+      - name: Reauthorize and publish result
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HARNESS_EXECUTION_ID: ${{ inputs.execution-id }}
+          HARNESS_ISSUE_NUMBER: ${{ inputs.issue-number }}
+          SF_BASE_SHA: ${{ needs.prepare.outputs.base-sha }}
+          SF_BASE_BRANCH: ${{ needs.prepare.outputs.base-branch }}
+          SF_ARTIFACT: .artifact/artifact.json
+          CONFIG: ${{ inputs.config-path }}
+        run: node bundle/factory.cjs publish-coding --config-path "$CONFIG"

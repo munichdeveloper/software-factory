@@ -26,12 +26,12 @@ interprets it for lifecycle, follow-ups or retries.
 
 The adapter applies a subprocess deadline and output cap; the runtime also checks
 its own per-run limits. Process separation is not an OS sandbox for hostile code.
-The only bundled operation is the trusted digest test worker, implemented solely
-in the Harness repository.
+The digest test worker and isolated Codex coding adapter are implemented solely
+in the Harness repository. Coding uses request/artifact contract 3.0 and a separate
+SF prepare/execution/publish workflow. Only SF owns GitHub publication; see README.
 
 The target's wrapper owns cron and concurrency and calls a pinned SF composite
-Action. This supports the private SF repository without cross-repository PATs:
-GitHub downloads the authorized private action and its checked-in deterministic
+Action. SF is public; GitHub downloads the pinned action and its checked-in deterministic
 bundle. Worker mode checks out only the independently pinned public Harness for
 execution. `runtime.json` records that pin and contract version. CI validates the
 real protocol, vendored schemas and bundle reproducibility.

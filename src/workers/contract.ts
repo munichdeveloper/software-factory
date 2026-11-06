@@ -8,7 +8,7 @@ export const workerInputSchema = z.strictObject({
   contextReferences: z.array(z.string().max(1000)).max(30), executionId: z.string().regex(/^[a-f0-9]{32}$/),
   allowedActions: z.array(z.literal('publish_result')).length(1),
   limits: z.strictObject({ timeoutMinutes: z.number().int().min(1).max(30), maxOutputBytes: z.literal(16000) }),
-  operation: z.enum(['sha256', 'fail', 'blocked'])
+  operation: z.enum(['sha256', 'fail', 'blocked']), worker: z.enum(['test', 'codex']).default('test')
 });
 export const workerResultSchema = z.strictObject({
   contractVersion: z.literal('1.0'), executionId: z.string().regex(/^[a-f0-9]{32}$/), issueNumber: z.number().int().positive(),

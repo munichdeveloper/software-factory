@@ -38,6 +38,6 @@ Factory runtime `d83554c1c60b828a33101189f8b85f0d70e671ce` calls Harness
 Legacy comments/labels and human blocks remain intact. Historical pre-split
 acceptance details are available in the import commit and original Harness PR #1.
 No paid OpenAI call was performed: the planning provider was moved without API
-changes, and no key is configured. No productive coding/review worker or automatic
+changes, and no key is configured. The original v0.1 verification had no coding/review worker or automatic
 PR merge is claimed. This private SF distribution supports permitted private
 repositories owned by the same account; public targets need a public distribution.

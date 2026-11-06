@@ -111,6 +111,14 @@
                     "fail",
                     "blocked"
                   ]
+                },
+                "worker": {
+                  "default": "test",
+                  "type": "string",
+                  "enum": [
+                    "test",
+                    "codex"
+                  ]
                 }
               },
               "required": [
@@ -124,7 +132,8 @@
                 "executionId",
                 "allowedActions",
                 "limits",
-                "operation"
+                "operation",
+                "worker"
               ],
               "additionalProperties": false
             },

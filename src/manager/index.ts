@@ -91,7 +91,8 @@ export class Manager {
           issueNumber: live.number, taskVersion: action.taskVersion, description: live.body, acceptanceCriteria: task.criteria,
           contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`], executionId: id,
           allowedActions: ['publish_result'], limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16000 },
-          operation: this.config.workers.test.operation });
+          operation: this.config.workers.test.operation,
+          worker: this.config.workers.coding && this.config.workers.coding.enabled ? 'codex' : 'test' });
         await this.event(live.number, `intent:${id}`, { type: 'intent', input, actionId: actionId(action, policyVersion(this.config)), attempt });
         // Recheck actual workflow state immediately before dispatch; never retry the dispatch call itself.
         const existing = (await this.github.runs(this.config.manager.workflow)).find(r => r.title === `Factory worker ${id}`);
