@@ -6,7 +6,7 @@ approval, Issue/PR lifecycle, dependencies, priority, persistent journals, worke
 selection/dispatch/supervision, global concurrency, retries and reporting.
 
 [Dev Agent Harness](https://github.com/munichdeveloper/dev-agent-harness) executes
-one supplied run through contract 2.0. SF validates authorization before invoking
+one supplied test run through contract 2.0 or coding run through contract 3.0. SF validates authorization before invoking
 its standalone CLI, strips credentials from its subprocess environment, validates
 the result and persists it. SF never implements the digest worker itself.
 
@@ -45,4 +45,42 @@ See [migration](docs/migration.md) and [configuration](docs/configuration.md).
 Build the pinned Harness separately, set `HARNESS_ENTRYPOINT` to its absolute
 `dist/cli.js` path, then run `npm run test:integration`. CI checks out that exact
 runtime, runs the real cross-repository protocol test and rejects bundle/schema
-drift. No production coding or review worker or automatic PR merging is included.
+drift. Automatic PR merging and review workers remain unsupported.
+
+## Real Codex coding worker (v0.2.0)
+
+Install with `npx tsx scripts/install.ts --directory TARGET --ref FULL_FACTORY_COMMIT_SHA --coding`.
+Existing files are preserved: compare with `templates/factory-manager-coding.yml`
+when upgrading. Set the target Actions secret `OPENAI_API_KEY` and enable Actions
+to create pull requests in repository Settings → Actions → General.
+
+```yaml
+workers:
+  test:
+    enabled: false
+  coding:
+    enabled: true
+    agent: codex
+    model: gpt-6.1-sol
+    reasoningEffort: high
+  review: false
+```
+
+`llm.*` configures SF planning independently. `workers.coding.*` selects the actual
+Codex agent and its model/effort. Coding takes precedence when both worker types
+are enabled. The default installation remains supervised with the test worker.
+The coding wrapper is required; the old single-job wrapper supports only test runs.
+
+The reusable SF coding workflow has three jobs: reauthorize and freeze the base;
+execute the pinned Harness with contents-read only; reauthorize again and publish
+in a fresh job through GitHub's Git Data API. The worker receives neither a GitHub
+write credential nor the raw OpenAI key. SF rejects unrelated, oversized, invalid,
+symlink and control-plane changes, reuses a stable execution branch/PR, and journals
+the terminal result. A moved default branch fails publication so a retry can use
+a fresh base. Missing/failed coding output is durably recorded. Runtime success
+with no changes is blocked rather than treated as implementation completion.
+
+Maximum policy autonomy is `profile: autonomous` with `expand_scope: allow`
+(all other supported actions already allow by default). Resource budgets still
+apply; autonomy does not imply unlimited parallelism or API spending. Protected
+configuration and automatic merging are not granted to the coding agent.

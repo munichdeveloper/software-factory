@@ -32,7 +32,10 @@ export const configSchema = z.strictObject({
   workers: z.strictObject({
     test: z.strictObject({ enabled: z.boolean().default(true), operation: z.enum(['sha256', 'fail', 'blocked']).default('sha256') })
       .prefault({}),
-    coding: z.literal(false).default(false), review: z.literal(false).default(false)
+    coding: z.union([z.literal(false), z.strictObject({ enabled: z.boolean(), agent: z.literal('codex'),
+      model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/).default('gpt-6.1-sol'),
+      reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).default('high') })]).default(false),
+    review: z.literal(false).default(false)
   }).prefault({}),
   reporting: z.strictObject({ persistDecisions: z.boolean().default(true) }).prefault({})
 });

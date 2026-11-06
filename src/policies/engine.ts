@@ -40,7 +40,7 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
   }
   if (action.kind === 'close_issue' && (ctx.source !== 'reconcile' || !task.hasClosingMerge || task.executions.some(e => e.active))) return deny('Closing requires a verified native closing link to a merged PR and no active execution');
   if (['start_worker', 'retry_worker'].includes(action.kind)) {
-    if (!config.workers.test.enabled) return deny('Test worker disabled');
+    if (!config.workers.test.enabled && !(config.workers.coding && config.workers.coding.enabled)) return deny('All workers disabled');
     if (task.blocked || task.issue.body.length > 20000) return deny('Task is blocked or exceeds worker input limit');
     if (task.executions.some(e => e.active)) return deny('Task already has an active or uncertain execution');
     if (task.hasClosingMerge || task.hasOpenPR) return deny('Task already has implementation PRs');

@@ -238,8 +238,44 @@
         },
         "coding": {
           "default": false,
-          "type": "boolean",
-          "const": false
+          "anyOf": [
+            {
+              "type": "boolean",
+              "const": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "agent": {
+                  "type": "string",
+                  "const": "codex"
+                },
+                "model": {
+                  "default": "gpt-6.1-sol",
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9._-]{1,100}$"
+                },
+                "reasoningEffort": {
+                  "default": "high",
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                }
+              },
+              "required": [
+                "enabled",
+                "agent"
+              ],
+              "additionalProperties": false
+            }
+          ]
         },
         "review": {
           "default": false,

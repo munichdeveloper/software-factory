@@ -9,6 +9,8 @@ import { MockPlanner, OpenAIPlanner } from './llm/provider.js';
 import { summary } from './manager/report.js';
 import { executeDelegation } from './workers/execute-delegation.js';
 import { HarnessProcessClient } from './workers/harness-client.js';
+import { CodingRepository } from './github/coding.js';
+import { prepareCoding, publishCoding } from './workers/coding.js';
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
@@ -22,7 +24,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     loadConfig(await readFile(values.file, 'utf8'));
     console.log('Configuration valid'); return;
   }
-  if (!['manager', 'worker', 'bootstrap'].includes(command)) throw new Error('Supported commands: manager, worker, bootstrap, validate');
+  if (!['manager', 'worker', 'bootstrap', 'prepare-coding', 'publish-coding'].includes(command)) throw new Error('Supported commands: manager, worker, bootstrap, validate, prepare-coding, publish-coding');
   const repository = values.repository ?? process.env.GITHUB_REPOSITORY ?? '';
   const github = new GitHubClient(repository, process.env.GITHUB_TOKEN ?? '');
   let config = loadConfig(await github.readConfig(values['config-path']!));
@@ -45,10 +47,29 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       }
       console.log(JSON.stringify({ correlationId, createdLabels: await github.bootstrap() })); return;
     }
-    if (command === 'worker') {
+    if (['worker', 'prepare-coding', 'publish-coding'].includes(command)) {
       const issue = values.issue ?? process.env.HARNESS_ISSUE_NUMBER ?? '';
       const id = values.execution ?? process.env.HARNESS_EXECUTION_ID ?? '';
       if (!/^[1-9]\d*$/.test(issue) || !/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid worker issue or execution ID');
+      if (command === 'prepare-coding') {
+        const prepared = await prepareCoding(github, config, new CodingRepository(repository, process.env.GITHUB_TOKEN ?? ''), Number(issue), id, correlationId);
+        if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, prepared
+          ? `ready=true\nrequest=${JSON.stringify(prepared.request)}\nbase-sha=${prepared.base.sha}\nbase-branch=${prepared.base.branch}\n`
+          : 'ready=false\n');
+        console.log(JSON.stringify({ executionId: id, ready: !!prepared })); return;
+      }
+      if (command === 'publish-coding') {
+        let artifact: unknown = null;
+        if (process.env.SF_ARTIFACT) {
+          const source = await readFile(process.env.SF_ARTIFACT, 'utf8').catch(() => 'null');
+          if (Buffer.byteLength(source) <= 7000000) { try { artifact = JSON.parse(source); } catch { /* Persist failed result below. */ } }
+        }
+        const result = await publishCoding(github, config, new CodingRepository(repository, process.env.GITHUB_TOKEN ?? ''),
+          Number(issue), id, correlationId, { sha: process.env.SF_BASE_SHA ?? '', branch: process.env.SF_BASE_BRANCH ?? '' }, artifact);
+        console.log(JSON.stringify({ executionId: id, status: result.status, artifacts: result.artifacts }));
+        if (result.status === 'failed') process.exitCode = 1;
+        return;
+      }
       const result = await executeDelegation(github, config, Number(issue), id, correlationId,
         new HarnessProcessClient(process.env.HARNESS_ENTRYPOINT ?? ''));
       console.log(JSON.stringify({ correlationId, executionId: result.executionId, status: result.status })); return;
