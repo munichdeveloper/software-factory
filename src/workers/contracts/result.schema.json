@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failed",
+        "blocked",
+        "needs_approval",
+        "cancelled",
+        "timed_out"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "artifacts": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 2000
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "contractVersion": {
+      "type": "string",
+      "const": "2.0"
+    },
+    "executionId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{32}$"
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9:/#._-]{0,199}$"
+    },
+    "taskVersion": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "required": [
+    "status",
+    "summary",
+    "artifacts",
+    "error",
+    "contractVersion",
+    "executionId",
+    "taskId",
+    "taskVersion"
+  ],
+  "additionalProperties": false
+}

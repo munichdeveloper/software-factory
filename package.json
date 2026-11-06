@@ -1,0 +1,40 @@
+{
+  "name": "software-factory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run --exclude tests/harness-integration.test.ts",
+    "test:coverage": "vitest run --coverage --exclude tests/harness-integration.test.ts",
+    "schemas": "tsx scripts/schemas.ts",
+    "check": "npm run build && npm run lint && npm test && npm run validate:workflows",
+    "validate:workflows": "tsx scripts/validate-workflows.ts",
+    "bundle": "tsx scripts/bundle.ts",
+    "test:integration": "vitest run tests/harness-integration.test.ts"
+  },
+  "dependencies": {
+    "@octokit/rest": "^22.0.0",
+    "ajv": "^8.20.0",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.19.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.14.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "minimatch": "^11.0.5"
+  }
+}

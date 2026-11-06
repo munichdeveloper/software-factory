@@ -1,0 +1,71 @@
+name: Software Factory
+description: Plan, authorize, dispatch and reconcile repository tasks using a separate Harness runtime
+inputs:
+  mode:
+    description: manager, bootstrap or worker
+    default: manager
+  config-path:
+    description: Default-branch SF configuration path
+    default: .github/software-factory.yml
+  harness-ref:
+    description: Immutable independent Harness runtime commit
+    default: afb02103e1255fb966cc5264b6833c5cc63eda94
+  execution-id:
+    description: SF delegation execution identifier
+    default: ''
+  issue-number:
+    description: SF managed task issue number
+    default: ''
+  dry-run:
+    description: Evaluate without repository mutations
+    default: 'false'
+  github-token:
+    description: SF repository API credential, never passed to Harness
+    default: ${{ github.token }}
+  openai-api-key:
+    description: Optional SF planning credential, never passed to Harness
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Validate invocation
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        REF: ${{ inputs.harness-ref }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        [[ "$MODE" == manager || "$MODE" == bootstrap || "$MODE" == worker ]]
+        [[ "$REF" =~ ^[a-f0-9]{40}$ ]]
+        [[ "$GITHUB_REF_NAME" == "$DEFAULT_BRANCH" ]]
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      with:
+        node-version: '22'
+    - if: inputs.mode == 'worker'
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        repository: munichdeveloper/dev-agent-harness
+        ref: ${{ inputs.harness-ref }}
+        path: .runtime/harness
+        persist-credentials: false
+    - if: inputs.mode == 'worker'
+      shell: bash
+      working-directory: .runtime/harness
+      run: |
+        npm ci --ignore-scripts
+        npm run build
+    - name: Run Software Factory
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        OPENAI_API_KEY: ${{ inputs.mode != 'worker' && inputs.openai-api-key || '' }}
+        HARNESS_EXECUTION_ID: ${{ inputs.execution-id }}
+        HARNESS_ISSUE_NUMBER: ${{ inputs.issue-number }}
+        MODE: ${{ inputs.mode }}
+        CONFIG: ${{ inputs.config-path }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        export HARNESS_ENTRYPOINT="$GITHUB_WORKSPACE/.runtime/harness/dist/cli.js"
+        args=()
+        if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
+        node "$GITHUB_ACTION_PATH/bundle/factory.cjs" "$MODE" --config-path "$CONFIG" "${args[@]}"
