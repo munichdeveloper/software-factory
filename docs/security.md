@@ -20,9 +20,9 @@ Advisory, dry run, global disable, retry/action/parallelism limits, protected
 branches and explicit denials remain active. Merge and standalone scope actions
 remain unsupported. Audit logging may be disabled; recovery journals are mandatory.
 
-Private Action access is limited by GitHub to permitted private repositories of
-the owner. Public targets cannot consume this private distribution. Do not copy
-an operator's PAT into target secrets merely to check out SF. The bundle is
+SF was made public with owner approval for its v0.1.0 release. Public and private
+targets can use its SHA-pinned Action, subject to their Actions policies. No
+cross-repository PAT is necessary. The bundle is
 generated deterministically and checked for drift in CI. Protect changes to SF,
 its action, its bundle and its independent Harness pin together through review.
 
