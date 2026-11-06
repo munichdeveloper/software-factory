@@ -14845,7 +14845,7 @@ var require__ = __commonJS({
 
 // src/cli.ts
 var import_promises = require("node:fs/promises");
-var import_node_crypto2 = require("node:crypto");
+var import_node_crypto3 = require("node:crypto");
 var import_node_util = require("node:util");
 var import_node_url = require("node:url");
 
@@ -34615,7 +34615,12 @@ var configSchema = external_exports.strictObject({
   }).prefault({}),
   workers: external_exports.strictObject({
     test: external_exports.strictObject({ enabled: external_exports.boolean().default(true), operation: external_exports.enum(["sha256", "fail", "blocked"]).default("sha256") }).prefault({}),
-    coding: external_exports.literal(false).default(false),
+    coding: external_exports.union([external_exports.literal(false), external_exports.strictObject({
+      enabled: external_exports.boolean(),
+      agent: external_exports.literal("codex"),
+      model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/).default("gpt-6.1-sol"),
+      reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh"]).default("high")
+    })]).default(false),
     review: external_exports.literal(false).default(false)
   }).prefault({}),
   reporting: external_exports.strictObject({ persistDecisions: external_exports.boolean().default(true) }).prefault({})
@@ -38744,7 +38749,8 @@ var workerInputSchema = external_exports.strictObject({
   executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
   allowedActions: external_exports.array(external_exports.literal("publish_result")).length(1),
   limits: external_exports.strictObject({ timeoutMinutes: external_exports.number().int().min(1).max(30), maxOutputBytes: external_exports.literal(16e3) }),
-  operation: external_exports.enum(["sha256", "fail", "blocked"])
+  operation: external_exports.enum(["sha256", "fail", "blocked"]),
+  worker: external_exports.enum(["test", "codex"]).default("test")
 });
 var workerResultSchema = external_exports.strictObject({
   contractVersion: external_exports.literal("1.0"),
@@ -39104,7 +39110,7 @@ function evaluate(action, ctx) {
   }
   if (action.kind === "close_issue" && (ctx.source !== "reconcile" || !task.hasClosingMerge || task.executions.some((e) => e.active))) return deny("Closing requires a verified native closing link to a merged PR and no active execution");
   if (["start_worker", "retry_worker"].includes(action.kind)) {
-    if (!config2.workers.test.enabled) return deny("Test worker disabled");
+    if (!config2.workers.test.enabled && !(config2.workers.coding && config2.workers.coding.enabled)) return deny("All workers disabled");
     if (task.blocked || task.issue.body.length > 2e4) return deny("Task is blocked or exceeds worker input limit");
     if (task.executions.some((e) => e.active)) return deny("Task already has an active or uncertain execution");
     if (task.hasClosingMerge || task.hasOpenPR) return deny("Task already has implementation PRs");
@@ -39167,7 +39173,8 @@ All fields inapplicable to an action must be null.
 Use start_worker for runnable tasks, prioritize for priority changes, create_followup for necessary concrete work.
 Follow-ups need a stable semantic key (same work always same key), context, goal and acceptance criteria.
 Mark expandsScope true whenever the work broadens the configured project scope. Never propose workflow/security
-changes to bypass policy. The test worker computes a digest; success does not implement or close a task.
+changes to bypass policy. The configured worker is described in trustedWorker. A test worker computes a digest;
+a Codex worker implements code and proposes a PR. Neither result alone proves review, merge or completion.
 Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.`;
 function compactContext(tasks, config2) {
   const selected = [];
@@ -39188,7 +39195,11 @@ function compactContext(tasks, config2) {
     if (JSON.stringify([...selected, item]).length > config2.manager.maxContextChars) break;
     selected.push(item);
   }
-  return JSON.stringify({ trustedScope: config2.factory.scope, untrustedTasks: selected });
+  return JSON.stringify({
+    trustedScope: config2.factory.scope,
+    trustedWorker: config2.workers.coding && config2.workers.coding.enabled ? "Codex coding worker (edits, tests, opens a PR via SF)" : "Non-mutating digest test worker",
+    untrustedTasks: selected
+  });
 }
 var OpenAIPlanner = class {
   constructor(key, fetcher = fetch) {
@@ -39359,7 +39370,8 @@ ${marker2}`;
           executionId: id,
           allowedActions: ["publish_result"],
           limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16e3 },
-          operation: this.config.workers.test.operation
+          operation: this.config.workers.test.operation,
+          worker: this.config.workers.coding && this.config.workers.coding.enabled ? "codex" : "test"
         });
         await this.event(live.number, `intent:${id}`, { type: "intent", input: input2, actionId: actionId(action, policyVersion(this.config)), attempt });
         const existing = (await this.github.runs(this.config.manager.workflow)).find((r) => r.title === `Factory worker ${id}`);
@@ -39502,8 +39514,8 @@ function summary(report) {
 }
 
 // src/workers/execute-delegation.ts
-async function executeDelegation(github, config2, issueNumber, id, correlationId, harness) {
-  if (!config2.factory.enabled || !config2.workers.test.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") throw new Error("Worker execution disabled by configuration");
+async function authorizeDelegation(github, config2, issueNumber, id) {
+  if (!config2.factory.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") throw new Error("Worker execution disabled by configuration");
   const issue2 = await github.getIssue(issueNumber);
   const comments = await github.comments(issueNumber);
   const events = comments.flatMap((c) => {
@@ -39511,7 +39523,6 @@ async function executeDelegation(github, config2, issueNumber, id, correlationId
     return e ? [e] : [];
   });
   const previous = events.find((e) => e.data.type === "result" && e.data.result.executionId === id);
-  if (previous?.data.type === "result") return previous.data.result;
   const event = events.find((e) => e.data.type === "intent" && e.data.input.executionId === id);
   if (event?.data.type !== "intent") throw new Error("No trusted manager intent for this execution");
   const input2 = workerInputSchema.parse(event.data.input);
@@ -39532,11 +39543,11 @@ async function executeDelegation(github, config2, issueNumber, id, correlationId
     if (command?.[2] === event.data.actionId && await github.canApprove(c.author)) approved = command[1] === "approve";
   }
   const rule = permission(config2, original.kind);
-  const policyChanged = actionId(original, policyVersion(config2)) !== event.data.actionId || rule === "deny" || rule === "approval" && !approved;
+  const workerEnabled = input2.worker === "codex" ? config2.workers.coding && config2.workers.coding.enabled : config2.workers.test.enabled;
+  const policyChanged = !workerEnabled || actionId(original, policyVersion(config2)) !== event.data.actionId || rule === "deny" || rule === "approval" && !approved;
   const explicitlyBlocked = issue2.labels.includes("harness:blocked") && !currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
   const stale = policyChanged || explicitlyBlocked || issue2.state !== "open" || !issue2.labels.includes("harness:managed") || taskVersion(issue2) !== input2.taskVersion;
-  let result;
-  if (stale) result = workerResultSchema.parse({
+  const cancelled = stale ? workerResultSchema.parse({
     contractVersion: "1.0",
     executionId: id,
     issueNumber,
@@ -39545,8 +39556,19 @@ async function executeDelegation(github, config2, issueNumber, id, correlationId
     artifacts: [],
     error: null,
     proposedActions: []
-  });
+  }) : null;
+  return { input: input2, cancelled, previous: previous?.data.type === "result" ? previous.data.result : null };
+}
+async function persistResult(github, result, correlationId) {
+  await github.writeEvent(result.issueNumber, { version: 1, key: `result:${result.executionId}`, at: (/* @__PURE__ */ new Date()).toISOString(), correlationId, data: { type: "result", result } });
+}
+async function executeDelegation(github, config2, issueNumber, id, correlationId, harness) {
+  const { input: input2, cancelled, previous } = await authorizeDelegation(github, config2, issueNumber, id);
+  if (previous) return previous;
+  let result;
+  if (cancelled) result = cancelled;
   else {
+    if (input2.worker !== "test") throw new Error("Codex delegation requires isolated coding workflow");
     try {
       result = workerResultSchema.parse(await harness.execute(input2));
     } catch {
@@ -39564,7 +39586,7 @@ async function executeDelegation(github, config2, issueNumber, id, correlationId
     if (result.executionId !== id || result.issueNumber !== issueNumber) throw new Error("Harness adapter returned an unrelated delegation result");
   }
   if (Buffer.byteLength(JSON.stringify(result)) > input2.limits.maxOutputBytes) throw new Error("Worker output exceeds contract resource limit");
-  await github.writeEvent(issueNumber, { version: 1, key: `result:${id}`, at: (/* @__PURE__ */ new Date()).toISOString(), correlationId, data: { type: "result", result } });
+  await persistResult(github, result, correlationId);
   return result;
 }
 
@@ -39765,13 +39787,13 @@ var HarnessProcessClient = class {
   entrypoint;
   async execute(value) {
     const input2 = workerInputSchema.parse(value);
-    const taskId = `github:${input2.repository}#${input2.issueNumber}`;
+    const taskId2 = `github:${input2.repository}#${input2.issueNumber}`;
     const request2 = {
       contractVersion: "2.0",
       executionId: input2.executionId,
       worker: "test",
       task: {
-        id: taskId,
+        id: taskId2,
         version: input2.taskVersion,
         description: input2.description,
         acceptanceCriteria: input2.acceptanceCriteria,
@@ -39814,7 +39836,7 @@ var HarnessProcessClient = class {
       child.stdin.end(JSON.stringify(request2));
     });
     const result = JSON.parse(raw);
-    if (!validateResult(result) || result.executionId !== input2.executionId || result.taskId !== taskId || result.taskVersion !== input2.taskVersion) {
+    if (!validateResult(result) || result.executionId !== input2.executionId || result.taskId !== taskId2 || result.taskVersion !== input2.taskVersion) {
       throw new Error("Harness result failed schema or correlation validation");
     }
     return workerResultSchema.parse({
@@ -39829,6 +39851,194 @@ var HarnessProcessClient = class {
     });
   }
 };
+
+// src/github/coding.ts
+var import_node_crypto2 = require("node:crypto");
+var CodingRepository = class {
+  api;
+  target;
+  constructor(repository, token, fetcher = fetch) {
+    const [owner, repo] = repository.split("/");
+    this.target = { owner, repo };
+    this.api = new Octokit2({ auth: token, request: { timeout: 3e4, fetch: fetcher }, log: { debug() {
+    }, info() {
+    }, warn() {
+    }, error() {
+    } } });
+  }
+  async base() {
+    const { data: repository } = await this.api.repos.get(this.target);
+    const { data: ref } = await this.api.git.getRef({ ...this.target, ref: `heads/${repository.default_branch}` });
+    return { sha: ref.object.sha, branch: repository.default_branch };
+  }
+  async publish(base, artifact, issue2) {
+    const live = await this.base();
+    if (live.branch !== base.branch || live.sha !== base.sha) throw new Error("Default branch moved; retry from fresh base");
+    const { data: parent } = await this.api.git.getCommit({ ...this.target, commit_sha: base.sha });
+    const { data: entries } = await this.api.git.getTree({ ...this.target, tree_sha: parent.tree.sha, recursive: "1" });
+    if (entries.truncated) throw new Error("Base tree truncated");
+    const tree = [];
+    for (const change of artifact.changes) {
+      const segments = change.path.split("/");
+      for (let i = 1; i < segments.length; i++) {
+        const ancestor = entries.tree.find((e) => e.path === segments.slice(0, i).join("/"));
+        if (ancestor && ancestor.type !== "tree") throw new Error("Non-directory base ancestor");
+      }
+      const previous = entries.tree.find((e) => e.path === change.path);
+      if (previous && (previous.type !== "blob" || !["100644", "100755"].includes(previous.mode ?? ""))) throw new Error("Non-regular base file");
+      if (change.content === null) {
+        if (!previous) throw new Error("Cannot delete missing file");
+        tree.push({ path: change.path, type: "blob", mode: change.mode, sha: null });
+      } else {
+        const { data: blob } = await this.api.git.createBlob({ ...this.target, content: change.content, encoding: "base64" });
+        tree.push({ path: change.path, type: "blob", mode: change.mode, sha: blob.sha });
+      }
+    }
+    const { data: newTree } = await this.api.git.createTree({ ...this.target, base_tree: parent.tree.sha, tree });
+    if (newTree.sha === parent.tree.sha) throw new Error("No changes to publish");
+    const id = artifact.result.executionId;
+    const branch = `sf/issue-${issue2}/${id}`;
+    const fingerprint = (0, import_node_crypto2.createHash)("sha256").update(JSON.stringify(artifact)).digest("hex");
+    const message = `Implement #${issue2} with Codex
+
+SF execution: ${id}
+Artifact: ${fingerprint}`;
+    let existing = null;
+    try {
+      existing = (await this.api.git.getRef({ ...this.target, ref: `heads/${branch}` })).data.object.sha;
+    } catch (error62) {
+      if (!(error62 instanceof Error && "status" in error62 && error62.status === 404)) throw error62;
+    }
+    if (existing) {
+      const { data: commit } = await this.api.git.getCommit({ ...this.target, commit_sha: existing });
+      if (commit.tree.sha !== newTree.sha || commit.parents[0]?.sha !== base.sha || commit.message !== message) throw new Error("Execution branch collision");
+    } else {
+      const { data: commit } = await this.api.git.createCommit({ ...this.target, message, tree: newTree.sha, parents: [base.sha] });
+      await this.api.git.createRef({ ...this.target, ref: `refs/heads/${branch}`, sha: commit.sha });
+    }
+    const { data: prs } = await this.api.pulls.list({ ...this.target, state: "all", head: `${this.target.owner}:${branch}`, base: base.branch });
+    if (prs[0]) return prs[0].html_url;
+    const { data: pr } = await this.api.pulls.create({
+      ...this.target,
+      base: base.branch,
+      head: branch,
+      title: `Implement #${issue2} with Codex`,
+      body: `Closes #${issue2}
+
+${artifact.result.summary}
+
+Software Factory execution: \`${id}\`. Generated by the isolated Codex Harness. Review changes and CI before merging.`
+    });
+    return pr.html_url;
+  }
+};
+
+// src/workers/coding.ts
+var sha = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var codingArtifactSchema = external_exports.strictObject({
+  contractVersion: external_exports.literal("3.0"),
+  baseSha: sha,
+  result: external_exports.strictObject({
+    contractVersion: external_exports.literal("2.0"),
+    executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+    taskId: external_exports.string().max(200),
+    taskVersion: external_exports.string().regex(/^[a-f0-9]{64}$/),
+    status: external_exports.enum(["success", "failed", "blocked", "needs_approval", "cancelled", "timed_out"]),
+    summary: external_exports.string().min(1).max(2e3),
+    artifacts: external_exports.array(external_exports.string().max(2e3)).max(20),
+    error: external_exports.string().max(2e3).nullable()
+  }),
+  changes: external_exports.array(external_exports.strictObject({
+    path: external_exports.string().min(1).max(500),
+    content: external_exports.string().max(6666668).nullable(),
+    mode: external_exports.enum(["100644", "100755"])
+  })).max(100)
+});
+function validateChanges(artifact) {
+  const seen = /* @__PURE__ */ new Set();
+  let total = 0;
+  for (const change of artifact.changes) {
+    const parts = change.path.split("/");
+    if (change.path.includes("\\") || change.path.includes(":") || [...change.path].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) || parts.some((p) => !p || p === "." || p === ".." || p.endsWith(".") || p.endsWith(" ") || /^(\.git.*|\.codex|\.agents|\.squad|\.copilot|\.claude|agents\.md|codeowners)$/i.test(p))) throw new Error("Protected or invalid artifact path");
+    const key = change.path.toLowerCase();
+    if (seen.has(key)) throw new Error("Duplicate artifact path");
+    seen.add(key);
+    if (change.content !== null) {
+      const bytes = Buffer.from(change.content, "base64");
+      if (bytes.toString("base64") !== change.content) throw new Error("Invalid artifact encoding");
+      total += bytes.length;
+    }
+  }
+  if (total > 5e6) throw new Error("Artifact exceeds publication limit");
+}
+var taskId = (repository, issue2) => `github:${repository}#${issue2}`;
+async function prepareCoding(github, config2, repository, issue2, id, correlationId) {
+  const auth2 = await authorizeDelegation(github, config2, issue2, id);
+  if (auth2.previous) return null;
+  if (auth2.cancelled) {
+    await persistResult(github, auth2.cancelled, correlationId);
+    return null;
+  }
+  if (auth2.input.worker !== "codex" || !config2.workers.coding || !config2.workers.coding.enabled) throw new Error("Coding worker disabled");
+  const base = await repository.base();
+  sha.parse(base.sha);
+  return { base, request: {
+    contractVersion: "3.0",
+    executionId: id,
+    worker: "codex",
+    task: {
+      id: taskId(github.repository, issue2),
+      version: auth2.input.taskVersion,
+      description: auth2.input.description,
+      acceptanceCriteria: auth2.input.acceptanceCriteria,
+      contextReferences: auth2.input.contextReferences
+    },
+    baseSha: base.sha,
+    allowedActions: ["edit_workspace", "run_commands"],
+    model: config2.workers.coding.model,
+    effort: config2.workers.coding.reasoningEffort,
+    limits: { timeoutMinutes: auth2.input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5e6 }
+  } };
+}
+async function publishCoding(github, config2, repository, issue2, id, correlationId, base, source) {
+  const auth2 = await authorizeDelegation(github, config2, issue2, id);
+  if (auth2.previous) return auth2.previous;
+  let result = auth2.cancelled;
+  if (!result) {
+    if (auth2.input.worker !== "codex") throw new Error("Not a coding delegation");
+    try {
+      const artifact = codingArtifactSchema.parse(source);
+      if (artifact.baseSha !== base.sha || artifact.result.executionId !== id || artifact.result.taskVersion !== auth2.input.taskVersion || artifact.result.taskId !== taskId(github.repository, issue2)) throw new Error("Unrelated coding artifact");
+      validateChanges(artifact);
+      const status = artifact.result.status === "timed_out" ? "failed" : artifact.result.status;
+      const artifacts = [];
+      if (status === "success" && artifact.changes.length) artifacts.push(await repository.publish(base, artifact, issue2));
+      result = workerResultSchema.parse({
+        contractVersion: "1.0",
+        executionId: id,
+        issueNumber: issue2,
+        status: status === "success" && !artifact.changes.length ? "blocked" : status,
+        summary: artifact.result.summary,
+        artifacts,
+        error: artifact.result.error,
+        proposedActions: []
+      });
+    } catch {
+      result = workerResultSchema.parse({
+        contractVersion: "1.0",
+        executionId: id,
+        issueNumber: issue2,
+        status: "failed",
+        summary: "Coding run or publication failed",
+        artifacts: [],
+        error: "Missing, invalid or unpublishable coding result",
+        proposedActions: []
+      });
+    }
+  }
+  await persistResult(github, result, correlationId);
+  return result;
+}
 
 // src/cli.ts
 async function main(args = process.argv.slice(2)) {
@@ -39848,7 +40058,7 @@ async function main(args = process.argv.slice(2)) {
     console.log("Configuration valid");
     return;
   }
-  if (!["manager", "worker", "bootstrap"].includes(command)) throw new Error("Supported commands: manager, worker, bootstrap, validate");
+  if (!["manager", "worker", "bootstrap", "prepare-coding", "publish-coding"].includes(command)) throw new Error("Supported commands: manager, worker, bootstrap, validate, prepare-coding, publish-coding");
   const repository = values.repository ?? process.env.GITHUB_REPOSITORY ?? "";
   const github = new GitHubClient(repository, process.env.GITHUB_TOKEN ?? "");
   let config2 = loadConfig(await github.readConfig(values["config-path"]));
@@ -39861,7 +40071,7 @@ async function main(args = process.argv.slice(2)) {
   if (process.env.GITHUB_ACTIONS !== "true" && !values["allow-local-writes"] && !config2.execution.dryRun && config2.autonomy.profile !== "advisory") {
     throw new Error("Local mutations require --allow-local-writes and an exclusive operator session; prefer the serialized GitHub workflow");
   }
-  const correlationId = process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? "1"}` : (0, import_node_crypto2.randomUUID)();
+  const correlationId = process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? "1"}` : (0, import_node_crypto3.randomUUID)();
   const timer = setTimeout(() => {
     console.error(JSON.stringify({ correlationId, error: "Hard execution time limit reached; next run will recover durable state" }));
     process.exit(1);
@@ -39876,10 +40086,45 @@ async function main(args = process.argv.slice(2)) {
       console.log(JSON.stringify({ correlationId, createdLabels: await github.bootstrap() }));
       return;
     }
-    if (command === "worker") {
+    if (["worker", "prepare-coding", "publish-coding"].includes(command)) {
       const issue2 = values.issue ?? process.env.HARNESS_ISSUE_NUMBER ?? "";
       const id = values.execution ?? process.env.HARNESS_EXECUTION_ID ?? "";
       if (!/^[1-9]\d*$/.test(issue2) || !/^[a-f0-9]{32}$/.test(id)) throw new Error("Invalid worker issue or execution ID");
+      if (command === "prepare-coding") {
+        const prepared = await prepareCoding(github, config2, new CodingRepository(repository, process.env.GITHUB_TOKEN ?? ""), Number(issue2), id, correlationId);
+        if (process.env.GITHUB_OUTPUT) await (0, import_promises.appendFile)(process.env.GITHUB_OUTPUT, prepared ? `ready=true
+request=${JSON.stringify(prepared.request)}
+base-sha=${prepared.base.sha}
+base-branch=${prepared.base.branch}
+` : "ready=false\n");
+        console.log(JSON.stringify({ executionId: id, ready: !!prepared }));
+        return;
+      }
+      if (command === "publish-coding") {
+        let artifact = null;
+        if (process.env.SF_ARTIFACT) {
+          const source = await (0, import_promises.readFile)(process.env.SF_ARTIFACT, "utf8").catch(() => "null");
+          if (Buffer.byteLength(source) <= 7e6) {
+            try {
+              artifact = JSON.parse(source);
+            } catch {
+            }
+          }
+        }
+        const result2 = await publishCoding(
+          github,
+          config2,
+          new CodingRepository(repository, process.env.GITHUB_TOKEN ?? ""),
+          Number(issue2),
+          id,
+          correlationId,
+          { sha: process.env.SF_BASE_SHA ?? "", branch: process.env.SF_BASE_BRANCH ?? "" },
+          artifact
+        );
+        console.log(JSON.stringify({ executionId: id, status: result2.status, artifacts: result2.artifacts }));
+        if (result2.status === "failed") process.exitCode = 1;
+        return;
+      }
       const result = await executeDelegation(
         github,
         config2,
