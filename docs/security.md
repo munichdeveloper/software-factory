@@ -1,44 +1,32 @@
-# Security boundaries
+# Security boundary
 
-- Issue/PR bodies, comments and future repository context are untrusted data,
-  serialized as user input. Strict schema and independent policy validation are
-  the execution boundary; prompt instructions alone are not.
-- Only managed Issues are mutated. Native closing connections prove completion.
-  Planners cannot assert execution/completion facts or increase permissions.
-- Default-branch config and reviewed workflows are trusted policy. Workflow and
-  runtime must use matching reviewed SHA pins. Third-party Actions are pinned.
-  Lockfile installation disables lifecycle scripts.
-- No target code is checked out or executed. No `pull_request_target` is used.
-  PR CI has only contents-read and no API secrets.
-- Manager has contents-read, issues-write, PRs-read, Actions-write. Worker has
-  contents-read, issues-write and Actions-read; it receives no OpenAI secret.
-  GitHub has no comment-only permission, so the worker token technically permits
-  issue updates. The reviewed worker code publishes only results; never run
-  untrusted application code in that privileged job.
-- Machine authors are explicitly trusted. GitHub's bot identity is shared across
-  repository workflows, so other issue-write workflows are in the same trust
-  boundary. Restrict privileged jobs and protect config/workflows with rulesets
-  and owner review. User text cannot impersonate a comment's actual author.
-- Approvals use exact full-comment commands and current write/maintain/admin
-  permission. IDs bind task text, complete config, payload and retry attempt.
-  A ready label or generated approve_task proposal never grants worker permission.
-  Workers recheck configuration identity and current approval before starting;
-  queued work is cancelled if authorization changed after delegation.
-- Caps, global disable and dry run apply in all profiles. Advisory prohibits all
-  mutations. Unsupported actions cannot be enabled through overrides.
-  Bootstrap also skips all mutations in advisory and dry-run modes.
-- Logs omit secrets, issue text, raw request errors and provider response bodies.
-  Job-summary text is escaped. Provider requests use a fixed HTTPS OpenAI endpoint;
-  there is no configurable credential-exfiltration URL.
+SF credentials are scoped to the target repository: contents-read, issues-write,
+PRs-read and Actions-write. They are used only by SF's reviewed bundled code.
+The OpenAI key belongs to SF planning; worker mode receives an empty planner key.
+The Harness subprocess inherits only OS temporary-directory/SystemRoot variables,
+never GitHub/OpenAI credentials, NODE_OPTIONS or arbitrary caller environment.
 
-Scope classification is semantic and can be mistaken. Explicit scope expansion
-is separately gated, but the model's classification is not a proof. Keep follow-up
-creation behind approval when strict mandate review is needed. Never put secrets
-in tasks: descriptions intentionally persist as worker input and may enter LLM
-context.
+No target application code is checked out or executed. Worker mode checks out
+only the SHA-pinned public Harness, disables credential persistence and installs
+locked dependencies with lifecycle scripts disabled. Runtime handlers are trusted
+code, not dynamically loaded repository files. Incoming CI has contents-read only.
 
-Read probes validate Issues, contents, PR and Actions access. GitHub exposes no
-universally available non-mutating token-permission introspection across all
-token types. Missing write permission fails closed at the first journal,
-bootstrap or dispatch operation; CLI diagnostics name required scopes and never
-print request objects. Organization policies and branch rules remain authoritative.
+Issue/PR text and comments are untrusted data. The planner has no API tools; plans
+are schema validated and independently checked against policy, current facts,
+concrete approvals and budgets. Trusted journal authors and native label timeline
+events distinguish automatic block provenance from later human blocks.
+
+Advisory, dry run, global disable, retry/action/parallelism limits, protected
+branches and explicit denials remain active. Merge and standalone scope actions
+remain unsupported. Audit logging may be disabled; recovery journals are mandatory.
+
+Private Action access is limited by GitHub to permitted private repositories of
+the owner. Public targets cannot consume this private distribution. Do not copy
+an operator's PAT into target secrets merely to check out SF. The bundle is
+generated deterministically and checked for drift in CI. Protect changes to SF,
+its action, its bundle and its independent Harness pin together through review.
+
+GitHub has no multi-operation transaction across comments, labels and dispatch.
+An uncertain intent occupies a worker slot and is quarantined instead of blindly
+redispatched. Recheck failures stop the run. This is duplicate prevention with
+explicit recovery, not a claim of distributed exactly-once delivery.
