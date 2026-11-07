@@ -31,7 +31,7 @@ Follow-ups need a stable semantic key (same work always same key), context, goal
 Mark expandsScope true whenever the work broadens the configured project scope. Never propose workflow/security
 changes to bypass policy. The configured worker is described in trustedWorker. A test worker computes a digest;
 a Codex worker implements code and proposes a PR. Neither result alone proves review, merge or completion.
-Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.`;
+Do not propose merge_pr: a separate commit-bound PR code reviewer owns merge decisions. Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.`;
 export function compactContext(tasks: Task[], config: Config): string {
   const selected: unknown[] = [];
   for (const t of [...tasks].sort((a, b) => priority(a) - priority(b) || a.issue.number - b.issue.number)) {

@@ -12,6 +12,9 @@ import { HarnessProcessClient } from './workers/harness-client.js';
 import { SlackSink, deliverNotifications } from './notifications/slack.js';
 import { CodingRepository } from './github/coding.js';
 import { prepareCoding, publishCoding } from './workers/coding.js';
+import { GitHubMergePort } from './merge/github.js';
+import { OpenAIMergeReviewer } from './merge/reviewer.js';
+import { MergeManager } from './merge/manager.js';
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
@@ -25,7 +28,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     loadConfig(await readFile(values.file, 'utf8'));
     console.log('Configuration valid'); return;
   }
-  if (!['manager', 'notify', 'check-slack', 'worker', 'bootstrap', 'prepare-coding', 'publish-coding'].includes(command)) throw new Error('Supported commands: manager, notify, check-slack, worker, bootstrap, validate, prepare-coding, publish-coding');
+  if (!['manager', 'merge', 'notify', 'check-slack', 'worker', 'bootstrap', 'prepare-coding', 'publish-coding'].includes(command)) throw new Error('Supported commands: manager, merge, notify, check-slack, worker, bootstrap, validate, prepare-coding, publish-coding');
   const repository = values.repository ?? process.env.GITHUB_REPOSITORY ?? '';
   const github = new GitHubClient(repository, process.env.GITHUB_TOKEN ?? '');
   let config = loadConfig(await github.readConfig(values['config-path']!));
@@ -42,6 +45,16 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const timer = setTimeout(() => { console.error(JSON.stringify({ correlationId, error: 'Hard execution time limit reached; next run will recover durable state' })); process.exit(1); }, (command === 'worker' ? config.execution.workerTimeoutMinutes : config.manager.timeoutMinutes) * 60000);
   timer.unref();
   try {
+    if (command === 'merge') {
+      if (!config.merge.enabled || config.execution.dryRun || config.autonomy.profile === 'advisory') {
+        console.log(JSON.stringify({ outcome: 'merge-disabled' })); return;
+      }
+      const report = await new MergeManager(new GitHubMergePort(repository, process.env.GITHUB_TOKEN ?? '', config.factory.scope, config.merge.adoptLabel),
+        config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), correlationId).run(await github.snapshot(config.manager.workflow));
+      console.log(JSON.stringify({ correlationId, ...report }));
+      if (report.errors.length) process.exitCode = 1;
+      return;
+    }
     if (command === 'check-slack') {
       if (!config.notifications.slack.enabled || config.execution.dryRun || config.autonomy.profile === 'advisory') {
         console.log('Slack connection check skipped in mutation-free or disabled mode'); return;

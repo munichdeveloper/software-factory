@@ -308,6 +308,128 @@
       },
       "additionalProperties": false
     },
+    "merge": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "includeFactoryPRs": {
+          "default": true,
+          "type": "boolean"
+        },
+        "adoptLabel": {
+          "default": "sf:automerge",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "method": {
+          "default": "squash",
+          "type": "string",
+          "enum": [
+            "squash",
+            "merge",
+            "rebase"
+          ]
+        },
+        "updateBranch": {
+          "default": true,
+          "type": "boolean"
+        },
+        "requiredChecks": {
+          "default": [
+            "test-backend",
+            "test-frontend",
+            "test-docker"
+          ],
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "validationWorkflow": {
+          "default": "test.yml",
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+\\.ya?ml$"
+        },
+        "maxReviewsPerRun": {
+          "default": 2,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "maxActionsPerRun": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "review": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "model": {
+              "default": "gpt-6.1-sol",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "reasoningEffort": {
+              "default": "high",
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 120,
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 120
+            },
+            "maxOutputTokens": {
+              "default": 6000,
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 12000
+            },
+            "maxFiles": {
+              "default": 60,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "maxContextBytes": {
+              "default": 250000,
+              "type": "integer",
+              "minimum": 10000,
+              "maximum": 500000
+            }
+          },
+          "additionalProperties": false
+        },
+        "postMergeWorkflows": {
+          "default": [],
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+\\.ya?ml$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "notifications": {
       "default": {},
       "type": "object",

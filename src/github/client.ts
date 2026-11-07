@@ -9,7 +9,7 @@ const normalizeIssue = (i: RawIssue): Issue => ({ number: i.number, title: i.tit
   state: i.state === 'closed' ? 'closed' : 'open', labels: i.labels.map(l => typeof l === 'string' ? l : l.name ?? ''), updatedAt: i.updated_at,
   createdAt: i.created_at, authorType: i.user?.type });
 type PRNode = { number: number; state: string; merged: boolean; mergedAt: string | null; body: string; title?: string;
-  headRefName?: string; mergedBy?: { login: string; __typename: string } | null;
+  headRefName?: string; headRefOid?: string; mergedBy?: { login: string; __typename: string } | null;
   closingIssuesReferences: { nodes: { number: number; repository: { nameWithOwner: string } }[]; pageInfo: { hasNextPage: boolean } } };
 
 export class GitHubClient implements GitHubPort {
@@ -69,7 +69,7 @@ export class GitHubClient implements GitHubPort {
         query($owner:String!, $repo:String!, $cursor:String) {
           repository(owner:$owner, name:$repo) {
             pullRequests(first:50, after:$cursor, orderBy:{field:UPDATED_AT,direction:DESC}) {
-              nodes { number state merged mergedAt body title headRefName mergedBy { login __typename } closingIssuesReferences(first:100) {
+              nodes { number state merged mergedAt body title headRefName headRefOid mergedBy { login __typename } closingIssuesReferences(first:100) {
                 nodes { number repository { nameWithOwner } } pageInfo { hasNextPage }
               }} pageInfo { hasNextPage endCursor }
             }
@@ -79,7 +79,7 @@ export class GitHubClient implements GitHubPort {
       for (const pr of connection.nodes) {
         if (pr.closingIssuesReferences.pageInfo.hasNextPage) throw new Error(`PR #${pr.number} has over 100 closing links; refusing incomplete reconciliation`);
         result.push({ number: pr.number, state: pr.state === 'OPEN' ? 'open' : 'closed', merged: pr.merged, mergedAt: pr.mergedAt ?? undefined,
-          title: pr.title, headRefName: pr.headRefName, mergedBy: pr.mergedBy ? {
+          title: pr.title, headRefName: pr.headRefName, headSha: pr.headRefOid, mergedBy: pr.mergedBy ? {
             login: pr.mergedBy.__typename === 'Bot' && !pr.mergedBy.login.endsWith('[bot]') ? `${pr.mergedBy.login}[bot]` : pr.mergedBy.login,
             type: pr.mergedBy.__typename } : undefined,
           closingIssues: pr.closingIssuesReferences.nodes.filter(i => i.repository.nameWithOwner.toLowerCase() === this.repository.toLowerCase()).map(i => i.number),
@@ -125,7 +125,7 @@ export class GitHubClient implements GitHubPort {
     for (const name of allLabels) {
       if (existing.some(l => l.name === name)) continue;
       try {
-        await this.api.issues.createLabel({ ...this.target, name, color: name === managedLabel ? '5319e7' : 'ededed', description: `Software Factory ${name.slice(8)}` });
+        await this.api.issues.createLabel({ ...this.target, name, color: name === managedLabel ? '5319e7' : 'ededed', description: `Software Factory ${name.replace(/^(harness|sf):/, '')}` });
         created.push(name);
       } catch (error) {
         // Another bootstrap can create a label between list and create.

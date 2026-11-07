@@ -87,16 +87,21 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
       if (created) await deliver(parent.number, { event: 'issue_created', number: created.number, title: created.title,
         actor: 'Software Factory', url: `https://github.com/${github.repository}/issues/${created.number}` });
     }
-    if (settings.events.pr_merged.enabled) for (const event of trusted) {
-      if (event.data.type !== 'result') continue;
-      const result = event.data.result;
-      const pr = snapshot.prs.find(p => p.merged && p.mergedBy?.type === 'Bot' && afterStart(p.mergedAt) &&
-        p.headRefName === `sf/issue-${parent.number}/${result.executionId}` &&
-        result.artifacts.includes(`https://github.com/${github.repository}/pull/${p.number}`) &&
-        (!settings.events.pr_merged.actors.length || settings.events.pr_merged.actors.includes(p.mergedBy.login)));
-      if (pr) await deliver(parent.number, { event: 'pr_merged', number: pr.number, title: pr.title ?? `PR #${pr.number}`,
-        actor: pr.mergedBy!.login, url: `https://github.com/${github.repository}/pull/${pr.number}` });
-    }
+  }
+  if (settings.events.pr_merged.enabled) for (const pr of snapshot.prs) {
+    if (!pr.merged || pr.mergedBy?.type !== 'Bot' || !afterStart(pr.mergedAt) ||
+      (settings.events.pr_merged.actors.length && !settings.events.pr_merged.actors.includes(pr.mergedBy.login))) continue;
+    const nativeComments = await github.comments(pr.number);
+    const mergedByFactory = nativeComments.some(c => {
+      const e = decodeEvent(c, config.manager.trustedActors);
+      return e?.data.type === 'merge_intent' && e.data.prNumber === pr.number && e.data.head === pr.headSha;
+    });
+    const parent = snapshot.issues.find(i => events(i.number).some(e => e.data.type === 'result' &&
+      pr.headRefName === `sf/issue-${i.number}/${e.data.result.executionId}` &&
+      e.data.result.artifacts.includes(`https://github.com/${github.repository}/pull/${pr.number}`)));
+    const journal = mergedByFactory ? pr.number : parent?.number;
+    if (journal !== undefined) await deliver(journal, { event: 'pr_merged', number: pr.number, title: pr.title ?? `PR #${pr.number}`,
+      actor: pr.mergedBy.login, url: `https://github.com/${github.repository}/pull/${pr.number}` });
   }
   return errors;
 }

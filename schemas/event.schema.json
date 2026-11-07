@@ -509,6 +509,246 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "merge_review"
+            },
+            "head": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "base": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "reviewKey": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "review": {
+              "type": "object",
+              "properties": {
+                "decision": {
+                  "type": "string",
+                  "enum": [
+                    "merge",
+                    "update_branch",
+                    "request_changes",
+                    "defer"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 3000
+                },
+                "findings": {
+                  "maxItems": 15,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "severity": {
+                        "type": "string",
+                        "enum": [
+                          "blocking",
+                          "warning"
+                        ]
+                      },
+                      "explanation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "severity",
+                      "explanation"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "decision",
+                "reason",
+                "findings"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "head",
+            "base",
+            "reviewKey",
+            "review"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "merge_intent"
+            },
+            "prNumber": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "head": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "base": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "reviewKey": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "type",
+            "prNumber",
+            "head",
+            "base",
+            "reviewKey"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "merge_completed"
+            },
+            "prNumber": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "head": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "mergeSha": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            }
+          },
+          "required": [
+            "type",
+            "prNumber",
+            "head",
+            "mergeSha"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "branch_update"
+            },
+            "head": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "base": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            }
+          },
+          "required": [
+            "type",
+            "head",
+            "base"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "workflow_dispatch"
+            },
+            "workflow": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "ref": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "sha": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            }
+          },
+          "required": [
+            "type",
+            "workflow",
+            "ref",
+            "sha"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "merge_status"
+            },
+            "head": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "base": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "reason": {
+              "type": "string",
+              "maxLength": 3000
+            }
+          },
+          "required": [
+            "type",
+            "head",
+            "base",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "decision"
             },
             "action": {

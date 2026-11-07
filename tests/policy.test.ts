@@ -25,7 +25,7 @@ describe('independent autonomy policy engine', () => {
     expect(actionId({ ...a, taskVersion: 'a'.repeat(64) }, policyVersion(cfg))).not.toBe(id);
     cfg.execution.maxRetries++; expect(actionId(a, policyVersion(cfg))).not.toBe(id);
   });
-  it('hard-denies unsupported merge and standalone scope actions even after approval', () => {
+  it('routes merges only through the dedicated PR review workflow and denies standalone scope changes', () => {
     const f = fixture();
     for (const kind of ['merge_pr', 'expand_scope'] as const) expect(evaluate(proposal(f.task, kind, 'request'), {
       config: f.cfg, ...f, source: 'planner', approved: true }).outcome).toBe('deny');

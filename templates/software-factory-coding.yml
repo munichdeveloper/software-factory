@@ -54,3 +54,23 @@ notifications:
         enabled: false
         channel: null
         actors: [] # Always Bot accounts only; optional narrower login allow-list.
+
+# Optional independent AI merge reviewer; green CI alone never authorizes merging.
+merge:
+  enabled: false
+  includeFactoryPRs: true
+  adoptLabel: sf:automerge
+  method: squash
+  updateBranch: true
+  requiredChecks: [test-backend, test-frontend, test-docker]
+  validationWorkflow: test.yml
+  maxReviewsPerRun: 2
+  maxActionsPerRun: 1
+  review:
+    model: gpt-6.1-sol
+    reasoningEffort: high
+    timeoutSeconds: 120
+    maxOutputTokens: 12000
+    maxFiles: 60
+    maxContextBytes: 250000
+  postMergeWorkflows: []

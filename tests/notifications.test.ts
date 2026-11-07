@@ -83,7 +83,7 @@ it('documents at-least-once behavior when Slack succeeds but receipt persistence
 });
 it('notification settings preserve existing policy approvals and execution identities', () => {
   const cfg = config(); const before = policyVersion(cfg);
-  const { notifications: _notifications, ...legacy } = cfg; void _notifications;
+  const { notifications: _notifications, merge: _merge, ...legacy } = cfg; void _notifications; void _merge;
   expect(before).toBe(hash(legacy)); cfg.notifications.slack.enabled = true; cfg.notifications.slack.channel = channel;
   expect(policyVersion(cfg)).toBe(before);
 });

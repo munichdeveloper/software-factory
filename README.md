@@ -49,7 +49,9 @@ See [migration](docs/migration.md) and [configuration](docs/configuration.md).
 Build the pinned Harness separately, set `HARNESS_ENTRYPOINT` to its absolute
 `dist/cli.js` path, then run `npm run test:integration`. CI checks out that exact
 runtime, runs the real cross-repository protocol test and rejects bundle/schema
-drift. Automatic PR merging and review workers remain unsupported.
+drift. Optional [AI-reviewed PR merging](docs/merging.md) is disabled by default.
+It requires a real code-review decision and native GitHub gates; green CI alone
+does not authorize a merge. Existing PRs can be explicitly enrolled by label.
 
 ## Real Codex coding worker (v0.2.0)
 
