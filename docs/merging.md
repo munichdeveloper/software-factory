@@ -84,7 +84,15 @@ and scheduled/manual manager runs drive reconciliation. Change the workflow name
 in the trigger for repositories whose product CI has a different display name.
 
 A branch update is journaled before mutation, waits for the new head and explicitly
-dispatches product CI. A new AI decision is required after that update; it never
+dispatches product CI as supplementary evidence. GitHub may create PR workflows in
+`action_required` after a `GITHUB_TOKEN` branch update. A maintainer must inspect
+the workflow changes and select **Approve workflows to run** on the PR. SF reads
+these exact-head runs, explains the gate and never approves or bypasses it.
+Green `workflow_dispatch` jobs do not satisfy native PR required checks; an eligible
+PR/push workflow must pass before GitHub reports `CLEAN`. See
+[GitHub required-check guidance](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks)
+and [workflow token triggers](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+A new AI decision is required after that update; it never
 merges in the same iteration. Unknown update outcomes are quarantined until native
 state changes. Successful merges are journaled and adopted PRs enter the existing
 bot-only Slack notification flow. Trusted merge intents plus native facts recover

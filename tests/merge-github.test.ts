@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { GitHubMergePort } from '../src/merge/github.js';
 
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
-function fixture(options: { tooManyThreads?: boolean; noPatch?: boolean; largeFile?: boolean; failMerge?: boolean; forbidden?: boolean } = {}) {
+function fixture(options: { approval?: boolean; tooManyThreads?: boolean; noPatch?: boolean; largeFile?: boolean; failMerge?: boolean; forbidden?: boolean } = {}) {
   let currentHead = head;
   const calls: { path: string; method: string; body: Record<string, unknown> }[] = [];
   const fetcher = (async (input, init) => {
@@ -27,6 +27,11 @@ function fixture(options: { tooManyThreads?: boolean; noPatch?: boolean; largeFi
     else if (path.endsWith('/git/ref/heads/main')) value = { object: { sha: base } };
     else if (path.endsWith('/check-runs')) value = { total_count: 1, check_runs: [{ name: 'test-backend', status: 'completed', conclusion: 'success' }] };
     else if (path.endsWith('/statuses')) value = [{ context: 'Vercel', state: 'success' }, { context: 'Vercel', state: 'failure' }];
+    else if (path.endsWith('/actions/runs')) value = { total_count: 3, workflow_runs: options.approval ? [
+      { head_sha: head, conclusion: 'action_required', name: 'Test', html_url: 'https://github.com/owner/target/actions/runs/1', pull_requests: [{ number: 52 }] },
+      { head_sha: base, conclusion: 'action_required', name: 'Stale', pull_requests: [{ number: 52 }] },
+      { head_sha: head, conclusion: 'action_required', name: 'Unrelated', pull_requests: [{ number: 99 }] }
+    ] : [] };
     else if (path.includes('/compare/')) {
       expect(path).toContain(`${base}...${head}`);
       value = { files: [{ filename: 'file.txt', status: 'modified', patch: options.noPatch ? undefined : '-old\n+new' }] };
@@ -62,6 +67,14 @@ it.each(['threads', 'patch', 'size', 'count', 'context'])('refuses incomplete ev
 });
 it('does not treat an HTTP-success merge response with merged=false as completion', async () => {
   await expect(fixture({ failMerge: true }).api.merge(52, head, 'squash')).rejects.toThrow('did not confirm');
+});
+it('reports only approval-required PR workflows on the exact head alongside green dispatch checks', async () => {
+  const x = fixture({ approval: true }); const facts = await x.api.facts(52);
+  expect(facts.checks.filter(c => c.state === 'action_required')).toEqual([
+    { name: 'Workflow-Freigabe erforderlich: Test (https://github.com/owner/target/actions/runs/1)', state: 'action_required' }
+  ]);
+  expect(facts.checks).toContainEqual({ name: 'test-backend', state: 'success' });
+  expect(x.calls.some(c => c.method !== 'GET' && c.path !== '/graphql')).toBe(false);
 });
 it('fails closed for unavailable collaborator permission', async () => {
   expect(await fixture({ forbidden: true }).api.canApprove('maintainer')).toBe(false);
