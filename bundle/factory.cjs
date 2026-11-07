@@ -38914,7 +38914,10 @@ var GitHubClient = class {
           mergedAt: pr.mergedAt ?? void 0,
           title: pr.title,
           headRefName: pr.headRefName,
-          mergedBy: pr.mergedBy ? { login: pr.mergedBy.login, type: pr.mergedBy.__typename } : void 0,
+          mergedBy: pr.mergedBy ? {
+            login: pr.mergedBy.__typename === "Bot" && !pr.mergedBy.login.endsWith("[bot]") ? `${pr.mergedBy.login}[bot]` : pr.mergedBy.login,
+            type: pr.mergedBy.__typename
+          } : void 0,
           closingIssues: pr.closingIssuesReferences.nodes.filter((i) => i.repository.nameWithOwner.toLowerCase() === this.repository.toLowerCase()).map((i) => i.number),
           referencedIssues: [...pr.body.matchAll(/(?<![\w/])#(\d+)\b/g)].map((m) => Number(m[1]))
         });

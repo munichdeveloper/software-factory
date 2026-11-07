@@ -79,7 +79,9 @@ export class GitHubClient implements GitHubPort {
       for (const pr of connection.nodes) {
         if (pr.closingIssuesReferences.pageInfo.hasNextPage) throw new Error(`PR #${pr.number} has over 100 closing links; refusing incomplete reconciliation`);
         result.push({ number: pr.number, state: pr.state === 'OPEN' ? 'open' : 'closed', merged: pr.merged, mergedAt: pr.mergedAt ?? undefined,
-          title: pr.title, headRefName: pr.headRefName, mergedBy: pr.mergedBy ? { login: pr.mergedBy.login, type: pr.mergedBy.__typename } : undefined,
+          title: pr.title, headRefName: pr.headRefName, mergedBy: pr.mergedBy ? {
+            login: pr.mergedBy.__typename === 'Bot' && !pr.mergedBy.login.endsWith('[bot]') ? `${pr.mergedBy.login}[bot]` : pr.mergedBy.login,
+            type: pr.mergedBy.__typename } : undefined,
           closingIssues: pr.closingIssuesReferences.nodes.filter(i => i.repository.nameWithOwner.toLowerCase() === this.repository.toLowerCase()).map(i => i.number),
           referencedIssues: [...pr.body.matchAll(/(?<![\w/])#(\d+)\b/g)].map(m => Number(m[1])) });
       }
