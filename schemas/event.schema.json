@@ -458,6 +458,57 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "issue_creation_intent"
+            },
+            "followupKey": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "actionId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "type",
+            "followupKey",
+            "actionId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "notification_sent"
+            },
+            "deliveryId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "channel": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "timestamp": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "type",
+            "deliveryId",
+            "channel",
+            "timestamp"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "decision"
             },
             "action": {

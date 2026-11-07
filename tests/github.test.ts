@@ -15,7 +15,8 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     const requested: string[] = [];
     const gh = new GitHubClient('owner/target', 'token', 1000, transport((url) => {
       requested.push(url.href);
-      if (url.pathname === '/graphql') return json({ data: { repository: { pullRequests: { nodes: [{ number: 9, state: 'MERGED', merged: true, body: 'Fixes #1', closingIssuesReferences: {
+      if (url.pathname === '/graphql') return json({ data: { repository: { pullRequests: { nodes: [{ number: 9, state: 'MERGED', merged: true,
+        mergedBy: { login: 'merge-agent', __typename: 'Bot' }, body: 'Fixes #1', closingIssuesReferences: {
         nodes: [{ number: 1, repository: { nameWithOwner: 'owner/target' } }, { number: 42, repository: { nameWithOwner: 'other/repo' } }], pageInfo: { hasNextPage: false }
       } }], pageInfo: { hasNextPage: false, endCursor: '' } } } } });
       expect(url.pathname.startsWith('/repos/owner/target')).toBe(true);
@@ -31,6 +32,7 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     }));
     const state = await gh.snapshot('factory-manager.yml'); expect(state.issues).toHaveLength(1);
     expect(state.prs[0]!.closingIssues).toEqual([1]); expect(state.prs[0]!.merged).toBe(true);
+    expect(state.prs[0]!.mergedBy).toEqual({ login: 'merge-agent[bot]', type: 'Bot' });
     expect(requested.some(u => u.includes('page=2'))).toBe(true);
   });
   it('bootstrap preserves existing labels and is repeatable', async () => {

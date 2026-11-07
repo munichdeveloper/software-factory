@@ -13,6 +13,8 @@ export const eventSchema = z.strictObject({
     z.strictObject({ type: z.literal('receipt'), executionId: z.string().length(32), runId: z.number().int().positive() }),
     z.strictObject({ type: z.literal('result'), result: workerResultSchema }),
     z.strictObject({ type: z.literal('block_intent'), taskVersion: z.string().length(64), cause: blockCauseSchema, afterLabelEventId: z.number().int().nonnegative() }),
+    z.strictObject({ type: z.literal('issue_creation_intent'), followupKey: z.string().regex(/^[a-f0-9]{64}$/), actionId: z.string().regex(/^[a-f0-9]{64}$/) }),
+    z.strictObject({ type: z.literal('notification_sent'), deliveryId: z.string().regex(/^[a-f0-9]{64}$/), channel: z.string().max(100), timestamp: z.string().max(100) }),
     z.strictObject({ type: z.literal('decision'), action: z.string().max(30000), outcome: z.enum(['allow', 'deny', 'approval', 'executed']), reason: z.string().max(2000) })
   ])
 });

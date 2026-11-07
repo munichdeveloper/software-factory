@@ -11,8 +11,9 @@ import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
 import { workerInputSchema } from '../workers/contract.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
+import { deliverNotifications, type NotificationSink } from '../notifications/slack.js';
 
-export interface ManagerOptions { correlationId: string; now?: () => Date }
+export interface ManagerOptions { correlationId: string; now?: () => Date; notifications?: NotificationSink }
 export class Manager {
   private now: () => Date;
   constructor(private github: GitHubPort, private config: Config, private planner: Planner, private options: ManagerOptions) {
@@ -79,6 +80,8 @@ export class Manager {
         const key = hash({ repository: this.github.repository.toLowerCase(), key: f.key });
         const marker = `<!-- harness:followup:${key} -->`;
         if (snapshot.issues.some(i => i.body.includes(marker))) return false;
+        await this.event(live.number, `issue-creation:${key}:${actionId(action, policyVersion(this.config))}`, { type: 'issue_creation_intent', followupKey: key,
+          actionId: actionId(action, policyVersion(this.config)) });
         const body = `${f.context}\n\n## Goal\n${f.goal}\n\n## Acceptance criteria\n${f.acceptanceCriteria.map(c => `- ${c}`).join('\n')}\n\nDepends on: ${f.dependencies.map(n => `#${n}`).join(', ') || 'none'}\n\nOrigin: #${task.issue.number}\nDecision: ${actionId(action, policyVersion(this.config))}\n\n${marker}`;
         await this.github.createIssue(f.title, body, [managedLabel, 'harness:backlog']); return true;
       }
@@ -177,6 +180,11 @@ export class Manager {
         // Fail closed for the rest of this run: a mutation may have succeeded before an API error.
         break;
       }
+    }
+    if (this.config.notifications.slack.enabled && !this.config.execution.dryRun && this.config.autonomy.profile !== 'advisory') {
+      try { report.errors.push(...await deliverNotifications(this.github, this.config,
+        await this.github.snapshot(this.config.manager.workflow), this.options.notifications, this.options.correlationId, this.now())); }
+      catch { report.errors.push('Slack notification reconciliation failed; repository actions remain committed'); }
     }
     if (report.errors.length) report.outcome = 'partial';
     report.durationMs = this.now().getTime() - started.getTime();

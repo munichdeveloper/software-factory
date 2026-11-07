@@ -20,9 +20,10 @@ export const planSchema = z.strictObject({ version: z.literal(1), actions: z.arr
 export type Action = z.infer<typeof actionSchema>;
 export type Plan = z.infer<typeof planSchema>;
 export interface BlockLabelEvent { id: number; event: 'labeled' | 'unlabeled'; actor: string; createdAt: string }
-export interface Issue { number: number; title: string; body: string; state: 'open' | 'closed'; labels: string[]; updatedAt: string; reopenedAt?: string; blockedLabelEvents?: BlockLabelEvent[] }
+export interface Issue { number: number; title: string; body: string; state: 'open' | 'closed'; labels: string[]; updatedAt: string; createdAt?: string; authorType?: string; reopenedAt?: string; blockedLabelEvents?: BlockLabelEvent[] }
 export interface Comment { id: number; body: string; author: string; createdAt: string }
-export interface PullRequest { number: number; state: 'open' | 'closed'; merged: boolean; mergedAt?: string; closingIssues: number[]; referencedIssues: number[] }
+export interface PullRequest { number: number; state: 'open' | 'closed'; merged: boolean; mergedAt?: string; closingIssues: number[]; referencedIssues: number[];
+  title?: string; headRefName?: string; mergedBy?: { login: string; type: string } }
 export interface WorkflowRun { id: number; title: string; status: string; conclusion: string | null; createdAt: string; url: string }
 export interface Snapshot { issues: Issue[]; comments: Map<number, Comment[]>; prs: PullRequest[]; runs: WorkflowRun[]; defaultBranch: string; dependencyStates: Map<number, boolean> }
 export type Decision = { outcome: 'allow' | 'deny' | 'approval'; reason: string; actionId: string };

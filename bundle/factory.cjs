@@ -34582,6 +34582,8 @@ var actionKinds = [
 ];
 var permissionSchema = external_exports.enum(["allow", "deny", "approval"]);
 var bounded = (min, max, value) => external_exports.number().int().min(min).max(max).default(value);
+var slackChannel = external_exports.string().regex(/^(?:[CG][A-Z0-9]{8,}|#[a-z0-9_-]{1,80})$/);
+var notificationRule = external_exports.strictObject({ enabled: external_exports.boolean().default(false), channel: slackChannel.nullable().default(null) });
 var configSchema = external_exports.strictObject({
   version: external_exports.literal(1),
   factory: external_exports.strictObject({ enabled: external_exports.boolean().default(true), scope: external_exports.string().min(1).max(4e3) }),
@@ -34624,7 +34626,17 @@ var configSchema = external_exports.strictObject({
     })]).default(false),
     review: external_exports.literal(false).default(false)
   }).prefault({}),
-  reporting: external_exports.strictObject({ persistDecisions: external_exports.boolean().default(true) }).prefault({})
+  reporting: external_exports.strictObject({ persistDecisions: external_exports.boolean().default(true) }).prefault({}),
+  notifications: external_exports.strictObject({ slack: external_exports.strictObject({
+    enabled: external_exports.boolean().default(false),
+    channel: slackChannel.nullable().default(null),
+    maxPerRun: bounded(1, 100, 20),
+    since: external_exports.iso.datetime().nullable().default(null),
+    events: external_exports.strictObject({
+      issue_created: notificationRule.prefault({}),
+      pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
+    }).prefault({})
+  }).prefault({}) }).prefault({})
 });
 function loadConfig(source) {
   const doc = (0, import_yaml.parseDocument)(source, { uniqueKeys: true });
@@ -38778,6 +38790,8 @@ var eventSchema = external_exports.strictObject({
     external_exports.strictObject({ type: external_exports.literal("receipt"), executionId: external_exports.string().length(32), runId: external_exports.number().int().positive() }),
     external_exports.strictObject({ type: external_exports.literal("result"), result: workerResultSchema }),
     external_exports.strictObject({ type: external_exports.literal("block_intent"), taskVersion: external_exports.string().length(64), cause: blockCauseSchema, afterLabelEventId: external_exports.number().int().nonnegative() }),
+    external_exports.strictObject({ type: external_exports.literal("issue_creation_intent"), followupKey: external_exports.string().regex(/^[a-f0-9]{64}$/), actionId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
+    external_exports.strictObject({ type: external_exports.literal("notification_sent"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/), channel: external_exports.string().max(100), timestamp: external_exports.string().max(100) }),
     external_exports.strictObject({ type: external_exports.literal("decision"), action: external_exports.string().max(3e4), outcome: external_exports.enum(["allow", "deny", "approval", "executed"]), reason: external_exports.string().max(2e3) })
   ])
 });
@@ -38810,7 +38824,9 @@ var normalizeIssue = (i) => ({
   body: i.body ?? "",
   state: i.state === "closed" ? "closed" : "open",
   labels: i.labels.map((l) => typeof l === "string" ? l : l.name ?? ""),
-  updatedAt: i.updated_at
+  updatedAt: i.updated_at,
+  createdAt: i.created_at,
+  authorType: i.user?.type
 });
 var GitHubClient = class {
   constructor(repository, token, timeoutMs = 3e4, fetcher = fetch) {
@@ -38882,7 +38898,7 @@ var GitHubClient = class {
         query($owner:String!, $repo:String!, $cursor:String) {
           repository(owner:$owner, name:$repo) {
             pullRequests(first:50, after:$cursor, orderBy:{field:UPDATED_AT,direction:DESC}) {
-              nodes { number state merged mergedAt body closingIssuesReferences(first:100) {
+              nodes { number state merged mergedAt body title headRefName mergedBy { login __typename } closingIssuesReferences(first:100) {
                 nodes { number repository { nameWithOwner } } pageInfo { hasNextPage }
               }} pageInfo { hasNextPage endCursor }
             }
@@ -38896,6 +38912,12 @@ var GitHubClient = class {
           state: pr.state === "OPEN" ? "open" : "closed",
           merged: pr.merged,
           mergedAt: pr.mergedAt ?? void 0,
+          title: pr.title,
+          headRefName: pr.headRefName,
+          mergedBy: pr.mergedBy ? {
+            login: pr.mergedBy.__typename === "Bot" && !pr.mergedBy.login.endsWith("[bot]") ? `${pr.mergedBy.login}[bot]` : pr.mergedBy.login,
+            type: pr.mergedBy.__typename
+          } : void 0,
           closingIssues: pr.closingIssuesReferences.nodes.filter((i) => i.repository.nameWithOwner.toLowerCase() === this.repository.toLowerCase()).map((i) => i.number),
           referencedIssues: [...pr.body.matchAll(/(?<![\w/])#(\d+)\b/g)].map((m) => Number(m[1]))
         });
@@ -39086,7 +39108,11 @@ var defaults = {
   supervised: { transition: "allow", close_issue: "allow", create_followup: "approval", prioritize: "allow", approve_task: "approval", start_worker: "approval", retry_worker: "approval", cancel_worker: "allow", expand_scope: "approval", merge_pr: "deny" },
   autonomous: { transition: "allow", close_issue: "allow", create_followup: "allow", prioritize: "allow", approve_task: "allow", start_worker: "allow", retry_worker: "allow", cancel_worker: "allow", expand_scope: "deny", merge_pr: "deny" }
 };
-var policyVersion = (config2) => hash2(config2);
+var policyVersion = (config2) => {
+  const { notifications: _notifications, ...policy } = config2;
+  void _notifications;
+  return hash2(policy);
+};
 function permission(config2, kind) {
   return config2.autonomy.overrides[kind] ?? defaults[config2.autonomy.profile][kind];
 }
@@ -39259,6 +39285,138 @@ function reconciliationPlan(tasks, config2) {
   });
 }
 
+// src/notifications/slack.ts
+var SlackSink = class {
+  constructor(token, fetcher = fetch) {
+    this.token = token;
+    this.fetcher = fetcher;
+  }
+  token;
+  fetcher;
+  lastCall = 0;
+  async checkConnection() {
+    try {
+      if (!this.token) throw new Error("Missing token");
+      const response = await this.fetcher("https://slack.com/api/auth.test", {
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(1e4),
+        headers: { Authorization: `Bearer ${this.token}` }
+      });
+      if (!response.ok) throw new Error("Slack authentication failed");
+      const result = await response.json();
+      if (!result.ok || !result.bot_id) throw new Error("Bot token required");
+    } catch {
+      throw new Error("Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation");
+    }
+  }
+  async send(channel, notification) {
+    if (!this.token) throw new Error("Slack token missing");
+    const delay = this.lastCall + 1100 - Date.now();
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    this.lastCall = Date.now();
+    const label = notification.event === "issue_created" ? "SF: Issue autonom angelegt" : "SF: PR durch Bot gemergt";
+    const text = `${label}
+${notification.url}
+#${notification.number}: ${notification.title.slice(0, 300)}
+Akteur: ${notification.actor}`;
+    try {
+      const response = await this.fetcher("https://slack.com/api/chat.postMessage", {
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(1e4),
+        headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          channel,
+          text: text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
+          blocks: [{ type: "section", text: { type: "plain_text", text, emoji: false } }],
+          mrkdwn: false,
+          parse: "none",
+          link_names: false,
+          unfurl_links: false,
+          unfurl_media: false
+        })
+      });
+      if (!response.ok) throw new Error("Slack delivery failed");
+      const result = await response.json();
+      if (!result.ok || !result.channel || !result.ts || result.channel.length > 100 || result.ts.length > 100) throw new Error("Slack delivery failed");
+      return { channel: result.channel, timestamp: result.ts };
+    } catch {
+      throw new Error("Slack delivery failed; check token, bot membership and API availability");
+    }
+  }
+};
+async function deliverNotifications(github, config2, snapshot, sink, correlationId, now) {
+  const settings = config2.notifications.slack;
+  if (!settings.enabled || !config2.factory.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") return [];
+  const errors = [];
+  let attempts = 0;
+  const events = (issue2) => (snapshot.comments.get(issue2) ?? []).flatMap((c) => {
+    const event = decodeEvent(c, config2.manager.trustedActors);
+    return event ? [event] : [];
+  });
+  const afterStart = (date5) => !settings.since || !!date5 && Date.parse(date5) >= Date.parse(settings.since);
+  const deliver = async (journal, notification) => {
+    const rule = settings.events[notification.event];
+    if (!rule.enabled) return;
+    const channel = rule.channel ?? settings.channel;
+    if (!channel || !sink) {
+      errors.push(`Slack ${notification.event}: channel or connection missing`);
+      return;
+    }
+    const deliveryId = hash2({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel });
+    const sent = (await github.comments(journal)).some((c) => {
+      const e = decodeEvent(c, config2.manager.trustedActors);
+      return e?.data.type === "notification_sent" && e.data.deliveryId === deliveryId;
+    });
+    if (sent) return;
+    if (attempts >= settings.maxPerRun) return;
+    attempts++;
+    try {
+      const receipt = await sink.send(channel, notification);
+      await github.writeEvent(journal, {
+        version: 1,
+        key: `notification:${deliveryId}`,
+        at: now.toISOString(),
+        correlationId,
+        data: { type: "notification_sent", deliveryId, channel: receipt.channel, timestamp: receipt.timestamp }
+      });
+    } catch {
+      errors.push(`Slack ${notification.event} #${notification.number}: delivery unconfirmed; retry next manager run`);
+    }
+  };
+  for (const parent of snapshot.issues) {
+    const trusted = events(parent.number);
+    if (settings.events.issue_created.enabled) for (const event of trusted) {
+      if (event.data.type !== "issue_creation_intent") continue;
+      const intent = event.data;
+      const created = snapshot.issues.find((i) => i.authorType === "Bot" && afterStart(i.createdAt) && i.body.includes(`<!-- harness:followup:${intent.followupKey} -->`) && i.body.includes(`Origin: #${parent.number}
+Decision: ${intent.actionId}
+`));
+      if (created) await deliver(parent.number, {
+        event: "issue_created",
+        number: created.number,
+        title: created.title,
+        actor: "Software Factory",
+        url: `https://github.com/${github.repository}/issues/${created.number}`
+      });
+    }
+    if (settings.events.pr_merged.enabled) for (const event of trusted) {
+      if (event.data.type !== "result") continue;
+      const result = event.data.result;
+      const pr = snapshot.prs.find((p) => p.merged && p.mergedBy?.type === "Bot" && afterStart(p.mergedAt) && p.headRefName === `sf/issue-${parent.number}/${result.executionId}` && result.artifacts.includes(`https://github.com/${github.repository}/pull/${p.number}`) && (!settings.events.pr_merged.actors.length || settings.events.pr_merged.actors.includes(p.mergedBy.login)));
+      if (pr) await deliver(parent.number, {
+        event: "pr_merged",
+        number: pr.number,
+        title: pr.title ?? `PR #${pr.number}`,
+        actor: pr.mergedBy.login,
+        url: `https://github.com/${github.repository}/pull/${pr.number}`
+      });
+    }
+  }
+  return errors;
+}
+
 // src/manager/index.ts
 var Manager = class {
   constructor(github, config2, planner, options) {
@@ -39339,6 +39497,11 @@ var Manager = class {
         const key = hash2({ repository: this.github.repository.toLowerCase(), key: f.key });
         const marker2 = `<!-- harness:followup:${key} -->`;
         if (snapshot.issues.some((i) => i.body.includes(marker2))) return false;
+        await this.event(live.number, `issue-creation:${key}:${actionId(action, policyVersion(this.config))}`, {
+          type: "issue_creation_intent",
+          followupKey: key,
+          actionId: actionId(action, policyVersion(this.config))
+        });
         const body = `${f.context}
 
 ## Goal
@@ -39479,6 +39642,20 @@ ${marker2}`;
         const status = error62 instanceof Error && "status" in error62 ? String(error62.status) : "unknown";
         report.errors.push(`Action ${action.kind} on #${action.issueNumber} failed (HTTP ${status}); durable intents preserved for recovery`);
         break;
+      }
+    }
+    if (this.config.notifications.slack.enabled && !this.config.execution.dryRun && this.config.autonomy.profile !== "advisory") {
+      try {
+        report.errors.push(...await deliverNotifications(
+          this.github,
+          this.config,
+          await this.github.snapshot(this.config.manager.workflow),
+          this.options.notifications,
+          this.options.correlationId,
+          this.now()
+        ));
+      } catch {
+        report.errors.push("Slack notification reconciliation failed; repository actions remain committed");
       }
     }
     if (report.errors.length) report.outcome = "partial";
@@ -40064,7 +40241,7 @@ async function main(args = process.argv.slice(2)) {
     console.log("Configuration valid");
     return;
   }
-  if (!["manager", "worker", "bootstrap", "prepare-coding", "publish-coding"].includes(command)) throw new Error("Supported commands: manager, worker, bootstrap, validate, prepare-coding, publish-coding");
+  if (!["manager", "notify", "check-slack", "worker", "bootstrap", "prepare-coding", "publish-coding"].includes(command)) throw new Error("Supported commands: manager, notify, check-slack, worker, bootstrap, validate, prepare-coding, publish-coding");
   const repository = values.repository ?? process.env.GITHUB_REPOSITORY ?? "";
   const github = new GitHubClient(repository, process.env.GITHUB_TOKEN ?? "");
   let config2 = loadConfig(await github.readConfig(values["config-path"]));
@@ -40084,6 +40261,28 @@ async function main(args = process.argv.slice(2)) {
   }, (command === "worker" ? config2.execution.workerTimeoutMinutes : config2.manager.timeoutMinutes) * 6e4);
   timer.unref();
   try {
+    if (command === "check-slack") {
+      if (!config2.notifications.slack.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") {
+        console.log("Slack connection check skipped in mutation-free or disabled mode");
+        return;
+      }
+      await new SlackSink(process.env.SLACK_BOT_TOKEN ?? "").checkConnection();
+      console.log(JSON.stringify({ correlationId, slackConnection: "verified", configuredChannel: config2.notifications.slack.channel }));
+      return;
+    }
+    if (command === "notify") {
+      const errors = await deliverNotifications(
+        github,
+        config2,
+        await github.snapshot(config2.manager.workflow),
+        new SlackSink(process.env.SLACK_BOT_TOKEN ?? ""),
+        correlationId,
+        /* @__PURE__ */ new Date()
+      );
+      console.log(JSON.stringify({ correlationId, outcome: errors.length ? "partial" : "success", errors }));
+      if (errors.length) process.exitCode = 1;
+      return;
+    }
     if (command === "bootstrap") {
       if (config2.execution.dryRun || config2.autonomy.profile === "advisory") {
         console.log("Mutation-free mode: bootstrap skipped");
@@ -40143,7 +40342,10 @@ base-branch=${prepared.base.branch}
       return;
     }
     const planner = config2.llm.provider === "mock" ? new MockPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? "");
-    const report = await new Manager(github, config2, planner, { correlationId }).run();
+    const report = await new Manager(github, config2, planner, {
+      correlationId,
+      notifications: new SlackSink(process.env.SLACK_BOT_TOKEN ?? "")
+    }).run();
     if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));
     console.log(JSON.stringify({
       correlationId,
@@ -40160,7 +40362,7 @@ base-branch=${prepared.base.branch}
 }
 async function handleError(error62) {
   const message = error62 instanceof Error ? error62.message : "";
-  const safe = /^(Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message) ? message : "Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.";
+  const safe = /^(Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message) ? message : "Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.";
   const httpStatus = error62 instanceof Error && "status" in error62 && typeof error62.status === "number" ? error62.status : null;
   const category = error62 instanceof Error ? error62.name.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UnknownError";
   console.error(JSON.stringify({ error: safe, category, httpStatus }));
