@@ -40,6 +40,11 @@ it('defers optional publication hooks until their workflow is installed, then re
   vi.mocked(x.api.workflowAvailable).mockResolvedValue(true); await x.run(); expect(x.api.dispatch).toHaveBeenCalledTimes(1);
   expect(x.api.merge).toHaveBeenCalledTimes(1);
 });
+it('does not falsely report an unmerged PR when only a post-merge workflow failed', async () => {
+  const x = fixture(); x.cfg.merge.postMergeWorkflows = ['publish.yml']; vi.mocked(x.api.dispatch).mockRejectedValue(new Error('Unavailable'));
+  const report = await x.run(); expect(report.merged).toBe(1); expect(report.errors).toHaveLength(1);
+  expect(x.f.comments.at(-1)!.body).toContain('Merge bestätigt – Nacharbeit offen');
+});
 it.each(['request_changes', 'defer'] as const)('publishes the AI reason and never merges on %s, even with green CI', async decision => {
   const x = fixture(decision); x.review.reason = 'Konkreter fachlicher oder technischer Einwand.';
   await x.run(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.f.comments.some(c => c.body.includes(x.review.reason))).toBe(true);

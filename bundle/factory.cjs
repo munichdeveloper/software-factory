@@ -40515,7 +40515,7 @@ ${safe(text)}`) : Buffer.alloc(0);
       f,
       `merge-status:${hash2({ head: f.head, base: f.base, reason })}`,
       { type: "merge_status", head: f.head, base: f.base, reason },
-      `**Noch kein Merge.** ${reason}
+      `${f.mergeSha ? "**Merge best\xE4tigt \u2013 Nacharbeit offen.**" : "**Noch kein Merge.**"} ${reason}
 
 Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
     );
@@ -40659,6 +40659,8 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         phase = "GitHub-Merge";
         const sha2 = await this.api.merge(number4, f.head, this.config.merge.method);
         report.merged++;
+        f.state = "closed";
+        f.mergeSha = sha2;
         await this.event(
           live,
           `merge-completed:${f.head}`,

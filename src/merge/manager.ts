@@ -38,7 +38,7 @@ export class MergeManager {
   }
   private async explain(f: MergeFacts, reason: string) {
     await this.event(f, `merge-status:${hash({ head: f.head, base: f.base, reason })}`,
-      { type: 'merge_status', head: f.head, base: f.base, reason }, `**Noch kein Merge.** ${reason}\n\nGeprüfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
+      { type: 'merge_status', head: f.head, base: f.base, reason }, `${f.mergeSha ? '**Merge bestätigt – Nacharbeit offen.**' : '**Noch kein Merge.**'} ${reason}\n\nGeprüfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
   }
   private owned(f: MergeFacts, snapshot: Snapshot) {
     return snapshot.issues.find(i => (snapshot.comments.get(i.number) ?? []).some(c => {
@@ -142,6 +142,7 @@ export class MergeManager {
         await this.event(live, `merge-intent:${reviewKey}`, { type: 'merge_intent', prNumber: number, head: f.head, base: f.base, reviewKey });
         phase = 'GitHub-Merge';
         const sha = await this.api.merge(number, f.head, this.config.merge.method); report.merged++;
+        f.state = 'closed'; f.mergeSha = sha;
         await this.event(live, `merge-completed:${f.head}`, { type: 'merge_completed', prNumber: number, head: f.head, mergeSha: sha },
           `**Gemergt.** Die KI hat den geprüften Commit freigegeben; GitHub hat den Merge bestätigt: \`${sha}\`.`);
         phase = 'Workflows nach Merge';
