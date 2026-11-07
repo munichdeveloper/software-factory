@@ -1,0 +1,132 @@
+# Deployment after pushes (docker-ssh)
+
+SF v0.5 can deploy the default branch to a Docker host over SSH, for example a
+Hostinger VPS with Docker. It is disabled by default and independent of planning,
+workers, merging and notifications: none of them changes behaviour.
+
+## Flow
+
+1. A push to the default branch triggers either directly (`trigger: push`) or,
+   by default, after the listed CI workflows succeeded (`trigger: checks`).
+2. SF deploys only the **current head** of the default branch. An older commit is
+   skipped (`superseded`) because the newer commit's own run deploys it. With
+   `checks`, every listed workflow must have succeeded for exactly that commit.
+3. The wrapper checks out that commit; `git archive` (tracked files only, no
+   `.env` or build output) is streamed over SSH to `<path>/releases/<sha>`.
+4. On the host: the env file `<path>/.env` is linked into the release, then
+   `docker compose --project-name <project> up --detach --build --remove-orphans --wait`
+   starts it. Healthchecks defined in the compose file must pass; optionally an
+   additional HTTP check (`healthcheck.url`) runs on the host.
+5. Success switches the `<path>/current` link, keeps `keepReleases` releases and
+   prunes dangling images of the project. Failure prints recent container logs and,
+   with `rollback: true`, starts the previous release again. The job then fails.
+
+Deployments are serialized (wrapper concurrency plus a `flock` on the host). The
+Compose project name stays fixed across releases, so named volumes keep their data.
+If the application already runs on the host, set `project` to its existing Compose
+project name (by default the directory it was started from), otherwise Docker
+creates new, empty volumes.
+
+## Host setup (Hostinger VPS)
+
+```sh
+# as root on the VPS (Ubuntu with Docker, e.g. Hostinger's Docker template)
+adduser --disabled-password --gecos "" deploy
+usermod -aG docker deploy
+mkdir -p /opt/backofficer && chown deploy:deploy /opt/backofficer
+# copy the application's .env to /opt/backofficer/.env (owner deploy, mode 600)
+```
+
+Docker Compose v2.21 or newer is required (`docker compose version`). Membership
+in the `docker` group is equivalent to root access on the host: use a dedicated
+VPS or user for the application. Allow SSH in the Hostinger firewall; keep
+application ports bound to 127.0.0.1 behind a reverse proxy where possible.
+
+Create a dedicated key pair and pin the host key (no trust on first use):
+
+```sh
+ssh-keygen -t ed25519 -N "" -C "github-deploy" -f deploy_key
+ssh-copy-id -i deploy_key.pub deploy@VPS_HOST
+ssh-keyscan -t ed25519 VPS_HOST          # with a custom port: ssh-keyscan -p PORT VPS_HOST
+```
+
+Compare the scanned fingerprint with the one shown in the Hostinger panel or on
+the VPS console (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`).
+
+## Repository setup
+
+Install the wrapper, e.g. only deployment without the planning manager:
+
+```sh
+npx tsx scripts/install.ts --directory TARGET --ref FULL_FACTORY_COMMIT_SHA --no-manager \
+  --deploy --deploy-after "Application checks" --deploy-path /opt/backofficer
+```
+
+Existing files are preserved; add the `deploy` section from
+`templates/software-factory.yml` and `templates/factory-deploy.yml` manually when
+upgrading. Then add secrets to the GitHub environment (default `production`) or
+the repository:
+
+| Secret / variable | Content |
+|---|---|
+| `DEPLOY_SSH_KEY` | Private key (`deploy_key`), unencrypted |
+| `DEPLOY_KNOWN_HOSTS` | Output of `ssh-keyscan` |
+| `DEPLOY_HOST` | VPS host name or IP (secret or variable), unless `deploy.host` is set |
+| `DEPLOY_USER` | SSH user (secret or variable), unless `deploy.user` is set |
+| `DEPLOY_PORT` | Variable, optional (default 22), unless `deploy.port` is set |
+
+Until key, host key, host and user exist the deployment is skipped with a
+warning instead of failing. Environment protection rules (required reviewers,
+branch restrictions) apply to every deployment. A manual `workflow_dispatch`
+redeploys the current head (still gated by `checks`) or previews with `dry_run`.
+
+## Configuration
+
+```yaml
+deploy:
+  enabled: true
+  provider: docker-ssh
+  trigger: checks          # or push
+  workflows: ["Application checks"] # names of the CI workflows; must match the wrapper's workflow_run list
+  environment: production
+  host: null               # null: DEPLOY_HOST
+  port: null               # null: DEPLOY_PORT or 22
+  user: null               # null: DEPLOY_USER
+  path: /opt/backofficer
+  composeFile: compose.yaml
+  project: backofficer     # Compose project; default: last segment of path
+  envFile: .env            # relative to path or absolute; null disables
+  healthcheck:
+    url: http://127.0.0.1:3000/  # optional, checked on the host (curl or wget)
+    timeoutSeconds: 180    # also the docker compose --wait timeout
+  rollback: true
+  keepReleases: 5
+  timeoutMinutes: 30       # per upload and per activation
+  githubDeployment: false  # extra deployment record; the wrapper's environment already records one
+```
+
+`factory.enabled: false`, `execution.dryRun` and the `advisory` profile stop
+deployments like every other mutation.
+
+## Security
+
+- The deploy job only has `contents: read`, `deployments: write`, `actions: read`
+  and only receives deployment secrets; the OpenAI and Slack credentials are never
+  passed to it. Deployment secrets are exposed only to the deploy steps of the action.
+- SSH runs with `StrictHostKeyChecking=yes` against the pinned host key,
+  `IdentitiesOnly`, no agent and batch mode. The key lives in a private temporary
+  directory (mode 700/600) for the duration of the run.
+- Configuration values passed to the host are validated (paths, names, user, host)
+  and shell-quoted. Only tracked files of the exact verified commit are uploaded.
+- The application's secrets stay on the host in the env file and never pass
+  through GitHub.
+
+## Recovery
+
+| Situation | Effect |
+|---|---|
+| Upload or SSH fails | Job fails; nothing changed on the host |
+| Precondition fails (`env-file-missing`, `compose-missing`, …) | Job fails before containers change |
+| New release unhealthy | Previous release restarted (`rolled-back`), job fails |
+| Rollback also fails | `rollback-failed`; inspect `docker compose ps/logs` on the host |
+| Manual rollback | `ln -sfn /opt/app/releases/<sha> /opt/app/current` and run `docker compose --project-name <project> up -d --build` in it, or re-run an older workflow run via dispatch after reverting the commit |

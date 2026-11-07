@@ -15,12 +15,17 @@ import { prepareCoding, publishCoding } from './workers/coding.js';
 import { GitHubMergePort } from './merge/github.js';
 import { OpenAIMergeReviewer } from './merge/reviewer.js';
 import { MergeManager } from './merge/manager.js';
+import { GitHubDeployPort } from './deploy/github.js';
+import { deploySummary, executeDeploy, planDeploy, readEvent } from './deploy/index.js';
+import { resolveTarget } from './deploy/target.js';
+import { SshTransport } from './deploy/transport.js';
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     repository: { type: 'string' }, 'config-path': { type: 'string', default: '.github/software-factory.yml' },
     file: { type: 'string' }, 'dry-run': { type: 'boolean', default: false },
-    'allow-local-writes': { type: 'boolean', default: false }, issue: { type: 'string' }, execution: { type: 'string' }
+    'allow-local-writes': { type: 'boolean', default: false }, issue: { type: 'string' }, execution: { type: 'string' },
+    sha: { type: 'string' }, source: { type: 'string' }
   } });
   const command = positionals[0] ?? 'manager';
   if (command === 'validate') {
@@ -28,7 +33,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     loadConfig(await readFile(values.file, 'utf8'));
     console.log('Configuration valid'); return;
   }
-  if (!['manager', 'merge', 'notify', 'check-slack', 'worker', 'bootstrap', 'prepare-coding', 'publish-coding'].includes(command)) throw new Error('Supported commands: manager, merge, notify, check-slack, worker, bootstrap, validate, prepare-coding, publish-coding');
+  if (!['manager', 'merge', 'notify', 'check-slack', 'worker', 'bootstrap', 'prepare-coding', 'publish-coding', 'deploy-plan', 'deploy'].includes(command)) throw new Error('Supported commands: manager, merge, notify, check-slack, worker, bootstrap, validate, prepare-coding, publish-coding, deploy-plan, deploy');
   const repository = values.repository ?? process.env.GITHUB_REPOSITORY ?? '';
   const github = new GitHubClient(repository, process.env.GITHUB_TOKEN ?? '');
   let config = loadConfig(await github.readConfig(values['config-path']!));
@@ -42,9 +47,38 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     throw new Error('Local mutations require --allow-local-writes and an exclusive operator session; prefer the serialized GitHub workflow');
   }
   const correlationId = process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? '1'}` : randomUUID();
-  const timer = setTimeout(() => { console.error(JSON.stringify({ correlationId, error: 'Hard execution time limit reached; next run will recover durable state' })); process.exit(1); }, (command === 'worker' ? config.execution.workerTimeoutMinutes : config.manager.timeoutMinutes) * 60000);
+  const timer = setTimeout(() => { console.error(JSON.stringify({ correlationId, error: 'Hard execution time limit reached; next run will recover durable state' })); process.exit(1); }, (command === 'worker' ? config.execution.workerTimeoutMinutes : command === 'deploy' ? config.deploy.timeoutMinutes * 2 + 2 : config.manager.timeoutMinutes) * 60000);
   timer.unref();
   try {
+    if (command === 'deploy-plan' || command === 'deploy') {
+      const port = new GitHubDeployPort(repository, process.env.GITHUB_TOKEN ?? '');
+      const decision = await planDeploy(config, await readEvent(), port);
+      const mutationFree = config.execution.dryRun || config.autonomy.profile === 'advisory';
+      const target = decision.deploy ? resolveTarget(config) : null;
+      const writeSummary = async (text: string) => { if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, text); };
+      if (command === 'deploy-plan') {
+        let reason = decision.deploy ? (mutationFree ? 'mutation-free' : null) : decision.reason;
+        if (!reason && target && 'missing' in target) {
+          reason = 'not-configured';
+          console.log(`::warning title=Software Factory deploy::Deployment skipped: missing ${target.missing.join(', ')} (Actions secrets or deploy.* configuration).`);
+        }
+        const ready = decision.deploy && !reason;
+        if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `deploy=${ready}\nsha=${decision.deploy ? decision.sha : ''}\n`);
+        if (!ready) await writeSummary(deploySummary(null, decision.deploy ? { deploy: false, reason: reason!, sha: decision.sha } : decision, config.deploy.environment));
+        console.log(JSON.stringify({ correlationId, deploy: ready, reason, sha: decision.sha ?? null })); return;
+      }
+      if (!decision.deploy || decision.sha !== values.sha || mutationFree || !target || 'missing' in target) {
+        console.log(JSON.stringify({ correlationId, outcome: 'skipped', reason: decision.deploy ? 'stale-or-unconfigured' : decision.reason })); return;
+      }
+      const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID
+        ? `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined;
+      const report = await executeDeploy({ config, sha: decision.sha, sourceDir: values.source ?? '.', transport: new SshTransport(target),
+        port, logUrl: runUrl, log: line => console.log(line) });
+      await writeSummary(deploySummary(report, decision, config.deploy.environment));
+      console.log(JSON.stringify({ correlationId, ...report }));
+      if (report.outcome !== 'deployed') process.exitCode = 1;
+      return;
+    }
     if (command === 'merge') {
       if (!config.merge.enabled || config.execution.dryRun || config.autonomy.profile === 'advisory') {
         console.log(JSON.stringify({ outcome: 'merge-disabled' })); return;
@@ -114,7 +148,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 export async function handleError(error: unknown): Promise<void> {
   // Config errors are safe; API/request objects are deliberately never printed.
   const message = error instanceof Error ? error.message : '';
-  const safe = /^(Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message)
+  const safe = /^(Deployment|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message)
     ? message : 'Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.';
   const httpStatus = error instanceof Error && 'status' in error && typeof error.status === 'number' ? error.status : null;
   const category = error instanceof Error ? error.name.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) : 'UnknownError';

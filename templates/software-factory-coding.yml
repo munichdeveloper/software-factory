@@ -74,3 +74,27 @@ merge:
     maxFiles: 60
     maxContextBytes: 250000
   postMergeWorkflows: []
+
+# Optional deployment of the default branch (docker-ssh: Docker Compose on a host via SSH).
+# Secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS and, unless set below, DEPLOY_HOST/DEPLOY_USER.
+# Requires the .github/workflows/factory-deploy.yml wrapper (install with --deploy).
+deploy:
+  enabled: DEPLOY_ENABLED
+  provider: docker-ssh
+  trigger: DEPLOY_TRIGGER # checks: after the listed CI workflows succeeded; push: right after the push
+  workflows: DEPLOY_WORKFLOWS
+  environment: DEPLOY_ENVIRONMENT
+  host: null
+  port: null
+  user: null
+  path: DEPLOY_PATH
+  composeFile: compose.yaml
+  project: null # Docker Compose project; defaults to the last path segment. Keep stable: named volumes belong to it.
+  envFile: .env # Relative to path (or absolute) on the host, linked into each release; null to disable.
+  healthcheck:
+    url: null # e.g. http://127.0.0.1:3000/ checked on the host after docker compose up --wait
+    timeoutSeconds: 180
+  rollback: true
+  keepReleases: 5
+  timeoutMinutes: 30
+  githubDeployment: false # The wrapper's GitHub environment already records each deployment.

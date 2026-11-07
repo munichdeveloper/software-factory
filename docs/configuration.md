@@ -33,6 +33,17 @@ Generated JSON schemas share the executable Zod source.
 | `workers.test.operation` | `sha256` | Digest, deterministic `fail`, or deterministic `blocked` |
 | `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper |
 | `workers.review` | `false` | Must be false; not implemented |
+| `deploy.enabled` | `false` | Optional deployment of the default branch, see [deploy](deploy.md) |
+| `deploy.trigger` | `checks` | `checks` (after `deploy.workflows` succeeded) or `push` |
+| `deploy.workflows` | `[]` | CI workflow names; required for `checks` |
+| `deploy.host`/`port`/`user` | `null` | Target; `null` uses `DEPLOY_HOST`/`DEPLOY_PORT` (22)/`DEPLOY_USER` |
+| `deploy.path` | `/opt/app` | Absolute release root on the host |
+| `deploy.composeFile` | `compose.yaml` | Compose file relative to the repository root |
+| `deploy.project` | `null` | Compose project; default last path segment |
+| `deploy.envFile` | `.env` | Host env file linked into each release; `null` disables |
+| `deploy.healthcheck.url`/`timeoutSeconds` | `null`/`180` | Optional HTTP check on the host; wait timeout 10–900 |
+| `deploy.rollback`/`keepReleases`/`timeoutMinutes` | `true`/`5`/`30` | Restart previous release on failure; releases kept 1–20; per-step timeout 5–60 |
+| `deploy.githubDeployment` | `false` | Additional GitHub deployment record with outcome |
 | `reporting.persistDecisions` | `true` | Deduplicated decision comments; execution intents/results and automatic block provenance always durable |
 
 ## Policy defaults
