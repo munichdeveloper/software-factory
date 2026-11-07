@@ -19,11 +19,12 @@ export class GitHubMergePort implements MergePort {
       this.api.pulls.get({ ...this.target, pull_number: number }), this.api.repos.get(this.target),
       this.api.paginate(this.api.issues.listComments, { ...this.target, issue_number: number, per_page: 100 })
     ]);
-    const [ref, rules, checks, statuses, graph] = await Promise.all([
+    const [ref, rules, checks, statuses, runs, graph] = await Promise.all([
       this.api.git.getRef({ ...this.target, ref: `heads/${repo.default_branch}` }),
       this.api.paginate(this.api.repos.getBranchRules, { ...this.target, branch: repo.default_branch, per_page: 100 }),
       this.api.paginate(this.api.checks.listForRef, { ...this.target, ref: pr.head.sha, filter: 'latest', per_page: 100 }),
       this.api.paginate(this.api.repos.listCommitStatusesForRef, { ...this.target, ref: pr.head.sha, per_page: 100 }),
+      this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: pr.head.sha, event: 'pull_request', status: 'action_required', per_page: 100 }),
       this.api.graphql<{ repository: { pullRequest: { mergeStateStatus: string; reviewDecision: string | null; mergedBy: { __typename: string } | null;
         reviewThreads: { nodes: { isResolved: boolean; comments: { nodes: { body: string }[] } }[]; pageInfo: { hasNextPage: boolean } } } } }>(`
         query($owner:String!,$repo:String!,$number:Int!) { repository(owner:$owner,name:$repo) { pullRequest(number:$number) {
@@ -42,6 +43,8 @@ export class GitHubMergePort implements MergePort {
       unresolvedThreads: native.reviewThreads.nodes.filter(t => !t.isResolved).map(t => t.comments.nodes.map(c => c.body).join('\n')),
       mergeSha: pr.merged ? pr.merge_commit_sha : null, mergeActorType: native.mergedBy?.__typename ?? null,
       checks: [...checks.map(c => ({ name: c.name, state: c.status === 'completed' ? c.conclusion ?? 'unknown' : c.status })),
+        ...runs.filter(r => r.head_sha === pr.head.sha && r.conclusion === 'action_required' && r.pull_requests?.some(p => p.number === number))
+          .map(r => ({ name: `Workflow-Freigabe erforderlich: ${r.name ?? r.path} (${r.html_url})`, state: 'action_required' })),
         ...[...latestStatuses].map(([name, state]) => ({ name, state }))],
       strictChecks: required.some(r => r.parameters?.strict_required_status_checks_policy) && rules.some(r => r.type === 'pull_request'),
       nativeRequiredChecks: required.flatMap(r => r.parameters?.required_status_checks.map(c => c.context) ?? []),

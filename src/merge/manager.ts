@@ -16,6 +16,7 @@ export function mergeGate(f: MergeFacts, config: Config): string | null {
   if (f.unresolvedThreads.length) return 'Es gibt ungelöste Review-Diskussionen.';
   if (f.reviewDecision === 'CHANGES_REQUESTED' || f.reviewDecision === 'REVIEW_REQUIRED') return 'GitHub verlangt Änderungen oder zusätzliche Reviews.';
   if (!f.strictChecks || !f.nativeRequiredChecks.length) return 'Serverseitige PR-Regeln mit strikt aktuellen Pflichtprüfungen sind erforderlich.';
+  if (f.checks.some(c => c.state === 'action_required')) return 'GitHub verlangt eine Workflow-Freigabe am PR: Approve workflows to run. Separat per workflow_dispatch gestartete Tests ersetzen diese Pflichtprüfungen nicht. SF umgeht oder erteilt diese Freigabe nicht.';
   if (f.mergeState !== 'CLEAN') return `GitHub meldet ${f.mergeState}; kein Merge bei veraltetem, blockiertem oder unklarem Stand.`;
   for (const name of new Set([...config.merge.requiredChecks, ...f.nativeRequiredChecks])) {
     const checks = f.checks.filter(c => c.name === name);
@@ -103,6 +104,7 @@ export class MergeManager {
         }
         await this.event(f, `merge-review:${reviewKey}`, { type: 'merge_review', head: f.head, base: f.base, reviewKey, review },
           `**KI-Entscheidung: ${review.decision}**\n\n${review.reason}\n\n${review.findings.map(x => `- ${x.severity}: ${x.path} – ${x.explanation}`).join('\n')}\n\nHead: \`${f.head}\`; Basis: \`${f.base}\`.`);
+        if (f.checks.some(c => c.state === 'action_required')) { await this.explain(f, mergeGate(f, this.config)!); continue; }
         if (review.findings.some(x => x.severity === 'blocking') || ['request_changes', 'defer'].includes(review.decision)) continue;
         const live = await this.api.facts(number);
         if (hash(factsKey(live)) !== hash(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== 'open' || live.draft || !live.sameRepository ||

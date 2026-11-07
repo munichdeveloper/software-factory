@@ -26,6 +26,14 @@ function fixture(decision: MergeReview['decision'] = 'merge') {
   const run = () => new MergeManager(api, cfg, reviewer, 'test').run(structuredClone(snapshot));
   return { cfg, f, api, reviewer, review, snapshot, run };
 }
+it.each(['merge', 'defer'] as const)('explains native workflow approval and never auto-approves or merges despite green dispatch CI and verdict %s', async decision => {
+  const x = fixture(decision); x.f.mergeState = 'BLOCKED';
+  x.f.checks.push({ name: 'Workflow-Freigabe erforderlich: Test', state: 'action_required' });
+  await x.run(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.api.update).not.toHaveBeenCalled();
+  expect(x.api.dispatch).not.toHaveBeenCalled();
+  expect(x.f.comments.at(-1)!.body).toContain('Approve workflows to run');
+  expect(x.f.comments.at(-1)!.body).toContain('workflow_dispatch');
+});
 it('requires a real AI verdict, rechecks facts, persists intent before merging exactly the reviewed head, and recovers idempotently', async () => {
   const x = fixture(); x.cfg.merge.postMergeWorkflows = ['publish.yml'];
   expect((await x.run()).merged).toBe(1); expect(x.api.merge).toHaveBeenCalledWith(52, 'a'.repeat(40), 'squash');
