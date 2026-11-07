@@ -40,7 +40,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   if (values['dry-run']) config = configSchema.parse({ ...config, execution: { ...config.execution, dryRun: true } });
   if (!config.factory.enabled) {
     if (values['dry-run'] && process.env.SF_SANITY_REPORT) await writeFile(process.env.SF_SANITY_REPORT,
-      JSON.stringify({ formatVersion: 1, mutationFree: true, passed: false, reason: 'factory-disabled', runId: process.env.GITHUB_RUN_ID ?? null }));
+      JSON.stringify({ formatVersion: 1, mutationFree: true, passed: false, reason: 'factory-disabled',
+        runId: process.env.GITHUB_RUN_ID ?? null, runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? '1', productionVerified: false }));
     console.log(JSON.stringify({ outcome: 'disabled' }));
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, '# Software Factory\n\nGlobally disabled. No repository changes.\n');
     return;
