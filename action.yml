@@ -84,11 +84,20 @@ runs:
         MODE: ${{ inputs.mode }}
         CONFIG: ${{ inputs.config-path }}
         DRY_RUN: ${{ inputs.dry-run }}
+        SF_SANITY_REPORT: ${{ runner.temp }}/sf-sanity.json
       run: |
         export HARNESS_ENTRYPOINT="$GITHUB_WORKSPACE/.runtime/harness/dist/cli.js"
         args=()
         if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
         node "$GITHUB_ACTION_PATH/bundle/factory.cjs" "$MODE" --config-path "$CONFIG" "${args[@]}"
+    - name: Upload mutation-free manager result
+      if: inputs.dry-run == 'true' && inputs.mode == 'manager'
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: sf-sanity-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/sf-sanity.json
+        if-no-files-found: error
+        retention-days: 7
     - name: Plan deployment
       id: deploy-plan
       if: inputs.mode == 'deploy'

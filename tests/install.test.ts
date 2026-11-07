@@ -43,3 +43,19 @@ describe('installation templates', () => {
     expect(installFiles(true, false, true)).toEqual([['software-factory-coding.yml', '.github/software-factory.yml'], ['factory-deploy.yml', '.github/workflows/factory-deploy.yml']]);
   });
 });
+
+it('publishes the exact CLI renderer as data, preserving existing files', async () => {
+  const { installationContract, planInstallation } = await import('../src/install.js');
+  const names = ['software-factory.yml', 'software-factory-coding.yml', 'factory-manager.yml', 'factory-manager-coding.yml', 'factory-deploy.yml'];
+  const templates = Object.fromEntries(await Promise.all(names.map(async n => [n, await template(n)])));
+  const contract = installationContract(templates, 'test', { repository: 'munichdeveloper/dev-agent-harness', ref: options.harnessRef, contractVersion: '2.0' }, options);
+  for (const [variant, selected] of Object.entries(contract.variants)) {
+    const plan = planInstallation(contract, variant, options.ref, { '.github/software-factory.yml': 'custom' });
+    expect(plan[0]?.disposition).toBe('preserve');
+    for (const [source, path] of installFiles(selected.coding, selected.manager, selected.deploy)) {
+      expect(plan.find(p => p.path === path)?.content).toBe(renderTemplate(source, templates[source]!, { ...options, deploy: selected.deploy }));
+    }
+  }
+  expect(() => planInstallation(contract, 'manager', 'main')).toThrow();
+  expect(() => planInstallation(contract, 'unknown', options.ref)).toThrow();
+});
