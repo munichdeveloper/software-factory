@@ -6,6 +6,12 @@ import { hash } from '../state/identity.js';
 
 export interface Notification { event: 'issue_created' | 'pr_merged'; number: number; title: string; actor: string; url: string }
 export interface NotificationSink { send(channel: string, notification: Notification): Promise<{ channel: string; timestamp: string }> }
+// Only a definite rejection permits automatic retry. Transport/response failures are ambiguous.
+export class NotificationRejected extends Error {}
+const httpStatus = (error: unknown) => {
+  const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
+  return typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599 ? ` (HTTP ${status})` : '';
+};
 
 export class SlackSink implements NotificationSink {
   private lastCall = 0;
@@ -36,11 +42,17 @@ export class SlackSink implements NotificationSink {
           blocks: [{ type: 'section', text: { type: 'plain_text', text, emoji: false } }],
           mrkdwn: false, parse: 'none', link_names: false, unfurl_links: false, unfurl_media: false })
       });
+      if (response.status === 429) throw new NotificationRejected('Slack rate limited');
       if (!response.ok) throw new Error('Slack delivery failed');
       const result = await response.json() as { ok?: boolean; channel?: string; ts?: string };
+      if (result.ok === false) throw new NotificationRejected('Slack rejected the message');
       if (!result.ok || !result.channel || !result.ts || result.channel.length > 100 || result.ts.length > 100) throw new Error('Slack delivery failed');
       return { channel: result.channel, timestamp: result.ts };
-    } catch { throw new Error('Slack delivery failed; check token, bot membership and API availability'); }
+    } catch (error) {
+      if (error instanceof NotificationRejected) throw error;
+      // eslint-disable-next-line preserve-caught-error -- Provider errors can contain credentials; never attach them.
+      throw new Error('Slack delivery failed; check token, bot membership and API availability');
+    }
   }
 }
 
@@ -63,18 +75,38 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
     if (!channel || !sink) { errors.push(`Slack ${notification.event}: channel or connection missing`); return; }
     const deliveryId = hash({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel });
     // Re-read to handle repeated manager runs and duplicate PR links across tasks.
-    const sent = (await github.comments(journal)).some(c => {
+    const deliveries = (await github.comments(journal)).flatMap(c => {
       const e = decodeEvent(c, config.manager.trustedActors);
-      return e?.data.type === 'notification_sent' && e.data.deliveryId === deliveryId;
+      return e && 'deliveryId' in e.data && e.data.deliveryId === deliveryId ? [e] : [];
     });
-    if (sent) return;
+    if (deliveries.some(e => e.data.type === 'notification_sent')) return;
+    if (deliveries.at(-1)?.data.type === 'notification_attempt') {
+      errors.push(`Slack ${notification.event} #${notification.number}: previous delivery unconfirmed; inspect Slack and reconcile journal #${journal}; automatic resend blocked`); return;
+    }
     if (attempts >= settings.maxPerRun) return;
     attempts++;
+    const event = (type: 'notification_attempt' | 'notification_rejected') => github.writeEvent(journal, {
+      version: 1, key: `${type}:${deliveryId}`, at: now.toISOString(), correlationId, data: { type, deliveryId }
+    });
     try {
-      const receipt = await sink.send(channel, notification);
+      await event('notification_attempt');
+    } catch (error) {
+      errors.push(`Slack ${notification.event} #${notification.number}: cannot persist delivery attempt on #${journal}${httpStatus(error)}; nothing sent; check GitHub comment write permissions`); return;
+    }
+    let receipt;
+    try { receipt = await sink.send(channel, notification); }
+    catch (error) {
+      if (error instanceof NotificationRejected) {
+        try { await event('notification_rejected'); }
+        catch (writeError) { errors.push(`Slack ${notification.event} #${notification.number}: rejection receipt failed${httpStatus(writeError)}; automatic resend blocked`); return; }
+        errors.push(`Slack ${notification.event} #${notification.number}: provider rejected delivery; retry next manager run`);
+      } else errors.push(`Slack ${notification.event} #${notification.number}: delivery unconfirmed; inspect Slack and reconcile journal #${journal}; automatic resend blocked`);
+      return;
+    }
+    try {
       await github.writeEvent(journal, { version: 1, key: `notification:${deliveryId}`, at: now.toISOString(), correlationId,
         data: { type: 'notification_sent', deliveryId, channel: receipt.channel, timestamp: receipt.timestamp } });
-    } catch { errors.push(`Slack ${notification.event} #${notification.number}: delivery unconfirmed; retry next manager run`); }
+    } catch (error) { errors.push(`Slack ${notification.event} #${notification.number}: Slack accepted delivery but receipt persistence failed${httpStatus(error)} on #${journal}; automatic resend blocked`); }
   };
   for (const parent of snapshot.issues) {
     const trusted = events(parent.number);

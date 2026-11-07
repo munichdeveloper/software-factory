@@ -34,7 +34,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
       actions: write
     steps:
       - uses: munichdeveloper/software-factory@FACTORY_COMMIT_SHA
@@ -70,7 +70,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: write
       actions: read
     steps:
