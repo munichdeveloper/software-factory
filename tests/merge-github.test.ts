@@ -52,6 +52,7 @@ it('loads immutable full source context, binds update and merge mutations to exp
   const context = await x.api.context(facts, 60, 250000); expect(context.changes[0]!.content).toBe('new');
   expect(await x.api.update(52, head)).toBe('c'.repeat(40)); expect(await x.api.merge(52, head, 'squash')).toBe('d'.repeat(40));
   await x.api.dispatch('test.yml', 'feature'); await x.api.comment(52, 'Explanation'); expect(await x.api.canApprove('maintainer')).toBe(true);
+  expect(await x.api.workflowAvailable('publish.yml')).toBe(true);
 });
 it.each(['threads', 'patch', 'size', 'count', 'context'])('refuses incomplete evidence: %s', async kind => {
   const x = fixture({ tooManyThreads: kind === 'threads', noPatch: kind === 'patch', largeFile: kind === 'size' });

@@ -22,7 +22,7 @@ function fixture(decision: MergeReview['decision'] = 'merge') {
     comment: vi.fn(async (_number, body) => { f.comments.push({ id: f.comments.length + 1, body, author: 'github-actions[bot]', createdAt: clock.toISOString() }); }),
     update: vi.fn(async () => { f.head = 'c'.repeat(40); f.mergeState = 'CLEAN'; f.checks = []; return f.head; }),
     merge: vi.fn(async () => { f.state = 'closed'; f.mergeSha = 'd'.repeat(40); f.mergeActorType = 'Bot'; return f.mergeSha; }),
-    dispatch: vi.fn(async () => {}), canApprove: vi.fn(async login => login === 'maintainer') };
+    dispatch: vi.fn(async () => {}), workflowAvailable: vi.fn(async () => true), canApprove: vi.fn(async login => login === 'maintainer') };
   const run = () => new MergeManager(api, cfg, reviewer, 'test').run(structuredClone(snapshot));
   return { cfg, f, api, reviewer, review, snapshot, run };
 }
@@ -33,6 +33,12 @@ it('requires a real AI verdict, rechecks facts, persists intent before merging e
   expect(events.findIndex(e => e.data.type === 'merge_intent')).toBeLessThan(events.findIndex(e => e.data.type === 'merge_completed'));
   await x.run(); expect(x.api.merge).toHaveBeenCalledTimes(1); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
   expect(x.api.dispatch).toHaveBeenCalledTimes(1); expect(x.api.dispatch).toHaveBeenCalledWith('publish.yml', 'main');
+});
+it('defers optional publication hooks until their workflow is installed, then recovers them without another merge', async () => {
+  const x = fixture(); x.cfg.merge.postMergeWorkflows = ['publish.yml']; vi.mocked(x.api.workflowAvailable).mockResolvedValue(false);
+  expect((await x.run()).merged).toBe(1); expect(x.api.dispatch).not.toHaveBeenCalled();
+  vi.mocked(x.api.workflowAvailable).mockResolvedValue(true); await x.run(); expect(x.api.dispatch).toHaveBeenCalledTimes(1);
+  expect(x.api.merge).toHaveBeenCalledTimes(1);
 });
 it.each(['request_changes', 'defer'] as const)('publishes the AI reason and never merges on %s, even with green CI', async decision => {
   const x = fixture(decision); x.review.reason = 'Konkreter fachlicher oder technischer Einwand.';

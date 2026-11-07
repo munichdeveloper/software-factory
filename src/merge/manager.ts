@@ -55,6 +55,11 @@ export class MergeManager {
     await this.api.dispatch(workflow, ref);
     await this.event(f, key, { type: 'workflow_dispatch', workflow, ref, sha });
   }
+  private async postMerge(f: MergeFacts, sha: string) {
+    for (const workflow of new Set(this.config.merge.postMergeWorkflows)) {
+      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha);
+    }
+  }
   async run(snapshot: Snapshot) {
     const report: { reviewed: number; updated: number; merged: number; errors: string[] } = { reviewed: 0, updated: 0, merged: 0, errors: [] };
     if (!this.config.factory.enabled || !this.config.merge.enabled || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return report;
@@ -69,7 +74,7 @@ export class MergeManager {
         if (f.state === 'closed') {
           if (f.mergeSha && f.mergeActorType === 'Bot' && this.events(f).some(e => e.data.type === 'merge_intent' && e.data.head === f!.head)) {
             await this.event(f, `merge-completed:${f.head}`, { type: 'merge_completed', prNumber: number, head: f.head, mergeSha: f.mergeSha });
-            for (const workflow of this.config.merge.postMergeWorkflows) await this.dispatch(f, workflow, f.baseBranch, f.mergeSha);
+            await this.postMerge(f, f.mergeSha);
           }
           continue;
         }
@@ -140,7 +145,7 @@ export class MergeManager {
         await this.event(live, `merge-completed:${f.head}`, { type: 'merge_completed', prNumber: number, head: f.head, mergeSha: sha },
           `**Gemergt.** Die KI hat den geprüften Commit freigegeben; GitHub hat den Merge bestätigt: \`${sha}\`.`);
         phase = 'Workflows nach Merge';
-        for (const workflow of this.config.merge.postMergeWorkflows) await this.dispatch(live, workflow, f.baseBranch, sha);
+        await this.postMerge(live, sha);
       } catch (error) {
         const status = error instanceof Error && 'status' in error ? String(error.status) : 'unavailable';
         report.errors.push(`PR #${number}: review/update/merge not confirmed (${status}); no unreviewed merge performed`);

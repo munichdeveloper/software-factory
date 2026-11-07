@@ -40387,6 +40387,15 @@ var GitHubMergePort = class {
   async dispatch(workflow, ref) {
     await this.api.actions.createWorkflowDispatch({ ...this.target, workflow_id: workflow, ref });
   }
+  async workflowAvailable(workflow) {
+    try {
+      await this.api.actions.getWorkflow({ ...this.target, workflow_id: workflow });
+      return true;
+    } catch (error62) {
+      if (error62 instanceof Error && "status" in error62 && error62.status === 404) return false;
+      throw error62;
+    }
+  }
   async canApprove(login) {
     try {
       return ["admin", "maintain", "write"].includes((await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login })).data.permission);
@@ -40526,6 +40535,11 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
     await this.api.dispatch(workflow, ref);
     await this.event(f, key, { type: "workflow_dispatch", workflow, ref, sha: sha2 });
   }
+  async postMerge(f, sha2) {
+    for (const workflow of new Set(this.config.merge.postMergeWorkflows)) {
+      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha2);
+    }
+  }
   async run(snapshot) {
     const report = { reviewed: 0, updated: 0, merged: 0, errors: [] };
     if (!this.config.factory.enabled || !this.config.merge.enabled || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return report;
@@ -40540,7 +40554,7 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         if (f.state === "closed") {
           if (f.mergeSha && f.mergeActorType === "Bot" && this.events(f).some((e) => e.data.type === "merge_intent" && e.data.head === f.head)) {
             await this.event(f, `merge-completed:${f.head}`, { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: f.mergeSha });
-            for (const workflow of this.config.merge.postMergeWorkflows) await this.dispatch(f, workflow, f.baseBranch, f.mergeSha);
+            await this.postMerge(f, f.mergeSha);
           }
           continue;
         }
@@ -40652,7 +40666,7 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
           `**Gemergt.** Die KI hat den gepr\xFCften Commit freigegeben; GitHub hat den Merge best\xE4tigt: \`${sha2}\`.`
         );
         phase = "Workflows nach Merge";
-        for (const workflow of this.config.merge.postMergeWorkflows) await this.dispatch(live, workflow, f.baseBranch, sha2);
+        await this.postMerge(live, sha2);
       } catch (error62) {
         const status = error62 instanceof Error && "status" in error62 ? String(error62.status) : "unavailable";
         report.errors.push(`PR #${number4}: review/update/merge not confirmed (${status}); no unreviewed merge performed`);

@@ -26,5 +26,6 @@ export interface MergePort {
   update(number: number, head: string): Promise<string>;
   merge(number: number, head: string, method: 'squash' | 'merge' | 'rebase'): Promise<string>;
   dispatch(workflow: string, ref: string): Promise<void>;
+  workflowAvailable(workflow: string): Promise<boolean>;
   canApprove(login: string): Promise<boolean>;
 }

@@ -95,6 +95,7 @@ GitHub suppresses normal push workflows for `GITHUB_TOKEN` mutations. Optional
 confirmed merge. Each must support workflow_dispatch on the default branch. Receipts
 avoid ordinary repeated dispatches, but ambiguous cross-service failures can repeat
 a dispatch; downstream workflows must be idempotent. Confirmed closed bot merges
-are reconciled for missing completion receipts/hooks. This feature does not deploy
+are reconciled for missing completion receipts/hooks. Optional hooks whose workflow
+is not installed yet are deferred until a later reconciliation. This feature does not deploy
 code by itself. A merge of workflow files may require repository permissions beyond
 those available to an installation; GitHub rejection is reported, never bypassed.
