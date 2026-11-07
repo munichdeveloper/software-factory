@@ -50,7 +50,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         console.log(JSON.stringify({ outcome: 'merge-disabled' })); return;
       }
       const report = await new MergeManager(new GitHubMergePort(repository, process.env.GITHUB_TOKEN ?? '', config.factory.scope, config.merge.adoptLabel),
-        config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), correlationId).run(await github.snapshot(config.manager.workflow));
+        config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), correlationId, github).run(await github.snapshot(config.manager.workflow));
       console.log(JSON.stringify({ correlationId, ...report }));
       if (report.errors.length) process.exitCode = 1;
       return;

@@ -40434,6 +40434,7 @@ Choose request_changes for concrete blocking code problems; defer for insufficie
             requireStrictUpToDate: true
           },
           untrustedFacts: facts,
+          untrustedSourceTask: input2.sourceTask ?? null,
           untrustedChanges: input2.changes
         }),
         text: { format: { type: "json_schema", name: "merge_review", strict: true, schema: external_exports.toJSONSchema(mergeReviewSchema) } }
@@ -40454,6 +40455,7 @@ var factsKey = (f) => ({
   ...f,
   comments: [],
   labels: [...f.labels].sort(),
+  nativeRequiredChecks: [...f.nativeRequiredChecks].sort(),
   checks: [...f.checks].sort((a, b) => `${a.name}:${a.state}`.localeCompare(`${b.name}:${b.state}`))
 });
 function mergeGate(f, config2) {
@@ -40471,16 +40473,18 @@ function mergeGate(f, config2) {
   return null;
 }
 var MergeManager = class {
-  constructor(api, config2, reviewer, correlationId) {
+  constructor(api, config2, reviewer, correlationId, tasks) {
     this.api = api;
     this.config = config2;
     this.reviewer = reviewer;
     this.correlationId = correlationId;
+    this.tasks = tasks;
   }
   api;
   config;
   reviewer;
   correlationId;
+  tasks;
   events(f) {
     return f.comments.flatMap((c) => {
       const e = decodeEvent(c, this.config.manager.trustedActors);
@@ -40554,7 +40558,9 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         report.reviewed++;
         phase = "Vollst\xE4ndigen \xC4nderungskontext laden";
         const input2 = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
-        const reviewKey = hash2({ ...input2, facts: factsKey(f), merge: this.config.merge, policy: policyVersion(this.config) });
+        if (owner) input2.sourceTask = { number: owner.number, title: owner.title, body: owner.body };
+        if (Buffer.byteLength(JSON.stringify({ ...input2, facts: factsKey(f) })) > this.config.merge.review.maxContextBytes) throw new Error("Review context exceeds limit; no truncated approval");
+        const reviewKey = hash2({ repository: this.api.repository.toLowerCase(), ...input2, facts: factsKey(f), merge: this.config.merge, policy: policyVersion(this.config) });
         const cached2 = this.events(f).find((e) => e.data.type === "merge_review" && e.data.reviewKey === reviewKey);
         phase = "KI-Review";
         const review = cached2?.data.type === "merge_review" ? cached2.data.review : mergeReviewSchema.parse(await this.reviewer.review(input2));
@@ -40572,12 +40578,19 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         );
         if (review.findings.some((x) => x.severity === "blocking") || ["request_changes", "defer"].includes(review.decision)) continue;
         const live = await this.api.facts(number4);
-        if (live.head !== f.head || live.base !== f.base || !this.eligible(live, snapshot) || live.state !== "open" || live.draft || !live.sameRepository || live.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
+        if (hash2(factsKey(live)) !== hash2(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== "open" || live.draft || !live.sameRepository || live.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
           await this.explain(live, "PR, Head, Basis oder Freigabe hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung erforderlich.");
           continue;
         }
+        if (owner) {
+          const liveOwner = this.tasks ? await this.tasks.getIssue(owner.number) : owner;
+          if (liveOwner.state !== "open" || liveOwner.labels.includes("harness:blocked") || !liveOwner.labels.includes("harness:managed") || taskVersion(liveOwner) !== taskVersion(owner)) {
+            await this.explain(live, "Die zugeh\xF6rige Aufgabe wurde w\xE4hrend des Reviews geschlossen, blockiert, abgemeldet oder fachlich ver\xE4ndert.");
+            continue;
+          }
+        }
         if (permission(this.config, "merge_pr") === "approval") {
-          const approvalId = hash2({ repository: this.api.repository, number: number4, head: f.head, base: f.base, reviewKey });
+          const approvalId = hash2({ repository: this.api.repository, number: number4, head: f.head, base: f.base, reviewKey, review });
           let approved = false;
           for (const c of live.comments) {
             const match = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
@@ -40695,7 +40708,8 @@ async function main(args = process.argv.slice(2)) {
         new GitHubMergePort(repository, process.env.GITHUB_TOKEN ?? "", config2.factory.scope, config2.merge.adoptLabel),
         config2,
         new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? "", config2),
-        correlationId
+        correlationId,
+        github
       ).run(await github.snapshot(config2.manager.workflow));
       console.log(JSON.stringify({ correlationId, ...report2 }));
       if (report2.errors.length) process.exitCode = 1;

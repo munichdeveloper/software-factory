@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { config, clock, MemoryGitHub } from './helpers.js';
+import { config, clock, MemoryGitHub, issue } from './helpers.js';
 import { MergeManager, mergeGate } from '../src/merge/manager.js';
 import type { MergeFacts, MergePort, MergeReview, ReviewInput } from '../src/merge/contract.js';
 import { decodeEvent, encodeEvent } from '../src/state/events.js';
@@ -14,7 +14,7 @@ function fixture(decision: MergeReview['decision'] = 'merge') {
     strictChecks: true, nativeRequiredChecks: ['test-backend'], comments: [], mergeSha: null, mergeActorType: null };
   const snapshot = new MemoryGitHub().state;
   const review: MergeReview = { decision, reason: 'Code und Tests geprüft.', findings: [] };
-  const reviewer = { review: vi.fn(async () => structuredClone(review)) };
+  const reviewer = { review: vi.fn(async (_input: ReviewInput) => { void _input; return structuredClone(review); }) };
   const api: MergePort = { repository: 'owner/target',
     candidates: vi.fn(async () => [52]), facts: vi.fn(async () => structuredClone(f)),
     context: vi.fn(async facts => ({ facts, trustedScope: 'Community', trustedInstructions: 'Keep API compatible', changes: [
@@ -43,13 +43,28 @@ it('blocking findings cannot be overridden by an inconsistent positive model dec
   const x = fixture(); x.review.findings = [{ path: 'security.ts', severity: 'blocking', explanation: 'Authorization missing' }];
   await x.run(); expect(x.api.merge).not.toHaveBeenCalled();
 });
-it.each(['head', 'base', 'enrollment', 'draft'])('discards approval when %s changes during model review', async change => {
+it.each(['head', 'base', 'enrollment', 'draft', 'description'])('discards approval when %s changes during model review', async change => {
   const x = fixture(); x.reviewer.review.mockImplementation(async () => {
     if (change === 'head') x.f.head = 'e'.repeat(40); if (change === 'base') x.f.base = 'e'.repeat(40);
     if (change === 'enrollment') x.f.labels = []; if (change === 'draft') x.f.draft = true;
+    if (change === 'description') x.f.body = 'Changed requirements';
     return x.review;
   });
   await x.run(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.f.comments.some(c => c.body.includes('erneute Prüfung'))).toBe(true);
+});
+it.each(['closed', 'blocked', 'changed'])('revalidates the source task after AI review: %s', async change => {
+  const x = fixture(); const task = issue(44); const execution = 'f'.repeat(32);
+  x.snapshot.issues = [task]; x.f.headBranch = `sf/issue-44/${execution}`; x.f.labels = [];
+  x.snapshot.comments.set(44, [{ id: 1, author: 'github-actions[bot]', createdAt: clock.toISOString(),
+    body: encodeEvent({ version: 1, key: 'result', at: clock.toISOString(), correlationId: 'test', data: { type: 'result', result: {
+      contractVersion: '1.0', executionId: execution, issueNumber: 44, status: 'success', summary: 'Created PR',
+      artifacts: ['https://github.com/owner/target/pull/52'], error: null, proposedActions: [] } } }) }]);
+  const tasks = { getIssue: vi.fn(async () => ({ ...task, state: change === 'closed' ? 'closed' as const : 'open' as const,
+    labels: change === 'blocked' ? [...task.labels, 'harness:blocked'] : task.labels, body: change === 'changed' ? task.body + 'New requirement' : task.body })) };
+  await new MergeManager(x.api, x.cfg, x.reviewer, 'test', tasks).run(x.snapshot);
+  expect(x.reviewer.review).toHaveBeenCalledTimes(1); expect(x.api.merge).not.toHaveBeenCalled();
+  expect(x.reviewer.review.mock.calls[0]![0].sourceTask?.number).toBe(44);
+  expect(x.f.comments.some(c => c.body.includes('Aufgabe wurde während'))).toBe(true);
 });
 it.each(['disabled', 'advisory', 'dry-run', 'deny'])('never reviews or mutates in %s mode', async mode => {
   const x = fixture(); if (mode === 'disabled') x.cfg.merge.enabled = false;

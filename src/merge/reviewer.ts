@@ -19,7 +19,7 @@ Choose request_changes for concrete blocking code problems; defer for insufficie
         input: JSON.stringify({ trustedScope: input.trustedScope, trustedInstructions: input.trustedInstructions,
           trustedMergeRequirements: { requiredChecks: this.config.merge.requiredChecks, updateBranch: this.config.merge.updateBranch,
             method: this.config.merge.method, requireResolvedThreads: true, requireStrictUpToDate: true },
-          untrustedFacts: facts, untrustedChanges: input.changes }),
+          untrustedFacts: facts, untrustedSourceTask: input.sourceTask ?? null, untrustedChanges: input.changes }),
         text: { format: { type: 'json_schema', name: 'merge_review', strict: true, schema: z.toJSONSchema(mergeReviewSchema) } }
       })
     });
