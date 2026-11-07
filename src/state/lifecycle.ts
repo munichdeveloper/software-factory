@@ -4,7 +4,7 @@ import { statuses } from '../types.js';
 export const managedLabel = 'harness:managed';
 export const lifecycleLabels = statuses.map(s => `harness:${s}`);
 export const priorityLabels = ['harness:priority-high', 'harness:priority-normal', 'harness:priority-low'];
-export const allLabels = [managedLabel, ...lifecycleLabels, ...priorityLabels];
+export const allLabels = [managedLabel, ...lifecycleLabels, ...priorityLabels, 'sf:automerge', 'sf:blocked'];
 const transitions: Record<Status, readonly Status[]> = {
   backlog: ['ready', 'running', 'failed', 'awaiting-pr', 'blocked', 'awaiting-approval', 'done'],
   ready: ['running', 'failed', 'blocked', 'awaiting-approval', 'awaiting-pr', 'done', 'backlog'],

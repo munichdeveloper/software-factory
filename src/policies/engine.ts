@@ -10,7 +10,7 @@ const defaults: Record<Config['autonomy']['profile'], Record<Action['kind'], Per
   supervised: { transition: 'allow', close_issue: 'allow', create_followup: 'approval', prioritize: 'allow', approve_task: 'approval', start_worker: 'approval', retry_worker: 'approval', cancel_worker: 'allow', expand_scope: 'approval', merge_pr: 'deny' },
   autonomous: { transition: 'allow', close_issue: 'allow', create_followup: 'allow', prioritize: 'allow', approve_task: 'allow', start_worker: 'allow', retry_worker: 'allow', cancel_worker: 'allow', expand_scope: 'deny', merge_pr: 'deny' }
 };
-export const policyVersion = (config: Config): string => { const { notifications: _notifications, ...policy } = config; void _notifications; return hash(policy); };
+export const policyVersion = (config: Config): string => { const { notifications: _notifications, merge: _merge, ...policy } = config; void _notifications; void _merge; return hash(policy); };
 export function permission(config: Config, kind: Action['kind']): Permission {
   return config.autonomy.overrides[kind] ?? defaults[config.autonomy.profile][kind];
 }
@@ -27,7 +27,8 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
       (action.kind !== 'create_followup' && action.followup !== null) ||
       (!['start_worker', 'retry_worker'].includes(action.kind) && action.attempt !== null)) return deny('Action contains fields belonging to a different operation');
   if (config.autonomy.profile === 'advisory') return deny('Advisory profile prohibits repository changes');
-  if (action.kind === 'merge_pr' || action.kind === 'expand_scope') return deny(`Action ${action.kind} is not implemented in v0.1; scope permission applies to follow-ups`);
+  if (action.kind === 'merge_pr') return deny('Merge requires the dedicated PR workflow with a commit-bound AI review');
+  if (action.kind === 'expand_scope') return deny('Standalone scope changes are unsupported; permission applies to follow-ups');
   if (!task.issue.labels.includes('harness:managed')) return deny('Issue is not explicitly managed');
   if (action.taskVersion !== task.version) return deny('Task changed since proposal or approval');
   if (budget.actions >= config.manager.maxActions) return deny('Maximum actions per run reached');

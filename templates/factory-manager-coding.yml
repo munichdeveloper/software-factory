@@ -1,14 +1,17 @@
 name: Software Factory
-run-name: Factory ${{ github.event_name == 'push' && 'notify' || inputs.mode || 'manager' }} ${{ inputs.execution_id }}
+run-name: Factory ${{ (github.event_name == 'push' || github.event_name == 'workflow_run') && 'notify' || inputs.mode || 'manager' }} ${{ inputs.execution_id }}
 on:
   push:
+  workflow_run:
+    workflows: [Test]
+    types: [completed]
   schedule:
     - cron: '17 */2 * * *'
   workflow_dispatch:
     inputs:
       mode:
         type: choice
-        options: [manager, notify, check-slack, bootstrap, worker]
+        options: [manager, merge, notify, check-slack, bootstrap, worker]
         default: manager
       execution_id:
         type: string
@@ -36,7 +39,7 @@ jobs:
     steps:
       - uses: munichdeveloper/software-factory@FACTORY_COMMIT_SHA
         with:
-          mode: ${{ github.event_name == 'push' && 'notify' || inputs.mode || 'manager' }}
+          mode: ${{ (github.event_name == 'push' || github.event_name == 'workflow_run' || inputs.mode == 'merge') && 'notify' || inputs.mode || 'manager' }}
           dry-run: ${{ inputs.dry_run || false }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -55,3 +58,37 @@ jobs:
       issue-number: ${{ inputs.issue_number }}
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  merge:
+    needs: factory
+    if: success() && inputs.mode != 'worker' && inputs.mode != 'check-slack' && inputs.mode != 'notify' && inputs.mode != 'bootstrap'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      checks: read
+      statuses: read
+      actions: write
+    steps:
+      - uses: munichdeveloper/software-factory@FACTORY_COMMIT_SHA
+        with:
+          mode: merge
+          dry-run: ${{ inputs.dry_run || false }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+  merge-notifications:
+    needs: merge
+    if: always() && needs.merge.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+      actions: read
+    steps:
+      - uses: munichdeveloper/software-factory@FACTORY_COMMIT_SHA
+        with:
+          mode: notify
+          dry-run: ${{ inputs.dry_run || false }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}

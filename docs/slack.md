@@ -48,7 +48,7 @@ authorization. Existing installations continue with notifications disabled.
   correlated with its execution branch and trusted persisted result URL. GitHub
   must identify the merging actor as **Bot**; human merges never match, even if
   the PR was written by AI. `actors` can narrow that bot set. This does not enable
-  PR merging: SF's existing `merge_pr` action remains unsupported.
+  PR merging. The optional dedicated AI-reviewed merge workflow is configured separately.
 
 Messages contain the event, title, GitHub link, and actor; no issue body or LLM
 transcript. Untrusted titles use Slack plain-text blocks with mention parsing and

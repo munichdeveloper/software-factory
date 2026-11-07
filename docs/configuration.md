@@ -48,12 +48,13 @@ Generated JSON schemas share the executable Zod source.
 | `retry_worker` | deny | approval per attempt | allow within retry cap |
 | `cancel_worker` | deny | allow for overdue runs | allow for overdue runs |
 | `expand_scope` | deny | approval | deny |
-| `merge_pr` | unsupported | unsupported | unsupported |
+| `merge_pr` | deny | deny (override approval/allow) | deny (override allow) |
 
 Overrides replace defaults; technical constraints remain. Advisory and global
 disable are absolute zero-mutation boundaries even with an allow override. Dry
 run evaluates but never executes. `expand_scope` gates a follow-up explicitly
-marked `expandsScope=true`; standalone scope changes and all merges are unsupported.
+marked `expandsScope=true`; standalone scope changes are unsupported. PR merging
+requires the separate opt-in AI review workflow documented in [merging](merging.md).
 `approve_task` marks a well-specified task ready; it never grants worker permission.
 
 ```yaml
