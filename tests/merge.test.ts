@@ -43,6 +43,13 @@ it('blocking findings cannot be overridden by an inconsistent positive model dec
   const x = fixture(); x.review.findings = [{ path: 'security.ts', severity: 'blocking', explanation: 'Authorization missing' }];
   await x.run(); expect(x.api.merge).not.toHaveBeenCalled();
 });
+it('cached negative decisions do not consume the next run review budget or starve another enrolled PR', async () => {
+  const x = fixture('defer'); x.cfg.merge.maxReviewsPerRun = 1; await x.run();
+  const originalFacts = x.api.facts.bind(x.api); vi.mocked(x.api.candidates).mockResolvedValue([52, 53]);
+  vi.mocked(x.api.facts).mockImplementation(async n => { const f = await originalFacts(n); return { ...f, number: n, comments: n === 52 ? f.comments : [] }; });
+  const report = await x.run(); expect(report.reviewed).toBe(1); expect(x.reviewer.review).toHaveBeenCalledTimes(2);
+  expect(x.reviewer.review.mock.calls[1]![0].facts.number).toBe(53);
+});
 it.each(['head', 'base', 'enrollment', 'draft', 'description'])('discards approval when %s changes during model review', async change => {
   const x = fixture(); x.reviewer.review.mockImplementation(async () => {
     if (change === 'head') x.f.head = 'e'.repeat(40); if (change === 'base') x.f.base = 'e'.repeat(40);

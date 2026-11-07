@@ -40555,15 +40555,27 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         }
         const pendingUpdate = this.events(f).find((e) => e.data.type === "branch_update" && e.data.base === f.base && e.data.head !== f.head);
         if (pendingUpdate) await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
-        report.reviewed++;
-        phase = "Vollst\xE4ndigen \xC4nderungskontext laden";
-        const input2 = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
-        if (owner) input2.sourceTask = { number: owner.number, title: owner.title, body: owner.body };
-        if (Buffer.byteLength(JSON.stringify({ ...input2, facts: factsKey(f) })) > this.config.merge.review.maxContextBytes) throw new Error("Review context exceeds limit; no truncated approval");
-        const reviewKey = hash2({ repository: this.api.repository.toLowerCase(), ...input2, facts: factsKey(f), merge: this.config.merge, policy: policyVersion(this.config) });
+        const sourceTask = owner ? { number: owner.number, title: owner.title, body: owner.body } : null;
+        const reviewKey = hash2({
+          protocol: "sf-merge-review-v1",
+          repository: this.api.repository.toLowerCase(),
+          sourceTask,
+          facts: factsKey(f),
+          merge: this.config.merge,
+          policy: policyVersion(this.config)
+        });
         const cached2 = this.events(f).find((e) => e.data.type === "merge_review" && e.data.reviewKey === reviewKey);
-        phase = "KI-Review";
-        const review = cached2?.data.type === "merge_review" ? cached2.data.review : mergeReviewSchema.parse(await this.reviewer.review(input2));
+        let review;
+        if (cached2?.data.type === "merge_review") review = cached2.data.review;
+        else {
+          report.reviewed++;
+          phase = "Vollst\xE4ndigen \xC4nderungskontext laden";
+          const input2 = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+          if (sourceTask) input2.sourceTask = sourceTask;
+          if (Buffer.byteLength(JSON.stringify({ ...input2, facts: factsKey(f) })) > this.config.merge.review.maxContextBytes) throw new Error("Review context exceeds limit; no truncated approval");
+          phase = "KI-Review";
+          review = mergeReviewSchema.parse(await this.reviewer.review(input2));
+        }
         await this.event(
           f,
           `merge-review:${reviewKey}`,

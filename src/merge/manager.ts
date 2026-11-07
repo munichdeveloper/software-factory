@@ -80,15 +80,22 @@ export class MergeManager {
         }
         const pendingUpdate = this.events(f).find(e => e.data.type === 'branch_update' && e.data.base === f!.base && e.data.head !== f!.head);
         if (pendingUpdate) await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
-        report.reviewed++;
-        phase = 'Vollständigen Änderungskontext laden';
-        const input = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
-        if (owner) input.sourceTask = { number: owner.number, title: owner.title, body: owner.body };
-        if (Buffer.byteLength(JSON.stringify({ ...input, facts: factsKey(f) })) > this.config.merge.review.maxContextBytes) throw new Error('Review context exceeds limit; no truncated approval');
-        const reviewKey = hash({ repository: this.api.repository.toLowerCase(), ...input, facts: factsKey(f), merge: this.config.merge, policy: policyVersion(this.config) });
+        const sourceTask = owner ? { number: owner.number, title: owner.title, body: owner.body } : null;
+        // Immutable head/base IDs bind all source/context files. Mutable facts and task intent are included explicitly.
+        const reviewKey = hash({ protocol: 'sf-merge-review-v1', repository: this.api.repository.toLowerCase(), sourceTask,
+          facts: factsKey(f), merge: this.config.merge, policy: policyVersion(this.config) });
         const cached = this.events(f).find(e => e.data.type === 'merge_review' && e.data.reviewKey === reviewKey);
-        phase = 'KI-Review';
-        const review = cached?.data.type === 'merge_review' ? cached.data.review : mergeReviewSchema.parse(await this.reviewer.review(input));
+        let review;
+        if (cached?.data.type === 'merge_review') review = cached.data.review;
+        else {
+          report.reviewed++;
+          phase = 'Vollständigen Änderungskontext laden';
+          const input = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+          if (sourceTask) input.sourceTask = sourceTask;
+          if (Buffer.byteLength(JSON.stringify({ ...input, facts: factsKey(f) })) > this.config.merge.review.maxContextBytes) throw new Error('Review context exceeds limit; no truncated approval');
+          phase = 'KI-Review';
+          review = mergeReviewSchema.parse(await this.reviewer.review(input));
+        }
         await this.event(f, `merge-review:${reviewKey}`, { type: 'merge_review', head: f.head, base: f.base, reviewKey, review },
           `**KI-Entscheidung: ${review.decision}**\n\n${review.reason}\n\n${review.findings.map(x => `- ${x.severity}: ${x.path} – ${x.explanation}`).join('\n')}\n\nHead: \`${f.head}\`; Basis: \`${f.base}\`.`);
         if (review.findings.some(x => x.severity === 'blocking') || ['request_changes', 'defer'].includes(review.decision)) continue;
