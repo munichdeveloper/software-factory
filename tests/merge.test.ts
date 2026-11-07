@@ -45,8 +45,8 @@ it('blocking findings cannot be overridden by an inconsistent positive model dec
 });
 it('cached negative decisions do not consume the next run review budget or starve another enrolled PR', async () => {
   const x = fixture('defer'); x.cfg.merge.maxReviewsPerRun = 1; await x.run();
-  const originalFacts = x.api.facts.bind(x.api); vi.mocked(x.api.candidates).mockResolvedValue([52, 53]);
-  vi.mocked(x.api.facts).mockImplementation(async n => { const f = await originalFacts(n); return { ...f, number: n, comments: n === 52 ? f.comments : [] }; });
+  vi.mocked(x.api.candidates).mockResolvedValue([52, 53]);
+  vi.mocked(x.api.facts).mockImplementation(async n => ({ ...structuredClone(x.f), number: n, comments: n === 52 ? structuredClone(x.f.comments) : [] }));
   const report = await x.run(); expect(report.reviewed).toBe(1); expect(x.reviewer.review).toHaveBeenCalledTimes(2);
   expect(x.reviewer.review.mock.calls[1]![0].facts.number).toBe(53);
 });
