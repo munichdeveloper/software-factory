@@ -7,6 +7,9 @@ for (const path of [...(await readdir('.github/workflows')).map(f => `.github/wo
   assert(workflow.on && workflow.jobs && workflow.permissions); assert(!workflow.on.pull_request_target);
   if (path.startsWith('templates/')) assert(workflow.concurrency && workflow.on.schedule && workflow.on.workflow_dispatch);
   for (const job of Object.values(workflow.jobs) as { permissions?: unknown }[]) assert(job.permissions);
+  if (path.startsWith('templates/')) for (const name of ['factory', 'merge-notifications']) {
+    assert.equal(workflow.jobs[name].permissions['pull-requests'], 'write', `${name} must persist notification receipts on PRs`);
+  }
   console.log(`Validated ${path}`);
 }
 const action = parseDocument(await readFile('action.yml', 'utf8')).toJS();

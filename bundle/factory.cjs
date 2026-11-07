@@ -38823,6 +38823,8 @@ var eventSchema = external_exports.strictObject({
     external_exports.strictObject({ type: external_exports.literal("block_intent"), taskVersion: external_exports.string().length(64), cause: blockCauseSchema, afterLabelEventId: external_exports.number().int().nonnegative() }),
     external_exports.strictObject({ type: external_exports.literal("issue_creation_intent"), followupKey: external_exports.string().regex(/^[a-f0-9]{64}$/), actionId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
     external_exports.strictObject({ type: external_exports.literal("notification_sent"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/), channel: external_exports.string().max(100), timestamp: external_exports.string().max(100) }),
+    external_exports.strictObject({ type: external_exports.literal("notification_attempt"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
+    external_exports.strictObject({ type: external_exports.literal("notification_rejected"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
     external_exports.strictObject({ type: external_exports.literal("merge_review"), head: external_exports.string().length(40), base: external_exports.string().length(40), reviewKey: external_exports.string().length(64), review: mergeReviewSchema }),
     external_exports.strictObject({ type: external_exports.literal("merge_intent"), prNumber: external_exports.number().int().positive(), head: external_exports.string().length(40), base: external_exports.string().length(40), reviewKey: external_exports.string().length(64) }),
     external_exports.strictObject({ type: external_exports.literal("merge_completed"), prNumber: external_exports.number().int().positive(), head: external_exports.string().length(40), mergeSha: external_exports.string().length(40) }),
@@ -39329,6 +39331,12 @@ function reconciliationPlan(tasks, config2) {
 }
 
 // src/notifications/slack.ts
+var NotificationRejected = class extends Error {
+};
+var httpStatus = (error62) => {
+  const status = error62 && typeof error62 === "object" && "status" in error62 ? error62.status : void 0;
+  return typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? ` (HTTP ${status})` : "";
+};
 var SlackSink = class {
   constructor(token, fetcher = fetch) {
     this.token = token;
@@ -39380,11 +39388,14 @@ Akteur: ${notification.actor}`;
           unfurl_media: false
         })
       });
+      if (response.status === 429) throw new NotificationRejected("Slack rate limited");
       if (!response.ok) throw new Error("Slack delivery failed");
       const result = await response.json();
+      if (result.ok === false) throw new NotificationRejected("Slack rejected the message");
       if (!result.ok || !result.channel || !result.ts || result.channel.length > 100 || result.ts.length > 100) throw new Error("Slack delivery failed");
       return { channel: result.channel, timestamp: result.ts };
-    } catch {
+    } catch (error62) {
+      if (error62 instanceof NotificationRejected) throw error62;
       throw new Error("Slack delivery failed; check token, bot membership and API availability");
     }
   }
@@ -39408,15 +39419,46 @@ async function deliverNotifications(github, config2, snapshot, sink, correlation
       return;
     }
     const deliveryId = hash2({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel });
-    const sent = (await github.comments(journal)).some((c) => {
+    const deliveries = (await github.comments(journal)).flatMap((c) => {
       const e = decodeEvent(c, config2.manager.trustedActors);
-      return e?.data.type === "notification_sent" && e.data.deliveryId === deliveryId;
+      return e && "deliveryId" in e.data && e.data.deliveryId === deliveryId ? [e] : [];
     });
-    if (sent) return;
+    if (deliveries.some((e) => e.data.type === "notification_sent")) return;
+    if (deliveries.at(-1)?.data.type === "notification_attempt") {
+      errors.push(`Slack ${notification.event} #${notification.number}: previous delivery unconfirmed; inspect Slack and reconcile journal #${journal}; automatic resend blocked`);
+      return;
+    }
     if (attempts >= settings.maxPerRun) return;
     attempts++;
+    const event = (type) => github.writeEvent(journal, {
+      version: 1,
+      key: `${type}:${deliveryId}`,
+      at: now.toISOString(),
+      correlationId,
+      data: { type, deliveryId }
+    });
     try {
-      const receipt = await sink.send(channel, notification);
+      await event("notification_attempt");
+    } catch (error62) {
+      errors.push(`Slack ${notification.event} #${notification.number}: cannot persist delivery attempt on #${journal}${httpStatus(error62)}; nothing sent; check GitHub comment write permissions`);
+      return;
+    }
+    let receipt;
+    try {
+      receipt = await sink.send(channel, notification);
+    } catch (error62) {
+      if (error62 instanceof NotificationRejected) {
+        try {
+          await event("notification_rejected");
+        } catch (writeError) {
+          errors.push(`Slack ${notification.event} #${notification.number}: rejection receipt failed${httpStatus(writeError)}; automatic resend blocked`);
+          return;
+        }
+        errors.push(`Slack ${notification.event} #${notification.number}: provider rejected delivery; retry next manager run`);
+      } else errors.push(`Slack ${notification.event} #${notification.number}: delivery unconfirmed; inspect Slack and reconcile journal #${journal}; automatic resend blocked`);
+      return;
+    }
+    try {
       await github.writeEvent(journal, {
         version: 1,
         key: `notification:${deliveryId}`,
@@ -39424,8 +39466,8 @@ async function deliverNotifications(github, config2, snapshot, sink, correlation
         correlationId,
         data: { type: "notification_sent", deliveryId, channel: receipt.channel, timestamp: receipt.timestamp }
       });
-    } catch {
-      errors.push(`Slack ${notification.event} #${notification.number}: delivery unconfirmed; retry next manager run`);
+    } catch (error62) {
+      errors.push(`Slack ${notification.event} #${notification.number}: Slack accepted delivery but receipt persistence failed${httpStatus(error62)} on #${journal}; automatic resend blocked`);
     }
   };
   for (const parent of snapshot.issues) {
@@ -40852,14 +40894,14 @@ base-branch=${prepared.base.branch}
 async function handleError(error62) {
   const message = error62 instanceof Error ? error62.message : "";
   const safe2 = /^(Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message) ? message : "Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.";
-  const httpStatus = error62 instanceof Error && "status" in error62 && typeof error62.status === "number" ? error62.status : null;
+  const httpStatus2 = error62 instanceof Error && "status" in error62 && typeof error62.status === "number" ? error62.status : null;
   const category = error62 instanceof Error ? error62.name.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UnknownError";
-  console.error(JSON.stringify({ error: safe2, category, httpStatus }));
+  console.error(JSON.stringify({ error: safe2, category, httpStatus: httpStatus2 }));
   if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises.appendFile)(process.env.GITHUB_STEP_SUMMARY, `# Software Factory failed
 
 ${safe2.replace(/[<>`]/g, "")}
 
-Category: ${category}; HTTP: ${httpStatus ?? "n/a"}
+Category: ${category}; HTTP: ${httpStatus2 ?? "n/a"}
 `).catch(() => {
   });
   process.exitCode = 1;

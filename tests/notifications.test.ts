@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { config, issue, MemoryGitHub, clock } from './helpers.js';
-import { deliverNotifications, SlackSink, type Notification, type NotificationSink } from '../src/notifications/slack.js';
+import { deliverNotifications, NotificationRejected, SlackSink, type Notification, type NotificationSink } from '../src/notifications/slack.js';
 import { actionId, hash, taskVersion } from '../src/state/identity.js';
 import { policyVersion } from '../src/policies/engine.js';
 import { Manager } from '../src/manager/index.js';
@@ -58,7 +58,7 @@ it.each(['disabled', 'dry-run', 'advisory', 'factory-disabled', 'rules-disabled'
   await f.deliver(); expect(f.send).not.toHaveBeenCalled();
 });
 it('keeps failed sends retryable, without leaking errors or repeating repository mutations', async () => {
-  const f = await fixture(); f.send.mockRejectedValueOnce(new Error('xoxb-private'));
+  const f = await fixture(); f.send.mockRejectedValueOnce(new NotificationRejected('xoxb-private'));
   expect(JSON.stringify(await f.deliver())).not.toContain('xoxb-private');
   await f.deliver(); expect(f.send).toHaveBeenCalledTimes(3);
   expect(await f.deliver()).toEqual([]); expect(f.send).toHaveBeenCalledTimes(3);
@@ -74,12 +74,41 @@ it('limits per-run attempts and resumes pending events on the next run', async (
   await f.deliver(); expect(f.send).toHaveBeenCalledTimes(1);
   await f.deliver(); expect(f.send).toHaveBeenCalledTimes(2);
 });
-it('documents at-least-once behavior when Slack succeeds but receipt persistence fails', async () => {
+it('never sends if the attempt journal cannot be written, and reports only safe HTTP diagnostics', async () => {
+  const f = await fixture(); f.cfg.notifications.slack.events.pr_merged.enabled = false;
+  f.gh.writeEvent = async () => { throw Object.assign(new Error('private-token'), { status: 403 }); };
+  const errors = await f.deliver(); expect(errors[0]).toContain('HTTP 403'); expect(errors[0]).toContain('nothing sent');
+  expect(JSON.stringify(errors)).not.toContain('private-token'); expect(f.send).not.toHaveBeenCalled();
+});
+it('quarantines an ambiguous Slack timeout across runs rather than resending', async () => {
+  const f = await fixture(); f.cfg.notifications.slack.events.pr_merged.enabled = false;
+  f.send.mockRejectedValueOnce(new Error('private-token'));
+  expect((await f.deliver())[0]).toContain('automatic resend blocked');
+  expect((await f.deliver())[0]).toContain('previous delivery unconfirmed'); expect(f.send).toHaveBeenCalledTimes(1);
+});
+it('never resends when Slack succeeds but receipt persistence fails', async () => {
   const f = await fixture(); f.cfg.notifications.slack.events.pr_merged.enabled = false;
   const write = f.gh.writeEvent.bind(f.gh); let fail = true;
-  f.gh.writeEvent = async (...args) => { if (fail) { fail = false; throw new Error('Lost write'); } await write(...args); };
+  f.gh.writeEvent = async (...args) => { if (fail && args[1].data.type === 'notification_sent') { fail = false; throw new Error('Lost write'); } await write(...args); };
   expect(await f.deliver()).toHaveLength(1); await f.deliver(); await f.deliver();
-  expect(f.send).toHaveBeenCalledTimes(2);
+  expect(f.send).toHaveBeenCalledTimes(1);
+});
+it('unblocks an ambiguous attempt only after a trusted operator records actual delivery', async () => {
+  const f = await fixture(); f.cfg.notifications.slack.events.pr_merged.enabled = false;
+  f.send.mockRejectedValueOnce(new Error('Timeout after Slack accepted'));
+  await f.deliver();
+  const deliveryId = hash({ repository: f.gh.repository.toLowerCase(), event: 'issue_created', number: 2, channel });
+  await f.gh.writeEvent(1, { version: 1, key: `notification:${deliveryId}`, at: clock.toISOString(), correlationId: 'recovery',
+    data: { type: 'notification_sent', deliveryId, channel, timestamp: '1.23' } });
+  expect(await f.deliver()).toEqual([]); expect(f.send).toHaveBeenCalledTimes(1);
+});
+it('blocks retries if persistence of a definite rejection fails', async () => {
+  const f = await fixture(); f.cfg.notifications.slack.events.pr_merged.enabled = false;
+  f.send.mockRejectedValueOnce(new NotificationRejected('Rejected'));
+  const write = f.gh.writeEvent.bind(f.gh);
+  f.gh.writeEvent = async (...args) => { if (args[1].data.type === 'notification_rejected') throw new Error('Failed'); await write(...args); };
+  expect((await f.deliver())[0]).toContain('rejection receipt failed');
+  expect((await f.deliver())[0]).toContain('previous delivery unconfirmed'); expect(f.send).toHaveBeenCalledTimes(1);
 });
 it('notification settings preserve existing policy approvals and execution identities', () => {
   const cfg = config(); const before = policyVersion(cfg);
@@ -120,7 +149,9 @@ it.each([429, 500, 'rejected', 'invalid', 'transport'])('does not acknowledge or
     if (failure === 'transport') throw new Error('private token');
     return new Response(JSON.stringify(failure === 'invalid' ? { ok: true } : { ok: false, error: 'private token' }), { status: typeof failure === 'number' ? failure : 200 });
   });
-  await expect(new SlackSink('fixture-token', fetcher).send(channel, notice)).rejects.toThrow('Slack delivery failed; check');
+  const send = new SlackSink('fixture-token', fetcher).send(channel, notice);
+  if (failure === 429 || failure === 'rejected') await expect(send).rejects.toBeInstanceOf(NotificationRejected);
+  else await expect(send).rejects.toThrow('Slack delivery failed; check');
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it('does not make a request without a token', async () => {

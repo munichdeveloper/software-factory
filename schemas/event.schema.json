@@ -509,6 +509,42 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "notification_attempt"
+            },
+            "deliveryId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "type",
+            "deliveryId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "notification_rejected"
+            },
+            "deliveryId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "type",
+            "deliveryId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "merge_review"
             },
             "head": {

@@ -67,22 +67,37 @@ or successful message delivery, and requires no additional scopes.
 
 ## Delivery and recovery
 
-Confirmed sends store a trusted `notification_sent` journal receipt on the parent
-Issue. Repeated runs skip the same repository/event/object/channel delivery, even
+Notification jobs need both `issues: write` and `pull-requests: write`: adopted
+PRs keep their receipts directly on the PR. With only PR read permission, GitHub
+can reject PR comments with HTTP 403 despite issue write permission. Install the
+updated wrapper as well as the Action pin.
+
+Before contacting Slack, SF persists a trusted `notification_attempt`. If that
+write fails, no Slack request is made. Confirmed sends store a trusted
+`notification_sent` journal receipt on the source Issue or adopted PR.
+Repeated runs skip the same repository/event/object/channel delivery, even
 when decision audit is disabled. Changing a channel deliberately creates a new
 delivery destination; use `since` to prevent unwanted historical delivery.
 
 Slack failures are reported without provider bodies or credentials. They do not
-undo or repeat successful repository actions. No receipt is written for a failed
-or unconfirmed send; later runs retry it. Requests have a 10-second timeout and
+undo or repeat successful repository actions. A definite Slack rejection (`ok:false`
+or HTTP 429) records `notification_rejected`, allowing a later retry. Requests have a 10-second timeout and
 are paced at least 1.1 seconds apart, with at most `maxPerRun` attempts; remaining
 events are processed on later runs. There is no immediate transport retry after
 an ambiguous timeout or HTTP error. Advisory, dry-run, global disable, and the
 notification kill switch never send or write notification receipts.
 
-Delivery is **at least once**, not a cross-service transaction: if Slack accepts a
-message and the response or GitHub receipt write is lost, a later retry can duplicate
-that message. Ordinary repeated manager runs with persisted receipts do not spam.
+Ambiguous timeouts, malformed responses and failed success-receipt writes leave
+the attempt unresolved. Later runs report it and **do not resend automatically**.
+This favors avoiding duplicates over automatic recovery of potentially lost
+notifications; it is not an exactly-once cross-service transaction. All notification
+invocations must share the wrapper's concurrency group (local runs require exclusive
+operator access). To reconcile, an operator inspects Slack and records a trusted
+`notification_sent` with the actual channel/timestamp when delivery is confirmed;
+only after proving non-delivery may an operator record `notification_rejected` to
+allow retry. Never blindly clear an unresolved attempt. Error reports distinguish
+journal-write failure, definite rejection, ambiguous delivery and receipt-write
+failure, exposing only safe HTTP status codes rather than provider bodies/secrets.
 
 Slack API references: https://docs.slack.dev/reference/methods/chat.postMessage/
 and https://docs.slack.dev/apis/web-api/rate-limits/.
