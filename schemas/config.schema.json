@@ -430,6 +430,161 @@
       },
       "additionalProperties": false
     },
+    "deploy": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "provider": {
+          "default": "docker-ssh",
+          "type": "string",
+          "const": "docker-ssh"
+        },
+        "trigger": {
+          "default": "checks",
+          "type": "string",
+          "enum": [
+            "checks",
+            "push"
+          ]
+        },
+        "workflows": {
+          "default": [],
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "environment": {
+          "default": "production",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9 ._-]{1,100}$"
+        },
+        "host": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$|^\\[?[0-9a-fA-F:.]+\\]?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "port": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "user": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "default": "/opt/app",
+          "type": "string",
+          "pattern": "^\\/(?:[A-Za-z0-9._-]+\\/)*[A-Za-z0-9._-]+$"
+        },
+        "composeFile": {
+          "default": "compose.yaml",
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9._-]+\\/)*[A-Za-z0-9._-]+\\.ya?ml$"
+        },
+        "project": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "envFile": {
+          "default": ".env",
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(?:\\/)?(?:[A-Za-z0-9._-]+\\/)*[A-Za-z0-9._-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "healthcheck": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "url": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uri"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 180,
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 900
+            }
+          },
+          "additionalProperties": false
+        },
+        "rollback": {
+          "default": true,
+          "type": "boolean"
+        },
+        "keepReleases": {
+          "default": 5,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "timeoutMinutes": {
+          "default": 30,
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 60
+        },
+        "githubDeployment": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "notifications": {
       "default": {},
       "type": "object",

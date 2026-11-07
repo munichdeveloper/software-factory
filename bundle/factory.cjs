@@ -1144,16 +1144,16 @@ var require_stringifyString = __commonJS({
     function lineLengthOverLimit(str, lineWidth, indentLength) {
       if (!lineWidth || lineWidth < 0)
         return false;
-      const limit = lineWidth - indentLength;
+      const limit2 = lineWidth - indentLength;
       const strLen = str.length;
-      if (strLen <= limit)
+      if (strLen <= limit2)
         return false;
       for (let i = 0, start = 0; i < strLen; ++i) {
         if (str[i] === "\n") {
-          if (i - start > limit)
+          if (i - start > limit2)
             return true;
           start = i + 1;
-          if (strLen - start <= limit)
+          if (strLen - start <= limit2)
             return false;
         }
       }
@@ -9520,14 +9520,14 @@ var require_resolve = __commonJS({
       "enum",
       "const"
     ]);
-    function inlineRef(schema, limit = true) {
+    function inlineRef(schema, limit2 = true) {
       if (typeof schema == "boolean")
         return true;
-      if (limit === true)
+      if (limit2 === true)
         return !hasRef(schema);
-      if (!limit)
+      if (!limit2)
         return false;
-      return countKeys(schema) <= limit;
+      return countKeys(schema) <= limit2;
     }
     exports2.inlineRef = inlineRef;
     var REF_KEYWORDS = /* @__PURE__ */ new Set([
@@ -14844,7 +14844,7 @@ var require__ = __commonJS({
 });
 
 // src/cli.ts
-var import_promises = require("node:fs/promises");
+var import_promises3 = require("node:fs/promises");
 var import_node_crypto3 = require("node:crypto");
 var import_node_util = require("node:util");
 var import_node_url = require("node:url");
@@ -34647,6 +34647,32 @@ var configSchema = external_exports.strictObject({
     }).prefault({}),
     postMergeWorkflows: external_exports.array(external_exports.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/)).max(10).default([])
   }).prefault({}),
+  deploy: external_exports.strictObject({
+    enabled: external_exports.boolean().default(false),
+    provider: external_exports.literal("docker-ssh").default("docker-ssh"),
+    trigger: external_exports.enum(["checks", "push"]).default("checks"),
+    workflows: external_exports.array(external_exports.string().min(1).max(200)).max(10).default([]),
+    environment: external_exports.string().regex(/^[A-Za-z0-9 ._-]{1,100}$/).default("production"),
+    host: external_exports.string().regex(/^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$|^\[?[0-9a-fA-F:.]+\]?$/).nullable().default(null),
+    port: external_exports.number().int().min(1).max(65535).nullable().default(null),
+    user: external_exports.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).nullable().default(null),
+    path: external_exports.string().regex(/^\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+$/).refine((p) => !p.split("/").includes(".."), "must not contain ..").default("/opt/app"),
+    composeFile: external_exports.string().regex(/^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.ya?ml$/).refine((p) => !p.split("/").includes(".."), "must not contain ..").default("compose.yaml"),
+    project: external_exports.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/).nullable().default(null),
+    envFile: external_exports.string().regex(/^(?:\/)?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+$/).refine((p) => !p.split("/").includes(".."), "must not contain ..").nullable().default(".env"),
+    healthcheck: external_exports.strictObject({
+      url: external_exports.url({ protocol: /^https?$/ }).nullable().default(null),
+      timeoutSeconds: bounded(10, 900, 180)
+    }).prefault({}),
+    rollback: external_exports.boolean().default(true),
+    keepReleases: bounded(1, 20, 5),
+    timeoutMinutes: bounded(5, 60, 30),
+    githubDeployment: external_exports.boolean().default(false)
+  }).superRefine((deploy, context) => {
+    if (deploy.enabled && deploy.trigger === "checks" && !deploy.workflows.length) {
+      context.addIssue({ code: "custom", path: ["workflows"], message: "trigger checks requires at least one workflow name" });
+    }
+  }).prefault({}),
   notifications: external_exports.strictObject({ slack: external_exports.strictObject({
     enabled: external_exports.boolean().default(false),
     channel: slackChannel.nullable().default(null),
@@ -40738,6 +40764,389 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
   }
 };
 
+// src/deploy/github.ts
+var GitHubDeployPort = class {
+  api;
+  target;
+  constructor(repository, token, fetcher = fetch) {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error("Repository must be owner/name");
+    if (!token) throw new Error("GITHUB_TOKEN is required");
+    const [owner, repo] = repository.split("/");
+    this.target = { owner, repo };
+    this.api = new Octokit2({ auth: token, request: { timeout: 3e4, fetch: fetcher }, log: { debug() {
+    }, info() {
+    }, warn() {
+    }, error() {
+    } } });
+  }
+  async defaultBranch() {
+    const { data: repo } = await this.api.repos.get(this.target);
+    const { data: ref } = await this.api.git.getRef({ ...this.target, ref: `heads/${repo.default_branch}` });
+    return { name: repo.default_branch, sha: ref.object.sha };
+  }
+  async workflowRuns(sha2) {
+    const rows = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: sha2, per_page: 100 });
+    return rows.map((r) => ({ name: r.name ?? "", event: r.event, status: r.status ?? "unknown", conclusion: r.conclusion, createdAt: r.created_at }));
+  }
+  async createDeployment(sha2, environment, description) {
+    const { data } = await this.api.repos.createDeployment({
+      ...this.target,
+      ref: sha2,
+      environment,
+      description,
+      auto_merge: false,
+      required_contexts: [],
+      production_environment: environment === "production"
+    });
+    if (!("id" in data)) throw new Error("Deployment record was not created");
+    return data.id;
+  }
+  async setDeploymentStatus(id, state, description, logUrl) {
+    await this.api.repos.createDeploymentStatus({
+      ...this.target,
+      deployment_id: id,
+      state,
+      description: description.slice(0, 140),
+      ...logUrl ? { log_url: logUrl } : {},
+      auto_inactive: state === "success"
+    });
+  }
+};
+
+// src/deploy/index.ts
+var import_node_child_process3 = require("node:child_process");
+var import_promises2 = require("node:fs/promises");
+var import_node_stream = require("node:stream");
+
+// src/deploy/remote.ts
+function shellQuote(value) {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+function bashCommand(script, args) {
+  return ["bash", "-c", script, "sf-deploy", ...args].map(shellQuote).join(" ");
+}
+var uploadScript = `set -euo pipefail
+root=$1 sha=$2
+release="$root/releases/$sha"
+mkdir -p "$root/releases"
+rm -rf -- "$release.upload"
+mkdir -p "$release.upload"
+tar -x -C "$release.upload"
+rm -rf -- "$release"
+mv -- "$release.upload" "$release"
+echo "SF_DEPLOY_UPLOADED=$sha"
+`;
+var activateScript = `set -euo pipefail
+root=$1 sha=$2 project=$3 compose_file=$4 env_file=$5 keep=$6 health_url=$7 health_timeout=$8 rollback=$9
+release="$root/releases/$sha"
+fail() { echo "SF_DEPLOY_ERROR=$1"; exit 4; }
+command -v docker >/dev/null || fail docker-missing
+docker compose version >/dev/null 2>&1 || fail compose-missing
+if command -v flock >/dev/null; then
+  exec 9>"$root/.sf-deploy.lock"
+  flock -w 600 9 || fail lock-timeout
+fi
+[ -d "$release" ] || fail release-missing
+[ -f "$release/$compose_file" ] || fail compose-file-missing
+if [ -n "$env_file" ]; then
+  case "$env_file" in /*) env_path=$env_file ;; *) env_path="$root/$env_file" ;; esac
+  [ -f "$env_path" ] || fail env-file-missing
+  ln -sfn "$env_path" "$release/.env"
+fi
+previous=""
+if [ -L "$root/current" ]; then previous=$(readlink "$root/current"); fi
+echo "SF_DEPLOY_PREVIOUS=$(basename "\${previous:-none}")"
+compose() { local dir=$1; shift; docker compose --project-name "$project" --project-directory "$dir" --file "$dir/$compose_file" "$@"; }
+healthy() {
+  [ -z "$health_url" ] && return 0
+  local deadline=$((SECONDS + health_timeout))
+  while (( SECONDS < deadline )); do
+    if command -v curl >/dev/null; then
+      curl -fsS -o /dev/null --max-time 10 "$health_url" && return 0
+    elif command -v wget >/dev/null; then
+      wget -q -O /dev/null -T 10 "$health_url" && return 0
+    else
+      echo "SF_DEPLOY_ERROR=http-client-missing"; return 1
+    fi
+    sleep 3
+  done
+  return 1
+}
+start() { compose "$1" up --detach --build --remove-orphans --wait --wait-timeout "$health_timeout" && healthy; }
+if start "$release"; then
+  ln -sfn "$release" "$root/current.next"
+  mv -Tf "$root/current.next" "$root/current"
+  kept=1
+  while IFS= read -r dir; do
+    dir=\${dir%/}
+    [ "$dir" = "$release" ] && continue
+    if (( kept < keep )); then kept=$((kept + 1)); else rm -rf -- "$dir"; fi
+  done < <(ls -1dt "$root"/releases/*/ 2>/dev/null)
+  docker image prune --force --filter "label=com.docker.compose.project=$project" >/dev/null 2>&1 || true
+  echo "SF_DEPLOY_RESULT=deployed"
+  exit 0
+fi
+echo "Release $sha failed to start; recent logs:" >&2
+compose "$release" logs --no-color --tail 80 >&2 || true
+if [ "$rollback" = 1 ] && [ -n "$previous" ] && [ -d "$previous" ] && [ "$previous" != "$release" ]; then
+  if start "$previous"; then echo "SF_DEPLOY_RESULT=rolled-back"; exit 3; fi
+  echo "SF_DEPLOY_RESULT=rollback-failed"; exit 2
+fi
+echo "SF_DEPLOY_RESULT=failed"
+exit 2
+`;
+function remoteValue(output2, key) {
+  return [...output2.matchAll(new RegExp(`^${key}=(.*)$`, "gm"))].at(-1)?.[1]?.trim();
+}
+
+// src/deploy/transport.ts
+var import_node_child_process2 = require("node:child_process");
+var import_promises = require("node:fs/promises");
+var import_node_os = require("node:os");
+var import_node_path2 = require("node:path");
+var limit = (text) => text.length > 2e4 ? text.slice(-2e4) : text;
+function runProcess(command, args, stdin, timeoutMs = 6e5, env) {
+  return new Promise((resolve, reject) => {
+    const child = (0, import_node_child_process2.spawn)(command, args, { stdio: ["pipe", "pipe", "pipe"], env: env ?? process.env });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout = limit(stdout + chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr = limit(stderr + chunk);
+    });
+    const timer = setTimeout(() => {
+      stderr += "\nTimed out";
+      child.kill("SIGKILL");
+    }, timeoutMs);
+    child.on("error", (error62) => {
+      clearTimeout(timer);
+      reject(error62);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
+    child.stdin.on("error", () => {
+    });
+    if (stdin) {
+      stdin.on("error", (error62) => {
+        child.stdin.destroy();
+        stderr += `
+Input failed: ${error62.message}`;
+      });
+      stdin.pipe(child.stdin);
+    } else child.stdin.end();
+  });
+}
+var SshTransport = class {
+  constructor(target) {
+    this.target = target;
+  }
+  target;
+  files;
+  prepare() {
+    this.files ??= (async () => {
+      const dir = await (0, import_promises.mkdtemp)((0, import_node_path2.join)((0, import_node_os.tmpdir)(), "sf-deploy-"));
+      await (0, import_promises.chmod)(dir, 448);
+      const key = (0, import_node_path2.join)(dir, "id"), hosts = (0, import_node_path2.join)(dir, "known_hosts");
+      await (0, import_promises.writeFile)(key, this.target.privateKey.replace(/\r\n/g, "\n").trimEnd() + "\n", { mode: 384 });
+      await (0, import_promises.writeFile)(hosts, this.target.knownHosts.replace(/\r\n/g, "\n").trimEnd() + "\n", { mode: 384 });
+      return { dir, key, hosts };
+    })();
+    return this.files;
+  }
+  async run(script, args, stdin, timeoutMs) {
+    const { key, hosts } = await this.prepare();
+    return runProcess("ssh", [
+      "-i",
+      key,
+      "-o",
+      "IdentitiesOnly=yes",
+      "-o",
+      "IdentityAgent=none",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "StrictHostKeyChecking=yes",
+      "-o",
+      `UserKnownHostsFile=${hosts}`,
+      "-o",
+      "GlobalKnownHostsFile=/dev/null",
+      "-o",
+      "ConnectTimeout=20",
+      "-o",
+      "ServerAliveInterval=15",
+      "-o",
+      "ServerAliveCountMax=8",
+      "-p",
+      String(this.target.port),
+      "-l",
+      this.target.user,
+      "--",
+      this.target.host,
+      bashCommand(script, args)
+    ], stdin, timeoutMs, { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? (0, import_node_os.tmpdir)() });
+  }
+  async close() {
+    if (this.files) await (0, import_promises.rm)((await this.files).dir, { recursive: true, force: true });
+  }
+};
+
+// src/deploy/index.ts
+var SHA = /^[a-f0-9]{40}$/;
+async function readEvent(env = process.env) {
+  let payload = {};
+  if (env.GITHUB_EVENT_PATH) {
+    try {
+      payload = JSON.parse(await (0, import_promises2.readFile)(env.GITHUB_EVENT_PATH, "utf8"));
+    } catch {
+      payload = {};
+    }
+  }
+  return { name: env.GITHUB_EVENT_NAME ?? "", ref: env.GITHUB_REF ?? "", payload };
+}
+async function planDeploy(config2, event, port) {
+  const deploy = config2.deploy;
+  if (!deploy.enabled) return { deploy: false, reason: "disabled" };
+  const branch = await port.defaultBranch();
+  let sha2;
+  let source = event.name;
+  if (event.name === "workflow_dispatch") sha2 = branch.sha;
+  else if (event.name === "push") {
+    if (deploy.trigger !== "push") return { deploy: false, reason: "waiting-for-checks" };
+    if (event.ref !== `refs/heads/${branch.name}`) return { deploy: false, reason: "not-default-branch" };
+    sha2 = String(event.payload.after ?? "");
+  } else if (event.name === "workflow_run") {
+    if (deploy.trigger !== "checks") return { deploy: false, reason: "push-trigger-configured" };
+    const run = event.payload.workflow_run ?? {};
+    if (run.event !== "push" || run.head_branch !== branch.name) return { deploy: false, reason: "not-default-branch" };
+    if (!deploy.workflows.includes(String(run.name))) return { deploy: false, reason: "unrelated-workflow" };
+    if (run.conclusion !== "success") return { deploy: false, reason: "checks-failed", sha: String(run.head_sha ?? "") };
+    sha2 = String(run.head_sha ?? "");
+    source = `workflow_run:${String(run.name)}`;
+  } else return { deploy: false, reason: "unsupported-event" };
+  if (!SHA.test(sha2)) return { deploy: false, reason: "invalid-commit" };
+  if (sha2 !== branch.sha) return { deploy: false, reason: "superseded", sha: sha2 };
+  if (deploy.trigger === "checks") {
+    const runs = await port.workflowRuns(sha2);
+    for (const name of deploy.workflows) {
+      const latest = runs.filter((r) => r.name === name && r.event === "push").sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      if (!latest || latest.status !== "completed") return { deploy: false, reason: "checks-pending", sha: sha2 };
+      if (latest.conclusion !== "success") return { deploy: false, reason: "checks-failed", sha: sha2 };
+    }
+  }
+  return { deploy: true, sha: sha2, source };
+}
+function archive(sourceDir) {
+  const child = (0, import_node_child_process3.spawn)("git", ["-C", sourceDir, "archive", "--format=tar", "HEAD"], { stdio: ["ignore", "pipe", "ignore"] });
+  const stream = new import_node_stream.PassThrough({ highWaterMark: 1 << 20 });
+  child.stdout.pipe(stream);
+  const done = new Promise((resolve) => {
+    child.on("close", (code) => resolve(code ?? 1));
+    child.on("error", () => {
+      stream.destroy();
+      resolve(1);
+    });
+  });
+  return { stream, done };
+}
+async function executeDeploy(context) {
+  const { config: config2, sha: sha2, sourceDir, transport, port, logUrl } = context;
+  const deploy = config2.deploy;
+  const log = context.log ?? (() => {
+  });
+  const head = await runProcess("git", ["-C", sourceDir, "rev-parse", "HEAD"]);
+  if (head.code !== 0 || head.stdout.trim() !== sha2) throw new Error("Deployment source does not match the planned commit");
+  let deploymentId = null;
+  const status = async (state, description) => {
+    if (deploymentId !== null) await port.setDeploymentStatus(deploymentId, state, description, logUrl).catch(() => log("Deployment status could not be recorded"));
+  };
+  if (deploy.githubDeployment) {
+    deploymentId = await port.createDeployment(sha2, deploy.environment, `Software Factory docker-ssh deploy of ${sha2.slice(0, 12)}`);
+    await status("in_progress", "Uploading release");
+  }
+  const timeoutMs = deploy.timeoutMinutes * 6e4;
+  try {
+    const tar = archive(sourceDir);
+    const upload = await transport.run(uploadScript, [deploy.path, sha2], tar.stream, timeoutMs);
+    if (await tar.done !== 0 || upload.code !== 0 || remoteValue(upload.stdout, "SF_DEPLOY_UPLOADED") !== sha2) {
+      log(upload.stderr.trim());
+      throw new Error(`Deployment upload failed (exit ${upload.code})`);
+    }
+    log(`Uploaded ${sha2} to ${deploy.path}/releases/${sha2}`);
+    const project = deploy.project ?? deploy.path.split("/").at(-1).toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+    const result = await transport.run(activateScript, [
+      deploy.path,
+      sha2,
+      project,
+      deploy.composeFile,
+      deploy.envFile ?? "",
+      String(deploy.keepReleases),
+      deploy.healthcheck.url ?? "",
+      String(deploy.healthcheck.timeoutSeconds),
+      deploy.rollback ? "1" : "0"
+    ], void 0, timeoutMs);
+    if (result.stderr.trim()) log(result.stderr.trim());
+    const previousRelease = remoteValue(result.stdout, "SF_DEPLOY_PREVIOUS");
+    const previous = previousRelease && previousRelease !== "none" ? previousRelease : null;
+    const error62 = remoteValue(result.stdout, "SF_DEPLOY_ERROR");
+    const outcome = remoteValue(result.stdout, "SF_DEPLOY_RESULT");
+    if (result.code === 0 && outcome === "deployed") {
+      await status("success", `Deployed ${sha2.slice(0, 12)}`);
+      return { outcome: "deployed", sha: sha2, previous, deploymentId, detail: "Release started and verified" };
+    }
+    const detail = error62 ? `Precondition failed: ${error62}` : outcome === "rolled-back" ? `Release failed; previous release ${previous?.slice(0, 12)} restored` : outcome === "rollback-failed" ? "Release failed and the rollback also failed" : `Release failed (exit ${result.code})`;
+    await status("failure", detail);
+    return { outcome: outcome === "rolled-back" ? "rolled-back" : "failed", sha: sha2, previous, deploymentId, detail };
+  } catch (error62) {
+    await status("error", error62 instanceof Error ? error62.message : "Deployment failed");
+    throw error62;
+  } finally {
+    await transport.close();
+  }
+}
+function deploySummary(report, decision, environment) {
+  if (!report) return `# Software Factory deploy
+
+No deployment: ${decision.deploy ? "dry run" : decision.reason}${decision.sha ? ` (${decision.sha.slice(0, 12)})` : ""}.
+`;
+  return `# Software Factory deploy
+
+| | |
+|---|---|
+| Environment | ${environment.replace(/[|<>`]/g, "")} |
+| Commit | \`${report.sha}\` |
+| Outcome | ${report.outcome} |
+| Previous release | ${report.previous ? `\`${report.previous}\`` : "\u2013"} |
+| Detail | ${report.detail.replace(/[|<>`]/g, "")} |
+`;
+}
+
+// src/deploy/target.ts
+var HOST = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$|^\[?[0-9a-fA-F:.]+\]?$/;
+var USER = /^[a-z_][a-z0-9_-]{0,31}$/;
+function resolveTarget(config2, env = process.env) {
+  const deploy = config2.deploy;
+  const host = deploy.host ?? env.DEPLOY_HOST?.trim() ?? "";
+  const user = deploy.user ?? env.DEPLOY_USER?.trim() ?? "";
+  const port = deploy.port ?? (env.DEPLOY_PORT?.trim() ? Number(env.DEPLOY_PORT.trim()) : 22);
+  const privateKey = env.DEPLOY_SSH_KEY ?? "";
+  const knownHosts = env.DEPLOY_KNOWN_HOSTS ?? "";
+  const missing = [
+    ...host ? [] : ["DEPLOY_HOST"],
+    ...user ? [] : ["DEPLOY_USER"],
+    ...privateKey.trim() ? [] : ["DEPLOY_SSH_KEY"],
+    ...knownHosts.trim() ? [] : ["DEPLOY_KNOWN_HOSTS"]
+  ];
+  if (missing.length) return { missing };
+  if (!HOST.test(host)) throw new Error("Deployment host is invalid");
+  if (!USER.test(user)) throw new Error("Deployment user is invalid");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Deployment port is invalid");
+  if (!/PRIVATE KEY-----/.test(privateKey)) throw new Error("Deployment SSH key must be an unencrypted OpenSSH/PEM private key");
+  return { host, user, port, privateKey, knownHosts };
+}
+
 // src/cli.ts
 async function main(args = process.argv.slice(2)) {
   const { values, positionals } = (0, import_node_util.parseArgs)({ args, allowPositionals: true, options: {
@@ -40747,23 +41156,25 @@ async function main(args = process.argv.slice(2)) {
     "dry-run": { type: "boolean", default: false },
     "allow-local-writes": { type: "boolean", default: false },
     issue: { type: "string" },
-    execution: { type: "string" }
+    execution: { type: "string" },
+    sha: { type: "string" },
+    source: { type: "string" }
   } });
   const command = positionals[0] ?? "manager";
   if (command === "validate") {
     if (!values.file) throw new Error("validate requires --file");
-    loadConfig(await (0, import_promises.readFile)(values.file, "utf8"));
+    loadConfig(await (0, import_promises3.readFile)(values.file, "utf8"));
     console.log("Configuration valid");
     return;
   }
-  if (!["manager", "merge", "notify", "check-slack", "worker", "bootstrap", "prepare-coding", "publish-coding"].includes(command)) throw new Error("Supported commands: manager, merge, notify, check-slack, worker, bootstrap, validate, prepare-coding, publish-coding");
+  if (!["manager", "merge", "notify", "check-slack", "worker", "bootstrap", "prepare-coding", "publish-coding", "deploy-plan", "deploy"].includes(command)) throw new Error("Supported commands: manager, merge, notify, check-slack, worker, bootstrap, validate, prepare-coding, publish-coding, deploy-plan, deploy");
   const repository = values.repository ?? process.env.GITHUB_REPOSITORY ?? "";
   const github = new GitHubClient(repository, process.env.GITHUB_TOKEN ?? "");
   let config2 = loadConfig(await github.readConfig(values["config-path"]));
   if (values["dry-run"]) config2 = configSchema.parse({ ...config2, execution: { ...config2.execution, dryRun: true } });
   if (!config2.factory.enabled) {
     console.log(JSON.stringify({ outcome: "disabled" }));
-    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises.appendFile)(process.env.GITHUB_STEP_SUMMARY, "# Software Factory\n\nGlobally disabled. No repository changes.\n");
+    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, "# Software Factory\n\nGlobally disabled. No repository changes.\n");
     return;
   }
   if (process.env.GITHUB_ACTIONS !== "true" && !values["allow-local-writes"] && !config2.execution.dryRun && config2.autonomy.profile !== "advisory") {
@@ -40773,9 +41184,50 @@ async function main(args = process.argv.slice(2)) {
   const timer = setTimeout(() => {
     console.error(JSON.stringify({ correlationId, error: "Hard execution time limit reached; next run will recover durable state" }));
     process.exit(1);
-  }, (command === "worker" ? config2.execution.workerTimeoutMinutes : config2.manager.timeoutMinutes) * 6e4);
+  }, (command === "worker" ? config2.execution.workerTimeoutMinutes : command === "deploy" ? config2.deploy.timeoutMinutes * 2 + 2 : config2.manager.timeoutMinutes) * 6e4);
   timer.unref();
   try {
+    if (command === "deploy-plan" || command === "deploy") {
+      const port = new GitHubDeployPort(repository, process.env.GITHUB_TOKEN ?? "");
+      const decision = await planDeploy(config2, await readEvent(), port);
+      const mutationFree = config2.execution.dryRun || config2.autonomy.profile === "advisory";
+      const target = decision.deploy ? resolveTarget(config2) : null;
+      const writeSummary = async (text) => {
+        if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, text);
+      };
+      if (command === "deploy-plan") {
+        let reason = decision.deploy ? mutationFree ? "mutation-free" : null : decision.reason;
+        if (!reason && target && "missing" in target) {
+          reason = "not-configured";
+          console.log(`::warning title=Software Factory deploy::Deployment skipped: missing ${target.missing.join(", ")} (Actions secrets or deploy.* configuration).`);
+        }
+        const ready = decision.deploy && !reason;
+        if (process.env.GITHUB_OUTPUT) await (0, import_promises3.appendFile)(process.env.GITHUB_OUTPUT, `deploy=${ready}
+sha=${decision.deploy ? decision.sha : ""}
+`);
+        if (!ready) await writeSummary(deploySummary(null, decision.deploy ? { deploy: false, reason, sha: decision.sha } : decision, config2.deploy.environment));
+        console.log(JSON.stringify({ correlationId, deploy: ready, reason, sha: decision.sha ?? null }));
+        return;
+      }
+      if (!decision.deploy || decision.sha !== values.sha || mutationFree || !target || "missing" in target) {
+        console.log(JSON.stringify({ correlationId, outcome: "skipped", reason: decision.deploy ? "stale-or-unconfigured" : decision.reason }));
+        return;
+      }
+      const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}` : void 0;
+      const report2 = await executeDeploy({
+        config: config2,
+        sha: decision.sha,
+        sourceDir: values.source ?? ".",
+        transport: new SshTransport(target),
+        port,
+        logUrl: runUrl,
+        log: (line) => console.log(line)
+      });
+      await writeSummary(deploySummary(report2, decision, config2.deploy.environment));
+      console.log(JSON.stringify({ correlationId, ...report2 }));
+      if (report2.outcome !== "deployed") process.exitCode = 1;
+      return;
+    }
     if (command === "merge") {
       if (!config2.merge.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") {
         console.log(JSON.stringify({ outcome: "merge-disabled" }));
@@ -40828,7 +41280,7 @@ async function main(args = process.argv.slice(2)) {
       if (!/^[1-9]\d*$/.test(issue2) || !/^[a-f0-9]{32}$/.test(id)) throw new Error("Invalid worker issue or execution ID");
       if (command === "prepare-coding") {
         const prepared = await prepareCoding(github, config2, new CodingRepository(repository, process.env.GITHUB_TOKEN ?? ""), Number(issue2), id, correlationId);
-        if (process.env.GITHUB_OUTPUT) await (0, import_promises.appendFile)(process.env.GITHUB_OUTPUT, prepared ? `ready=true
+        if (process.env.GITHUB_OUTPUT) await (0, import_promises3.appendFile)(process.env.GITHUB_OUTPUT, prepared ? `ready=true
 request=${JSON.stringify(prepared.request)}
 base-sha=${prepared.base.sha}
 base-branch=${prepared.base.branch}
@@ -40839,7 +41291,7 @@ base-branch=${prepared.base.branch}
       if (command === "publish-coding") {
         let artifact = null;
         if (process.env.SF_ARTIFACT) {
-          const source = await (0, import_promises.readFile)(process.env.SF_ARTIFACT, "utf8").catch(() => "null");
+          const source = await (0, import_promises3.readFile)(process.env.SF_ARTIFACT, "utf8").catch(() => "null");
           if (Buffer.byteLength(source) <= 7e6) {
             try {
               artifact = JSON.parse(source);
@@ -40877,7 +41329,7 @@ base-branch=${prepared.base.branch}
       correlationId,
       notifications: new SlackSink(process.env.SLACK_BOT_TOKEN ?? "")
     }).run();
-    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));
+    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));
     console.log(JSON.stringify({
       correlationId,
       outcome: report.outcome,
@@ -40893,11 +41345,11 @@ base-branch=${prepared.base.branch}
 }
 async function handleError(error62) {
   const message = error62 instanceof Error ? error62.message : "";
-  const safe2 = /^(Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message) ? message : "Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.";
+  const safe2 = /^(Deployment|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message) ? message : "Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.";
   const httpStatus2 = error62 instanceof Error && "status" in error62 && typeof error62.status === "number" ? error62.status : null;
   const category = error62 instanceof Error ? error62.name.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UnknownError";
   console.error(JSON.stringify({ error: safe2, category, httpStatus: httpStatus2 }));
-  if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises.appendFile)(process.env.GITHUB_STEP_SUMMARY, `# Software Factory failed
+  if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, `# Software Factory failed
 
 ${safe2.replace(/[<>`]/g, "")}
 

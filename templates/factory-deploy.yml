@@ -1,0 +1,46 @@
+name: Software Factory Deploy
+run-name: Factory deploy ${{ github.event.workflow_run.head_sha || github.sha }}
+on:
+  # sf:trigger-checks:start deploy.trigger "checks" (default): after these CI workflows succeeded on the default branch.
+  workflow_run:
+    workflows: [DEPLOY_AFTER_WORKFLOWS]
+    types: [completed]
+  # sf:trigger-checks:end
+  # sf:trigger-push:start deploy.trigger "push": directly after every push to the default branch.
+  push:
+  # sf:trigger-push:end
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        type: boolean
+        default: false
+permissions: {}
+concurrency:
+  # Deployments run strictly one after another; only the newest queued run is kept.
+  group: ${{ github.repository }}-software-factory-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    # Protection rules and environment secrets of this GitHub environment apply to every deployment.
+    environment: DEPLOY_ENVIRONMENT
+    permissions:
+      contents: read
+      deployments: write
+      actions: read
+    steps:
+      - uses: munichdeveloper/software-factory@FACTORY_COMMIT_SHA
+        with:
+          mode: deploy
+          dry-run: ${{ inputs.dry_run || false }}
+          deploy-ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          deploy-known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          deploy-host: ${{ secrets.DEPLOY_HOST || vars.DEPLOY_HOST }}
+          deploy-user: ${{ secrets.DEPLOY_USER || vars.DEPLOY_USER }}
+          deploy-port: ${{ vars.DEPLOY_PORT }}

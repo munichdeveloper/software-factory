@@ -2,7 +2,7 @@ name: Software Factory
 description: Plan, authorize, dispatch and reconcile repository tasks using a separate Harness runtime
 inputs:
   mode:
-    description: manager, merge, notify, check-slack, bootstrap or worker
+    description: manager, merge, notify, check-slack, bootstrap, worker or deploy
     default: manager
   config-path:
     description: Default-branch SF configuration path
@@ -28,6 +28,21 @@ inputs:
   slack-bot-token:
     description: Optional Slack bot connection; used only by the trusted manager
     default: ''
+  deploy-ssh-key:
+    description: Deploy mode only. Private SSH key of the deployment user
+    default: ''
+  deploy-known-hosts:
+    description: Deploy mode only. Pinned known_hosts line(s) of the target host
+    default: ''
+  deploy-host:
+    description: Deploy mode only. Target host when deploy.host is not configured
+    default: ''
+  deploy-user:
+    description: Deploy mode only. SSH user when deploy.user is not configured
+    default: ''
+  deploy-port:
+    description: Deploy mode only. SSH port when deploy.port is not configured
+    default: ''
 runs:
   using: composite
   steps:
@@ -38,7 +53,7 @@ runs:
         REF: ${{ inputs.harness-ref }}
         DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       run: |
-        [[ "$MODE" == manager || "$MODE" == merge || "$MODE" == notify || "$MODE" == check-slack || "$MODE" == bootstrap || "$MODE" == worker ]]
+        [[ "$MODE" == manager || "$MODE" == merge || "$MODE" == notify || "$MODE" == check-slack || "$MODE" == bootstrap || "$MODE" == worker || "$MODE" == deploy ]]
         [[ "$REF" =~ ^[a-f0-9]{40}$ ]]
         [[ "$GITHUB_REF_NAME" == "$DEFAULT_BRANCH" ]]
     - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -58,6 +73,7 @@ runs:
         npm ci --ignore-scripts
         npm run build
     - name: Run Software Factory
+      if: inputs.mode != 'deploy'
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
@@ -73,3 +89,40 @@ runs:
         args=()
         if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
         node "$GITHUB_ACTION_PATH/bundle/factory.cjs" "$MODE" --config-path "$CONFIG" "${args[@]}"
+    - name: Plan deployment
+      id: deploy-plan
+      if: inputs.mode == 'deploy'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        CONFIG: ${{ inputs.config-path }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        DEPLOY_SSH_KEY: ${{ inputs.deploy-ssh-key }}
+        DEPLOY_KNOWN_HOSTS: ${{ inputs.deploy-known-hosts }}
+        DEPLOY_HOST: ${{ inputs.deploy-host }}
+        DEPLOY_USER: ${{ inputs.deploy-user }}
+        DEPLOY_PORT: ${{ inputs.deploy-port }}
+      run: |
+        args=()
+        if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
+        node "$GITHUB_ACTION_PATH/bundle/factory.cjs" deploy-plan --config-path "$CONFIG" "${args[@]}"
+    - if: inputs.mode == 'deploy' && steps.deploy-plan.outputs.deploy == 'true'
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: ${{ steps.deploy-plan.outputs.sha }}
+        path: .runtime/deploy-source
+        token: ${{ inputs.github-token }}
+        persist-credentials: false
+    - name: Deploy
+      if: inputs.mode == 'deploy' && steps.deploy-plan.outputs.deploy == 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        CONFIG: ${{ inputs.config-path }}
+        SHA: ${{ steps.deploy-plan.outputs.sha }}
+        DEPLOY_SSH_KEY: ${{ inputs.deploy-ssh-key }}
+        DEPLOY_KNOWN_HOSTS: ${{ inputs.deploy-known-hosts }}
+        DEPLOY_HOST: ${{ inputs.deploy-host }}
+        DEPLOY_USER: ${{ inputs.deploy-user }}
+        DEPLOY_PORT: ${{ inputs.deploy-port }}
+      run: node "$GITHUB_ACTION_PATH/bundle/factory.cjs" deploy --config-path "$CONFIG" --sha "$SHA" --source "$GITHUB_WORKSPACE/.runtime/deploy-source"

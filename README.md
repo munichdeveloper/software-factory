@@ -53,6 +53,15 @@ drift. Optional [AI-reviewed PR merging](docs/merging.md) is disabled by default
 It requires a real code-review decision and native GitHub gates; green CI alone
 does not authorize a merge. Existing PRs can be explicitly enrolled by label.
 
+## Deployment after pushes (v0.5.0)
+
+Optional [docker-ssh deployment](docs/deploy.md) ships the default branch to a
+Docker host such as a Hostinger VPS: after the configured CI workflows succeeded
+(or directly after the push), SF uploads the exact commit over SSH with a pinned
+host key, runs `docker compose up --build --wait`, verifies health, switches the
+release and rolls back on failure. Disabled by default; install the wrapper with
+`--deploy` (optionally `--no-manager` for deployment only).
+
 ## Real Codex coding worker (v0.2.0)
 
 Install with `npx tsx scripts/install.ts --directory TARGET --ref FULL_FACTORY_COMMIT_SHA --coding`.

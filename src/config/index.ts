@@ -55,6 +55,32 @@ export const configSchema = z.strictObject({
     }).prefault({}),
     postMergeWorkflows: z.array(z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/)).max(10).default([])
   }).prefault({}),
+  deploy: z.strictObject({
+    enabled: z.boolean().default(false),
+    provider: z.literal('docker-ssh').default('docker-ssh'),
+    trigger: z.enum(['checks', 'push']).default('checks'),
+    workflows: z.array(z.string().min(1).max(200)).max(10).default([]),
+    environment: z.string().regex(/^[A-Za-z0-9 ._-]{1,100}$/).default('production'),
+    host: z.string().regex(/^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$|^\[?[0-9a-fA-F:.]+\]?$/).nullable().default(null),
+    port: z.number().int().min(1).max(65535).nullable().default(null),
+    user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).nullable().default(null),
+    path: z.string().regex(/^\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+$/).refine(p => !p.split('/').includes('..'), 'must not contain ..').default('/opt/app'),
+    composeFile: z.string().regex(/^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.ya?ml$/).refine(p => !p.split('/').includes('..'), 'must not contain ..').default('compose.yaml'),
+    project: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/).nullable().default(null),
+    envFile: z.string().regex(/^(?:\/)?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+$/).refine(p => !p.split('/').includes('..'), 'must not contain ..').nullable().default('.env'),
+    healthcheck: z.strictObject({
+      url: z.url({ protocol: /^https?$/ }).nullable().default(null),
+      timeoutSeconds: bounded(10, 900, 180)
+    }).prefault({}),
+    rollback: z.boolean().default(true),
+    keepReleases: bounded(1, 20, 5),
+    timeoutMinutes: bounded(5, 60, 30),
+    githubDeployment: z.boolean().default(false)
+  }).superRefine((deploy, context) => {
+    if (deploy.enabled && deploy.trigger === 'checks' && !deploy.workflows.length) {
+      context.addIssue({ code: 'custom', path: ['workflows'], message: 'trigger checks requires at least one workflow name' });
+    }
+  }).prefault({}),
   notifications: z.strictObject({ slack: z.strictObject({
     enabled: z.boolean().default(false), channel: slackChannel.nullable().default(null),
     maxPerRun: bounded(1, 100, 20),
