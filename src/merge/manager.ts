@@ -28,8 +28,10 @@ export class MergeManager {
   private events(f: MergeFacts) { return f.comments.flatMap(c => { const e = decodeEvent(c, this.config.manager.trustedActors); return e ? [e] : []; }); }
   private async event(f: MergeFacts, key: string, data: HarnessEvent['data'], text = '') {
     if (this.events(f).some(e => e.key === key)) return;
-    await this.api.comment(f.number, encodeEvent({ version: 1, key, at: new Date().toISOString(), correlationId: this.correlationId, data }) +
-      (text ? `\n\n### Software Factory – Mergeprüfung\n\n${safe(text)}` : ''));
+    const journal = encodeEvent({ version: 1, key, at: new Date().toISOString(), correlationId: this.correlationId, data });
+    const summary = text ? Buffer.from(`\n\n### Software Factory – Mergeprüfung\n\n${safe(text)}`) : Buffer.alloc(0);
+    // Keep the full durable decision; bound the extra human-readable presentation.
+    await this.api.comment(f.number, journal + summary.subarray(0, Math.max(0, 60000 - Buffer.byteLength(journal) - 4)).toString('utf8'));
   }
   private async explain(f: MergeFacts, reason: string) {
     await this.event(f, `merge-status:${hash({ head: f.head, base: f.base, reason })}`,

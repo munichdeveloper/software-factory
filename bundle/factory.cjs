@@ -40489,11 +40489,13 @@ var MergeManager = class {
   }
   async event(f, key, data, text = "") {
     if (this.events(f).some((e) => e.key === key)) return;
-    await this.api.comment(f.number, encodeEvent({ version: 1, key, at: (/* @__PURE__ */ new Date()).toISOString(), correlationId: this.correlationId, data }) + (text ? `
+    const journal = encodeEvent({ version: 1, key, at: (/* @__PURE__ */ new Date()).toISOString(), correlationId: this.correlationId, data });
+    const summary2 = text ? Buffer.from(`
 
 ### Software Factory \u2013 Mergepr\xFCfung
 
-${safe(text)}` : ""));
+${safe(text)}`) : Buffer.alloc(0);
+    await this.api.comment(f.number, journal + summary2.subarray(0, Math.max(0, 6e4 - Buffer.byteLength(journal) - 4)).toString("utf8"));
   }
   async explain(f, reason) {
     await this.event(
