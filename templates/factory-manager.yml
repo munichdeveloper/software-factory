@@ -47,7 +47,7 @@ jobs:
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
   merge:
     needs: factory
-    if: success() && inputs.mode != 'worker' && inputs.mode != 'check-slack' && inputs.mode != 'notify' && inputs.mode != 'bootstrap'
+    if: ${{ !cancelled() && inputs.mode != 'worker' && inputs.mode != 'check-slack' && inputs.mode != 'notify' && inputs.mode != 'bootstrap' && (needs.factory.result == 'success' || (needs.factory.result == 'failure' && (github.event_name == 'push' || github.event_name == 'workflow_run' || inputs.mode == 'merge'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
