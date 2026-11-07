@@ -14,6 +14,7 @@ export interface MergeFacts {
   strictChecks: boolean; nativeRequiredChecks: string[]; comments: Comment[];
 }
 export interface ReviewInput { facts: MergeFacts; trustedScope: string; trustedInstructions: string;
+  sourceTask?: { number: number; title: string; body: string };
   changes: { path: string; status: string; patch: string; content: string | null }[] }
 export interface MergeReviewer { review(input: ReviewInput): Promise<MergeReview> }
 export interface MergePort {
@@ -25,5 +26,6 @@ export interface MergePort {
   update(number: number, head: string): Promise<string>;
   merge(number: number, head: string, method: 'squash' | 'merge' | 'rebase'): Promise<string>;
   dispatch(workflow: string, ref: string): Promise<void>;
+  workflowAvailable(workflow: string): Promise<boolean>;
   canApprove(login: string): Promise<boolean>;
 }

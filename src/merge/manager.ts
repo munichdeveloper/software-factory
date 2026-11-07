@@ -1,12 +1,14 @@
 import type { Config } from '../config/index.js';
 import type { Snapshot } from '../types.js';
 import { decodeEvent, encodeEvent, type HarnessEvent } from '../state/events.js';
-import { hash } from '../state/identity.js';
+import { hash, taskVersion } from '../state/identity.js';
+import type { GitHubPort } from '../github/port.js';
 import { permission, policyVersion } from '../policies/engine.js';
 import { mergeReviewSchema, type MergeFacts, type MergePort, type MergeReviewer } from './contract.js';
 
 const safe = (s: string) => s.replaceAll('@', '@\u200b').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const factsKey = (f: MergeFacts) => ({ ...f, comments: [], labels: [...f.labels].sort(),
+  nativeRequiredChecks: [...f.nativeRequiredChecks].sort(),
   checks: [...f.checks].sort((a, b) => `${a.name}:${a.state}`.localeCompare(`${b.name}:${b.state}`)) });
 export function mergeGate(f: MergeFacts, config: Config): string | null {
   if (f.state !== 'open' || f.draft || !f.sameRepository) return 'PR ist geschlossen, ein Entwurf oder stammt aus einem anderen Repository/Zielbranch.';
@@ -24,7 +26,8 @@ export function mergeGate(f: MergeFacts, config: Config): string | null {
 }
 
 export class MergeManager {
-  constructor(private api: MergePort, private config: Config, private reviewer: MergeReviewer, private correlationId: string) {}
+  constructor(private api: MergePort, private config: Config, private reviewer: MergeReviewer, private correlationId: string,
+    private tasks?: Pick<GitHubPort, 'getIssue'>) {}
   private events(f: MergeFacts) { return f.comments.flatMap(c => { const e = decodeEvent(c, this.config.manager.trustedActors); return e ? [e] : []; }); }
   private async event(f: MergeFacts, key: string, data: HarnessEvent['data'], text = '') {
     if (this.events(f).some(e => e.key === key)) return;
@@ -35,7 +38,7 @@ export class MergeManager {
   }
   private async explain(f: MergeFacts, reason: string) {
     await this.event(f, `merge-status:${hash({ head: f.head, base: f.base, reason })}`,
-      { type: 'merge_status', head: f.head, base: f.base, reason }, `**Noch kein Merge.** ${reason}\n\nGeprüfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
+      { type: 'merge_status', head: f.head, base: f.base, reason }, `${f.mergeSha ? '**Merge bestätigt – Nacharbeit offen.**' : '**Noch kein Merge.**'} ${reason}\n\nGeprüfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
   }
   private owned(f: MergeFacts, snapshot: Snapshot) {
     return snapshot.issues.find(i => (snapshot.comments.get(i.number) ?? []).some(c => {
@@ -52,6 +55,11 @@ export class MergeManager {
     await this.api.dispatch(workflow, ref);
     await this.event(f, key, { type: 'workflow_dispatch', workflow, ref, sha });
   }
+  private async postMerge(f: MergeFacts, sha: string) {
+    for (const workflow of new Set(this.config.merge.postMergeWorkflows)) {
+      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha);
+    }
+  }
   async run(snapshot: Snapshot) {
     const report: { reviewed: number; updated: number; merged: number; errors: string[] } = { reviewed: 0, updated: 0, merged: 0, errors: [] };
     if (!this.config.factory.enabled || !this.config.merge.enabled || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return report;
@@ -66,7 +74,7 @@ export class MergeManager {
         if (f.state === 'closed') {
           if (f.mergeSha && f.mergeActorType === 'Bot' && this.events(f).some(e => e.data.type === 'merge_intent' && e.data.head === f!.head)) {
             await this.event(f, `merge-completed:${f.head}`, { type: 'merge_completed', prNumber: number, head: f.head, mergeSha: f.mergeSha });
-            for (const workflow of this.config.merge.postMergeWorkflows) await this.dispatch(f, workflow, f.baseBranch, f.mergeSha);
+            await this.postMerge(f, f.mergeSha);
           }
           continue;
         }
@@ -77,21 +85,37 @@ export class MergeManager {
         }
         const pendingUpdate = this.events(f).find(e => e.data.type === 'branch_update' && e.data.base === f!.base && e.data.head !== f!.head);
         if (pendingUpdate) await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
-        report.reviewed++;
-        phase = 'Vollständigen Änderungskontext laden';
-        const input = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
-        const reviewKey = hash({ ...input, facts: factsKey(f), merge: this.config.merge, policy: policyVersion(this.config) });
+        const sourceTask = owner ? { number: owner.number, title: owner.title, body: owner.body } : null;
+        // Immutable head/base IDs bind all source/context files. Mutable facts and task intent are included explicitly.
+        const reviewKey = hash({ protocol: 'sf-merge-review-v1', repository: this.api.repository.toLowerCase(), sourceTask,
+          facts: factsKey(f), merge: this.config.merge, policy: policyVersion(this.config) });
         const cached = this.events(f).find(e => e.data.type === 'merge_review' && e.data.reviewKey === reviewKey);
-        phase = 'KI-Review';
-        const review = cached?.data.type === 'merge_review' ? cached.data.review : mergeReviewSchema.parse(await this.reviewer.review(input));
+        let review;
+        if (cached?.data.type === 'merge_review') review = cached.data.review;
+        else {
+          report.reviewed++;
+          phase = 'Vollständigen Änderungskontext laden';
+          const input = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+          if (sourceTask) input.sourceTask = sourceTask;
+          if (Buffer.byteLength(JSON.stringify({ ...input, facts: factsKey(f) })) > this.config.merge.review.maxContextBytes) throw new Error('Review context exceeds limit; no truncated approval');
+          phase = 'KI-Review';
+          review = mergeReviewSchema.parse(await this.reviewer.review(input));
+        }
         await this.event(f, `merge-review:${reviewKey}`, { type: 'merge_review', head: f.head, base: f.base, reviewKey, review },
           `**KI-Entscheidung: ${review.decision}**\n\n${review.reason}\n\n${review.findings.map(x => `- ${x.severity}: ${x.path} – ${x.explanation}`).join('\n')}\n\nHead: \`${f.head}\`; Basis: \`${f.base}\`.`);
         if (review.findings.some(x => x.severity === 'blocking') || ['request_changes', 'defer'].includes(review.decision)) continue;
         const live = await this.api.facts(number);
-        if (live.head !== f.head || live.base !== f.base || !this.eligible(live, snapshot) || live.state !== 'open' || live.draft || !live.sameRepository ||
+        if (hash(factsKey(live)) !== hash(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== 'open' || live.draft || !live.sameRepository ||
           live.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) { await this.explain(live, 'PR, Head, Basis oder Freigabe hat sich während der KI-Prüfung geändert; erneute Prüfung erforderlich.'); continue; }
+        if (owner) {
+          const liveOwner = this.tasks ? await this.tasks.getIssue(owner.number) : owner;
+          if (liveOwner.state !== 'open' || liveOwner.labels.includes('harness:blocked') || !liveOwner.labels.includes('harness:managed') ||
+            taskVersion(liveOwner) !== taskVersion(owner)) {
+            await this.explain(live, 'Die zugehörige Aufgabe wurde während des Reviews geschlossen, blockiert, abgemeldet oder fachlich verändert.'); continue;
+          }
+        }
         if (permission(this.config, 'merge_pr') === 'approval') {
-          const approvalId = hash({ repository: this.api.repository, number, head: f.head, base: f.base, reviewKey });
+          const approvalId = hash({ repository: this.api.repository, number, head: f.head, base: f.base, reviewKey, review });
           let approved = false;
           for (const c of live.comments) {
             const match = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
@@ -118,10 +142,11 @@ export class MergeManager {
         await this.event(live, `merge-intent:${reviewKey}`, { type: 'merge_intent', prNumber: number, head: f.head, base: f.base, reviewKey });
         phase = 'GitHub-Merge';
         const sha = await this.api.merge(number, f.head, this.config.merge.method); report.merged++;
+        f.state = 'closed'; f.mergeSha = sha;
         await this.event(live, `merge-completed:${f.head}`, { type: 'merge_completed', prNumber: number, head: f.head, mergeSha: sha },
           `**Gemergt.** Die KI hat den geprüften Commit freigegeben; GitHub hat den Merge bestätigt: \`${sha}\`.`);
         phase = 'Workflows nach Merge';
-        for (const workflow of this.config.merge.postMergeWorkflows) await this.dispatch(live, workflow, f.baseBranch, sha);
+        await this.postMerge(live, sha);
       } catch (error) {
         const status = error instanceof Error && 'status' in error ? String(error.status) : 'unavailable';
         report.errors.push(`PR #${number}: review/update/merge not confirmed (${status}); no unreviewed merge performed`);

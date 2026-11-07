@@ -88,6 +88,10 @@ export class GitHubMergePort implements MergePort {
     return data.sha;
   }
   async dispatch(workflow: string, ref: string) { await this.api.actions.createWorkflowDispatch({ ...this.target, workflow_id: workflow, ref }); }
+  async workflowAvailable(workflow: string) {
+    try { await this.api.actions.getWorkflow({ ...this.target, workflow_id: workflow }); return true; }
+    catch (error) { if (error instanceof Error && 'status' in error && error.status === 404) return false; throw error; }
+  }
   async canApprove(login: string) {
     try { return ['admin', 'maintain', 'write'].includes((await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login })).data.permission); }
     catch { return false; }

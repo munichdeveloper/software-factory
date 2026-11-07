@@ -40387,6 +40387,15 @@ var GitHubMergePort = class {
   async dispatch(workflow, ref) {
     await this.api.actions.createWorkflowDispatch({ ...this.target, workflow_id: workflow, ref });
   }
+  async workflowAvailable(workflow) {
+    try {
+      await this.api.actions.getWorkflow({ ...this.target, workflow_id: workflow });
+      return true;
+    } catch (error62) {
+      if (error62 instanceof Error && "status" in error62 && error62.status === 404) return false;
+      throw error62;
+    }
+  }
   async canApprove(login) {
     try {
       return ["admin", "maintain", "write"].includes((await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login })).data.permission);
@@ -40434,6 +40443,7 @@ Choose request_changes for concrete blocking code problems; defer for insufficie
             requireStrictUpToDate: true
           },
           untrustedFacts: facts,
+          untrustedSourceTask: input2.sourceTask ?? null,
           untrustedChanges: input2.changes
         }),
         text: { format: { type: "json_schema", name: "merge_review", strict: true, schema: external_exports.toJSONSchema(mergeReviewSchema) } }
@@ -40454,6 +40464,7 @@ var factsKey = (f) => ({
   ...f,
   comments: [],
   labels: [...f.labels].sort(),
+  nativeRequiredChecks: [...f.nativeRequiredChecks].sort(),
   checks: [...f.checks].sort((a, b) => `${a.name}:${a.state}`.localeCompare(`${b.name}:${b.state}`))
 });
 function mergeGate(f, config2) {
@@ -40471,16 +40482,18 @@ function mergeGate(f, config2) {
   return null;
 }
 var MergeManager = class {
-  constructor(api, config2, reviewer, correlationId) {
+  constructor(api, config2, reviewer, correlationId, tasks) {
     this.api = api;
     this.config = config2;
     this.reviewer = reviewer;
     this.correlationId = correlationId;
+    this.tasks = tasks;
   }
   api;
   config;
   reviewer;
   correlationId;
+  tasks;
   events(f) {
     return f.comments.flatMap((c) => {
       const e = decodeEvent(c, this.config.manager.trustedActors);
@@ -40502,7 +40515,7 @@ ${safe(text)}`) : Buffer.alloc(0);
       f,
       `merge-status:${hash2({ head: f.head, base: f.base, reason })}`,
       { type: "merge_status", head: f.head, base: f.base, reason },
-      `**Noch kein Merge.** ${reason}
+      `${f.mergeSha ? "**Merge best\xE4tigt \u2013 Nacharbeit offen.**" : "**Noch kein Merge.**"} ${reason}
 
 Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
     );
@@ -40522,6 +40535,11 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
     await this.api.dispatch(workflow, ref);
     await this.event(f, key, { type: "workflow_dispatch", workflow, ref, sha: sha2 });
   }
+  async postMerge(f, sha2) {
+    for (const workflow of new Set(this.config.merge.postMergeWorkflows)) {
+      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha2);
+    }
+  }
   async run(snapshot) {
     const report = { reviewed: 0, updated: 0, merged: 0, errors: [] };
     if (!this.config.factory.enabled || !this.config.merge.enabled || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return report;
@@ -40536,7 +40554,7 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         if (f.state === "closed") {
           if (f.mergeSha && f.mergeActorType === "Bot" && this.events(f).some((e) => e.data.type === "merge_intent" && e.data.head === f.head)) {
             await this.event(f, `merge-completed:${f.head}`, { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: f.mergeSha });
-            for (const workflow of this.config.merge.postMergeWorkflows) await this.dispatch(f, workflow, f.baseBranch, f.mergeSha);
+            await this.postMerge(f, f.mergeSha);
           }
           continue;
         }
@@ -40551,13 +40569,27 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         }
         const pendingUpdate = this.events(f).find((e) => e.data.type === "branch_update" && e.data.base === f.base && e.data.head !== f.head);
         if (pendingUpdate) await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
-        report.reviewed++;
-        phase = "Vollst\xE4ndigen \xC4nderungskontext laden";
-        const input2 = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
-        const reviewKey = hash2({ ...input2, facts: factsKey(f), merge: this.config.merge, policy: policyVersion(this.config) });
+        const sourceTask = owner ? { number: owner.number, title: owner.title, body: owner.body } : null;
+        const reviewKey = hash2({
+          protocol: "sf-merge-review-v1",
+          repository: this.api.repository.toLowerCase(),
+          sourceTask,
+          facts: factsKey(f),
+          merge: this.config.merge,
+          policy: policyVersion(this.config)
+        });
         const cached2 = this.events(f).find((e) => e.data.type === "merge_review" && e.data.reviewKey === reviewKey);
-        phase = "KI-Review";
-        const review = cached2?.data.type === "merge_review" ? cached2.data.review : mergeReviewSchema.parse(await this.reviewer.review(input2));
+        let review;
+        if (cached2?.data.type === "merge_review") review = cached2.data.review;
+        else {
+          report.reviewed++;
+          phase = "Vollst\xE4ndigen \xC4nderungskontext laden";
+          const input2 = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+          if (sourceTask) input2.sourceTask = sourceTask;
+          if (Buffer.byteLength(JSON.stringify({ ...input2, facts: factsKey(f) })) > this.config.merge.review.maxContextBytes) throw new Error("Review context exceeds limit; no truncated approval");
+          phase = "KI-Review";
+          review = mergeReviewSchema.parse(await this.reviewer.review(input2));
+        }
         await this.event(
           f,
           `merge-review:${reviewKey}`,
@@ -40572,12 +40604,19 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         );
         if (review.findings.some((x) => x.severity === "blocking") || ["request_changes", "defer"].includes(review.decision)) continue;
         const live = await this.api.facts(number4);
-        if (live.head !== f.head || live.base !== f.base || !this.eligible(live, snapshot) || live.state !== "open" || live.draft || !live.sameRepository || live.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
+        if (hash2(factsKey(live)) !== hash2(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== "open" || live.draft || !live.sameRepository || live.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
           await this.explain(live, "PR, Head, Basis oder Freigabe hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung erforderlich.");
           continue;
         }
+        if (owner) {
+          const liveOwner = this.tasks ? await this.tasks.getIssue(owner.number) : owner;
+          if (liveOwner.state !== "open" || liveOwner.labels.includes("harness:blocked") || !liveOwner.labels.includes("harness:managed") || taskVersion(liveOwner) !== taskVersion(owner)) {
+            await this.explain(live, "Die zugeh\xF6rige Aufgabe wurde w\xE4hrend des Reviews geschlossen, blockiert, abgemeldet oder fachlich ver\xE4ndert.");
+            continue;
+          }
+        }
         if (permission(this.config, "merge_pr") === "approval") {
-          const approvalId = hash2({ repository: this.api.repository, number: number4, head: f.head, base: f.base, reviewKey });
+          const approvalId = hash2({ repository: this.api.repository, number: number4, head: f.head, base: f.base, reviewKey, review });
           let approved = false;
           for (const c of live.comments) {
             const match = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
@@ -40620,6 +40659,8 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         phase = "GitHub-Merge";
         const sha2 = await this.api.merge(number4, f.head, this.config.merge.method);
         report.merged++;
+        f.state = "closed";
+        f.mergeSha = sha2;
         await this.event(
           live,
           `merge-completed:${f.head}`,
@@ -40627,7 +40668,7 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
           `**Gemergt.** Die KI hat den gepr\xFCften Commit freigegeben; GitHub hat den Merge best\xE4tigt: \`${sha2}\`.`
         );
         phase = "Workflows nach Merge";
-        for (const workflow of this.config.merge.postMergeWorkflows) await this.dispatch(live, workflow, f.baseBranch, sha2);
+        await this.postMerge(live, sha2);
       } catch (error62) {
         const status = error62 instanceof Error && "status" in error62 ? String(error62.status) : "unavailable";
         report.errors.push(`PR #${number4}: review/update/merge not confirmed (${status}); no unreviewed merge performed`);
@@ -40695,7 +40736,8 @@ async function main(args = process.argv.slice(2)) {
         new GitHubMergePort(repository, process.env.GITHUB_TOKEN ?? "", config2.factory.scope, config2.merge.adoptLabel),
         config2,
         new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? "", config2),
-        correlationId
+        correlationId,
+        github
       ).run(await github.snapshot(config2.manager.workflow));
       console.log(JSON.stringify({ correlationId, ...report2 }));
       if (report2.errors.length) process.exitCode = 1;
