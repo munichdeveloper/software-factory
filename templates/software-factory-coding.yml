@@ -38,3 +38,19 @@ workers:
   review: false
 reporting:
   persistDecisions: true
+
+# Optional Slack bot connection is supplied through the SLACK_BOT_TOKEN Actions secret.
+notifications:
+  slack:
+    enabled: false
+    channel: null
+    maxPerRun: 20
+    since: null
+    events:
+      issue_created:
+        enabled: false
+        channel: null
+      pr_merged:
+        enabled: false
+        channel: null
+        actors: [] # Always Bot accounts only; optional narrower login allow-list.

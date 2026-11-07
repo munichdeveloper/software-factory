@@ -9,6 +9,7 @@ import { MockPlanner, OpenAIPlanner } from './llm/provider.js';
 import { summary } from './manager/report.js';
 import { executeDelegation } from './workers/execute-delegation.js';
 import { HarnessProcessClient } from './workers/harness-client.js';
+import { SlackSink, deliverNotifications } from './notifications/slack.js';
 import { CodingRepository } from './github/coding.js';
 import { prepareCoding, publishCoding } from './workers/coding.js';
 
@@ -24,7 +25,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     loadConfig(await readFile(values.file, 'utf8'));
     console.log('Configuration valid'); return;
   }
-  if (!['manager', 'worker', 'bootstrap', 'prepare-coding', 'publish-coding'].includes(command)) throw new Error('Supported commands: manager, worker, bootstrap, validate, prepare-coding, publish-coding');
+  if (!['manager', 'notify', 'check-slack', 'worker', 'bootstrap', 'prepare-coding', 'publish-coding'].includes(command)) throw new Error('Supported commands: manager, notify, check-slack, worker, bootstrap, validate, prepare-coding, publish-coding');
   const repository = values.repository ?? process.env.GITHUB_REPOSITORY ?? '';
   const github = new GitHubClient(repository, process.env.GITHUB_TOKEN ?? '');
   let config = loadConfig(await github.readConfig(values['config-path']!));
@@ -41,6 +42,20 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const timer = setTimeout(() => { console.error(JSON.stringify({ correlationId, error: 'Hard execution time limit reached; next run will recover durable state' })); process.exit(1); }, (command === 'worker' ? config.execution.workerTimeoutMinutes : config.manager.timeoutMinutes) * 60000);
   timer.unref();
   try {
+    if (command === 'check-slack') {
+      if (!config.notifications.slack.enabled || config.execution.dryRun || config.autonomy.profile === 'advisory') {
+        console.log('Slack connection check skipped in mutation-free or disabled mode'); return;
+      }
+      await new SlackSink(process.env.SLACK_BOT_TOKEN ?? '').checkConnection();
+      console.log(JSON.stringify({ correlationId, slackConnection: 'verified', configuredChannel: config.notifications.slack.channel })); return;
+    }
+    if (command === 'notify') {
+      const errors = await deliverNotifications(github, config, await github.snapshot(config.manager.workflow),
+        new SlackSink(process.env.SLACK_BOT_TOKEN ?? ''), correlationId, new Date());
+      console.log(JSON.stringify({ correlationId, outcome: errors.length ? 'partial' : 'success', errors }));
+      if (errors.length) process.exitCode = 1;
+      return;
+    }
     if (command === 'bootstrap') {
       if (config.execution.dryRun || config.autonomy.profile === 'advisory') {
         console.log('Mutation-free mode: bootstrap skipped'); return;
@@ -75,7 +90,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       console.log(JSON.stringify({ correlationId, executionId: result.executionId, status: result.status })); return;
     }
     const planner = config.llm.provider === 'mock' ? new MockPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
-    const report = await new Manager(github, config, planner, { correlationId }).run();
+    const report = await new Manager(github, config, planner, { correlationId,
+      notifications: new SlackSink(process.env.SLACK_BOT_TOKEN ?? '') }).run();
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary(report));
     console.log(JSON.stringify({ correlationId, outcome: report.outcome, tasks: report.tasks,
       executed: report.decisions.filter(d => d.executed).length, errors: report.errors, nextSteps: report.nextSteps }));
@@ -85,7 +101,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 export async function handleError(error: unknown): Promise<void> {
   // Config errors are safe; API/request objects are deliberately never printed.
   const message = error instanceof Error ? error.message : '';
-  const safe = /^(Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message)
+  const safe = /^(Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message)
     ? message : 'Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.';
   const httpStatus = error instanceof Error && 'status' in error && typeof error.status === 'number' ? error.status : null;
   const category = error instanceof Error ? error.name.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) : 'UnknownError';

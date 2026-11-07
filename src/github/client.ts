@@ -4,10 +4,12 @@ import type { Comment, Issue, PullRequest, Snapshot, WorkflowRun } from '../type
 import { allLabels, dependencies, managedLabel } from '../state/lifecycle.js';
 import { encodeEvent, type HarnessEvent } from '../state/events.js';
 
-type RawIssue = { number: number; title: string; body?: string | null; state: string; labels: (string | { name?: string })[]; updated_at: string };
+type RawIssue = { number: number; title: string; body?: string | null; state: string; labels: (string | { name?: string })[]; updated_at: string; created_at?: string; user?: { type?: string } | null };
 const normalizeIssue = (i: RawIssue): Issue => ({ number: i.number, title: i.title, body: i.body ?? '',
-  state: i.state === 'closed' ? 'closed' : 'open', labels: i.labels.map(l => typeof l === 'string' ? l : l.name ?? ''), updatedAt: i.updated_at });
-type PRNode = { number: number; state: string; merged: boolean; mergedAt: string | null; body: string;
+  state: i.state === 'closed' ? 'closed' : 'open', labels: i.labels.map(l => typeof l === 'string' ? l : l.name ?? ''), updatedAt: i.updated_at,
+  createdAt: i.created_at, authorType: i.user?.type });
+type PRNode = { number: number; state: string; merged: boolean; mergedAt: string | null; body: string; title?: string;
+  headRefName?: string; mergedBy?: { login: string; __typename: string } | null;
   closingIssuesReferences: { nodes: { number: number; repository: { nameWithOwner: string } }[]; pageInfo: { hasNextPage: boolean } } };
 
 export class GitHubClient implements GitHubPort {
@@ -67,7 +69,7 @@ export class GitHubClient implements GitHubPort {
         query($owner:String!, $repo:String!, $cursor:String) {
           repository(owner:$owner, name:$repo) {
             pullRequests(first:50, after:$cursor, orderBy:{field:UPDATED_AT,direction:DESC}) {
-              nodes { number state merged mergedAt body closingIssuesReferences(first:100) {
+              nodes { number state merged mergedAt body title headRefName mergedBy { login __typename } closingIssuesReferences(first:100) {
                 nodes { number repository { nameWithOwner } } pageInfo { hasNextPage }
               }} pageInfo { hasNextPage endCursor }
             }
@@ -77,6 +79,7 @@ export class GitHubClient implements GitHubPort {
       for (const pr of connection.nodes) {
         if (pr.closingIssuesReferences.pageInfo.hasNextPage) throw new Error(`PR #${pr.number} has over 100 closing links; refusing incomplete reconciliation`);
         result.push({ number: pr.number, state: pr.state === 'OPEN' ? 'open' : 'closed', merged: pr.merged, mergedAt: pr.mergedAt ?? undefined,
+          title: pr.title, headRefName: pr.headRefName, mergedBy: pr.mergedBy ? { login: pr.mergedBy.login, type: pr.mergedBy.__typename } : undefined,
           closingIssues: pr.closingIssuesReferences.nodes.filter(i => i.repository.nameWithOwner.toLowerCase() === this.repository.toLowerCase()).map(i => i.number),
           referencedIssues: [...pr.body.matchAll(/(?<![\w/])#(\d+)\b/g)].map(m => Number(m[1])) });
       }

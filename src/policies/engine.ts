@@ -10,7 +10,7 @@ const defaults: Record<Config['autonomy']['profile'], Record<Action['kind'], Per
   supervised: { transition: 'allow', close_issue: 'allow', create_followup: 'approval', prioritize: 'allow', approve_task: 'approval', start_worker: 'approval', retry_worker: 'approval', cancel_worker: 'allow', expand_scope: 'approval', merge_pr: 'deny' },
   autonomous: { transition: 'allow', close_issue: 'allow', create_followup: 'allow', prioritize: 'allow', approve_task: 'allow', start_worker: 'allow', retry_worker: 'allow', cancel_worker: 'allow', expand_scope: 'deny', merge_pr: 'deny' }
 };
-export const policyVersion = (config: Config): string => hash(config);
+export const policyVersion = (config: Config): string => { const { notifications: _notifications, ...policy } = config; void _notifications; return hash(policy); };
 export function permission(config: Config, kind: Action['kind']): Permission {
   return config.autonomy.overrides[kind] ?? defaults[config.autonomy.profile][kind];
 }

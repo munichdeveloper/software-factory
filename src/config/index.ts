@@ -5,6 +5,8 @@ export const actionKinds = ['transition', 'close_issue', 'create_followup', 'pri
   'start_worker', 'retry_worker', 'cancel_worker', 'expand_scope', 'merge_pr'] as const;
 export const permissionSchema = z.enum(['allow', 'deny', 'approval']);
 const bounded = (min: number, max: number, value: number) => z.number().int().min(min).max(max).default(value);
+const slackChannel = z.string().regex(/^(?:[CG][A-Z0-9]{8,}|#[a-z0-9_-]{1,80})$/);
+const notificationRule = z.strictObject({ enabled: z.boolean().default(false), channel: slackChannel.nullable().default(null) });
 export const configSchema = z.strictObject({
   version: z.literal(1),
   factory: z.strictObject({ enabled: z.boolean().default(true), scope: z.string().min(1).max(4000) }),
@@ -38,7 +40,16 @@ export const configSchema = z.strictObject({
       validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null) })]).default(false),
     review: z.literal(false).default(false)
   }).prefault({}),
-  reporting: z.strictObject({ persistDecisions: z.boolean().default(true) }).prefault({})
+  reporting: z.strictObject({ persistDecisions: z.boolean().default(true) }).prefault({}),
+  notifications: z.strictObject({ slack: z.strictObject({
+    enabled: z.boolean().default(false), channel: slackChannel.nullable().default(null),
+    maxPerRun: bounded(1, 100, 20),
+    since: z.iso.datetime().nullable().default(null),
+    events: z.strictObject({
+      issue_created: notificationRule.prefault({}),
+      pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
+    }).prefault({})
+  }).prefault({}) }).prefault({})
 });
 export type Config = z.infer<typeof configSchema>;
 export function loadConfig(source: string): Config {

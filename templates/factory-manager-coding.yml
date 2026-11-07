@@ -1,13 +1,14 @@
 name: Software Factory
-run-name: Factory ${{ inputs.mode || 'manager' }} ${{ inputs.execution_id }}
+run-name: Factory ${{ github.event_name == 'push' && 'notify' || inputs.mode || 'manager' }} ${{ inputs.execution_id }}
 on:
+  push:
   schedule:
     - cron: '17 */2 * * *'
   workflow_dispatch:
     inputs:
       mode:
         type: choice
-        options: [manager, bootstrap, worker]
+        options: [manager, notify, check-slack, bootstrap, worker]
         default: manager
       execution_id:
         type: string
@@ -24,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   factory:
-    if: inputs.mode != 'worker'
+    if: inputs.mode != 'worker' && (github.event_name != 'push' || github.ref_name == github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -35,9 +36,10 @@ jobs:
     steps:
       - uses: munichdeveloper/software-factory@FACTORY_COMMIT_SHA
         with:
-          mode: ${{ inputs.mode || 'manager' }}
+          mode: ${{ github.event_name == 'push' && 'notify' || inputs.mode || 'manager' }}
           dry-run: ${{ inputs.dry_run || false }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
   coding:
     if: inputs.mode == 'worker' && !inputs.dry_run
     permissions:

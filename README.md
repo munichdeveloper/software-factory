@@ -1,5 +1,9 @@
 # Software Factory
 
+Optional [Slack notifications](docs/slack.md) route individually enabled SF issue
+creation and bot-performed SF PR merge events to configurable channels. Use a
+`chat:write` bot connection through `SLACK_BOT_TOKEN`; default is disabled.
+
 GitHub-native orchestration extracted from Dev Agent Harness v0.1 (source commit
 `615fbee4775c3eea46270531d8a13648d998d835`). SF owns planning, project autonomy,
 approval, Issue/PR lifecycle, dependencies, priority, persistent journals, worker
