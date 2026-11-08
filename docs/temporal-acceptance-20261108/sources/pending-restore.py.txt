@@ -1,0 +1,18 @@
+import subprocess as sp,json,pathlib,time,hashlib
+p=pathlib.Path('/docker/sf-temporal/acceptance-20261108-2310');out=p/'results';backup=out/'pending-backup';backup.mkdir(exist_ok=False)
+def run(args,**kw): return sp.run(args,stdout=sp.PIPE,stderr=sp.PIPE,check=True,**kw).stdout.decode()
+e=json.loads((out/'pending-restore-evidence.json').read_text());assert e['pausedAtBackup']
+run(['docker','stop','sf-acceptance-restore-2310-worker','sf-acceptance-restore-2310-server2'])
+for db in ['temporal','temporal_visibility']:
+ with (backup/(db+'.dump')).open('wb') as f: sp.run(['docker','exec','sf-acceptance-restore-2310-db','pg_dump','-U','temporal_admin','-d',db,'-Fc'],stdout=f,stderr=sp.PIPE,check=True)
+net='sf-acceptance-restore-2310';pg=net+'-db2';server=net+'-server3';pgimage=json.loads(run(['docker','inspect','sf-temporal-postgres-1']))[0]['Image'];image=json.loads(run(['docker','inspect','sf-temporal-temporal-1']))[0]['Image']
+run(['docker','run','-d','--name',pg,'--network',net,'--memory','768m','--cpus','0.5','--tmpfs','/var/lib/postgresql/data:rw,size=768m','-e','POSTGRES_USER=temporal_admin','-e','POSTGRES_HOST_AUTH_METHOD=trust',pgimage])
+for i in range(30):
+ if sp.run(['docker','exec',pg,'pg_isready','-U','temporal_admin'],stdout=sp.DEVNULL,stderr=sp.DEVNULL).returncode==0:break
+ time.sleep(1)
+for db in ['temporal','temporal_visibility']:
+ run(['docker','exec',pg,'createdb','-U','temporal_admin',db])
+ with (backup/(db+'.dump')).open('rb') as f:run(['docker','exec','-i',pg,'pg_restore','--exit-on-error','--no-owner','--no-privileges','-U','temporal_admin','-d',db],stdin=f)
+run(['docker','run','-d','--name',server,'--network',net,'--memory','1g','--cpus','0.5','--cap-drop','ALL','--security-opt','no-new-privileges','-v','/docker/sf-temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro','-e','DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/sf-poc.yaml','-e','DB=postgres12','-e','POSTGRES_USER=temporal_admin','-e','POSTGRES_PWD=isolated-restore-placeholder','-e','POSTGRES_SEEDS='+pg,'-e','DB_PORT=5432','-e','NUM_HISTORY_SHARDS=32','-e','BIND_ON_IP=0.0.0.0',image])
+workerimage=json.loads(run(['docker','inspect','sf-temporal-worker-1']))[0]['Image'];run(['docker','run','-d','--name',net+'-worker2','--network',net,'--memory','512m','--cpus','0.5','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--tmpfs','/tmp:rw,size=64m','-v',str(p)+':/app/acceptance:ro','-e','TEST_BUILD=v1','-e','TEMPORAL_ADDRESS='+server+':7233','--entrypoint','node',workerimage,'/app/acceptance/worker.cjs'])
+e['backupHashes']={f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in backup.glob('*.dump')};e['sourceWritersStopped']=True;e['restoredIntoSeparateDatabase']=True;(out/'pending-restore-evidence.json').write_text(json.dumps(e,indent=2));print('PENDING_RESTORE_CLUSTER_STARTED')

@@ -1,0 +1,30 @@
+{
+  "stoppedTestContainers": [
+    "sf-acceptance-2310-v1",
+    "sf-acceptance-2310-v2",
+    "sf-gh-acceptance-a",
+    "sf-gh-acceptance-b",
+    "sf-acceptance-restore-2310-worker2",
+    "sf-acceptance-restore-2310-server3",
+    "sf-acceptance-restore-2310-db2",
+    "sf-acceptance-restore-2310-db"
+  ],
+  "sourceServices": [
+    {
+      "name": "/sf-temporal-temporal-1",
+      "startedAt": "2026-11-08T13:43:00.017233435Z",
+      "status": "running"
+    },
+    {
+      "name": "/sf-temporal-worker-1",
+      "startedAt": "2026-11-08T13:43:05.29688046Z",
+      "status": "running"
+    },
+    {
+      "name": "/sf-temporal-postgres-1",
+      "startedAt": "2026-11-08T13:37:50.536583519Z",
+      "status": "running"
+    }
+  ],
+  "originalServicesRestarted": false
+}

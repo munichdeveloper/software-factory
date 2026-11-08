@@ -1,0 +1,526 @@
+[
+  {
+    "name": "/sf-temporal-temporal-1",
+    "id": "1d2ac337c38f8930625ffdf949a2a5147cda47f0d2242af5a1fa90b9f18d16f4",
+    "image": "sha256:7bf69188a6232fea14869b9cef3d94aa82a1601d99517f7e86c71f22da4e0670",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1487892,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T13:43:00.017233435Z",
+      "FinishedAt": "2026-11-08T13:42:59.119496919Z",
+      "Health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-11-08T22:40:49.144795121Z",
+            "End": "2026-11-08T22:40:49.173356796Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-11-08T22:40:59.174004079Z",
+            "End": "2026-11-08T22:40:59.205257708Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-11-08T22:41:09.206543764Z",
+            "End": "2026-11-08T22:41:09.232600054Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-11-08T22:41:19.233033217Z",
+            "End": "2026-11-08T22:41:19.258669865Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-11-08T22:41:29.259655348Z",
+            "End": "2026-11-08T22:41:29.287605348Z",
+            "ExitCode": 0,
+            "Output": ""
+          }
+        ]
+      }
+    },
+    "memoryLimit": 2147483648,
+    "cpuLimit": 1500000000,
+    "readOnly": false,
+    "capDrop": [
+      "ALL"
+    ],
+    "ports": {
+      "7233/tcp": [
+        {
+          "HostIp": "127.0.0.1",
+          "HostPort": "7233"
+        }
+      ]
+    },
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/dynamicconfig",
+        "Destination": "/etc/temporal/config/dynamicconfig",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+      }
+    ],
+    "envKeys": [
+      "POSTGRES_USER",
+      "POSTGRES_PWD",
+      "DB",
+      "NUM_HISTORY_SHARDS",
+      "DYNAMIC_CONFIG_FILE_PATH",
+      "POSTGRES_SEEDS",
+      "DB_PORT",
+      "BIND_ON_IP",
+      "PATH"
+    ]
+  },
+  {
+    "name": "/sf-temporal-postgres-1",
+    "id": "f6f0d3d8f6a2ca2b9eca7dd29f41d6b80bdb6de5560665cfbb52e700d5c931dd",
+    "image": "sha256:5264710be20f409750ac6dc4e5706dcef929c87e241605463f0f9aefa932a8d9",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1482319,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T13:37:50.536583519Z",
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "Health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-11-08T22:41:05.375520029Z",
+            "End": "2026-11-08T22:41:05.428673413Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-11-08T22:41:10.429753037Z",
+            "End": "2026-11-08T22:41:10.486074345Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-11-08T22:41:15.48703559Z",
+            "End": "2026-11-08T22:41:15.541397119Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-11-08T22:41:20.542390282Z",
+            "End": "2026-11-08T22:41:20.589207519Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-11-08T22:41:25.590175685Z",
+            "End": "2026-11-08T22:41:25.63640942Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          }
+        ]
+      }
+    },
+    "memoryLimit": 1073741824,
+    "cpuLimit": 750000000,
+    "readOnly": false,
+    "capDrop": null,
+    "ports": {},
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/scripts/init-db.sh",
+        "Destination": "/docker-entrypoint-initdb.d/10-temporal.sh",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+      },
+      {
+        "Type": "volume",
+        "Name": "sf-temporal_postgres-data",
+        "Source": "/var/lib/docker/volumes/sf-temporal_postgres-data/_data",
+        "Destination": "/var/lib/postgresql/data",
+        "Driver": "local",
+        "Mode": "rw",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "envKeys": [
+      "TEMPORAL_DB_PASSWORD",
+      "POSTGRES_USER",
+      "POSTGRES_DB",
+      "POSTGRES_PASSWORD",
+      "PATH",
+      "GOSU_VERSION",
+      "LANG",
+      "PG_MAJOR",
+      "PG_VERSION",
+      "PGDATA"
+    ]
+  },
+  {
+    "name": "/sf-temporal-worker-1",
+    "id": "6f46ae8ff227113fd851150035af1dba5e501415b7cae674ad44524939c1b372",
+    "image": "sha256:181a18541102145a53f8c105ba4dd26312f22f0d609d524e349267bfad6c9eb5",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1488113,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T13:43:05.29688046Z",
+      "FinishedAt": "2026-11-08T13:42:57.877345886Z"
+    },
+    "memoryLimit": 1073741824,
+    "cpuLimit": 750000000,
+    "readOnly": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "ports": {},
+    "mounts": [],
+    "envKeys": [
+      "TEMPORAL_ADDRESS",
+      "TEMPORAL_NAMESPACE",
+      "TEMPORAL_TASK_QUEUE",
+      "PATH",
+      "NODE_VERSION",
+      "YARN_VERSION"
+    ]
+  },
+  {
+    "name": "/sf-temporal-ui-1",
+    "id": "1870c127592ff47fd96c756551f9c03d770130f63d92720070b09ac0a2383f65",
+    "image": "sha256:ac3c13eddb4547d830991bb5eee93a5d97140134522b7297fdb2be1fe25ef925",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1525688,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T14:38:26.275054684Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "memoryLimit": 402653184,
+    "cpuLimit": 250000000,
+    "readOnly": false,
+    "capDrop": [
+      "ALL"
+    ],
+    "ports": {
+      "8080/tcp": [
+        {
+          "HostIp": "127.0.0.1",
+          "HostPort": "18080"
+        }
+      ]
+    },
+    "mounts": [],
+    "envKeys": [
+      "TEMPORAL_CORS_ORIGINS",
+      "TEMPORAL_UI_PORT",
+      "TEMPORAL_DEFAULT_NAMESPACE",
+      "TEMPORAL_SHOW_TEMPORAL_SYSTEM_NAMESPACE",
+      "TEMPORAL_ADDRESS",
+      "PATH",
+      "TEMPORAL_CLOUD_UI"
+    ]
+  },
+  {
+    "name": "/sf-acceptance-2310-v1",
+    "id": "105e4e861a8c3632131698f67116860e53a09b3c4e05ef20874daa4071e25175",
+    "image": "sha256:181a18541102145a53f8c105ba4dd26312f22f0d609d524e349267bfad6c9eb5",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1891057,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T22:25:37.407352879Z",
+      "FinishedAt": "2026-11-08T22:24:42.300517305Z"
+    },
+    "memoryLimit": 536870912,
+    "cpuLimit": 500000000,
+    "readOnly": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "ports": {},
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/acceptance-20261108-2310",
+        "Destination": "/app/acceptance",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+      }
+    ],
+    "envKeys": [
+      "TEST_BUILD",
+      "PATH",
+      "NODE_VERSION",
+      "YARN_VERSION"
+    ]
+  },
+  {
+    "name": "/sf-acceptance-2310-v2",
+    "id": "f1aa4d9b561202073cc3653ace7cee949e247374e6202b7e48778804761a3696",
+    "image": "sha256:181a18541102145a53f8c105ba4dd26312f22f0d609d524e349267bfad6c9eb5",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1888143,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T22:23:55.967342671Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "memoryLimit": 536870912,
+    "cpuLimit": 500000000,
+    "readOnly": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "ports": {},
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/acceptance-20261108-2310",
+        "Destination": "/app/acceptance",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+      }
+    ],
+    "envKeys": [
+      "TEST_BUILD",
+      "PATH",
+      "NODE_VERSION",
+      "YARN_VERSION"
+    ]
+  },
+  {
+    "name": "/sf-gh-acceptance-a",
+    "id": "1f3d2d5196336640c35d04ad12d93ef079b44dda03f1c18e1f5fae7eae8984bd",
+    "image": "sha256:181a18541102145a53f8c105ba4dd26312f22f0d609d524e349267bfad6c9eb5",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1903202,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T22:35:28.796319525Z",
+      "FinishedAt": "2026-11-08T22:34:56.905721865Z"
+    },
+    "memoryLimit": 536870912,
+    "cpuLimit": 500000000,
+    "readOnly": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "ports": {},
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/acceptance-20261108-2310/results",
+        "Destination": "/tmp",
+        "Mode": "",
+        "RW": true,
+        "Propagation": "rprivate"
+      },
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/acceptance-20261108-2310",
+        "Destination": "/app/acceptance",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+      }
+    ],
+    "envKeys": [
+      "TEST_BUILD",
+      "PATH",
+      "NODE_VERSION",
+      "YARN_VERSION"
+    ]
+  },
+  {
+    "name": "/sf-gh-acceptance-b",
+    "id": "7e6902f3918da3058a922ebaee1105926915689decf8f037c378fa52df32e346",
+    "image": "sha256:181a18541102145a53f8c105ba4dd26312f22f0d609d524e349267bfad6c9eb5",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1900740,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T22:33:27.819603515Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "memoryLimit": 536870912,
+    "cpuLimit": 500000000,
+    "readOnly": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "ports": {},
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/acceptance-20261108-2310/results",
+        "Destination": "/tmp",
+        "Mode": "",
+        "RW": true,
+        "Propagation": "rprivate"
+      },
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/acceptance-20261108-2310",
+        "Destination": "/app/acceptance",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+      }
+    ],
+    "envKeys": [
+      "TEST_BUILD",
+      "PATH",
+      "NODE_VERSION",
+      "YARN_VERSION"
+    ]
+  },
+  {
+    "name": "/sf-acceptance-restore-2310-server3",
+    "id": "c09a735721d485084533acc6c1609485f21b24cc1918fe2f2b094372ee0c20de",
+    "image": "sha256:7bf69188a6232fea14869b9cef3d94aa82a1601d99517f7e86c71f22da4e0670",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1905675,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T22:36:56.445634901Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "memoryLimit": 1073741824,
+    "cpuLimit": 500000000,
+    "readOnly": false,
+    "capDrop": [
+      "ALL"
+    ],
+    "ports": {},
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/dynamicconfig",
+        "Destination": "/etc/temporal/config/dynamicconfig",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+      }
+    ],
+    "envKeys": [
+      "POSTGRES_USER",
+      "POSTGRES_PWD",
+      "POSTGRES_SEEDS",
+      "DB_PORT",
+      "NUM_HISTORY_SHARDS",
+      "BIND_ON_IP",
+      "DYNAMIC_CONFIG_FILE_PATH",
+      "DB",
+      "PATH"
+    ]
+  },
+  {
+    "name": "/sf-acceptance-restore-2310-worker2",
+    "id": "999b1ad8813daa68be25fe35cd8ff69935f6f5f118bc1c90d1a6bfe66c8b32a4",
+    "image": "sha256:181a18541102145a53f8c105ba4dd26312f22f0d609d524e349267bfad6c9eb5",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1905791,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-11-08T22:36:56.657018752Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "memoryLimit": 536870912,
+    "cpuLimit": 500000000,
+    "readOnly": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "ports": {},
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/docker/sf-temporal/acceptance-20261108-2310",
+        "Destination": "/app/acceptance",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+      }
+    ],
+    "envKeys": [
+      "TEST_BUILD",
+      "TEMPORAL_ADDRESS",
+      "PATH",
+      "NODE_VERSION",
+      "YARN_VERSION"
+    ]
+  }
+]

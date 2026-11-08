@@ -1,0 +1,22 @@
+[
+  {
+    "file": "history-v1.json",
+    "code": "workflows-v1.cjs",
+    "status": "PASS"
+  },
+  {
+    "file": "history-v2.json",
+    "code": "workflows-v2.cjs",
+    "status": "PASS"
+  },
+  {
+    "file": "gh-history-a.json",
+    "code": "gh-workflows-a.cjs",
+    "status": "PASS"
+  },
+  {
+    "file": "gh-history-b.json",
+    "code": "gh-workflows-b.cjs",
+    "status": "PASS"
+  }
+]

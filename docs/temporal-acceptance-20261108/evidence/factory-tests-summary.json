@@ -1,0 +1,603 @@
+{
+  "numTotalTests": 148,
+  "numPassedTests": 148,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "success": true,
+  "factorySha": "53f35004559b9135f82f263e965cdac9cce18909",
+  "nodeVersion": "24.11.1",
+  "cases": [
+    {
+      "name": "creates blobs/tree/branch and a closing PR without executing target files, idempotently",
+      "status": "passed"
+    },
+    {
+      "name": "explicitly dispatches configured product CI on the generated branch",
+      "status": "passed"
+    },
+    {
+      "name": "refuses unsafe or ambiguous publication {\"moved\":true}",
+      "status": "passed"
+    },
+    {
+      "name": "refuses unsafe or ambiguous publication {\"truncated\":true}",
+      "status": "passed"
+    },
+    {
+      "name": "refuses unsafe or ambiguous publication {\"treeMode\":\"120000\"}",
+      "status": "passed"
+    },
+    {
+      "name": "refuses unsafe or ambiguous publication {\"sameTree\":true}",
+      "status": "passed"
+    },
+    {
+      "name": "refuses unsafe or ambiguous publication {\"transportFailure\":true}",
+      "status": "passed"
+    },
+    {
+      "name": "refuses deleting a missing file or writing below a base symlink",
+      "status": "passed"
+    },
+    {
+      "name": "refuses a conflicting preexisting execution branch",
+      "status": "passed"
+    },
+    {
+      "name": "dispatches Codex when selected and supplies only a generic single-run request",
+      "status": "passed"
+    },
+    {
+      "name": "publishes a correlated PR and persists the result once across repeated callbacks",
+      "status": "passed"
+    },
+    {
+      "name": "reauthorizes before publication after a policy change",
+      "status": "passed"
+    },
+    {
+      "name": "reauthorizes before publication after a task change",
+      "status": "passed"
+    },
+    {
+      "name": "reauthorizes before publication after a block change",
+      "status": "passed"
+    },
+    {
+      "name": "reauthorizes before publication after a closed change",
+      "status": "passed"
+    },
+    {
+      "name": "stops stale preparation before giving the worker a request",
+      "status": "passed"
+    },
+    {
+      "name": "journals failed missing output without publishing unsafe changes",
+      "status": "passed"
+    },
+    {
+      "name": "journals failed identity output without publishing unsafe changes",
+      "status": "passed"
+    },
+    {
+      "name": "journals failed base output without publishing unsafe changes",
+      "status": "passed"
+    },
+    {
+      "name": "journals failed protected output without publishing unsafe changes",
+      "status": "passed"
+    },
+    {
+      "name": "journals failed publish-failed output without publishing unsafe changes",
+      "status": "passed"
+    },
+    {
+      "name": "reports no-change success as blocked and never publishes failed or timed-out runs",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"../escape\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"/absolute\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"a//b\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"a\\\\b\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"a/./b\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"a/../b\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"a:stream\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"AGENTS.md\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"docs/AGENTS.md\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \".GITHUB/workflows/a.yml\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \".git/config\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \".codex/config.toml\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"CODEOWNERS\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"a. \"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects path \"a\\nname\"",
+      "status": "passed"
+    },
+    {
+      "name": "rejects duplicate/case-colliding paths, invalid base64 and excessive byte count",
+      "status": "passed"
+    },
+    {
+      "name": "configuration, protocol and OpenAI transport 11: rejects unknown keys, invalid limits, duplicate YAML keys and unsupported workers",
+      "status": "passed"
+    },
+    {
+      "name": "configuration, protocol and OpenAI transport parses task sections and explicit dependencies without interpreting arbitrary instructions",
+      "status": "passed"
+    },
+    {
+      "name": "configuration, protocol and OpenAI transport validates the SF delegation and durable result envelopes",
+      "status": "passed"
+    },
+    {
+      "name": "configuration, protocol and OpenAI transport calls the real Responses endpoint format with strict JSON schema and no tools",
+      "status": "passed"
+    },
+    {
+      "name": "configuration, protocol and OpenAI transport bounds retries and never propagates provider response bodies or secret headers",
+      "status": "passed"
+    },
+    {
+      "name": "configuration, protocol and OpenAI transport rejects malformed JSON, unknown actions and incomplete/refused responses",
+      "status": "passed"
+    },
+    {
+      "name": "configuration, protocol and OpenAI transport caps context to selected affected tasks and keeps injected content in the untrusted field",
+      "status": "passed"
+    },
+    {
+      "name": "Octokit adapter against simulated REST and GraphQL HTTP responses paginates managed issues/comments, includes merged PRs and targets the caller repository",
+      "status": "passed"
+    },
+    {
+      "name": "Octokit adapter against simulated REST and GraphQL HTTP responses bootstrap preserves existing labels and is repeatable",
+      "status": "passed"
+    },
+    {
+      "name": "Octokit adapter against simulated REST and GraphQL HTTP responses dispatch sends only identifiers and fixed worker mode, never secrets or issue text",
+      "status": "passed"
+    },
+    {
+      "name": "Octokit adapter against simulated REST and GraphQL HTTP responses does not trust permissions asserted inside issue content",
+      "status": "passed"
+    },
+    {
+      "name": "Octokit adapter against simulated REST and GraphQL HTTP responses reads the current blocked-label provenance across timeline pages",
+      "status": "passed"
+    },
+    {
+      "name": "keeps credentials out of the separate runtime and correlates its result",
+      "status": "passed"
+    },
+    {
+      "name": "rejects invalid or unrelated runtime output: exit",
+      "status": "passed"
+    },
+    {
+      "name": "rejects invalid or unrelated runtime output: large",
+      "status": "passed"
+    },
+    {
+      "name": "rejects invalid or unrelated runtime output: invalid",
+      "status": "passed"
+    },
+    {
+      "name": "rejects invalid or unrelated runtime output: wrong",
+      "status": "passed"
+    },
+    {
+      "name": "rejects unsupported inputs and missing runtime executables",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 1: handles an empty managed repository without writes",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 2: delegates a runnable task and preserves unrelated labels",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 3, 9: never starts a second active worker; repeat is mutation-free",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 4: closes only a PR with a verified native closing reference",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 5: a closed unmerged PR is not completion evidence",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses a merged bare reference never closes an issue",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 6: blocks unresolved dependencies, including unknown issues",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 7: processes failed results and stops after bounded retries",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 8: cancels timed out runs before a retry can begin",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 10: deduplicates follow-ups by stable semantic key across runs",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 12: enforces parallel worker and per-run action limits",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 13: advisory profile produces no repository mutations even with allow override",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 14: supervised requires exact action approval from a maintainer",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses invalidates approval when task text changes",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 15, 16: autonomous respects explicit deny overrides",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 17: ignores injected comments and rejects forged completion proposals",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 18: LLM failure does not prevent deterministic repair",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses 19, 20: recovers from manager crash after accepted dispatch without duplicate",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses recovers when dispatch receipt cannot be persisted",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses quarantines ambiguous dispatch without visible runs rather than retrying",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses processes asynchronous durable success without falsely closing the task",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses dry-run and global disable prohibit all writes",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses repairs exclusive status labels and respects native human closure",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses respects human reopening after an earlier closing merge across repeat runs",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses cancels queued work if its configuration changes before execution",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses does not reuse a supervised retry approval for a later attempt",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses preserves an explicit human block without dependencies",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses unblocks a previously underspecified task after its text is fixed",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses durably records a workflow-only terminal failure before Actions retention expires",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses recovers specification blocks without optional decision logs",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses preserves a new explicit block by maintainer after an older automatic block resolved",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses preserves a new explicit block by github-actions[bot] after an older automatic block resolved",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses preserves a human block even after all declared dependencies close",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses recovers quarantine after the original worker completes, with decision logs disabled",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses retains automatic block origin through a crash after the label update",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses preserves a new human block after a quarantine resolves",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses still dispatches runnable work when the repository has over 100 tasks",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses missing OpenAI credentials do not prevent reconciliation with maxCalls=0",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses missing OpenAI credentials do not prevent reconciliation with maxCalls=1",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses defers when a human block arrives between validation and the final read",
+      "status": "passed"
+    },
+    {
+      "name": "manager integration with simulated GitHub responses cancels queued work when a human explicitly blocks the task",
+      "status": "passed"
+    },
+    {
+      "name": "reads effective rules, native review discussions, exact-head CI and default-branch SHA; narrows candidates before review",
+      "status": "passed"
+    },
+    {
+      "name": "loads immutable full source context, binds update and merge mutations to expected SHA, and uses explicit workflow dispatch",
+      "status": "passed"
+    },
+    {
+      "name": "refuses incomplete evidence: threads",
+      "status": "passed"
+    },
+    {
+      "name": "refuses incomplete evidence: patch",
+      "status": "passed"
+    },
+    {
+      "name": "refuses incomplete evidence: size",
+      "status": "passed"
+    },
+    {
+      "name": "refuses incomplete evidence: count",
+      "status": "passed"
+    },
+    {
+      "name": "refuses incomplete evidence: context",
+      "status": "passed"
+    },
+    {
+      "name": "does not treat an HTTP-success merge response with merged=false as completion",
+      "status": "passed"
+    },
+    {
+      "name": "reports only approval-required PR workflows on the exact head alongside green dispatch checks",
+      "status": "passed"
+    },
+    {
+      "name": "fails closed for unavailable collaborator permission",
+      "status": "passed"
+    },
+    {
+      "name": "explains native workflow approval and never auto-approves or merges despite green dispatch CI and verdict merge",
+      "status": "passed"
+    },
+    {
+      "name": "explains native workflow approval and never auto-approves or merges despite green dispatch CI and verdict defer",
+      "status": "passed"
+    },
+    {
+      "name": "requires a real AI verdict, rechecks facts, persists intent before merging exactly the reviewed head, and recovers idempotently",
+      "status": "passed"
+    },
+    {
+      "name": "defers optional publication hooks until their workflow is installed, then recovers them without another merge",
+      "status": "passed"
+    },
+    {
+      "name": "does not falsely report an unmerged PR when only a post-merge workflow failed",
+      "status": "passed"
+    },
+    {
+      "name": "publishes the AI reason and never merges on request_changes, even with green CI",
+      "status": "passed"
+    },
+    {
+      "name": "publishes the AI reason and never merges on defer, even with green CI",
+      "status": "passed"
+    },
+    {
+      "name": "blocking findings cannot be overridden by an inconsistent positive model decision",
+      "status": "passed"
+    },
+    {
+      "name": "cached negative decisions do not consume the next run review budget or starve another enrolled PR",
+      "status": "passed"
+    },
+    {
+      "name": "discards approval when head changes during model review",
+      "status": "passed"
+    },
+    {
+      "name": "discards approval when base changes during model review",
+      "status": "passed"
+    },
+    {
+      "name": "discards approval when enrollment changes during model review",
+      "status": "passed"
+    },
+    {
+      "name": "discards approval when draft changes during model review",
+      "status": "passed"
+    },
+    {
+      "name": "discards approval when description changes during model review",
+      "status": "passed"
+    },
+    {
+      "name": "revalidates the source task after AI review: closed",
+      "status": "passed"
+    },
+    {
+      "name": "revalidates the source task after AI review: blocked",
+      "status": "passed"
+    },
+    {
+      "name": "revalidates the source task after AI review: changed",
+      "status": "passed"
+    },
+    {
+      "name": "never reviews or mutates in disabled mode",
+      "status": "passed"
+    },
+    {
+      "name": "never reviews or mutates in advisory mode",
+      "status": "passed"
+    },
+    {
+      "name": "never reviews or mutates in dry-run mode",
+      "status": "passed"
+    },
+    {
+      "name": "never reviews or mutates in deny mode",
+      "status": "passed"
+    },
+    {
+      "name": "does not adopt or run AI on unrelated PRs",
+      "status": "passed"
+    },
+    {
+      "name": "does not adopt or run AI on fork PRs",
+      "status": "passed"
+    },
+    {
+      "name": "does not adopt or run AI on blocked PRs",
+      "status": "passed"
+    },
+    {
+      "name": "does not adopt or run AI on draft PRs",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: BEHIND",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: BLOCKED",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: UNKNOWN",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: DIRTY",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: pending",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: failure",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: missing",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: threads",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: changes_requested",
+      "status": "passed"
+    },
+    {
+      "name": "hard gates survive a positive AI verdict: rules",
+      "status": "passed"
+    },
+    {
+      "name": "requires exact current human approval in supervised mode and accepts only authorized approvers",
+      "status": "passed"
+    },
+    {
+      "name": "lets AI request a safe update, dispatches CI for the new head, and requires a new review before merging",
+      "status": "passed"
+    },
+    {
+      "name": "fails closed when context is incomplete or the review provider is unavailable",
+      "status": "passed"
+    },
+    {
+      "name": "publishes Slack merge notification for an adopted PR only with a matching trusted intent and native bot merge",
+      "status": "passed"
+    },
+    {
+      "name": "uses real structured Responses review with no tools, keeps untrusted code in data, rejects incomplete output and mock merge approval",
+      "status": "passed"
+    },
+    {
+      "name": "decodes durable journals with a readable explanation after the JSON fence",
+      "status": "passed"
+    }
+  ]
+}

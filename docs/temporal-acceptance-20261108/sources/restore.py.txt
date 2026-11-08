@@ -1,0 +1,20 @@
+import subprocess as sp,json,pathlib,time,hashlib
+base=pathlib.Path('/docker/sf-temporal'); out=base/'acceptance-20261108-2310'; backup=base/'backups/20261108T134257Z'
+def run(args,**kw): return sp.run(args,check=True,stdout=sp.PIPE,stderr=sp.PIPE,**kw).stdout.decode()
+net='sf-acceptance-restore-2310'; pg=net+'-db'; server=net+'-server'
+for n in [pg,server]:
+ if sp.run(['docker','inspect',n],stdout=sp.DEVNULL,stderr=sp.DEVNULL).returncode==0: raise RuntimeError('Refuse existing '+n)
+checks=run(['sha256sum','-c','SHA256SUMS'],cwd=backup); (out/'restore-checksums.log').write_text(checks)
+run(['docker','network','create','--internal',net])
+pgimage=json.loads(run(['docker','inspect','sf-temporal-postgres-1']))[0]['Image']; image=json.loads(run(['docker','inspect','sf-temporal-temporal-1']))[0]['Image']
+start=time.time()
+run(['docker','run','-d','--name',pg,'--network',net,'--memory','768m','--cpus','0.5','--tmpfs','/var/lib/postgresql/data:rw,size=768m','-e','POSTGRES_USER=temporal_admin','-e','POSTGRES_HOST_AUTH_METHOD=trust',pgimage])
+for i in range(40):
+ if sp.run(['docker','exec',pg,'pg_isready','-U','temporal_admin'],stdout=sp.DEVNULL,stderr=sp.DEVNULL).returncode==0: break
+ time.sleep(1)
+for db in ['temporal','temporal_visibility']:
+ run(['docker','exec',pg,'createdb','-U','temporal_admin',db])
+ with (backup/(db+'.dump')).open('rb') as f: run(['docker','exec','-i',pg,'pg_restore','--exit-on-error','--no-owner','--no-privileges','-U','temporal_admin','-d',db],stdin=f)
+run(['docker','run','-d','--name',server,'--network',net,'--memory','1g','--cpus','0.5','--cap-drop','ALL','--security-opt','no-new-privileges','-e','DB=postgres12','-e','POSTGRES_USER=temporal_admin','-e','POSTGRES_PWD=isolated-restore-placeholder','-e','POSTGRES_SEEDS='+pg,'-e','DB_PORT=5432','-e','NUM_HISTORY_SHARDS=32','-e','BIND_ON_IP=0.0.0.0',image])
+summary={'backup':str(backup),'checksums':checks,'network':net,'postgresImage':pgimage,'temporalImage':image,'sourceClusterUnchanged':True,'restoreAdminRole':'isolated trust network only, no public ports; not production credentials','elapsedStartSeconds':time.time()-start}
+(out/'restore-provision.json').write_text(json.dumps(summary,indent=2));print('RESTORE_PROVISIONED',summary['elapsedStartSeconds'])

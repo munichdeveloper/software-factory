@@ -1,0 +1,40 @@
+{
+  "workflowId": "sf-acceptance-pending-backup-20261108",
+  "runId": "01a1bd4e-0113-7cd8-9abb-ed4407ebe171",
+  "pausedAtBackup": true,
+  "backupHashes": {
+    "temporal.dump": "a599e2a8388d7255c373650b610bce421d1f269b019ef14bd26dc5c0e1975cd4",
+    "temporal_visibility.dump": "5aa918504ef9d7ce4dff4f5d157367110de60859784c18754c78157a95002569"
+  },
+  "sourceWritersStopped": true,
+  "restoredIntoSeparateDatabase": true,
+  "restoredState": {
+    "snapshot": {
+      "repository": "isolated-pending-backup",
+      "workflowHash": "pending-backup-v1"
+    },
+    "codeVersion": "v1",
+    "probe": {
+      "build": "v1",
+      "attempt": 2,
+      "repository": "isolated-pending-backup",
+      "credentialKeys": []
+    }
+  },
+  "result": {
+    "snapshot": {
+      "repository": "isolated-pending-backup",
+      "workflowHash": "pending-backup-v1"
+    },
+    "codeVersion": "v1",
+    "probe": {
+      "build": "v1",
+      "attempt": 2,
+      "repository": "isolated-pending-backup",
+      "credentialKeys": []
+    },
+    "rejected": 0,
+    "approved": true
+  },
+  "finalRunId": "01a1bd4e-0113-7cd8-9abb-ed4407ebe171"
+}

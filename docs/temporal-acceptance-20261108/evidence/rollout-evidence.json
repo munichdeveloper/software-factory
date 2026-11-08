@@ -1,0 +1,90 @@
+{
+  "a": {
+    "workflowId": "sf-acceptance-20261108-2310-rollout-a",
+    "runId": "01a1bd46-1c51-722c-8981-6c5312777bfa",
+    "result": {
+      "snapshot": {
+        "repository": "isolated-rollout-fixture-a",
+        "factoryRelease": "9635a860260dda36b9bfc0215dd58b222fa33fd7",
+        "workflowHash": "rollout-v1"
+      },
+      "codeVersion": "v1",
+      "probe": {
+        "build": "v1",
+        "attempt": 2,
+        "repository": "isolated-rollout-fixture-a",
+        "credentialKeys": []
+      },
+      "rejected": 0,
+      "approved": true
+    },
+    "versioningInfo": {
+      "behavior": "VERSIONING_BEHAVIOR_PINNED",
+      "version": "sf-acceptance-20261108-2310.v1",
+      "deploymentVersion": {
+        "buildId": "v1",
+        "deploymentName": "sf-acceptance-20261108-2310"
+      },
+      "revisionNumber": "1"
+    }
+  },
+  "b": {
+    "workflowId": "sf-acceptance-20261108-2310-rollout-b",
+    "runId": "01a1bd46-22fe-732e-9eee-a68c1a559925",
+    "result": {
+      "snapshot": {
+        "repository": "isolated-rollout-fixture-b",
+        "factoryRelease": "53f35004559b9135f82f263e965cdac9cce18909",
+        "workflowHash": "rollout-v2"
+      },
+      "codeVersion": "v2",
+      "probe": {
+        "build": "v2",
+        "attempt": 2,
+        "repository": "isolated-rollout-fixture-b",
+        "credentialKeys": []
+      },
+      "rejected": 0,
+      "approved": true
+    },
+    "versioningInfo": {
+      "behavior": "VERSIONING_BEHAVIOR_PINNED",
+      "version": "sf-acceptance-20261108-2310.v2",
+      "deploymentVersion": {
+        "buildId": "v2",
+        "deploymentName": "sf-acceptance-20261108-2310"
+      },
+      "revisionNumber": "2"
+    }
+  },
+  "rollback": {
+    "workflowId": "sf-acceptance-20261108-2310-rollout-rollback",
+    "runId": "01a1bd46-2a2e-711d-8cc4-ba84b20c6b52",
+    "result": {
+      "snapshot": {
+        "repository": "isolated-rollout-fixture-rollback",
+        "factoryRelease": "9635a860260dda36b9bfc0215dd58b222fa33fd7",
+        "workflowHash": "rollout-v1"
+      },
+      "codeVersion": "v1",
+      "probe": {
+        "build": "v1",
+        "attempt": 2,
+        "repository": "isolated-rollout-fixture-rollback",
+        "credentialKeys": []
+      },
+      "rejected": 0,
+      "approved": true
+    },
+    "versioningInfo": {
+      "behavior": "VERSIONING_BEHAVIOR_PINNED",
+      "version": "sf-acceptance-20261108-2310.v1",
+      "deploymentVersion": {
+        "buildId": "v1",
+        "deploymentName": "sf-acceptance-20261108-2310"
+      },
+      "revisionNumber": "3"
+    }
+  },
+  "result": "new default v2; existing run remained PINNED v1; rollback sends new run to v1"
+}

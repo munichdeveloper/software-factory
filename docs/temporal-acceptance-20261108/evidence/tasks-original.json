@@ -1,0 +1,18 @@
+[
+  {
+    "id": "0f703693-183d-4fde-bdf8-e8d1ac5b5c8d",
+    "title": "SF-WF-05 | Multi-Repo Versionsrouting und PINNED Worker-Versioning praktisch verifizieren",
+    "description": "Für zwei Repositories unterschiedliche Factory Releases/Workflow-Definitionen sowie einen Shared Temporal Cluster demonstrieren. Temporal Worker Deployment Versioning, Task Queue Routing, PINNED-Ausführungen, kompatible Workflow-Codeversionen, Worker-Retention für Human Gates und Fail-Closed bei unbekannten Releases tatsächlich testen; keine Annahme, dass Temporal das Repo-Routing automatisch erledigt.",
+    "status": "open",
+    "done_when": "Gleichzeitige Runs mit unterschiedlichen Release-Pins; laufende Run-Version bleibt nach neuer Factory-Auslieferung unverändert; inkompatible Version wird blockiert; Rollback/Upgrade-Regeln mit CI-Evidenz dokumentiert.",
+    "updated_at": "2026-11-08 11:17:17.503661+00"
+  },
+  {
+    "id": "f4429ebf-ecc9-453f-8a4c-d728e094afbe",
+    "title": "SF-WF-06 | Temporal Betrieb: Recovery, Idempotenz, Backup/Restore und Observability",
+    "description": "Crash/Retry/Signale, reproduzierbare GitHub-Nebenwirkungen, Worker-Ausfall, Temporal-Ausfall, Retention und Operationskonzept prüfen. Keine Exactly-once-Annahme; stabile Run-/Execution-IDs, Outbox/Receipt/Reconciliation, Restore-Tests, Sicherheits- und Secret-Grenzen aufstellen.",
+    "status": "open",
+    "done_when": "Wiederherstellungs-Runbook sowie Restart-/Backup-/Restore-/Duplicate-Dispatch-/Timeout-Testbelege; Ressourcenbudget und Monitoring nachvollziehbar.",
+    "updated_at": "2026-11-08 11:17:17.503661+00"
+  }
+]

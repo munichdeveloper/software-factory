@@ -1,0 +1,81 @@
+{
+  "a": {
+    "snapshot": {
+      "repository": "munichdeveloper/sf-temporal-acceptance-a-20261108",
+      "repositoryId": "1450715381",
+      "baseSha": "a0d89366c443550d585fc7a54ef8179ff49626d9",
+      "factoryRelease": "9635a860260dda36b9bfc0215dd58b222fa33fd7",
+      "executionId": "sf-gh-acceptance-20261108-a",
+      "workflowVersion": "a",
+      "harnessRelease": "8f1732c05c351af32bd25a6306a92f3bb06c1bad",
+      "policyVersion": "acceptance-only-1",
+      "specHash": "82c83e43c46a382b902e031be599dc20c54663cf21fae9f00ec693cce6e41e0d"
+    },
+    "runId": "01a1bd4b-b414-73b9-95fa-dbb4d2e2183a",
+    "result": {
+      "snapshot": {
+        "repository": "munichdeveloper/sf-temporal-acceptance-a-20261108",
+        "repositoryId": "1450715381",
+        "baseSha": "a0d89366c443550d585fc7a54ef8179ff49626d9",
+        "factoryRelease": "9635a860260dda36b9bfc0215dd58b222fa33fd7",
+        "executionId": "sf-gh-acceptance-20261108-a",
+        "workflowVersion": "a",
+        "harnessRelease": "8f1732c05c351af32bd25a6306a92f3bb06c1bad",
+        "policyVersion": "acceptance-only-1",
+        "specHash": "82c83e43c46a382b902e031be599dc20c54663cf21fae9f00ec693cce6e41e0d"
+      },
+      "rejected": 0,
+      "receipt": {
+        "executionId": "sf-gh-acceptance-20261108-a",
+        "repositoryId": "1450715381",
+        "specHash": "82c83e43c46a382b902e031be599dc20c54663cf21fae9f00ec693cce6e41e0d",
+        "prNumber": 1,
+        "headSha": "395c572caaea7569ce868756f195f79f9925c19a",
+        "url": "https://github.com/munichdeveloper/sf-temporal-acceptance-a-20261108/pull/1",
+        "reconciledAfterCrash": true
+      },
+      "attempt": 2,
+      "build": "a",
+      "credentialKeys": []
+    }
+  },
+  "b": {
+    "snapshot": {
+      "repository": "munichdeveloper/sf-temporal-acceptance-b-20261108",
+      "repositoryId": "1450715704",
+      "baseSha": "d00255adc097bbe62c9e71382da2d7b2a0aefcc1",
+      "factoryRelease": "53f35004559b9135f82f263e965cdac9cce18909",
+      "executionId": "sf-gh-acceptance-20261108-b",
+      "workflowVersion": "b",
+      "harnessRelease": "8f1732c05c351af32bd25a6306a92f3bb06c1bad",
+      "policyVersion": "acceptance-only-1",
+      "specHash": "8afceb239660208944e9d29417135a6eedd6ecaebe3501c58209642dc857d385"
+    },
+    "runId": "01a1bd4b-b505-7129-853c-7f135bba0ddc",
+    "result": {
+      "snapshot": {
+        "repository": "munichdeveloper/sf-temporal-acceptance-b-20261108",
+        "repositoryId": "1450715704",
+        "baseSha": "d00255adc097bbe62c9e71382da2d7b2a0aefcc1",
+        "factoryRelease": "53f35004559b9135f82f263e965cdac9cce18909",
+        "executionId": "sf-gh-acceptance-20261108-b",
+        "workflowVersion": "b",
+        "harnessRelease": "8f1732c05c351af32bd25a6306a92f3bb06c1bad",
+        "policyVersion": "acceptance-only-1",
+        "specHash": "8afceb239660208944e9d29417135a6eedd6ecaebe3501c58209642dc857d385"
+      },
+      "rejected": 0,
+      "receipt": {
+        "executionId": "sf-gh-acceptance-20261108-b",
+        "repositoryId": "1450715704",
+        "specHash": "8afceb239660208944e9d29417135a6eedd6ecaebe3501c58209642dc857d385",
+        "prNumber": 1,
+        "headSha": "367dc4431d1a5723e9195d4ccb6f73fd234ca714",
+        "url": "https://github.com/munichdeveloper/sf-temporal-acceptance-b-20261108/pull/1"
+      },
+      "attempt": 2,
+      "build": "b",
+      "credentialKeys": []
+    }
+  }
+}
