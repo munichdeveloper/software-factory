@@ -1,0 +1,73 @@
+name: Publish Software Factory v0.6.0
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+concurrency:
+  group: release-v0.6.0
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Create annotated tag and release for verified main SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(gh api "repos/$GH_REPO/branches/main" --jq '.commit.sha')"
+          if [[ "$VERIFIED_SHA" != "$current" ]]; then
+            echo "CI commit superseded on main; skip."
+            exit 0
+          fi
+          package_version="$(gh api "repos/$GH_REPO/contents/package.json?ref=$VERIFIED_SHA" --jq '.content' | base64 -d | jq -r '.version')"
+          contract_version="$(gh api "repos/$GH_REPO/contents/installation-contract.json?ref=$VERIFIED_SHA" --jq '.content' | base64 -d | jq -r '.factoryVersion')"
+          lock_version="$(gh api "repos/$GH_REPO/contents/package-lock.json?ref=$VERIFIED_SHA" --jq '.content' | base64 -d | jq -r '.version')"
+          if [[ "$package_version" != "0.6.0" || "$contract_version" != "0.6.0" || "$lock_version" != "0.6.0" ]]; then
+            echo "::error::Release metadata mismatch"
+            exit 1
+          fi
+          tag="v0.6.0"
+          if gh api "repos/$GH_REPO/releases/tags/$tag" > /dev/null 2>&1; then
+            echo "Release $tag already exists."
+            exit 0
+          fi
+          if ref_sha="$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null)"; then
+            tagged_commit="$(gh api "repos/$GH_REPO/git/tags/$ref_sha" --jq '.object.sha')"
+            if [[ "$tagged_commit" != "$VERIFIED_SHA" ]]; then
+              echo "::error::Existing tag points to a different commit."
+              exit 1
+            fi
+          else
+            tag_object="$(gh api -X POST "repos/$GH_REPO/git/tags" -f tag="$tag" -f message="Software Factory $tag: versioned installation contract and manager integration" -f object="$VERIFIED_SHA" -f type=commit --jq '.sha')"
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$tag_object" > /dev/null
+          fi
+          notes="$(cat <<'EOF'
+          ## Software Factory v0.6.0
+          - Adds versioned, data-only installation contract for the SF Manager (PR #13).
+          - Includes generated installation variants and pinned Harness references.
+          - Adds mutation-free manager dry-run JSON reports as GitHub Actions artifacts.
+          - Documents immutable release and manager compatibility requirements.
+          - Existing coding, merge, deployment and legacy Factory installations remain supported.
+
+          **Compatibility:** SF Manager installation/update and active sanity checks require this release or later; older Factory installations remain discoverable but contract-dependent writes are blocked.
+          **Scope:** This release does not include the planned Temporal workflow engine.
+          EOF
+          )"
+          gh api -X POST "repos/$GH_REPO/releases" -f tag_name="$tag" -f target_commitish="$VERIFIED_SHA" -f name="v0.6.0 – Versioned SF Manager integration" -f body="$notes" -F draft=false -F prerelease=false > /dev/null
+          gh api "repos/$GH_REPO/releases/tags/$tag" --jq '{tag: .tag_name, url: .html_url, published: .published_at, target: .target_commitish}'
