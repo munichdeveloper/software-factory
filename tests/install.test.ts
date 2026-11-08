@@ -1,4 +1,8 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 import { loadConfig } from '../src/config/index.js';
@@ -59,3 +63,31 @@ it('publishes the exact CLI renderer as data, preserving existing files', async 
   expect(() => planInstallation(contract, 'manager', 'main')).toThrow();
   expect(() => planInstallation(contract, 'unknown', options.ref)).toThrow();
 });
+
+
+it.each([
+  ['manager', []],
+  ['coding', ['--coding']],
+  ['config-deploy', ['--no-manager', '--deploy']],
+  ['coding-deploy', ['--coding', '--deploy']]
+] as const)('CLI %s matches the published contract and preserves existing files', async (variant, flags) => {
+  const directory = await mkdtemp(join(tmpdir(), 'sf-cli-contract-'));
+  try {
+    await mkdir(join(directory, '.github/workflows'), { recursive: true });
+    const managerPath = join(directory, '.github/workflows/factory-manager.yml');
+    await writeFile(managerPath, '# Existing owner customization\n');
+    await writeFile(join(directory, 'README.md'), 'Unrelated repository file\n');
+    const run = promisify(execFile);
+    const args = ['--import', 'tsx', 'scripts/install.ts', '--directory', directory, '--ref', options.ref, ...flags];
+    await run(process.execPath, args);
+    const published = JSON.parse(await readFile('installation-contract.json', 'utf8')) as { variants: Record<string, {files: Record<string,string>}> };
+    for (const [path, content] of Object.entries(published.variants[variant]!.files)) {
+      expect(await readFile(join(directory,path),'utf8')).toBe(path.endsWith('/factory-manager.yml') ? '# Existing owner customization\n' : content.replaceAll('__SF_FACTORY_COMMIT__',options.ref));
+    }
+    await writeFile(join(directory,'.github/software-factory.yml'), '# Keep my existing configuration\n');
+    await run(process.execPath, [...args.slice(0,args.indexOf('--ref')+1), 'd'.repeat(40), ...flags]);
+    expect(await readFile(join(directory,'.github/software-factory.yml'),'utf8')).toBe('# Keep my existing configuration\n');
+    expect(await readFile(managerPath,'utf8')).toBe('# Existing owner customization\n');
+    expect(await readFile(join(directory,'README.md'),'utf8')).toBe('Unrelated repository file\n');
+  } finally { await rm(directory, {recursive:true,force:true}); }
+}, 15000);
