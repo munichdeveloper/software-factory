@@ -15,7 +15,8 @@
     "check": "npm run build && npm run lint && npm test && npm run validate:workflows",
     "validate:workflows": "tsx scripts/validate-workflows.ts",
     "bundle": "tsx scripts/bundle.ts",
-    "test:integration": "vitest run tests/harness-integration.test.ts"
+    "test:integration": "vitest run tests/harness-integration.test.ts",
+    "contract": "tsx scripts/installation-contract.ts"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.0",

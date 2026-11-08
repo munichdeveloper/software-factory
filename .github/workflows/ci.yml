@@ -42,7 +42,8 @@ jobs:
       - name: Verify generated contracts are committed
         run: |
           npm run schemas
-          git diff --exit-code -- schemas
+          npm run contract
+          git diff --exit-code -- schemas installation-contract.json
       - name: Validate Actions syntax with pinned actionlint
         run: |
           curl -fsSLo "$RUNNER_TEMP/actionlint.tar.gz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz

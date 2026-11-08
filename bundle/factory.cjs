@@ -41173,6 +41173,18 @@ async function main(args = process.argv.slice(2)) {
   let config2 = loadConfig(await github.readConfig(values["config-path"]));
   if (values["dry-run"]) config2 = configSchema.parse({ ...config2, execution: { ...config2.execution, dryRun: true } });
   if (!config2.factory.enabled) {
+    if (values["dry-run"] && process.env.SF_SANITY_REPORT) await (0, import_promises3.writeFile)(
+      process.env.SF_SANITY_REPORT,
+      JSON.stringify({
+        formatVersion: 1,
+        mutationFree: true,
+        passed: false,
+        reason: "factory-disabled",
+        runId: process.env.GITHUB_RUN_ID ?? null,
+        runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? "1",
+        productionVerified: false
+      })
+    );
     console.log(JSON.stringify({ outcome: "disabled" }));
     if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, "# Software Factory\n\nGlobally disabled. No repository changes.\n");
     return;
@@ -41337,6 +41349,18 @@ base-branch=${prepared.base.branch}
       executed: report.decisions.filter((d) => d.executed).length,
       errors: report.errors,
       nextSteps: report.nextSteps
+    }));
+    if (config2.execution.dryRun && process.env.SF_SANITY_REPORT) await (0, import_promises3.writeFile)(process.env.SF_SANITY_REPORT, JSON.stringify({
+      formatVersion: 1,
+      mutationFree: true,
+      passed: report.errors.length === 0,
+      correlationId,
+      runId: process.env.GITHUB_RUN_ID ?? null,
+      runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? "1",
+      outcome: report.outcome,
+      errors: report.errors,
+      evaluated: report.decisions.length,
+      productionVerified: false
     }));
     if (report.errors.length) process.exitCode = 1;
   } finally {

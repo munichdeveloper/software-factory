@@ -1,4 +1,4 @@
-import { appendFile, readFile } from 'node:fs/promises';
+import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
@@ -39,6 +39,9 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   let config = loadConfig(await github.readConfig(values['config-path']!));
   if (values['dry-run']) config = configSchema.parse({ ...config, execution: { ...config.execution, dryRun: true } });
   if (!config.factory.enabled) {
+    if (values['dry-run'] && process.env.SF_SANITY_REPORT) await writeFile(process.env.SF_SANITY_REPORT,
+      JSON.stringify({ formatVersion: 1, mutationFree: true, passed: false, reason: 'factory-disabled',
+        runId: process.env.GITHUB_RUN_ID ?? null, runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? '1', productionVerified: false }));
     console.log(JSON.stringify({ outcome: 'disabled' }));
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, '# Software Factory\n\nGlobally disabled. No repository changes.\n');
     return;
@@ -142,6 +145,12 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary(report));
     console.log(JSON.stringify({ correlationId, outcome: report.outcome, tasks: report.tasks,
       executed: report.decisions.filter(d => d.executed).length, errors: report.errors, nextSteps: report.nextSteps }));
+    if (config.execution.dryRun && process.env.SF_SANITY_REPORT) await writeFile(process.env.SF_SANITY_REPORT, JSON.stringify({
+      formatVersion: 1, mutationFree: true, passed: report.errors.length === 0,
+      correlationId, runId: process.env.GITHUB_RUN_ID ?? null, runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? '1',
+      outcome: report.outcome, errors: report.errors, evaluated: report.decisions.length,
+      productionVerified: false
+    }));
     if (report.errors.length) process.exitCode = 1;
   } finally { clearTimeout(timer); }
 }
