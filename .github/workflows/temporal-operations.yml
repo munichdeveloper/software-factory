@@ -1,0 +1,24 @@
+name: Temporal operations checks
+on:
+  pull_request:
+    paths:
+      - 'operations/temporal/**'
+      - '.github/workflows/temporal-operations.yml'
+  push:
+    branches: ['feat/temporal-ops-wf06b']
+    paths:
+      - 'operations/temporal/**'
+      - '.github/workflows/temporal-operations.yml'
+permissions: {}
+jobs:
+  operations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s operations/temporal -p 'test_operations.py' -v
+      - run: node --check operations/temporal/health.mjs

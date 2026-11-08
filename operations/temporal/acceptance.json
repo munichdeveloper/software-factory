@@ -1,0 +1,11 @@
+{
+  "stage": "prepared_not_installed_not_active",
+  "unitTests": {"passed": 21, "failed": 0, "dockerAndSsh": "isolated test doubles"},
+  "portableEncryption": {"ageVersion": "1.3.2", "decryptUsingCopiedKey": "PASS", "wrongKeyRejected": "PASS", "tamperedCipherRejected": "PASS", "keyPhysicalCustody": "not verified"},
+  "liveReadOnlyProbe": {"checkedAt": "2026-11-08T23:09:40.787Z", "namespace": "software-factory-poc", "openWorkflows": 0, "maximumPendingTaskAgeSeconds": 0, "maximumActivityAttempt": 0, "recentTimedOutWorkflows": 0, "writes": 0, "coverage": "healthy low-load observation; injected failure thresholds covered by unit tests"},
+  "slack": {"channelId": "C0A5XUJFZPF", "channelName": "notifications", "testMessage": "https://digitalsmallbusiness.slack.com/archives/C0A5XUJFZPF/p1794178752906799", "readBackVerified": true},
+  "gmail": {"sent": false, "reason": "connector get_profile and send_email returned Unknown tool"},
+  "permanentAccess": "not granted",
+  "parentTasksDone": false,
+  "remaining": ["operator approval of forced-command access and writer pause", "installation and live helper tests", "scheduled run and failure-to-Slack test", "isolated restore through the new pipeline", "recovery-key off-device custody", "always-on coverage while the local computer is offline"]
+}

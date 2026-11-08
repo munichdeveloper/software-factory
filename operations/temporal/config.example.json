@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "host": "187.126.26.9",
+  "user": "root",
+  "privateKey": "C:/approved-operations/.private/backup-transfer",
+  "knownHosts": "C:/approved-operations/known_hosts",
+  "backupDirectory": "C:/approved-backups/scheduled",
+  "recipient": "age1REPLACE_WITH_APPROVED_PUBLIC_RECIPIENT",
+  "channelId": "C0A5XUJFZPF"
+}

@@ -1,0 +1,11 @@
+__pycache__/
+.private/
+config.json
+state.json
+state.json.tmp
+last-result.json
+last-result.json.tmp
+run.lock
+*.agekey
+*.age
+*.dump
