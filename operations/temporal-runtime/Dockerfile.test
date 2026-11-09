@@ -3,9 +3,14 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json ./
+COPY vitest.config.ts eslint.config.js runtime.json installation-contract.json ./
 COPY src ./src
-COPY scripts/runtime-acceptance.ts ./scripts/runtime-acceptance.ts
-COPY tests/helpers.ts ./tests/helpers.ts
+COPY scripts ./scripts
+COPY tests ./tests
+COPY schemas ./schemas
+COPY templates ./templates
+COPY .github/workflows ./.github/workflows
+COPY bundle ./bundle
 COPY .runtime/harness/package.json .runtime/harness/package-lock.json ./.runtime/harness/
 RUN cd .runtime/harness && npm ci --ignore-scripts
 COPY .runtime/harness/tsconfig.json ./.runtime/harness/tsconfig.json
