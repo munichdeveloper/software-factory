@@ -43,7 +43,8 @@ try:
   time.sleep(1)
  assert ready.returncode==0,'Temporal did not become ready'
  run(cli+['operator','namespace','create','--address',server+':7233','--namespace','sf-factory-runtime-acceptance','--retention','1d'])
- run(['docker','run','-d','--name',runner,'--label',label,'--network',name,'--memory','2g','--cpus','1','--env-file',str(envfile),
+ runner_user=['--user',str(os.getuid())+':'+str(os.getgid())] if os.name=='posix' else []
+ run(['docker','run','-d','--name',runner,'--label',label,'--network',name,'--memory','2g','--cpus','1',*runner_user,'--env-file',str(envfile),
       '--mount','type=bind,source='+str(directory)+',target=/app/.runtime/runtime-acceptance',name+':'+sha]);created.append(runner)
  deadline=time.monotonic()+180
  while inspect(runner)['State']['Running']:
