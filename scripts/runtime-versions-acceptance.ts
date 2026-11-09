@@ -14,6 +14,8 @@ import { assertRetainedReleases } from '../src/runtime/retention.js';
 import { Manager } from '../src/manager/index.js';
 import { githubFixtures } from './runtime-github-fixtures.js';
 import type { RuntimeRelease, RuntimeObservation } from '../src/runtime/contract.js';
+import { decodeEvent } from '../src/state/events.js';
+import { policyVersion } from '../src/policies/engine.js';
 
 let phase='initialize';
 process.on('uncaughtException',(error:Error&{code?:unknown;status?:unknown})=>{console.error(JSON.stringify({code:'VERSION_MATRIX_FAILED',phase,reason:/^[A-Z_]+$/.test(error.message)?error.message:undefined,grpcStatus:typeof error.code==='number'?error.code:undefined,httpStatus:typeof error.status==='number'?error.status:undefined,frames:error.stack?.split('\n').slice(1,5)}));process.exit(1);});
@@ -72,7 +74,13 @@ try{
  const rollbackIssue=await fa.github.createIssue(`Temporal runtime acceptance ${randomUUID()}`,body,['harness:managed','harness:ready']);const rollback=await admit(fa,rollbackIssue.number,true);evidence.rollback=await complete(fa,rollback);
  assert.equal((await fb.controller.observations([second.executionId]))[0]?.phase,'awaiting-approval');evidence.v2AfterRollback=await complete(fb,second);
  phase='unknown-version';const unknown={...b.release,buildId:'unknown-build',factorySha:'f'.repeat(40)};fa.repository.release=unknown;fa.repository.retainedReleases=[a.release,b.release];fa.controller=new RuntimeController(fa.repository,store,temporal);
- const unknownIssue=await fa.github.createIssue(`Temporal runtime acceptance ${randomUUID()}`,body,['harness:managed','harness:ready']);await runManager(fa,false);assert(!(await store.list(fa.repository.repositoryId)).some(r=>r.snapshot.admission.input.issueNumber===unknownIssue.number));
+ const unknownIssue=await fa.github.createIssue(`Temporal runtime acceptance ${randomUUID()}`,body,['harness:managed','harness:ready']);
+ let unknownIntent:ReturnType<typeof decodeEvent>;
+ const awaitedConfig=await fa.repository.config();
+ for(let attempt=0;attempt<3&&!unknownIntent;attempt++){await runManager(fa,false);unknownIntent=(await fa.github.comments(unknownIssue.number)).map(c=>decodeEvent(c,(awaitedConfig.manager.trustedActors))).find(e=>e?.data.type==='intent');}
+ assert(unknownIntent?.data.type==='intent','Unknown version rejection must actually reach admission');
+ await assert.rejects(fa.controller.start({input:unknownIntent.data.input,actionId:unknownIntent.data.actionId,policyHash:policyVersion(await fa.repository.config())}),error=>!!error&&typeof error==='object'&&(('code' in error&&error.code===5)||(error instanceof Error&&error.message==='UNKNOWN_WORKER_DEPLOYMENT_VERSION')));
+ assert(!(await store.list(fa.repository.repositoryId)).some(r=>r.snapshot.admission.input.issueNumber===unknownIssue.number));
  await assertRetainedReleases(fb.repository.repositoryId,[],store,temporal);
  const report={passed:true,scope:'actual-two-factory-build-version-matrix',factorySha:factoryB,previousFactorySha:factoryA,releases:[a.release,b.release],realRepositoryIds:fixtures.map(f=>f.repository.repositoryId),sharedTaskQueue:true,actualFactoryManagers:[factoryA,factoryB],pinned:true,retentionGuard:true,wrongWorkerBlocked:true,approvalWhileStopped:true,sameRunIdAfterRestart:true,unknownVersionBlocked:true,upgradeRollback:true,evidence,managerCycles,workerEnvironmentKeys:Object.keys(env),checkedAt:new Date().toISOString()};
  await writeFile(resolve(directory,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));

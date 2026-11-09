@@ -34,7 +34,7 @@ export async function githubFixtures(release: RuntimeRelease, store: RuntimeStor
   const codingConfig = structuredClone(cfg), matrixConfig = structuredClone(cfg);
   if (matrixConfig.workers.coding) matrixConfig.workers.coding.enabled = false;
   // Version routing exercises the real non-mutating Harness, not model compute.
-  if (versionMatrix) cfg.workers.coding!.enabled = false;
+  if (versionMatrix && cfg.workers.coding) cfg.workers.coding.enabled = false;
   class Target extends GitHubClient {
     lostResultResponse = false;
     override async writeEvent(...args: Parameters<GitHubClient['writeEvent']>) {
