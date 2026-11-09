@@ -1,0 +1,37 @@
+{
+  "partial": true,
+  "overallAcceptancePassed": false,
+  "actualModelExecution": true,
+  "repositoryId": 1450715381,
+  "factorySha": "5a8922fd35e6e03330d65ecee02bf45d0e16d589",
+  "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+  "actionsRunId": 42663075654,
+  "jobId": 129319574742,
+  "pr": {
+    "number": 10,
+    "url": "https://github.com/munichdeveloper/sf-temporal-acceptance-a-20261108/pull/10",
+    "head": "db8278bbde420f3420a5df0c9b7134cfc940a737",
+    "ref": "sf/issue-9/8b1abb296a78f989c732c7609c28b27b",
+    "draft": true
+  },
+  "runs": [
+    {
+      "repositoryId": 1450715381,
+      "runId": "01a1c14f-392f-75e6-a682-8674b12ee439"
+    },
+    {
+      "repositoryId": 1450715704,
+      "runId": "01a1c14f-8753-72d5-bbdf-9192151d89db"
+    }
+  ],
+  "repoB": {
+    "modelStarted": false,
+    "reason": "GitHub HTTP 500 on executor-ref creation; durable attempted claim and absent reconciliation evidence caused EFFECT_UNCERTAIN_RECONCILIATION_REQUIRED. No blind write retry. Controlled test stop, both temporary secrets removed."
+  },
+  "logExcerpt": [
+    "2026-11-09T17:17:24.6777099Z   model: gpt-6.1-sol",
+    "2026-11-09T17:17:39.8824844Z ##[start-action display=Run codex exec;id=codex.__openai_codex-action.run_codex]",
+    "2026-11-09T17:17:40.8816177Z model: gpt-6.1-sol",
+    "2026-11-09T17:17:55.8656016Z ##[end-action id=codex.__openai_codex-action.run_codex;outcome=success;conclusion=success;duration_ms=15983]"
+  ]
+}
