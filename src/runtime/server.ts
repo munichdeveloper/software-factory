@@ -74,6 +74,8 @@ export function runtimeServer(options: ServerOptions) {
       }
       throw new Error('NOT_FOUND');
     } catch (error) {
+      console.warn(JSON.stringify({ event: 'factory-runtime-blocked', reason: error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'OPERATION_FAILED',
+        httpStatus: error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' ? error.status : undefined }));
       // Never serialize external API/PG errors, request bodies or connection strings.
       const code = error instanceof z.ZodError || error instanceof SyntaxError ? 'INVALID_REQUEST' : 'RUNTIME_OPERATION_BLOCKED';
       send(response, code === 'INVALID_REQUEST' ? 400 : 409, { code });

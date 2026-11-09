@@ -15,8 +15,10 @@ import { config, issue, MemoryGitHub } from '../tests/helpers.js';
 import { githubFixtures } from './runtime-github-fixtures.js';
 
 // GitHub errors may embed authenticated request headers. Never print raw exceptions.
+let phase = 'initialize';
 process.on('uncaughtException', error => {
-  console.error(JSON.stringify({ code: 'RUNTIME_ACCEPTANCE_FAILED', status: 'status' in error && typeof error.status === 'number' ? error.status : undefined })); process.exit(1);
+  console.error(JSON.stringify({ code: 'RUNTIME_ACCEPTANCE_FAILED', phase, reason: /^[A-Z_]+$/.test(error.message) ? error.message : undefined,
+    status: 'status' in error && typeof error.status === 'number' ? error.status : undefined })); process.exit(1);
 });
 
 const database = new URL(process.env.RUNTIME_TEST_DATABASE_URL ?? '');
@@ -53,6 +55,7 @@ const simulated = [42, 43].map(repositoryId => {
 });
 const real = process.env.SF_TEST_REAL_GITHUB === '1';
 const publisherFixture = process.env.SF_TEST_PUBLISHER_FIXTURE === '1';
+phase = 'prepare-repository-fixtures';
 const { fixtures, actor } = real ? await githubFixtures(release, store, temporal) : { fixtures: simulated, actor: 'maintainer' };
 const [repoA, repoB] = fixtures.map(f => f.repository.repositoryId) as [number, number];
 const server = runtimeServer({ managerToken, workerToken, bindings: fixtures, store });
@@ -84,12 +87,15 @@ try {
     child.on('exit', () => { void writeFile(resolve(directory, 'worker.log'), logs); });
   };
   startWorker();
+  phase = 'worker-readiness';
   await wait(async () => (await temporal.workflowService.describeWorkerDeploymentVersion({ namespace,
     deploymentVersion: { deploymentName: release.deploymentName, buildId: release.buildId } })).workerDeploymentVersionInfo);
   assert.equal((await call(`/v1/repositories/${repoA}/reconcile`, { actor }, workerToken)).status, 401);
   assert.equal((await call('/v1/repositories/999/runs')).status, 409);
+  phase = 'reconcile';
   const first = await call(`/v1/repositories/${repoA}/reconcile`, { actor }); assert.equal(first.status, 200);
   const second = await call(`/v1/repositories/${repoB}/reconcile`, { actor }); assert.equal(second.status, 200);
+  phase = 'await-two-human-gates';
   const rows = await Promise.all([repoA, repoB].map(id => wait(async () => {
     const data = (await call(`/v1/repositories/${id}/runs`)).body as RuntimeObservation[];
     return data[0]?.phase === 'awaiting-approval' ? data[0] : null;
@@ -100,6 +106,7 @@ try {
     assert.equal(detail.workflowExecutionInfo?.versioningInfo?.behavior, 1);
   }
   const row = rows[0]!;
+  phase = 'gate-negatives-and-worker-crash';
   assert.equal((await call(`/v1/repositories/${repoA}/runs/${row.executionId}/approve`, { actor: 'attacker', binding: row.binding })).status, 409);
   assert.equal((await call(`/v1/repositories/${repoA}/runs/${row.executionId}/approve`, { actor, binding: 'f'.repeat(64) })).status, 409);
   assert.equal((await call(`/v1/repositories/${repoB}/runs/${row.executionId}/approve`, { actor, binding: row.binding })).status, 409);
@@ -109,6 +116,7 @@ try {
   fixtures[0]!.github.lostResultResponse = true;
   assert.equal((await call(`/v1/repositories/${repoA}/runs/${row.executionId}/approve`, { actor, binding: row.binding })).status, 200);
   startWorker();
+  phase = 'execution-and-publication';
   const completed = await wait(async () => {
     const data = (await call(`/v1/repositories/${repoA}/runs`)).body as RuntimeObservation[];
     return data[0]?.status === 'completed' && data[0].result ? data[0] : null;
@@ -126,7 +134,8 @@ try {
     lostJournalResponseReconciled: true, resultJournalCount: resultComments.length, duplicateDispatchCount: (await store.list(repoA)).length,
     crossRepositoryGateRejected: true, untrustedActorRejected: true, staleBindingRejected: true, workerCannotCallManager: true,
     sharedCluster: true, pinnedServerBehavior: true, githubAdapter: publisherFixture ? 'real repository-scoped GitHub App; deterministic artifact fixture and real Draft PR publisher' : real ? 'real repository-scoped GitHub App; result journal only, no PR publication' : 'simulated GitHub port; no real PR publication in this test',
-    repositories: fixtures.map(f => ({ id: f.repository.repositoryId, name: f.repository.repository, issueNumber: f.issueNumber })),
+    repositories: fixtures.map(f => ({ id: f.repository.repositoryId, name: f.repository.repository, issueNumber: f.issueNumber,
+      retiredFixtureIssues: 'retiredFixtureIssues' in f ? f.retiredFixtureIssues : [] })),
     publisherFixture, actualModelExecution: false,
     workerEnvironmentKeys: Object.keys(childEnvironment), checkedAt: new Date().toISOString() };
   await writeFile(resolve(directory, 'result.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));

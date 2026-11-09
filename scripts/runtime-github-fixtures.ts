@@ -34,6 +34,8 @@ export async function githubFixtures(release: RuntimeRelease, store: RuntimeStor
     }
   }
   const fixtures = [];
+  const digestBody = 'Compute a deterministic digest through the pinned Harness.\n\n## Acceptance criteria\n- Produce a durable digest result after an authenticated human gate.\n- Preserve the run across worker restart.\n\nNo product changes or merge requested.';
+  const publisherBody = 'Verify a deterministic publisher fixture, without a model call.\n\n## Acceptance criteria\n- Publish the bounded fixture text file as exactly one Draft PR.\n- Reconcile lost GitHub and database receipts without duplicate publication.\n\nNo product changes or merge requested.';
   for (const [repositoryId, repo] of [[1450715381, 'sf-temporal-acceptance-a-20261108'], [1450715704, 'sf-temporal-acceptance-b-20261108']] as const) {
     const api = scopedRuntimeGitHub({ ...credentials, repositoryId }), target = { owner: actor, repo };
     const metadata = (await api.repos.get(target)).data;
@@ -57,7 +59,17 @@ export async function githubFixtures(release: RuntimeRelease, store: RuntimeStor
       await api.repos.createOrUpdateFileContents({ ...target, path, message: 'Configure isolated Temporal runtime acceptance (no deployment or merge)', content: Buffer.from(content).toString('base64') });
     }
     await github.bootstrap();
-    const task = await github.createIssue(`Temporal runtime acceptance ${randomUUID()}`, 'Compute a deterministic digest through the pinned Harness.\n\n## Acceptance criteria\n- Produce a durable digest result after an authenticated human gate.\n- Preserve the run across worker restart.\n\nNo product changes or merge requested.', ['harness:managed', 'harness:ready']);
+    // A fresh disposable database cannot claim authority over gates from a removed test cluster.
+    // Retire only our exact, bot-authored fixture envelopes from the active test scope; preserve evidence.
+    const retiredFixtureIssues: number[] = [];
+    for (const old of await api.paginate(api.issues.listForRepo, { ...target, labels: 'harness:managed', state: 'all', per_page: 100 })) {
+      if (!old.pull_request && old.user?.login === bot && /^Temporal runtime acceptance [a-f0-9-]{36}$/.test(old.title) &&
+          [digestBody, publisherBody].includes(old.body ?? '')) {
+        await api.issues.update({ ...target, issue_number: old.number, labels: old.labels.map(l => typeof l === 'string' ? l : l.name ?? '').filter(l => l !== 'harness:managed') });
+        retiredFixtureIssues.push(old.number);
+      }
+    }
+    const task = await github.createIssue(`Temporal runtime acceptance ${randomUUID()}`, publisherFixture ? publisherBody : digestBody, ['harness:managed', 'harness:ready']);
     const coding = new CodingRepository(metadata.full_name, '', fetch, api);
     const repository: RuntimeRepository = { repositoryId, repository: metadata.full_name, release, requireHumanGate: true, github,
       config: async () => loadConfig(await github.readConfig(path)), baseSha: async () => (await coding.base()).sha };
@@ -74,7 +86,7 @@ export async function githubFixtures(release: RuntimeRelease, store: RuntimeStor
       } }, publish: (snapshot, binding, artifact, at) => new RuntimeCodingPublisher(api,
         new RuntimeEffects(store, repositoryId, snapshot.admission.input.executionId, binding), () => controller.authorize(snapshot, binding), cfg.manager.trustedActors).publish(snapshot, artifact, at) };
     }
-    fixtures.push({ repository, controller, planner: new MockPlanner(), github, issueNumber: task.number });
+    fixtures.push({ repository, controller, planner: new MockPlanner(), github, issueNumber: task.number, retiredFixtureIssues });
   }
   return { fixtures, actor };
 }
