@@ -18,12 +18,14 @@ import { RuntimeStore } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
+import { scopedRuntimeGitHub } from './github-app.js';
 
 const registrySchema = z.strictObject({
   namespace: z.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
   repositories: z.array(z.strictObject({ repositoryId: z.number().int().positive().safe(), repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
-    githubTokenEnv: z.string().regex(/^SF_GH_[A-Z0-9_]{1,80}$/), release: releaseSchema,
-    retainedReleases: releaseSchema.array().default([]), requireHumanGate: z.boolean().default(true) })).min(1).max(100),
+    githubTokenEnv: z.string().regex(/^SF_GH_[A-Z0-9_]{1,80}$/).optional(), githubInstallationId: z.number().int().positive().safe().optional(), release: releaseSchema,
+    retainedReleases: releaseSchema.array().default([]), requireHumanGate: z.boolean().default(true) })
+    .refine(item => Number(!!item.githubTokenEnv) + Number(!!item.githubInstallationId) === 1, 'Select exactly one scoped credential source')).min(1).max(100),
 });
 export async function main(args = process.argv.slice(2)) {
   const { positionals, values } = parseArgs({ args, allowPositionals: true, options: {
@@ -57,12 +59,15 @@ export async function main(args = process.argv.slice(2)) {
     await store.migrate();
     const bindings: RuntimeBinding[] = [];
     for (const item of registry.repositories) {
-      const token = z.string().min(1).parse(process.env[item.githubTokenEnv]), github = new GitHubClient(item.repository, token);
+      if (item.githubInstallationId && !(process.env.GITHUB_ALLOWED_INSTALLATION_IDS ?? '').split(',').includes(String(item.githubInstallationId))) throw new Error('INSTALLATION_NOT_ALLOWLISTED');
+      const token = item.githubTokenEnv ? z.string().min(1).parse(process.env[item.githubTokenEnv]) : '';
+      const api = item.githubInstallationId ? scopedRuntimeGitHub({ appId: z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
+        privateKey: z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), installationId: item.githubInstallationId, repositoryId: item.repositoryId }) : new Octokit({ auth: token });
+      const github = new GitHubClient(item.repository, token, 30000, fetch, api);
       const [owner, repo] = item.repository.split('/') as [string, string];
-      const api = new Octokit({ auth: token });
       if ((await api.repos.get({ owner, repo })).data.id !== item.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
       const repository: RuntimeRepository = { ...item, github, config: async () => loadConfig(await github.readConfig('.github/software-factory.yml')),
-        baseSha: async () => (await new CodingRepository(item.repository, token).base()).sha };
+        baseSha: async () => (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
       const controller = new RuntimeController(repository, store, temporal);
       // Refuse a registry rollout which would orphan any running version, including long human gates.
       const rows = await store.list(item.repositoryId), observations = await controller.observations(rows.filter(r => r.runId).map(r => r.snapshot.admission.input.executionId));

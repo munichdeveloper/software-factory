@@ -6,10 +6,10 @@ import type { CodingArtifact, CodingBase, CodingRepositoryPort } from '../worker
 export class CodingRepository implements CodingRepositoryPort {
   private api: Octokit;
   private target: { owner: string; repo: string };
-  constructor(repository: string, token: string, fetcher: typeof fetch = fetch) {
+  constructor(repository: string, token: string, fetcher: typeof fetch = fetch, api?: Octokit) {
     const [owner, repo] = repository.split('/') as [string, string];
     this.target = { owner, repo };
-    this.api = new Octokit({ auth: token, request: { timeout: 30000, fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
+    this.api = api ?? new Octokit({ auth: token, request: { timeout: 30000, fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
   }
   async base(): Promise<CodingBase> {
     const { data: repository } = await this.api.repos.get(this.target);

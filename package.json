@@ -23,6 +23,7 @@
     "test:runtime": "python3 scripts/test-runtime.py"
   },
   "dependencies": {
+    "@octokit/auth-app": "8.3.1",
     "@octokit/rest": "^22.0.0",
     "@temporalio/client": "1.25.0",
     "@temporalio/worker": "1.25.0",

@@ -15,12 +15,12 @@ type PRNode = { number: number; state: string; merged: boolean; mergedAt: string
 export class GitHubClient implements GitHubPort {
   private api: Octokit;
   private target: { owner: string; repo: string };
-  constructor(readonly repository: string, token: string, timeoutMs = 30000, fetcher: typeof fetch = fetch) {
+  constructor(readonly repository: string, token: string, timeoutMs = 30000, fetcher: typeof fetch = fetch, api?: Octokit) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('Repository must be owner/name');
-    if (!token) throw new Error('GITHUB_TOKEN is required');
+    if (!token && !api) throw new Error('GITHUB_TOKEN is required');
     const [owner, repo] = repository.split('/') as [string, string];
     this.target = { owner, repo };
-    this.api = new Octokit({ auth: token, request: { timeout: timeoutMs, fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
+    this.api = api ?? new Octokit({ auth: token, request: { timeout: timeoutMs, fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
   }
   async readConfig(path: string): Promise<string> {
     if (!/^\.github\/[\w./-]+\.ya?ml$/.test(path) || path.includes('..')) throw new Error('Configuration must be a YAML file under .github/');
