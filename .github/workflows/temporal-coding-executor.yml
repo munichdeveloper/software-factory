@@ -71,6 +71,7 @@ jobs:
           execution-id: ${{ needs.validate.outputs.execution-id }}
           workspace: ${{ github.workspace }}/target
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          trusted-bot-users: munichdeveloper-sf-manager-local[bot]
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: coding-result-${{ needs.validate.outputs.execution-id }}
