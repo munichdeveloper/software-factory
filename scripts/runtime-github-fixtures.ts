@@ -26,10 +26,11 @@ export async function githubFixtures(release: RuntimeRelease, store: RuntimeStor
     execution: { engine: 'temporal' }, merge: { enabled: false }, deploy: { enabled: false } });
   const publisherFixture = process.env.SF_TEST_PUBLISHER_FIXTURE === '1';
   const actualCoding = process.env.SF_TEST_REAL_CODING === '1';
+  const versionMatrix = process.env.SF_TEST_VERSION_MATRIX === '1';
   const previousConfig = structuredClone(cfg);
-  if (publisherFixture || actualCoding) cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
+  if (publisherFixture || actualCoding || versionMatrix) cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
   const publisherConfig = structuredClone(cfg);
-  if (actualCoding) { cfg.factory.scope = 'Isolated Temporal acceptance in this disposable repository; bounded coding tasks and Draft PR publication only.'; cfg.execution.workerTimeoutMinutes = 10; }
+  if (actualCoding || versionMatrix) { cfg.factory.scope = 'Isolated Temporal acceptance in this disposable repository; bounded coding tasks and Draft PR publication only.'; cfg.execution.workerTimeoutMinutes = 10; }
   class Target extends GitHubClient {
     lostResultResponse = false;
     override async writeEvent(...args: Parameters<GitHubClient['writeEvent']>) {

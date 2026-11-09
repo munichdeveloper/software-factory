@@ -52,13 +52,20 @@ async function fixture(requireHumanGate = true, coding = false) {
   const handle = { firstExecutionRunId: runId, describe: async () => ({ runId, status: { name: status } }),
     query: async () => ({ phase: 'awaiting-approval', binding: store.row!.binding, result: null }), signal,
     fetchHistory: async () => ({ events: [{ workflowExecutionStartedEventAttributes: { input: { payloads: [{}, { data: Buffer.from(JSON.stringify(store.row!.binding)) }] } } }] }) };
-  const start = vi.fn(async () => handle), client = { workflow: { start, getHandle: () => handle } } as unknown as Client;
+  const deployment = vi.fn(async () => ({ workerDeploymentVersionInfo: { deploymentVersion: { deploymentName: release.deploymentName, buildId: release.buildId } } }));
+  const start = vi.fn(async () => handle), client = { options: { namespace: 'test' }, workflowService: { describeWorkerDeploymentVersion: deployment }, workflow: { start, getHandle: () => handle } } as unknown as Client;
   const repo = { repositoryId: 42, repository: github.repository, release, github, requireHumanGate, config: async () => cfg, baseSha: async () => 'd'.repeat(40) };
   const controller = new RuntimeController(repo, store, client);
   const result: WorkerResult = { contractVersion: '1.0', executionId: admission.input.executionId, issueNumber: 1, status: 'success', summary: 'Verified result', artifacts: [], error: null, proposedActions: [] };
-  return { cfg, github, store, start, signal, handle, repo, controller, admission, result, status: (value: string) => { status = value; } };
+  return { cfg, github, store, start, deployment, signal, handle, repo, controller, admission, result, status: (value: string) => { status = value; } };
 }
 describe('Temporal admission, identity and approval', () => {
+  it('does not persist or start admission for an unknown deployment or unavailable Temporal', async () => {
+    const f = await fixture(); f.deployment.mockRejectedValueOnce(new Error('Unknown version'));
+    await expect(f.controller.start(f.admission)).rejects.toThrow('Unknown version'); expect(f.store.row).toBeNull(); expect(f.start).not.toHaveBeenCalled();
+    f.deployment.mockResolvedValueOnce({ workerDeploymentVersionInfo: { deploymentVersion: { deploymentName: release.deploymentName, buildId: 'unknown' } } });
+    await expect(f.controller.start(f.admission)).rejects.toThrow('UNKNOWN_WORKER_DEPLOYMENT_VERSION'); expect(f.store.row).toBeNull();
+  });
   it('starts one pinned execution and reuses the exact run on repeat', async () => {
     const f = await fixture(); const first = await f.controller.start(f.admission), repeat = await f.controller.start(f.admission);
     expect(first).toEqual(repeat); expect(f.start).toHaveBeenCalledOnce(); expect(f.start.mock.calls[0]![1]).toMatchObject({ versioningOverride: { pinnedTo: { deploymentName: release.deploymentName, buildId: release.buildId } } });

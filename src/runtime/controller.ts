@@ -44,6 +44,11 @@ export class RuntimeController implements WorkerRuntimePort {
           release: this.repo.release, admission, baseSha: await this.repo.baseSha(), specHash: admission.input.taskVersion,
           configHash: hash(config), requireHumanGate: this.repo.requireHumanGate });
         await this.current(snapshot);
+        const info = (await this.temporal.workflowService.describeWorkerDeploymentVersion({ namespace: this.temporal.options.namespace,
+          deploymentVersion: { deploymentName: snapshot.release.deploymentName, buildId: snapshot.release.buildId } })).workerDeploymentVersionInfo;
+        if (info?.deploymentVersion?.deploymentName !== snapshot.release.deploymentName || info.deploymentVersion.buildId !== snapshot.release.buildId) {
+          throw new Error('UNKNOWN_WORKER_DEPLOYMENT_VERSION');
+        }
         stored = await this.store.insert(snapshot, hash(snapshot), workflowId(this.repo.repositoryId, id));
       }
       if (!stored.runId) {
