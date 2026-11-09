@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tarfile
 import tempfile
 import types
 import unittest
@@ -141,7 +142,7 @@ class SnapshotTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory(dir=TEST_TEMP); self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         self.ops = self.root / 'ops'; self.ops.mkdir(); (self.ops / 'recipient.txt').write_text('age1fixture')
-        for name in ('.env', 'compose.yaml', 'worker/Dockerfile', 'worker/package.json', 'worker/package-lock.json', 'worker/src/example.txt', 'dynamicconfig/example.txt', 'scripts/example.txt'):
+        for name in ('.env', 'compose.yaml', 'worker/Dockerfile', 'worker/package.json', 'worker/package-lock.json', 'worker/tsconfig.json', 'worker/harness/package.json', 'worker/harness/src/example.txt', 'worker/src/example.txt', 'dynamicconfig/example.txt', 'scripts/example.txt'):
             path = self.root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('synthetic configuration')
         self.calls = []
         for attribute, value in [('ROOT', self.root), ('OPS', self.ops), ('BACKUPS', self.root / 'backups/sealed'), ('AGE', self.ops / 'age')]:
@@ -154,13 +155,17 @@ class SnapshotTests(unittest.TestCase):
 
     def fake_dump(self, args, **kwargs): kwargs['stdout'].write(b'PGDMP-fixture'); return types.SimpleNamespace(returncode=0)
 
-    def fake_encrypt(self, args, **kwargs): Path(args[4]).write_bytes(b'age-encryption.org/v1\nencrypted fixture'); return b''
+    def fake_encrypt(self, args, **kwargs):
+        with tarfile.open(args[5]) as archive: self.archived_names = archive.getnames()
+        Path(args[4]).write_bytes(b'age-encryption.org/v1\nencrypted fixture'); return b''
 
     def test_consistent_pair_and_resumption_before_sealing(self):
         with patch.object(server, 'service_states', return_value=self.states), patch.object(server, 'stop_writers', side_effect=self.fake_stop), patch.object(server, 'resume_writers', side_effect=self.fake_resume), patch.object(server.subprocess, 'run', side_effect=self.fake_dump), patch.object(server, 'execute', side_effect=self.fake_encrypt):
             result = server.snapshot()
         self.assertEqual(self.calls, ['stop', 'resume'])
         self.assertTrue(result['sourceServicesResumed']); self.assertEqual(set(result['databaseHashes']), {'temporal.dump', 'temporal_visibility.dump'})
+        for name in ('runtime/worker/tsconfig.json', 'runtime/worker/harness/package.json', 'runtime/worker/harness/src/example.txt'):
+            self.assertIn(name, self.archived_names)
         self.assertFalse(list((self.root / 'backups/sealed').glob('sf-backup-*')))
 
     def test_dump_failure_always_attempts_resumption(self):

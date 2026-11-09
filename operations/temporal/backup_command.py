@@ -102,7 +102,8 @@ def snapshot():
     try:
         runtime = temporary / 'runtime'; runtime.mkdir()
         runtime_names = ('.env', 'compose.yaml', 'dynamicconfig', 'scripts', 'worker/src',
-                         'worker/Dockerfile', 'worker/package.json', 'worker/package-lock.json', 'ops')
+                         'worker/Dockerfile', 'worker/package.json', 'worker/package-lock.json',
+                         'worker/tsconfig.json', 'worker/harness', 'ops')
         for name in runtime_names:
             source = ROOT / name; target = runtime / name; target.parent.mkdir(parents=True, exist_ok=True)
             if source.is_dir(): shutil.copytree(source, target, symlinks=True)
