@@ -18,7 +18,7 @@ export interface ManagerOptions { correlationId: string; now?: () => Date; notif
 export class Manager {
   private now: () => Date;
   private async snapshot(): Promise<Snapshot> {
-    const snapshot = await this.github.snapshot(this.config.manager.workflow);
+    const snapshot = await this.github.snapshot(this.config.execution.engine === 'temporal' ? null : this.config.manager.workflow);
     if (this.config.execution.engine === 'temporal') {
       if (!this.options.workerRuntime) throw new Error('Temporal runtime is required; legacy dispatch is forbidden');
       const ids = [...new Set([...snapshot.comments.values()].flatMap(comments => comments.flatMap(comment => {

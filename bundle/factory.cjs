@@ -39002,7 +39002,7 @@ var GitHubClient = class {
       this.api.repos.get(this.target),
       this.api.paginate(this.api.issues.listForRepo, { ...this.target, labels: managedLabel, state: "all", per_page: 100 }),
       this.pullRequests(),
-      this.runs(workflow)
+      workflow === null ? Promise.resolve([]) : this.runs(workflow)
     ]);
     if (!repo.has_issues) throw new Error("GitHub Issues must be enabled");
     const issues = rows.filter((i) => !i.pull_request).map(normalizeIssue);
@@ -39562,7 +39562,7 @@ var Manager = class {
   options;
   now;
   async snapshot() {
-    const snapshot = await this.github.snapshot(this.config.manager.workflow);
+    const snapshot = await this.github.snapshot(this.config.execution.engine === "temporal" ? null : this.config.manager.workflow);
     if (this.config.execution.engine === "temporal") {
       if (!this.options.workerRuntime) throw new Error("Temporal runtime is required; legacy dispatch is forbidden");
       const ids = [...new Set([...snapshot.comments.values()].flatMap((comments) => comments.flatMap((comment) => {

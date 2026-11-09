@@ -35,6 +35,15 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     expect(state.prs[0]!.mergedBy).toEqual({ login: 'merge-agent[bot]', type: 'Bot' });
     expect(requested.some(u => u.includes('page=2'))).toBe(true);
   });
+  it('observes Temporal repositories without requiring a legacy Actions workflow', async () => {
+    const gh = new GitHubClient('owner/target', 'token', 1000, transport(url => {
+      if (url.pathname === '/graphql') return json({ data: { repository: { pullRequests: { nodes: [], pageInfo: { hasNextPage: false } } } } });
+      if (url.pathname.endsWith('/issues')) return json([]);
+      if (url.pathname === '/repos/owner/target') return json({ default_branch: 'main', has_issues: true });
+      throw new Error('Unexpected legacy workflow access');
+    }));
+    expect((await gh.snapshot(null)).runs).toEqual([]);
+  });
   it('bootstrap preserves existing labels and is repeatable', async () => {
     const labels = [{ name: allLabels[0], color: 'custom' }]; let posts = 0;
     const gh = new GitHubClient('owner/target', 'token', 1000, transport((_url, method, body) => {

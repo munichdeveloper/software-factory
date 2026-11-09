@@ -12,6 +12,12 @@ import { runtimeServer } from '../src/runtime/server.js';
 import type { RuntimeRelease, RuntimeObservation } from '../src/runtime/contract.js';
 import { MockPlanner } from '../src/llm/provider.js';
 import { config, issue, MemoryGitHub } from '../tests/helpers.js';
+import { githubFixtures } from './runtime-github-fixtures.js';
+
+// GitHub errors may embed authenticated request headers. Never print raw exceptions.
+process.on('uncaughtException', error => {
+  console.error(JSON.stringify({ code: 'RUNTIME_ACCEPTANCE_FAILED', status: 'status' in error && typeof error.status === 'number' ? error.status : undefined })); process.exit(1);
+});
 
 const database = new URL(process.env.RUNTIME_TEST_DATABASE_URL ?? '');
 assert.equal(database.hostname, 'sf-factory-acceptance-db'); assert.equal(database.pathname, '/factory_runtime_acceptance');
@@ -40,11 +46,14 @@ class Target extends MemoryGitHub {
     if (args[1].data.type === 'result' && this.lostResultResponse) { this.lostResultResponse = false; throw new Error('Injected lost journal response'); }
   }
 }
-const fixtures = [42, 43].map(repositoryId => {
+const simulated = [42, 43].map(repositoryId => {
   const github = new Target(`acceptance/repo-${repositoryId}`), cfg = config(); cfg.execution.engine = 'temporal'; github.state.issues.push(issue());
   const repository = { repositoryId, repository: github.repository, release, requireHumanGate: true, github, config: async () => cfg, baseSha: async () => 'd'.repeat(40) };
-  return { repository, controller: new RuntimeController(repository, store, temporal), planner: new MockPlanner(), github };
+  return { repository, controller: new RuntimeController(repository, store, temporal), planner: new MockPlanner(), github, issueNumber: 1 };
 });
+const real = process.env.SF_TEST_REAL_GITHUB === '1';
+const { fixtures, actor } = real ? await githubFixtures(release, store, temporal) : { fixtures: simulated, actor: 'maintainer' };
+const [repoA, repoB] = fixtures.map(f => f.repository.repositoryId) as [number, number];
 const server = runtimeServer({ managerToken, workerToken, bindings: fixtures, store });
 let child: ChildProcess | undefined;
 const wait = async <T>(work: () => Promise<T | null | false>, timeout = 30000): Promise<T> => {
@@ -76,11 +85,11 @@ try {
   startWorker();
   await wait(async () => (await temporal.workflowService.describeWorkerDeploymentVersion({ namespace,
     deploymentVersion: { deploymentName: release.deploymentName, buildId: release.buildId } })).workerDeploymentVersionInfo);
-  assert.equal((await call('/v1/repositories/42/reconcile', { actor: 'maintainer' }, workerToken)).status, 401);
+  assert.equal((await call(`/v1/repositories/${repoA}/reconcile`, { actor }, workerToken)).status, 401);
   assert.equal((await call('/v1/repositories/999/runs')).status, 409);
-  const first = await call('/v1/repositories/42/reconcile', { actor: 'maintainer' }); assert.equal(first.status, 200);
-  const second = await call('/v1/repositories/43/reconcile', { actor: 'maintainer' }); assert.equal(second.status, 200);
-  const rows = await Promise.all([42, 43].map(id => wait(async () => {
+  const first = await call(`/v1/repositories/${repoA}/reconcile`, { actor }); assert.equal(first.status, 200);
+  const second = await call(`/v1/repositories/${repoB}/reconcile`, { actor }); assert.equal(second.status, 200);
+  const rows = await Promise.all([repoA, repoB].map(id => wait(async () => {
     const data = (await call(`/v1/repositories/${id}/runs`)).body as RuntimeObservation[];
     return data[0]?.phase === 'awaiting-approval' ? data[0] : null;
   })));
@@ -90,32 +99,33 @@ try {
     assert.equal(detail.workflowExecutionInfo?.versioningInfo?.behavior, 1);
   }
   const row = rows[0]!;
-  assert.equal((await call(`/v1/repositories/42/runs/${row.executionId}/approve`, { actor: 'attacker', binding: row.binding })).status, 409);
-  assert.equal((await call(`/v1/repositories/42/runs/${row.executionId}/approve`, { actor: 'maintainer', binding: 'f'.repeat(64) })).status, 409);
-  assert.equal((await call(`/v1/repositories/43/runs/${row.executionId}/approve`, { actor: 'maintainer', binding: row.binding })).status, 409);
-  await call('/v1/repositories/42/reconcile', { actor: 'maintainer' });
-  assert.equal((await store.list(42)).length, 1);
+  assert.equal((await call(`/v1/repositories/${repoA}/runs/${row.executionId}/approve`, { actor: 'attacker', binding: row.binding })).status, 409);
+  assert.equal((await call(`/v1/repositories/${repoA}/runs/${row.executionId}/approve`, { actor, binding: 'f'.repeat(64) })).status, 409);
+  assert.equal((await call(`/v1/repositories/${repoB}/runs/${row.executionId}/approve`, { actor, binding: row.binding })).status, 409);
+  await call(`/v1/repositories/${repoA}/reconcile`, { actor });
+  assert.equal((await store.list(repoA)).length, 1);
   child!.kill('SIGKILL'); await new Promise<void>(resolve => child!.once('exit', () => resolve()));
   fixtures[0]!.github.lostResultResponse = true;
-  assert.equal((await call(`/v1/repositories/42/runs/${row.executionId}/approve`, { actor: 'maintainer', binding: row.binding })).status, 200);
+  assert.equal((await call(`/v1/repositories/${repoA}/runs/${row.executionId}/approve`, { actor, binding: row.binding })).status, 200);
   startWorker();
   const completed = await wait(async () => {
-    const data = (await call('/v1/repositories/42/runs')).body as RuntimeObservation[];
+    const data = (await call(`/v1/repositories/${repoA}/runs`)).body as RuntimeObservation[];
     return data[0]?.status === 'completed' && data[0].result ? data[0] : null;
   }, 60000);
   assert.equal(completed.runId, row.runId); assert.equal(completed.result!.status, 'success');
   assert(completed.result!.artifacts.some(a => a.startsWith('urn:sha256:')));
-  const resultComments = (await fixtures[0]!.github.comments(1)).filter(c => c.body.includes('"type": "result"')); assert.equal(resultComments.length, 1);
-  assert.equal((await call('/v1/repositories/43/runs')).body[0].phase, 'awaiting-approval');
-  await call(`/v1/repositories/43/runs/${rows[1]!.executionId}/cancel`, { actor: 'maintainer' });
+  const resultComments = (await fixtures[0]!.github.comments(fixtures[0]!.issueNumber)).filter(c => c.body.includes('"type": "result"')); assert.equal(resultComments.length, 1);
+  assert.equal((await call(`/v1/repositories/${repoB}/runs`)).body[0].phase, 'awaiting-approval');
+  await call(`/v1/repositories/${repoB}/runs/${rows[1]!.executionId}/cancel`, { actor });
   await wait(async () => {
-    const data = (await call('/v1/repositories/43/runs')).body as RuntimeObservation[]; return data[0]?.status === 'cancelled' ? data[0] : null;
+    const data = (await call(`/v1/repositories/${repoB}/runs`)).body as RuntimeObservation[]; return data[0]?.status === 'cancelled' ? data[0] : null;
   });
   const report = { passed: true, factorySha, release, runs: rows.map(r => ({ workflowId: r.workflowId, runId: r.runId })),
     workerCrashRestartSameRunId: true, persistedApprovalWhileWorkerStopped: true, realHarnessResult: completed.result,
-    lostJournalResponseReconciled: true, resultJournalCount: resultComments.length, duplicateDispatchCount: (await store.list(42)).length,
+    lostJournalResponseReconciled: true, resultJournalCount: resultComments.length, duplicateDispatchCount: (await store.list(repoA)).length,
     crossRepositoryGateRejected: true, untrustedActorRejected: true, staleBindingRejected: true, workerCannotCallManager: true,
-    sharedCluster: true, pinnedServerBehavior: true, githubAdapter: 'simulated GitHub port; no real PR publication in this test',
+    sharedCluster: true, pinnedServerBehavior: true, githubAdapter: real ? 'real repository-scoped GitHub App; result journal only, no PR publication' : 'simulated GitHub port; no real PR publication in this test',
+    repositories: fixtures.map(f => ({ id: f.repository.repositoryId, name: f.repository.repository, issueNumber: f.issueNumber })),
     workerEnvironmentKeys: Object.keys(childEnvironment), checkedAt: new Date().toISOString() };
   await writeFile(resolve(directory, 'result.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
 } finally {

@@ -89,11 +89,11 @@ export class GitHubClient implements GitHubPort {
     } while (cursor);
     return result;
   }
-  async snapshot(workflow: string): Promise<Snapshot> {
+  async snapshot(workflow: string | null): Promise<Snapshot> {
     const [{ data: repo }, rows, prs, runs] = await Promise.all([
       this.api.repos.get(this.target),
       this.api.paginate(this.api.issues.listForRepo, { ...this.target, labels: managedLabel, state: 'all', per_page: 100 }),
-      this.pullRequests(), this.runs(workflow)
+      this.pullRequests(), workflow === null ? Promise.resolve([]) : this.runs(workflow)
     ]);
     if (!repo.has_issues) throw new Error('GitHub Issues must be enabled');
     // Repository push is contents-write, not issues/actions-write. A least-privilege
