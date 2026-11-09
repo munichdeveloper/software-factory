@@ -38899,13 +38899,13 @@ var normalizeIssue = (i) => ({
   authorType: i.user?.type
 });
 var GitHubClient = class {
-  constructor(repository, token, timeoutMs = 3e4, fetcher = fetch) {
+  constructor(repository, token, timeoutMs = 3e4, fetcher = fetch, api) {
     this.repository = repository;
     if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error("Repository must be owner/name");
-    if (!token) throw new Error("GITHUB_TOKEN is required");
+    if (!token && !api) throw new Error("GITHUB_TOKEN is required");
     const [owner, repo] = repository.split("/");
     this.target = { owner, repo };
-    this.api = new Octokit2({ auth: token, request: { timeout: timeoutMs, fetch: fetcher }, log: { debug() {
+    this.api = api ?? new Octokit2({ auth: token, request: { timeout: timeoutMs, fetch: fetcher }, log: { debug() {
     }, info() {
     }, warn() {
     }, error() {
@@ -40197,10 +40197,10 @@ var import_node_crypto2 = require("node:crypto");
 var CodingRepository = class {
   api;
   target;
-  constructor(repository, token, fetcher = fetch) {
+  constructor(repository, token, fetcher = fetch, api) {
     const [owner, repo] = repository.split("/");
     this.target = { owner, repo };
-    this.api = new Octokit2({ auth: token, request: { timeout: 3e4, fetch: fetcher }, log: { debug() {
+    this.api = api ?? new Octokit2({ auth: token, request: { timeout: 3e4, fetch: fetcher }, log: { debug() {
     }, info() {
     }, warn() {
     }, error() {
