@@ -33,6 +33,7 @@ export function runtimeServer(options: ServerOptions) {
         if (!binding) throw new Error('UNKNOWN_REPOSITORY');
         if (path === '/v1/worker/gate') send(response, 200, await binding.controller.gateApproved(body.snapshot, body.binding));
         else if (path === '/v1/worker/authorize') { await binding.controller.authorize(body.snapshot, body.binding); send(response, 200, { ok: true }); }
+        else if (path === '/v1/worker/coding-execution') send(response, 200, await binding.controller.executeCoding(body.snapshot, body.binding));
         else if (path === '/v1/worker/publish' && body.result) send(response, 200, await binding.controller.publish(body.snapshot, body.binding, body.result));
         else throw new Error('UNKNOWN_OPERATION');
         return;

@@ -1,0 +1,79 @@
+name: Temporal isolated coding executor
+on:
+  workflow_call:
+    inputs:
+      factory-ref:
+        type: string
+        required: true
+      harness-ref:
+        type: string
+        required: true
+      request:
+        type: string
+        required: true
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+permissions: {}
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      request: ${{ steps.request.outputs.request }}
+      execution-id: ${{ steps.request.outputs.execution-id }}
+      base-sha: ${{ steps.request.outputs.base-sha }}
+    steps:
+      - name: Validate immutable runtime references
+        shell: bash
+        env:
+          FACTORY_REF: ${{ inputs.factory-ref }}
+          HARNESS_REF: ${{ inputs.harness-ref }}
+        run: |
+          [[ "$FACTORY_REF" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$HARNESS_REF" =~ ^[a-f0-9]{40}$ ]]
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: munichdeveloper/software-factory
+          ref: ${{ inputs.factory-ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - id: request
+        env:
+          SF_CODING_REQUEST: ${{ inputs.request }}
+        run: node bundle/factory.cjs validate-coding-execution
+  code:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.validate.outputs.base-sha }}
+          path: target
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: munichdeveloper/dev-agent-harness
+          ref: ${{ inputs.harness-ref }}
+          path: .runtime/harness
+          persist-credentials: false
+      - id: codex
+        uses: ./.runtime/harness
+        with:
+          request: ${{ needs.validate.outputs.request }}
+          execution-id: ${{ needs.validate.outputs.execution-id }}
+          workspace: ${{ github.workspace }}/target
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coding-result-${{ needs.validate.outputs.execution-id }}
+          path: ${{ steps.codex.outputs.artifact }}
+          if-no-files-found: error
+          retention-days: 7

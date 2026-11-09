@@ -19,6 +19,9 @@ import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
 import { scopedRuntimeGitHub } from './github-app.js';
+import { ActionsCodingExecutor } from './coding-executor.js';
+import { RuntimeEffects } from './effects.js';
+import { RuntimeCodingPublisher } from './publisher.js';
 
 const registrySchema = z.strictObject({
   namespace: z.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
@@ -69,6 +72,10 @@ export async function main(args = process.argv.slice(2)) {
       const repository: RuntimeRepository = { ...item, github, config: async () => loadConfig(await github.readConfig('.github/software-factory.yml')),
         baseSha: async () => (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
       const controller = new RuntimeController(repository, store, temporal);
+      const effects = (snapshot: Parameters<ActionsCodingExecutor['poll']>[0], binding: string) => new RuntimeEffects(store, repository.repositoryId, snapshot.admission.input.executionId, binding);
+      repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors),
+        publish: async (snapshot, binding, artifact, createdAt) => new RuntimeCodingPublisher(api, effects(snapshot, binding),
+          () => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors).publish(snapshot, artifact, createdAt) };
       // Refuse a registry rollout which would orphan any running version, including long human gates.
       const rows = await store.list(item.repositoryId), observations = await controller.observations(rows.filter(r => r.runId).map(r => r.snapshot.admission.input.executionId));
       for (const row of rows.filter(r => observations.find(o => o.executionId === r.snapshot.admission.input.executionId)?.status === 'running')) {

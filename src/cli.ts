@@ -20,6 +20,7 @@ import { deploySummary, executeDeploy, planDeploy, readEvent } from './deploy/in
 import { resolveTarget } from './deploy/target.js';
 import { SshTransport } from './deploy/transport.js';
 import { RuntimeHttpClient } from './runtime/client.js';
+import { codingExecutionSchema } from './runtime/coding-contract.js';
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
@@ -29,6 +30,12 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     sha: { type: 'string' }, source: { type: 'string' }
   } });
   const command = positionals[0] ?? 'manager';
+  if (command === 'validate-coding-execution') {
+    const request = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ''));
+    const text = JSON.stringify(request);
+    if (Buffer.byteLength(text) > 60000 || !process.env.GITHUB_OUTPUT) throw new Error('Invalid coding executor request');
+    await appendFile(process.env.GITHUB_OUTPUT, `request=${text}\nexecution-id=${request.executionId}\nbase-sha=${request.baseSha}\n`); return;
+  }
   if (command === 'validate') {
     if (!values.file) throw new Error('validate requires --file');
     loadConfig(await readFile(values.file, 'utf8'));

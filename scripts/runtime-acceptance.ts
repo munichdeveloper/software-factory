@@ -52,6 +52,7 @@ const simulated = [42, 43].map(repositoryId => {
   return { repository, controller: new RuntimeController(repository, store, temporal), planner: new MockPlanner(), github, issueNumber: 1 };
 });
 const real = process.env.SF_TEST_REAL_GITHUB === '1';
+const publisherFixture = process.env.SF_TEST_PUBLISHER_FIXTURE === '1';
 const { fixtures, actor } = real ? await githubFixtures(release, store, temporal) : { fixtures: simulated, actor: 'maintainer' };
 const [repoA, repoB] = fixtures.map(f => f.repository.repositoryId) as [number, number];
 const server = runtimeServer({ managerToken, workerToken, bindings: fixtures, store });
@@ -113,7 +114,7 @@ try {
     return data[0]?.status === 'completed' && data[0].result ? data[0] : null;
   }, 60000);
   assert.equal(completed.runId, row.runId); assert.equal(completed.result!.status, 'success');
-  assert(completed.result!.artifacts.some(a => a.startsWith('urn:sha256:')));
+  assert(completed.result!.artifacts.some(a => publisherFixture ? a.startsWith('https://github.com/') && a.includes('/pull/') : a.startsWith('urn:sha256:')));
   const resultComments = (await fixtures[0]!.github.comments(fixtures[0]!.issueNumber)).filter(c => c.body.includes('"type": "result"')); assert.equal(resultComments.length, 1);
   assert.equal((await call(`/v1/repositories/${repoB}/runs`)).body[0].phase, 'awaiting-approval');
   await call(`/v1/repositories/${repoB}/runs/${rows[1]!.executionId}/cancel`, { actor });
@@ -121,11 +122,12 @@ try {
     const data = (await call(`/v1/repositories/${repoB}/runs`)).body as RuntimeObservation[]; return data[0]?.status === 'cancelled' ? data[0] : null;
   });
   const report = { passed: true, factorySha, release, runs: rows.map(r => ({ workflowId: r.workflowId, runId: r.runId })),
-    workerCrashRestartSameRunId: true, persistedApprovalWhileWorkerStopped: true, realHarnessResult: completed.result,
+    workerCrashRestartSameRunId: true, persistedApprovalWhileWorkerStopped: true, ...(publisherFixture ? { publisherResult: completed.result } : { realHarnessResult: completed.result }),
     lostJournalResponseReconciled: true, resultJournalCount: resultComments.length, duplicateDispatchCount: (await store.list(repoA)).length,
     crossRepositoryGateRejected: true, untrustedActorRejected: true, staleBindingRejected: true, workerCannotCallManager: true,
-    sharedCluster: true, pinnedServerBehavior: true, githubAdapter: real ? 'real repository-scoped GitHub App; result journal only, no PR publication' : 'simulated GitHub port; no real PR publication in this test',
+    sharedCluster: true, pinnedServerBehavior: true, githubAdapter: publisherFixture ? 'real repository-scoped GitHub App; deterministic artifact fixture and real Draft PR publisher' : real ? 'real repository-scoped GitHub App; result journal only, no PR publication' : 'simulated GitHub port; no real PR publication in this test',
     repositories: fixtures.map(f => ({ id: f.repository.repositoryId, name: f.repository.repository, issueNumber: f.issueNumber })),
+    publisherFixture, actualModelExecution: false,
     workerEnvironmentKeys: Object.keys(childEnvironment), checkedAt: new Date().toISOString() };
   await writeFile(resolve(directory, 'result.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
 } finally {

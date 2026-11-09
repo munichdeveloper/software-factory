@@ -41270,6 +41270,25 @@ var RuntimeHttpClient = class {
   }
 };
 
+// src/runtime/coding-contract.ts
+var codingExecutionSchema = external_exports.strictObject({
+  contractVersion: external_exports.literal("3.0"),
+  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  worker: external_exports.literal("codex"),
+  task: external_exports.strictObject({
+    id: external_exports.string().min(1).max(200),
+    version: external_exports.string().regex(/^[a-f0-9]{64}$/),
+    description: external_exports.string().min(1).max(2e4),
+    acceptanceCriteria: external_exports.string().min(1).array().min(1).max(20),
+    contextReferences: external_exports.string().max(1e3).array().max(30)
+  }),
+  baseSha: external_exports.string().regex(/^[a-f0-9]{40}$/),
+  allowedActions: external_exports.tuple([external_exports.literal("edit_workspace"), external_exports.literal("run_commands")]),
+  model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  effort: external_exports.enum(["low", "medium", "high", "xhigh"]),
+  limits: external_exports.strictObject({ timeoutMinutes: external_exports.number().int().min(1).max(30), maxFiles: external_exports.literal(100), maxPatchBytes: external_exports.literal(5e6) })
+});
+
 // src/cli.ts
 async function main(args = process.argv.slice(2)) {
   const { values, positionals } = (0, import_node_util.parseArgs)({ args, allowPositionals: true, options: {
@@ -41284,6 +41303,16 @@ async function main(args = process.argv.slice(2)) {
     source: { type: "string" }
   } });
   const command = positionals[0] ?? "manager";
+  if (command === "validate-coding-execution") {
+    const request2 = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ""));
+    const text = JSON.stringify(request2);
+    if (Buffer.byteLength(text) > 6e4 || !process.env.GITHUB_OUTPUT) throw new Error("Invalid coding executor request");
+    await (0, import_promises3.appendFile)(process.env.GITHUB_OUTPUT, `request=${text}
+execution-id=${request2.executionId}
+base-sha=${request2.baseSha}
+`);
+    return;
+  }
   if (command === "validate") {
     if (!values.file) throw new Error("validate requires --file");
     loadConfig(await (0, import_promises3.readFile)(values.file, "utf8"));

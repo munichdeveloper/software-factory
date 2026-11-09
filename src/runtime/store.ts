@@ -2,6 +2,8 @@ import { Pool, type PoolClient } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { snapshotSchema, type RunSnapshot } from './contract.js';
 import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
+import { codingArtifactSchema, type CodingArtifact } from '../workers/coding.js';
+import { hash } from '../state/identity.js';
 
 export interface StoredRun {
   snapshot: RunSnapshot; binding: string; workflowId: string; runId: string | null; createdAt: string;
@@ -27,7 +29,11 @@ export class RuntimeStore {
         payload_hash text NOT NULL, phase text NOT NULL, PRIMARY KEY(repository_id,execution_id,effect));
       CREATE TABLE IF NOT EXISTS factory_runtime_approvals (
         repository_id bigint NOT NULL, execution_id text NOT NULL, binding text NOT NULL, actor text NOT NULL,
-        approved boolean NOT NULL, created_at timestamptz NOT NULL DEFAULT now());`);
+        approved boolean NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      ALTER TABLE factory_runtime_effects ADD COLUMN IF NOT EXISTS receipt jsonb;
+      CREATE TABLE IF NOT EXISTS factory_runtime_artifacts (
+        repository_id bigint NOT NULL, execution_id text NOT NULL, digest text NOT NULL, artifact jsonb NOT NULL,
+        PRIMARY KEY(repository_id,execution_id));`);
   }
   async locked<T>(repositoryId: number, executionId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
     const inherited = this.context.getStore(), client = inherited ?? await this.pool.connect(), key = `${repositoryId}:${executionId}`;
@@ -79,5 +85,17 @@ export class RuntimeStore {
   }
   async terminal(repositoryId: number, executionId: string) {
     await this.db().query('UPDATE factory_runtime_runs SET terminal=true WHERE repository_id=$1 AND execution_id=$2', [repositoryId, executionId]);
+  }
+  async artifact(repositoryId: number, executionId: string): Promise<CodingArtifact | null> {
+    const { rows } = await this.db().query<{ artifact: unknown; digest: string }>('SELECT artifact,digest FROM factory_runtime_artifacts WHERE repository_id=$1 AND execution_id=$2', [repositoryId, executionId]);
+    if (!rows[0]) return null;
+    const artifact = codingArtifactSchema.parse(rows[0].artifact);
+    if (hash(artifact) !== rows[0].digest) throw new Error('STORED_ARTIFACT_INTEGRITY_FAILED');
+    return artifact;
+  }
+  async saveArtifact(repositoryId: number, executionId: string, value: CodingArtifact) {
+    const artifact = codingArtifactSchema.parse(value), digest = hash(artifact);
+    await this.db().query('INSERT INTO factory_runtime_artifacts(repository_id,execution_id,digest,artifact) VALUES($1,$2,$3,$4) ON CONFLICT(repository_id,execution_id) DO NOTHING', [repositoryId, executionId, digest, JSON.stringify(artifact)]);
+    if (hash(await this.artifact(repositoryId, executionId)) !== digest) throw new Error('CODING_ARTIFACT_CONFLICT');
   }
 }

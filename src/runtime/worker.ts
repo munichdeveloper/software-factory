@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { NativeConnection, Worker } from '@temporalio/worker';
+import { Context } from '@temporalio/activity';
 import { releaseSchema, snapshotSchema, type RunSnapshot } from './contract.js';
 import type { RuntimeActivities } from './workflow.js';
 import { HarnessProcessClient } from '../workers/harness-client.js';
@@ -21,7 +22,16 @@ export function createActivities(pack: WorkerPackage, broker: (operation: string
     async execute(value, binding) {
       const snapshot = validate(value);
       await broker('authorize', snapshot, binding);
-      if (snapshot.admission.input.worker !== 'test') throw new Error('Coding requires its isolated executor; test worker will not downgrade a coding task');
+      if (snapshot.admission.input.worker === 'codex') {
+        const deadline = Date.now() + snapshot.admission.input.limits.timeoutMinutes * 60000;
+        while (Date.now() < deadline) {
+          Context.current().heartbeat();
+          const result = await broker('coding-execution', snapshot, binding);
+          if (result !== null) return workerResultSchema.parse(result);
+          await new Promise(resolve => setTimeout(resolve, 4000));
+        }
+        throw new Error('CODING_EXECUTOR_DEADLINE');
+      }
       return new HarnessProcessClient(pack.harnessEntrypoint).execute(snapshot.admission.input);
     },
     async publish(value, binding, result) { return workerResultSchema.parse(await broker('publish', validate(value), binding, result)); },

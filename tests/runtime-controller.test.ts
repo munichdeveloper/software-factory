@@ -10,9 +10,11 @@ import { clock, config, issue, MemoryGitHub } from './helpers.js';
 import { hash } from '../src/state/identity.js';
 import type { WorkerResult } from '../src/workers/contract.js';
 import { createActivities } from '../src/runtime/worker.js';
+import type { CodingArtifact } from '../src/workers/coding.js';
 
 class MemoryStore extends RuntimeStore {
   row: StoredRun | null = null; effect = false; private tail = Promise.resolve();
+  codingArtifact: CodingArtifact | null = null;
   constructor() { super(new Pool()); }
   override async get() { return this.row; }
   override async insert(snapshot: StoredRun['snapshot'], binding: string, workflowId: string) {
@@ -22,6 +24,8 @@ class MemoryStore extends RuntimeStore {
   override async started(_repositoryId: number, _executionId: string, runId: string) { this.row!.runId = runId; }
   override async complete(_repositoryId: number, _executionId: string, result: WorkerResult) { this.row!.result = result; this.row!.terminal = true; }
   override async terminal() { this.row!.terminal = true; }
+  override async artifact() { return this.codingArtifact; }
+  override async saveArtifact(_repo: number, _id: string, artifact: CodingArtifact) { this.codingArtifact = artifact; }
   override async cancel() { this.row!.cancelled = true; this.row!.approved = false; }
   override async gate(_repositoryId: number, _executionId: string, binding: string, _actor: string, approved: boolean) {
     if (this.row?.binding !== binding || this.row.terminal || this.row.cancelled) throw new Error('STALE_APPROVAL'); this.row.approved = approved;
@@ -36,8 +40,9 @@ class MemoryStore extends RuntimeStore {
   }
 }
 const release: RuntimeRelease = { factorySha: 'a'.repeat(40), harnessSha: 'b'.repeat(40), workflowHash: 'c'.repeat(64), deploymentName: 'factory-runtime', buildId: 'v1', taskQueue: 'factory-runtime', schemaVersion: 1 };
-async function fixture(requireHumanGate = true) {
+async function fixture(requireHumanGate = true, coding = false) {
   const cfg = config(), github = new MemoryGitHub(); cfg.execution.engine = 'temporal'; github.state.issues.push(issue());
+  if (coding) cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
   let admission!: Admission;
   await new Manager(github, cfg, new MockPlanner(), { correlationId: 'prepare', now: () => clock,
     workerRuntime: { observations: async () => [], cancel: async () => {}, start: async value => { admission = value; throw new Error('test captures admission'); } } }).run();
@@ -99,6 +104,27 @@ describe('Temporal admission, identity and approval', () => {
   });
 });
 describe('durable result outbox', () => {
+  it('persists a correlated coding artifact, publishes a draft result and reuses it after restart', async () => {
+    const f = await fixture(true, true); await f.controller.start(f.admission); const row = f.store.row!;
+    const artifact: CodingArtifact = { contractVersion: '3.0', baseSha: row.snapshot.baseSha,
+      result: { contractVersion: '2.0', executionId: f.admission.input.executionId, taskId: `github:${f.github.repository}#1`, taskVersion: f.admission.input.taskVersion,
+        status: 'success', summary: 'Implemented and tested', artifacts: [], error: null }, changes: [{ path: 'result.txt', content: 'eA==', mode: '100644' }] };
+    const poll = vi.fn(async () => ({ artifact })), publish = vi.fn(async () => ({ url: 'https://github.com/owner/target/pull/3' }));
+    Object.assign(f.repo, { coding: { executor: { poll, cancel: vi.fn(async () => {}) }, publish } });
+    await expect(f.controller.executeCoding(row.snapshot, row.binding)).rejects.toThrow('APPROVAL_REQUIRED');
+    await f.controller.gate(f.result.executionId, row.binding, 'maintainer', true);
+    const result = (await f.controller.executeCoding(row.snapshot, row.binding))!;
+    expect(await f.controller.executeCoding(row.snapshot, row.binding)).toEqual(result); expect(poll).toHaveBeenCalledOnce();
+    await expect(f.controller.publish(row.snapshot, row.binding, { ...result, summary: 'forged' })).rejects.toThrow('RESULT_CONFLICT');
+    const final = await f.controller.publish(row.snapshot, row.binding, result); expect(final.artifacts).toEqual(['https://github.com/owner/target/pull/3']);
+    f.github.state.issues[0]!.body += '\nLater task change';
+    expect(await f.controller.publish(row.snapshot, row.binding, result)).toEqual(final); expect(publish).toHaveBeenCalledOnce();
+  });
+  it('rejects an executor artifact belonging to a different base before persisting it', async () => {
+    const f = await fixture(false, true); await f.controller.start(f.admission); const row = f.store.row!;
+    Object.assign(f.repo, { coding: { executor: { poll: async () => ({ artifact: { baseSha: 'f'.repeat(40), result: {} } }) } } });
+    await expect(f.controller.executeCoding(row.snapshot, row.binding)).rejects.toThrow('UNRELATED_EXECUTOR_ARTIFACT'); expect(f.store.codingArtifact).toBeNull();
+  });
   it('reconciles after GitHub accepted a write but its response was lost', async () => {
     const f = await fixture(false); await f.controller.start(f.admission); const row = f.store.row!;
     const original = f.github.writeEvent.bind(f.github); let lose = true;

@@ -8,10 +8,13 @@ import { decodeEvent } from '../state/events.js';
 import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
 import { RuntimeStore, type StoredRun } from './store.js';
 import { admissionSchema, snapshotSchema, workflowId, type Admission, type RunSnapshot, type RuntimeObservation, type RuntimeRelease, type RuntimeState, type WorkerRuntimePort } from './contract.js';
+import type { CodingExecutionPort } from './coding-executor.js';
+import type { CodingArtifact } from '../workers/coding.js';
 
 export interface RuntimeRepository {
   repositoryId: number; repository: string; release: RuntimeRelease; retainedReleases?: RuntimeRelease[]; requireHumanGate: boolean;
   github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
+  coding?: { executor: CodingExecutionPort; publish(snapshot: RunSnapshot, binding: string, artifact: CodingArtifact, createdAt: string): Promise<{ url: string }> };
 }
 export class RuntimeController implements WorkerRuntimePort {
   constructor(private repo: RuntimeRepository, private store: RuntimeStore, private temporal: Client) {}
@@ -105,17 +108,45 @@ export class RuntimeController implements WorkerRuntimePort {
   async cancel(id: string) {
     const row = await this.store.get(this.repo.repositoryId, id);
     if (!row) throw new Error('UNKNOWN_RUN');
-    await this.store.cancel(this.repo.repositoryId, id);
+    await this.store.locked(this.repo.repositoryId, id, () => this.store.cancel(this.repo.repositoryId, id));
+    if (row.snapshot.admission.input.worker === 'codex' && this.repo.coding) await this.repo.coding.executor.cancel(row.snapshot, row.binding);
     if (row.runId) await this.temporal.workflow.getHandle(row.workflowId, row.runId).signal('cancelRequested');
   }
+  private codingResult(snapshot: RunSnapshot, artifact: CodingArtifact): WorkerResult {
+    const input = snapshot.admission.input;
+    if (artifact.baseSha !== snapshot.baseSha || artifact.result.executionId !== input.executionId || artifact.result.taskVersion !== snapshot.specHash ||
+      artifact.result.taskId !== `github:${snapshot.repository}#${input.issueNumber}`) throw new Error('UNRELATED_EXECUTOR_ARTIFACT');
+    return workerResultSchema.parse({ contractVersion: '1.0', executionId: input.executionId, issueNumber: input.issueNumber,
+      status: artifact.result.status === 'timed_out' ? 'failed' : artifact.result.status === 'success' && !artifact.changes.length ? 'blocked' : artifact.result.status,
+      summary: artifact.result.summary, error: artifact.result.error, artifacts: [`urn:sf-artifact:${hash(artifact)}`], proposedActions: [] });
+  }
+  async executeCoding(snapshot: RunSnapshot, binding: string): Promise<WorkerResult | null> {
+    await this.authorize(snapshot, binding);
+    if (snapshot.admission.input.worker !== 'codex' || !this.repo.coding) throw new Error('CODING_EXECUTOR_UNAVAILABLE');
+    const id = snapshot.admission.input.executionId, previous = await this.store.artifact(this.repo.repositoryId, id);
+    if (previous) return this.codingResult(snapshot, previous);
+    const outcome = await this.repo.coding.executor.poll(snapshot, binding, await this.current(snapshot));
+    if (!outcome) return null;
+    if ('failed' in outcome) return workerResultSchema.parse({ contractVersion: '1.0', executionId: id, issueNumber: snapshot.admission.input.issueNumber,
+      status: 'failed', summary: 'Isolated coding executor failed', error: 'Inspect the scoped executor run', artifacts: [], proposedActions: [] });
+    const result = this.codingResult(snapshot, outcome.artifact);
+    await this.store.saveArtifact(this.repo.repositoryId, id, outcome.artifact); return result;
+  }
   async publish(snapshot: RunSnapshot, binding: string, value: WorkerResult): Promise<WorkerResult> {
-    const result = workerResultSchema.parse(value), id = snapshot.admission.input.executionId;
+    let result = workerResultSchema.parse(value); const id = snapshot.admission.input.executionId;
     if (result.executionId !== id || result.issueNumber !== snapshot.admission.input.issueNumber) throw new Error('RESULT_MISMATCH');
     return this.store.locked(this.repo.repositoryId, id, async client => {
       const row = await this.store.get(this.repo.repositoryId, id);
       if (!row || row.binding !== binding || hash(snapshot) !== binding) throw new Error('UNKNOWN_RUN');
-      if (row.result) { if (hash(row.result) !== hash(result)) throw new Error('RESULT_CONFLICT'); return row.result; }
+      const artifact = snapshot.admission.input.worker === 'codex' ? await this.store.artifact(this.repo.repositoryId, id) : null;
+      if (artifact && hash(this.codingResult(snapshot, artifact)) !== hash(result)) throw new Error('RESULT_CONFLICT');
+      if (row.result) { if (!artifact && hash(row.result) !== hash(result)) throw new Error('RESULT_CONFLICT'); return row.result; }
       await this.authorize(snapshot, binding);
+      if (snapshot.admission.input.worker === 'codex' && result.status === 'success') {
+        if (!artifact || !this.repo.coding) throw new Error('MISSING_CODING_ARTIFACT');
+        const pr = await this.repo.coding.publish(snapshot, binding, artifact, row.createdAt);
+        result = { ...result, artifacts: [pr.url] };
+      }
       const config = await this.repo.config(), digest = hash(result);
       const events = (await this.repo.github.comments(result.issueNumber)).map(c => decodeEvent(c, config.manager.trustedActors));
       const published = events.find(e => e?.data.type === 'result' && e.data.result.executionId === id);
