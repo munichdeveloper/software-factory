@@ -36,7 +36,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     if (binding !== hash(snapshot)) throw new Error('EXECUTOR_BINDING_MISMATCH');
     const [owner, repo] = snapshot.repository.split('/') as [string, string], target = { owner, repo }, id = snapshot.admission.input.executionId;
     if ((await this.api.repos.get(target)).data.id !== snapshot.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
-    const runs = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...target, workflow_id: codingWorkflow, branch: `sf-temporal-executor/${id}`, event: 'workflow_dispatch', per_page: 100 });
+    const runs = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...target, workflow_id: snapshot.executorWorkflow ?? codingWorkflow, branch: `sf-temporal-executor/${id}`, event: 'workflow_dispatch', per_page: 100 });
     const matches = runs.filter(r => r.display_title === `SF Temporal ${id} ${binding}`);
     if (matches.length > 1) throw new Error('MULTIPLE_EXECUTOR_RUNS');
     const run = matches[0]; if (!run || run.status === 'completed') return;
@@ -46,12 +46,12 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
   }
   async poll(snapshot: RunSnapshot, binding: string, config: Config) {
     await this.authorize(snapshot, binding);
-    const input = snapshot.admission.input, coding = config.workers.coding;
+    const input = snapshot.admission.input, coding = config.workers.coding, workflow = snapshot.executorWorkflow ?? codingWorkflow;
     if (input.worker !== 'codex' || !coding || !coding.enabled || binding !== hash(snapshot)) throw new Error('CODING_NOT_AUTHORIZED');
     const [owner, repo] = snapshot.repository.split('/') as [string, string], target = { owner, repo };
     const metadata = (await this.api.repos.get(target)).data;
     if (metadata.id !== snapshot.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
-    const wrapper = (await this.api.repos.getContent({ ...target, path: `.github/workflows/${codingWorkflow}`, ref: snapshot.baseSha })).data;
+    const wrapper = (await this.api.repos.getContent({ ...target, path: `.github/workflows/${workflow}`, ref: snapshot.baseSha })).data;
     if (!('content' in wrapper) || wrapper.encoding !== 'base64' || Buffer.from(wrapper.content, 'base64').toString('utf8') !== executorWrapper(snapshot.release.factorySha, snapshot.release.harnessSha)) throw new Error('EXECUTOR_WRAPPER_RELEASE_MISMATCH');
     const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: 'codex',
       task: { id: `github:${snapshot.repository}#${input.issueNumber}`, version: input.taskVersion, description: input.description,
@@ -68,7 +68,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
       } catch (error) { if (error && typeof error === 'object' && 'status' in error && error.status === 404) return null; throw error; } },
       apply: async () => ({ sha: (await this.api.git.createRef({ ...target, ref: `refs/heads/${ref}`, sha: snapshot.baseSha })).data.object.sha }) });
     const runs = [];
-    for await (const page of this.api.paginate.iterator(this.api.actions.listWorkflowRuns, { ...target, workflow_id: codingWorkflow, branch: ref, event: 'workflow_dispatch', per_page: 100 })) {
+    for await (const page of this.api.paginate.iterator(this.api.actions.listWorkflowRuns, { ...target, workflow_id: workflow, branch: ref, event: 'workflow_dispatch', per_page: 100 })) {
       runs.push(...page.data); if (runs.length > 1000) throw new Error('EXECUTOR_RUN_SCAN_LIMIT');
     }
     const matching = runs.filter(r => r.display_title === name);
@@ -77,9 +77,9 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     if (run && (run.head_sha !== snapshot.baseSha || run.event !== 'workflow_dispatch' || run.run_attempt !== 1 ||
       !this.trustedActors.includes(run.actor?.login ?? ''))) throw new Error('EXECUTOR_RUN_CONFLICT');
     try {
-      await effects.perform({ key: 'coding-dispatch', payload: { ref, request, binding, workflow: codingWorkflow }, authorize,
+      await effects.perform({ key: 'coding-dispatch', payload: { ref, request, binding, workflow }, authorize,
         validate: z.strictObject({ accepted: z.literal(true) }).parse, reconcile: async () => run ? { accepted: true as const } : null,
-        apply: async () => { await this.api.actions.createWorkflowDispatch({ ...target, workflow_id: codingWorkflow, ref, inputs: { request: serialized, binding } }); return { accepted: true as const }; } });
+        apply: async () => { await this.api.actions.createWorkflowDispatch({ ...target, workflow_id: workflow, ref, inputs: { request: serialized, binding } }); return { accepted: true as const }; } });
     } catch (error) {
       if (error instanceof Error && error.message === 'EFFECT_UNCERTAIN_RECONCILIATION_REQUIRED') return null;
       throw error;

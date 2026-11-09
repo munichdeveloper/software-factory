@@ -42,7 +42,7 @@ export async function startRuntimeWorker(pack: WorkerPackage, address: string, n
   const release = releaseSchema.parse(pack.release), url = runtimeUrl(brokerUrl);
   if (!isAbsolute(pack.bundlePath) || !isAbsolute(pack.harnessEntrypoint) || token.length < 32 ||
     (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) || url.username || url.password) throw new Error('INVALID_WORKER_CONFIGURATION');
-  for (const key of ['GITHUB_TOKEN', 'GH_TOKEN', 'OPENAI_API_KEY', 'DOCKER_HOST', 'NODE_OPTIONS']) {
+  for (const key of ['GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_APP_PRIVATE_KEY', 'OPENAI_API_KEY', 'FACTORY_MANAGER_TOKEN', 'FACTORY_RUNTIME_DATABASE_URL', 'DATABASE_URL', 'DOCKER_HOST', 'NODE_OPTIONS']) {
     if (process.env[key]) throw new Error('WORKER_SECRET_BOUNDARY_VIOLATION');
   }
   const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');

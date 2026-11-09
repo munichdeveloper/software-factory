@@ -5,6 +5,25 @@ on:
     branches: [main, 'feat/**']
 permissions: {}
 jobs:
+  temporal-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Build fresh credential-free runtime package
+        env:
+          FACTORY_SHA: ${{ github.sha }}
+        run: docker build --build-arg "FACTORY_SHA=$FACTORY_SHA" -f operations/temporal-runtime/Dockerfile -t sf-temporal-package:ci .
+      - name: Verify packaged manifest and produce immutable worker bundle offline
+        env:
+          FACTORY_SHA: ${{ github.sha }}
+        run: |
+          docker run --rm --network none --entrypoint node sf-temporal-package:ci -e 'const a=require("node:assert/strict"),p=require("./package.json"),m=require("./temporal-runtime.json");a.equal(p.version,m.factoryVersion);a.equal(m.harness.ref,"f70d11556075e9764d69ac03e029720d12ccef65");a.equal(m.experimental,true)'
+          docker run --rm --network none sf-temporal-package:ci pack --output /tmp/worker-package --factory-sha "$FACTORY_SHA" --harness-sha f70d11556075e9764d69ac03e029720d12ccef65 --harness /app/.runtime/harness/dist/cli.js --deployment sf-rc-package --build "$FACTORY_SHA" --queue sf-rc-package
   temporal-runtime:
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -38914,10 +38914,10 @@ var GitHubClient = class {
   repository;
   api;
   target;
-  async readConfig(path) {
+  async readConfig(path, ref) {
     if (!/^\.github\/[\w./-]+\.ya?ml$/.test(path) || path.includes("..")) throw new Error("Configuration must be a YAML file under .github/");
     const { data: repo } = await this.api.repos.get(this.target);
-    const { data } = await this.api.repos.getContent({ ...this.target, path, ref: repo.default_branch });
+    const { data } = await this.api.repos.getContent({ ...this.target, path, ref: ref ?? repo.default_branch });
     if (!("content" in data) || data.encoding !== "base64") throw new Error(`Cannot read config ${path}`);
     return Buffer.from(data.content, "base64").toString("utf8");
   }
@@ -41196,6 +41196,8 @@ function resolveTarget(config2, env = process.env) {
 // src/runtime/contract.ts
 var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
 var digest = external_exports.string().regex(/^[a-f0-9]{64}$/);
+var baseRefSchema = external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/).refine((v) => !v.includes("..") && !v.includes("//") && !v.endsWith("/") && !v.endsWith(".lock") && !v.startsWith("refs/"));
+var executorWorkflowSchema = external_exports.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}\.ya?ml$/);
 var executionKey = external_exports.string().regex(/^[a-f0-9]{32}$/);
 var releaseSchema = external_exports.strictObject({
   factorySha: sha2,
@@ -41214,6 +41216,8 @@ var snapshotSchema = external_exports.strictObject({
   release: releaseSchema,
   admission: admissionSchema,
   baseSha: sha2,
+  baseRef: baseRefSchema.optional(),
+  executorWorkflow: executorWorkflowSchema.optional(),
   specHash: digest,
   configHash: digest,
   requireHumanGate: external_exports.boolean()

@@ -13,7 +13,7 @@ import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
 import { MockPlanner, OpenAIPlanner } from '../llm/provider.js';
 import { assertRetainedReleases } from './retention.js';
-import { releaseSchema } from './contract.js';
+import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract.js';
 import { RuntimeStore } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
@@ -22,11 +22,15 @@ import { scopedRuntimeGitHub } from './github-app.js';
 import { ActionsCodingExecutor } from './coding-executor.js';
 import { RuntimeEffects } from './effects.js';
 import { RuntimeCodingPublisher } from './publisher.js';
+import { IssueScopedGitHub } from './issue-scope.js';
 
 const registrySchema = z.strictObject({
   namespace: z.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
   repositories: z.array(z.strictObject({ repositoryId: z.number().int().positive().safe(), repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
     githubTokenEnv: z.string().regex(/^SF_GH_[A-Z0-9_]{1,80}$/).optional(), githubInstallationId: z.number().int().positive().safe().optional(), release: releaseSchema,
+    baseRef: baseRefSchema.optional(), executorWorkflow: executorWorkflowSchema.optional(),
+    configPath: z.string().regex(/^\.github\/[\w.-]+\.ya?ml$/).default('.github/software-factory.yml'),
+    issueNumbers: z.array(z.number().int().positive().safe()).min(1).max(100).optional(),
     retainedReleases: releaseSchema.array().default([]), requireHumanGate: z.boolean().default(true) })
     .refine(item => Number(!!item.githubTokenEnv) + Number(!!item.githubInstallationId) === 1, 'Select exactly one scoped credential source')).min(1).max(100),
 });
@@ -66,11 +70,12 @@ export async function main(args = process.argv.slice(2)) {
       const token = item.githubTokenEnv ? z.string().min(1).parse(process.env[item.githubTokenEnv]) : '';
       const api = item.githubInstallationId ? scopedRuntimeGitHub({ appId: z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
         privateKey: z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), installationId: item.githubInstallationId, repositoryId: item.repositoryId }) : new Octokit({ auth: token });
-      const github = new GitHubClient(item.repository, token, 30000, fetch, api);
+      const source = new GitHubClient(item.repository, token, 30000, fetch, api);
+      const github = item.issueNumbers ? new IssueScopedGitHub(source, item.issueNumbers) : source;
       const [owner, repo] = item.repository.split('/') as [string, string];
       if ((await api.repos.get({ owner, repo })).data.id !== item.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
-      const repository: RuntimeRepository = { ...item, github, config: async () => loadConfig(await github.readConfig('.github/software-factory.yml')),
-        baseSha: async () => (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
+      const repository: RuntimeRepository = { ...item, github, config: async () => loadConfig(await source.readConfig(item.configPath, item.baseRef)),
+        baseSha: async () => item.baseRef ? (await api.git.getRef({ ...{ owner, repo }, ref: `heads/${item.baseRef}` })).data.object.sha : (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
       const controller = new RuntimeController(repository, store, temporal);
       const effects = (snapshot: Parameters<ActionsCodingExecutor['poll']>[0], binding: string) => new RuntimeEffects(store, repository.repositoryId, snapshot.admission.input.executionId, binding);
       repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors),

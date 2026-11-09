@@ -24,7 +24,7 @@ export class RuntimeCodingPublisher {
     const [owner, repo] = snapshot.repository.split('/') as [string, string], target = { owner, repo };
     const live = (await this.api.repos.get(target)).data;
     if (live.id !== snapshot.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
-    const branch = `sf/issue-${input.issueNumber}/${input.executionId}`, baseBranch = live.default_branch;
+    const branch = `sf/issue-${input.issueNumber}/${input.executionId}`, baseBranch = snapshot.baseRef ?? live.default_branch;
     const authorize = async () => {
       await this.authorize();
       if ((await this.api.git.getRef({ ...target, ref: `heads/${baseBranch}` })).data.object.sha !== snapshot.baseSha) throw new Error('BASE_MOVED');

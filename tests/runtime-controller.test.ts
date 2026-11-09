@@ -1,7 +1,7 @@
 import { Pool, type PoolClient } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkflowExecutionAlreadyStartedError, type Client } from '@temporalio/client';
-import { RuntimeController } from '../src/runtime/controller.js';
+import { RuntimeController, type RuntimeRepository } from '../src/runtime/controller.js';
 import { RuntimeStore, type StoredRun } from '../src/runtime/store.js';
 import { type Admission, type RuntimeRelease } from '../src/runtime/contract.js';
 import { Manager } from '../src/manager/index.js';
@@ -54,12 +54,24 @@ async function fixture(requireHumanGate = true, coding = false) {
     fetchHistory: async () => ({ events: [{ workflowExecutionStartedEventAttributes: { input: { payloads: [{}, { data: Buffer.from(JSON.stringify(store.row!.binding)) }] } } }] }) };
   const deployment = vi.fn(async () => ({ workerDeploymentVersionInfo: { deploymentVersion: { deploymentName: release.deploymentName, buildId: release.buildId } } }));
   const start = vi.fn(async () => handle), client = { options: { namespace: 'test' }, workflowService: { describeWorkerDeploymentVersion: deployment }, workflow: { start, getHandle: () => handle } } as unknown as Client;
-  const repo = { repositoryId: 42, repository: github.repository, release, github, requireHumanGate, config: async () => cfg, baseSha: async () => 'd'.repeat(40) };
+  const repo: RuntimeRepository = { repositoryId: 42, repository: github.repository, release, github, requireHumanGate, config: async () => cfg, baseSha: async () => 'd'.repeat(40) };
   const controller = new RuntimeController(repo, store, client);
   const result: WorkerResult = { contractVersion: '1.0', executionId: admission.input.executionId, issueNumber: 1, status: 'success', summary: 'Verified result', artifacts: [], error: null, proposedActions: [] };
   return { cfg, github, store, start, deployment, signal, handle, repo, controller, admission, result, status: (value: string) => { status = value; } };
 }
 describe('Temporal admission, identity and approval', () => {
+  it('freezes canary branch/workflow and rejects later target changes', async () => {
+    const f = await fixture(); f.repo.baseRef = 'test/temporal-rc'; f.repo.executorWorkflow = 'factory-manager.yml';
+    await f.controller.start(f.admission); expect(f.store.row!.snapshot).toMatchObject({baseRef:'test/temporal-rc',executorWorkflow:'factory-manager.yml'});
+    f.repo.baseRef = 'main'; await expect(f.controller.gate(f.result.executionId,f.store.row!.binding,'maintainer',true)).rejects.toThrow('STALE_SNAPSHOT');
+  });
+  it('cannot cancel, observe or approve unrelated persisted runs through a canary binding', async () => {
+    const f = await fixture(); await f.controller.start(f.admission); f.repo.issueNumbers = [2];
+    await expect(f.controller.cancel(f.result.executionId)).rejects.toThrow('ISSUE_OUTSIDE_RUNTIME_SCOPE');
+    await expect(f.controller.observations([f.result.executionId])).rejects.toThrow('ISSUE_OUTSIDE_RUNTIME_SCOPE');
+    await expect(f.controller.gate(f.result.executionId,f.store.row!.binding,'maintainer',true)).rejects.toThrow('ISSUE_OUTSIDE_RUNTIME_SCOPE');
+    expect(f.store.row!.cancelled).toBe(false); expect(f.store.row!.approved).toBe(false);
+  });
   it('does not persist or start admission for an unknown deployment or unavailable Temporal', async () => {
     const f = await fixture(); f.deployment.mockRejectedValueOnce(new Error('Unknown version'));
     await expect(f.controller.start(f.admission)).rejects.toThrow('Unknown version'); expect(f.store.row).toBeNull(); expect(f.start).not.toHaveBeenCalled();

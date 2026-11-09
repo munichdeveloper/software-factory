@@ -3,6 +3,9 @@ import { workerInputSchema, workerResultSchema } from '../workers/contract.js';
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
+export const baseRefSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/)
+  .refine(v => !v.includes('..') && !v.includes('//') && !v.endsWith('/') && !v.endsWith('.lock') && !v.startsWith('refs/'));
+export const executorWorkflowSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}\.ya?ml$/);
 export const executionKey = z.string().regex(/^[a-f0-9]{32}$/);
 export const releaseSchema = z.strictObject({
   factorySha: sha, harnessSha: sha, workflowHash: digest,
@@ -18,6 +21,7 @@ export const snapshotSchema = z.strictObject({
   version: z.literal(1), repositoryId: z.number().int().positive().safe(),
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
   release: releaseSchema, admission: admissionSchema, baseSha: sha,
+  baseRef: baseRefSchema.optional(), executorWorkflow: executorWorkflowSchema.optional(),
   specHash: digest, configHash: digest, requireHumanGate: z.boolean(),
 });
 export type RunSnapshot = z.infer<typeof snapshotSchema>;

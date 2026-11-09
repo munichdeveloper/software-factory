@@ -13,14 +13,16 @@ import type { CodingArtifact } from '../workers/coding.js';
 
 export interface RuntimeRepository {
   repositoryId: number; repository: string; release: RuntimeRelease; retainedReleases?: RuntimeRelease[]; requireHumanGate: boolean;
+  baseRef?: string; executorWorkflow?: string; issueNumbers?: number[];
   github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
   coding?: { executor: CodingExecutionPort; publish(snapshot: RunSnapshot, binding: string, artifact: CodingArtifact, createdAt: string): Promise<{ url: string }> };
 }
 export class RuntimeController implements WorkerRuntimePort {
   constructor(private repo: RuntimeRepository, private store: RuntimeStore, private temporal: Client) {}
+  private scope(number: number) { if (this.repo.issueNumbers && !this.repo.issueNumbers.includes(number)) throw new Error('ISSUE_OUTSIDE_RUNTIME_SCOPE'); }
   private async current(snapshot: RunSnapshot) {
     const config = await this.repo.config();
-    if (this.repo.repositoryId !== snapshot.repositoryId || this.repo.repository !== snapshot.repository ||
+    if (this.repo.repositoryId !== snapshot.repositoryId || this.repo.repository !== snapshot.repository || this.repo.baseRef !== snapshot.baseRef || this.repo.executorWorkflow !== snapshot.executorWorkflow ||
       ![this.repo.release, ...(this.repo.retainedReleases ?? [])].some(r => hash(r) === hash(snapshot.release)) || config.execution.engine !== 'temporal' ||
       hash(config) !== snapshot.configHash || policyVersion(config) !== snapshot.admission.policyHash || await this.repo.baseSha() !== snapshot.baseSha) throw new Error('STALE_SNAPSHOT');
     const auth = await authorizeDelegation(this.repo.github, config, snapshot.admission.input.issueNumber, snapshot.admission.input.executionId);
@@ -29,6 +31,7 @@ export class RuntimeController implements WorkerRuntimePort {
   }
   async start(value: Admission): Promise<RuntimeObservation> {
     const admission = admissionSchema.parse(value), id = admission.input.executionId;
+    this.scope(admission.input.issueNumber);
     if (admission.input.repository !== this.repo.repository) throw new Error('REPOSITORY_MISMATCH');
     await this.store.locked(this.repo.repositoryId, id, async () => {
       let stored = await this.store.get(this.repo.repositoryId, id);
@@ -42,6 +45,7 @@ export class RuntimeController implements WorkerRuntimePort {
         if (intent?.data.type !== 'intent' || intent.data.actionId !== admission.actionId) throw new Error('NO_MATCHING_INTENT');
         const snapshot = snapshotSchema.parse({ version: 1, repositoryId: this.repo.repositoryId, repository: this.repo.repository,
           release: this.repo.release, admission, baseSha: await this.repo.baseSha(), specHash: admission.input.taskVersion,
+          ...(this.repo.baseRef ? { baseRef: this.repo.baseRef } : {}), ...(this.repo.executorWorkflow ? { executorWorkflow: this.repo.executorWorkflow } : {}),
           configHash: hash(config), requireHumanGate: this.repo.requireHumanGate });
         await this.current(snapshot);
         const info = (await this.temporal.workflowService.describeWorkerDeploymentVersion({ namespace: this.temporal.options.namespace,
@@ -78,6 +82,7 @@ export class RuntimeController implements WorkerRuntimePort {
     for (const id of ids) {
       const row = await this.store.get(this.repo.repositoryId, id);
       if (!row) continue;
+      this.scope(row.snapshot.admission.input.issueNumber);
       if (!row.runId) { if (!row.cancelled) result.push(await this.start(row.snapshot.admission)); continue; }
       const handle = this.temporal.workflow.getHandle(row.workflowId, row.runId), description = await handle.describe();
       const status: RuntimeObservation['status'] = description.status.name === 'RUNNING' ? 'running' : description.status.name === 'COMPLETED' ? (row.cancelled ? 'cancelled' : 'completed')
@@ -91,6 +96,7 @@ export class RuntimeController implements WorkerRuntimePort {
     return result;
   }
   async authorize(snapshot: RunSnapshot, binding: string): Promise<StoredRun> {
+    this.scope(snapshot.admission.input.issueNumber);
     const stored = await this.store.get(this.repo.repositoryId, snapshot.admission.input.executionId);
     if (!stored || stored.binding !== binding || hash(snapshot) !== binding || stored.cancelled) throw new Error('UNKNOWN_OR_CANCELLED_RUN');
     if (snapshot.requireHumanGate && !stored.approved) throw new Error('APPROVAL_REQUIRED');
@@ -98,6 +104,7 @@ export class RuntimeController implements WorkerRuntimePort {
     return stored;
   }
   async gateApproved(snapshot: RunSnapshot, binding: string) {
+    this.scope(snapshot.admission.input.issueNumber);
     const row = await this.store.get(this.repo.repositoryId, snapshot.admission.input.executionId);
     if (!row || row.binding !== binding || row.cancelled || hash(snapshot) !== binding) throw new Error('UNKNOWN_OR_CANCELLED_RUN');
     return row.approved;
@@ -106,6 +113,7 @@ export class RuntimeController implements WorkerRuntimePort {
     if (!await this.repo.github.canApprove(actor)) throw new Error('ACTOR_NOT_AUTHORIZED');
     const row = await this.store.get(this.repo.repositoryId, id);
     if (!row || row.binding !== binding) throw new Error('STALE_APPROVAL');
+    this.scope(row.snapshot.admission.input.issueNumber);
     await this.current(row.snapshot);
     await this.store.gate(this.repo.repositoryId, id, binding, actor, approved);
     if (row.runId) await this.temporal.workflow.getHandle(row.workflowId, row.runId).signal('approvalChanged');
@@ -113,6 +121,7 @@ export class RuntimeController implements WorkerRuntimePort {
   async cancel(id: string) {
     const row = await this.store.get(this.repo.repositoryId, id);
     if (!row) throw new Error('UNKNOWN_RUN');
+    this.scope(row.snapshot.admission.input.issueNumber);
     await this.store.locked(this.repo.repositoryId, id, () => this.store.cancel(this.repo.repositoryId, id));
     if (row.snapshot.admission.input.worker === 'codex' && this.repo.coding) await this.repo.coding.executor.cancel(row.snapshot, row.binding);
     if (row.runId) await this.temporal.workflow.getHandle(row.workflowId, row.runId).signal('cancelRequested');
@@ -139,6 +148,7 @@ export class RuntimeController implements WorkerRuntimePort {
   }
   async publish(snapshot: RunSnapshot, binding: string, value: WorkerResult): Promise<WorkerResult> {
     let result = workerResultSchema.parse(value); const id = snapshot.admission.input.executionId;
+    this.scope(snapshot.admission.input.issueNumber);
     if (result.executionId !== id || result.issueNumber !== snapshot.admission.input.issueNumber) throw new Error('RESULT_MISMATCH');
     return this.store.locked(this.repo.repositoryId, id, async client => {
       const row = await this.store.get(this.repo.repositoryId, id);

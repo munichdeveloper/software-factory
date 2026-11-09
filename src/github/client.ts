@@ -22,10 +22,10 @@ export class GitHubClient implements GitHubPort {
     this.target = { owner, repo };
     this.api = api ?? new Octokit({ auth: token, request: { timeout: timeoutMs, fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
   }
-  async readConfig(path: string): Promise<string> {
+  async readConfig(path: string, ref?: string): Promise<string> {
     if (!/^\.github\/[\w./-]+\.ya?ml$/.test(path) || path.includes('..')) throw new Error('Configuration must be a YAML file under .github/');
     const { data: repo } = await this.api.repos.get(this.target);
-    const { data } = await this.api.repos.getContent({ ...this.target, path, ref: repo.default_branch });
+    const { data } = await this.api.repos.getContent({ ...this.target, path, ref: ref ?? repo.default_branch });
     if (!('content' in data) || data.encoding !== 'base64') throw new Error(`Cannot read config ${path}`);
     return Buffer.from(data.content, 'base64').toString('utf8');
   }

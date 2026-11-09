@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "factoryVersion": "0.7.0-temporal.0",
+  "factoryVersion": "0.7.0-rc.1",
   "schemaPath": "schemas/config.schema.json",
   "harness": {
     "repository": "munichdeveloper/dev-agent-harness",

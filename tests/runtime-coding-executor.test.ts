@@ -29,24 +29,25 @@ class Effects implements EffectPort {
     const receipt = evidence ?? await r.apply(); claim.receipt = receipt; return r.validate(receipt);
   }
 }
-function fixture() {
+function fixture(requestSnapshot = snapshot) {
   const cfg = config(); cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
   let ref = false, dispatches = 0, lost = false, before = false, complete = false, wrongHead = false, duplicate = false, badWrapper = false;
-  let source = artifact(); const effects = new Effects(), authorize = vi.fn(async () => {});
+  let source = artifact(); const effects = new Effects(), authorize = vi.fn(async () => {}), workflowPaths:string[]=[];
   const fetcher: typeof fetch = async (input, init) => {
     const path = decodeURIComponent(new URL(String(input)).pathname).replace('/repos/owner/target', ''), method = init?.method ?? 'GET';
+    if(path.includes('/actions/workflows/'))workflowPaths.push(path);
     let data: unknown, status = 200;
     if (path === '') data = { id: 42 };
     else if (path.startsWith('/contents/')) data = { encoding: 'base64', content: Buffer.from(badWrapper ? 'unapproved' : executorWrapper(snapshot.release.factorySha, snapshot.release.harnessSha)).toString('base64') };
     else if (path.startsWith('/git/ref/heads/')) { data = { object: { sha: snapshot.baseSha } }; if (!ref) status = 404; }
     else if (path === '/git/refs') { ref = true; data = { object: { sha: snapshot.baseSha } }; }
     else if (path.endsWith('/dispatches')) {
-      dispatches++; const body = JSON.parse(String(init?.body)); expect(body.inputs.binding).toBe(hash(snapshot)); codingExecutionSchema.parse(JSON.parse(body.inputs.request));
+      dispatches++; const body = JSON.parse(String(init?.body)); expect(body.inputs.binding).toBe(hash(requestSnapshot)); codingExecutionSchema.parse(JSON.parse(body.inputs.request));
       if (before) { before = false; throw new Error('Uncertain send'); }
       if (lost) { lost = false; complete = true; throw new Error('Lost response'); }
       data = {}; status = 204;
     } else if (path.endsWith('/runs') && method === 'GET') {
-      const run = { id: 12, display_title: `SF Temporal ${snapshot.admission.input.executionId} ${hash(snapshot)}`, head_sha: wrongHead ? '9'.repeat(40) : snapshot.baseSha,
+      const run = { id: 12, display_title: `SF Temporal ${snapshot.admission.input.executionId} ${hash(requestSnapshot)}`, head_sha: wrongHead ? '9'.repeat(40) : snapshot.baseSha,
         actor: { login: 'factory[bot]' }, run_attempt: 1, event: 'workflow_dispatch', status: complete ? 'completed' : 'in_progress', conclusion: complete ? 'success' : null };
       data = { total_count: complete ? duplicate ? 2 : 1 : 0, workflow_runs: complete ? duplicate ? [run, run] : [run] : [] };
     } else if (path === '/actions/runs/12/artifacts') data = { total_count: 1, artifacts: [{ id: 15, name: `coding-result-${snapshot.admission.input.executionId}`, size_in_bytes: 1000, expired: false }] };
@@ -56,13 +57,19 @@ function fixture() {
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
   const executor = new ActionsCodingExecutor(api, () => effects, authorize, ['factory[bot]']);
-  return { poll: () => executor.poll(snapshot, hash(snapshot), cfg), authorize, dispatches: () => dispatches, finish: () => { complete = true; },
+  return { poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
     lose: () => { lost = true; }, before: () => { before = true; }, wrong: () => { wrongHead = true; }, duplicate: () => { duplicate = true; },
     badWrapper: () => { badWrapper = true; }, unrelated: () => { source = { ...source, baseSha: '9'.repeat(40) }; } };
 }
 it('dispatches once, validates immutable wrapper/run/ZIP and returns only the correlated coding artifact', async () => {
   const f = fixture(); expect(await f.poll()).toBeNull(); expect(await f.poll()).toBeNull(); f.finish();
   expect(await f.poll()).toEqual({ artifact: artifact() }); expect(f.dispatches()).toBe(1);
+});
+it('uses only the frozen existing workflow path for branch-isolated canaries', async () => {
+  const f=fixture(snapshotSchema.parse({...snapshot,baseRef:'test/temporal-rc',executorWorkflow:'factory-manager.yml'}));
+  await f.poll();f.finish();expect(await f.poll()).toEqual({artifact:artifact()});
+  expect(f.workflowPaths.length).toBeGreaterThan(0);expect(f.workflowPaths.every(p=>p.includes('/factory-manager.yml/'))).toBe(true);
+  expect(()=>snapshotSchema.parse({...snapshot,executorWorkflow:'../unsafe.yml'})).toThrow();
 });
 it('reconciles a lost Actions dispatch response and blocks an uncertain send without a run', async () => {
   const f = fixture(); f.lose(); await expect(f.poll()).rejects.toThrow(); expect(await f.poll()).toEqual({ artifact: artifact() }); expect(f.dispatches()).toBe(1);

@@ -40,7 +40,9 @@ try:
  if version_matrix:
   previous_tag=name+':'+previous_sha
   assert inspect(previous_tag)['Id']==previous_image_id,'Previous release image identity changed'
-  assert run(['git','show',previous_sha+':package-lock.json'])==run(['git','show',sha+':package-lock.json']),'Previous release needs its own dependency tree'
+  def dependencies(commit):
+   lock=json.loads(run(['git','show',commit+':package-lock.json']));lock.pop('version',None);lock.get('packages',{}).get('',{}).pop('version',None);return lock
+  assert dependencies(previous_sha)==dependencies(sha),'Previous release needs its own dependency tree'
   matrixfile=directory/'Dockerfile.versions'
   matrixfile.write_text('ARG PREVIOUS_IMAGE\nARG CURRENT_IMAGE\nFROM ${PREVIOUS_IMAGE} AS previous\nFROM ${CURRENT_IMAGE}\nCOPY --from=previous /app/dist /app/.runtime/release-a/dist\nCMD ["node", "--import", "tsx", "scripts/runtime-versions-acceptance.ts"]\n')
   runner_image=name+':versions-'+sha

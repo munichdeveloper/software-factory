@@ -38,7 +38,7 @@ const artifact = (): CodingArtifact => ({ contractVersion: '3.0', baseSha: snaps
   result: { contractVersion: '2.0', executionId: snapshot.admission.input.executionId, taskId: 'github:owner/target#2', taskVersion: snapshot.specHash,
     status: 'success', summary: 'Implemented and tested; @nobody <untrusted>', artifacts: [], error: null },
   changes: [{ path: 'result.txt', content: Buffer.from('verified').toString('base64'), mode: '100644' }] });
-function fixture() {
+function fixture(selectedSnapshot = snapshot) {
   const store = new Store(), writes: { kind: string; body: Record<string, unknown> }[] = [];
   const blobs = new Map<string, string>();
   let branch: string | null = null, pr: Record<string, unknown> | null = null, comment: Record<string, unknown> | null = null;
@@ -54,7 +54,7 @@ function fixture() {
       writes.push({ kind, body });
     }
     if (path === '') data = { id: 42, default_branch: 'main' };
-    else if (path === '/git/ref/heads/main') data = { object: { sha: moved ? '9'.repeat(40) : snapshot.baseSha } };
+    else if (path === `/git/ref/heads/${selectedSnapshot.baseRef ?? 'main'}`) data = { object: { sha: moved ? '9'.repeat(40) : snapshot.baseSha } };
     else if (path === `/git/commits/${snapshot.baseSha}`) data = { tree: { sha: '4'.repeat(40) } };
     else if (path === `/git/trees/${'4'.repeat(40)}`) data = { truncated: false, tree: [] };
     else if (path.startsWith('/git/blobs/') && method === 'GET') { const sha = path.split('/').at(-1)!; data = blobs.has(sha) ? { sha, content: blobs.get(sha) } : {}; if (!blobs.has(sha)) status = 404; }
@@ -72,8 +72,8 @@ function fixture() {
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
   const authorize = vi.fn(async () => {});
-  const publisher = () => new RuntimeCodingPublisher(api, new RuntimeEffects(store, 42, snapshot.admission.input.executionId, hash(snapshot)), authorize, ['factory[bot]']);
-  const publish = (source = artifact()) => publisher().publish(snapshot, source, '2026-11-09T13:00:00.000Z');
+  const publisher = () => new RuntimeCodingPublisher(api, new RuntimeEffects(store, 42, snapshot.admission.input.executionId, hash(selectedSnapshot)), authorize, ['factory[bot]']);
+  const publish = (source = artifact()) => publisher().publish(selectedSnapshot, source, '2026-11-09T13:00:00.000Z');
   return { store, writes, publish, authorize, lose: (key: string) => { lost = key; }, failBefore: (key: string) => { before = key; }, collide: () => { collision = true; }, duplicate: () => { duplicate = true; }, move: () => { moved = true; } };
 }
 it('serializes concurrent publishers, creates exactly one draft and reuses durable receipts', async () => {
@@ -81,6 +81,12 @@ it('serializes concurrent publishers, creates exactly one draft and reuses durab
   expect(f.writes.filter(w => w.kind === 'draft-pr')).toHaveLength(1); expect(f.writes.filter(w => w.kind === 'publication-comment')).toHaveLength(1);
   const pr = f.writes.find(w => w.kind === 'draft-pr')!; expect(pr.body.draft).toBe(true); expect(pr.body.body).toContain('＠nobody &lt;untrusted&gt;');
   expect(f.writes.find(w => w.kind === 'commit')!.body.author).toMatchObject({ date: '2026-11-09T13:00:00.000Z' });
+});
+it('publishes canary changes only against the frozen integration branch', async () => {
+  const f = fixture(snapshotSchema.parse({...snapshot,baseRef:'test/temporal-rc'})); await f.publish();
+  expect(f.writes.find(w=>w.kind==='draft-pr')!.body.base).toBe('test/temporal-rc');
+  const moved=fixture(snapshotSchema.parse({...snapshot,baseRef:'test/temporal-rc'}));moved.move();
+  await expect(moved.publish()).rejects.toThrow('BASE_MOVED'); expect(moved.writes).toEqual([]);
 });
 it.each(['blob', 'tree', 'commit', 'branch', 'draft-pr', 'publication-comment'])('reconciles lost %s response across a fresh publisher instance', async key => {
   const f = fixture(); f.lose(key); await expect(f.publish()).rejects.toThrow();
