@@ -1,6 +1,16 @@
 # Temporal backup and monitoring – WF-06B
 
-Prepared implementation; disabled until the reviewed restricted access and maintenance behavior are approved. This is an addition to the evidence in [PR #15](https://github.com/munichdeveloper/software-factory/pull/15), not a claim that WF-05/06 are done. No code or credential is installed by merging this PR. No application repository is deployed by the checks.
+The user approved the concrete restricted access and short PoC writer pause. The helper is installed on VPS 2127002, the local collector is enabled, and the outside-Temporal app schedule is active every 30 minutes. The live restore and controlled Slack incident/recovery checks passed on 9 November 2026. A first actual scheduler-triggered run is not yet evidenced. This adds to [PR #15](https://github.com/munichdeveloper/software-factory/pull/15); WF-05/06 are not done. Merging this PR does not install credentials or deploy an application.
+
+## Verified activation evidence – 9 November 2026
+
+- Runtime commit `8cfb2d9e5bde25c57176cc7b285a421b09367bc1`; 21 isolated tests and regular CI passed at that exact commit. Sources include all worker Docker build inputs: TypeScript configuration and the complete local harness source as well as worker sources and lockfiles. The first live archive exposed those missing build inputs; the helper and regression assertions were corrected before activation.
+- Snapshot `20261109T090442Z-600127b2`, encrypted bytes 4,294,498, SHA-256 `f453ca9a84f4b6446ff51f7f2b6cc5fd0459b692aa3dff61148da83bcde0c871`. Both database hashes were verified after decrypting locally. Private runtime configuration was never extracted for the test; no recovery identity was copied to the VPS.
+- The user computer rebuilt the worker from the downloaded archive and restored both databases into a new internal Docker network without published ports. The source-pinned PostgreSQL and Temporal image digests were used. Two historical completed runs remained readable. Open gate `sf-poc-wf06b-gate-20261109-r2`, run `01a1bf8d-2c08-7b6c-8a1d-86fbfabbf7fe`, retained its run ID and completed after an approval signal. The measured backup-to-recovered-gate interval was 207.178 seconds in this small PoC, not a workload-independent RTO guarantee.
+- A local restored Temporal outage was detected in 4.454 seconds. This outage test never stopped the source. All three labeled local test containers and the internal test network were removed. The source fixture gate was completed and its additional worker stopped.
+- The dedicated SSH key passed seven live negative checks: arbitrary command, shell separator, traversal, invalid snapshot ID, trailing whitespace, empty command and TCP forwarding were rejected. Existing authorized-key bytes were preserved. Only the original PoC worker and Temporal containers were restarted for backups; their IDs were preserved, PostgreSQL/UI were not restarted.
+- A strict host-key rejection in a separate local test configuration produced a controlled observer alarm without a source outage. Its unique marker was reconciled in Slack; repeating the failing observation did not resend. The subsequent healthy observation produced one recovery notification, and a further healthy observation did not resend. [Incident](https://digitalsmallbusiness.slack.com/archives/C0A5XUJFZPF/p1794215416691039), [recovery](https://digitalsmallbusiness.slack.com/archives/C0A5XUJFZPF/p1794215455259159).
+- Local automation `temporal-backups-und-slack-alarme` was read back ACTIVE; production collector configuration enabled; first manual enabled run healthy with no pending deliveries. The actual first scheduled execution, physical off-device recovery-key custody, always-on coverage, PINNED-poller/capacity alarms and recurring restore/retention process remain open. See `evidence/20261109/` for sanitized machine-readable receipts and restore test sources. No PR was merged.
 
 ## Accepted settings
 
@@ -10,7 +20,7 @@ Prepared implementation; disabled until the reviewed restricted access and maint
 - Slack `#notifications`, channel `C0A5XUJFZPF`. Supersedes the earlier email destination; Gmail calls failed and sent no email.
 - No backup deletion or retention pruning. Retain all copies for this initial phase; capacity policy must be reviewed before unattended long-term operation.
 
-## Access awaiting approval
+## Approved restricted access
 
 Use a dedicated SSH key, `restrict`, and one root-owned forced command:
 
@@ -36,7 +46,7 @@ Run `python client.py --config ABSOLUTE_CONFIG_PATH`. One local run lock prevent
 
 The collector examines source Docker states, the authenticated HTTPS boundary (anonymous 401 plus Basic challenge), Temporal availability, pending task age over five minutes, activity attempts of three or more, and recent workflow timeouts. Temporal SDK 1.25.0 is supplied by the existing pinned PoC worker image. Open PINNED deployment versions are reported; explicit per-deployment retirement protection and poller availability remain WF-05A. Human Gate age itself is not an error.
 
-The scheduled agent reads `pendingDeliveries`, posts only stable alert codes and delivery IDs to the fixed Slack channel, then acknowledges the returned permalink using `--ack DELIVERY_ID --permalink SLACK_LINK`. It does not post raw status responses, histories, configuration, credentials or archive data. Continuing conditions reuse one delivery ID. Recovery generates one separate notification after a sent incident. A send with an unknown result must be marked `--unknown DELIVERY_ID`; reconcile its unique `sf-alert:ID` marker in Slack before any further send. Missing evidence is not permission to blindly resend. An obsolete incident that was never sent is cancelled.
+The scheduled agent reads `pendingDeliveries` and searches the fixed private Slack channel for the exact unique `sf-alert:ID` marker before each send. For a pending item with no existing receipt it persists `--unknown DELIVERY_ID` BEFORE publishing one notification, then acknowledges the returned permalink using `--ack DELIVERY_ID --permalink SLACK_LINK`. Thus a process crash between Slack acceptance and local acknowledgement cannot leave the item sendable again. It posts only stable alert codes, timestamps and delivery IDs, never raw status, histories, configuration, credentials or archives. Continuing conditions reuse one delivery ID. Recovery generates one separate notification after a sent incident. A previously unknown send without a confirmed matching Slack message stays blocked for reconciliation; it is never blindly resent. An obsolete incident that was never sent is cancelled.
 
 The schedule is outside Temporal. Local-file tasks still require the computer to be awake, connected, and the app running. A sleeping/offline laptop cannot observe or alert on its own outage; an independent always-on observer is a remaining reliability gap. Thus these settings are operational targets, not a demonstrated 24-hour RPO/four-hour RTO guarantee. No monthly restore or key-custody success is claimed until actually verified. Keep WF-06B open until those activation and monitoring checks pass.
 

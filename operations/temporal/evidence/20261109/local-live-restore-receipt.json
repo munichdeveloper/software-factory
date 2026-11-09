@@ -1,0 +1,54 @@
+{
+  "snapshotId": "20261109T090442Z-600127b2",
+  "cipherSha256": "f453ca9a84f4b6446ff51f7f2b6cc5fd0459b692aa3dff61148da83bcde0c871",
+  "startedAt": "2026-11-09T09:08:08.350670+00:00",
+  "isolatedOnUserComputer": true,
+  "noPublishedPorts": true,
+  "noSourceVpcConnection": true,
+  "sourceGateRunId": "01a1bf8d-2c08-7b6c-8a1d-86fbfabbf7fe",
+  "historicalRuns": [
+    {
+      "workflowId": "sf-poc-smoke-20261108-1",
+      "runId": "01a1bb60-a3af-7c44-96f9-7de19cabd016",
+      "status": "COMPLETED",
+      "eventCount": 11
+    },
+    {
+      "workflowId": "sf-poc-recovery-20261108-2",
+      "runId": "01a1bb60-a741-7030-b26c-d056ddfbca35",
+      "status": "COMPLETED",
+      "eventCount": 15
+    }
+  ],
+  "gate": {
+    "workflowId": "sf-poc-wf06b-gate-20261109-r2",
+    "runId": "01a1bf8d-2c08-7b6c-8a1d-86fbfabbf7fe",
+    "statusBefore": "RUNNING",
+    "statusAfter": "COMPLETED",
+    "sameRunId": true,
+    "activityAlreadyCompleted": true,
+    "signalAfterRestore": true,
+    "approved": true
+  },
+  "images": {
+    "sf-wf06b-local-20261109-db": "sha256:5264710be20f409750ac6dc4e5706dcef929c87e241605463f0f9aefa932a8d9",
+    "sf-wf06b-local-20261109-server": "sha256:7bf69188a6232fea14869b9cef3d94aa82a1601d99517f7e86c71f22da4e0670",
+    "sf-wf06b-local-20261109-worker": "sha256:9d56930e7fd4741ea695fd853df29944c98de75298417034a398cd7c32750073"
+  },
+  "recoveryElapsedSeconds": 9.047,
+  "backupToRecoveredGateSeconds": 207.178,
+  "withinFourHourTarget": true,
+  "isolatedTemporalOutage": {
+    "detected": true,
+    "elapsedSeconds": 4.454,
+    "code": "TEMPORAL_PROBE_FAILED",
+    "sourceStopped": false
+  },
+  "passed": true,
+  "removedOnlyLabeledTestContainers": [
+    "sf-wf06b-local-20261109-worker",
+    "sf-wf06b-local-20261109-server",
+    "sf-wf06b-local-20261109-db"
+  ],
+  "testNetworkRemoved": true
+}

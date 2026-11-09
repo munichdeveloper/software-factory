@@ -1,0 +1,22 @@
+const {Client,Connection}=require('@temporalio/client');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+(async()=>{
+ const connection=await Connection.connect({address:process.env.TEMPORAL_ADDRESS,connectTimeout:'3 seconds'});
+ try{
+  const c=new Client({connection,namespace:'software-factory-poc'});
+  const old=[];
+  for(const [id,runId] of [['sf-poc-smoke-20261108-1','01a1bb60-a3af-7c44-96f9-7de19cabd016'],['sf-poc-recovery-20261108-2','01a1bb60-a741-7030-b26c-d056ddfbca35']]){
+   const h=c.workflow.getHandle(id,runId),d=await h.describe(),history=await h.fetchHistory();
+   assert.equal(d.status.name,'COMPLETED');assert.equal(d.runId,runId);assert(history.events.length>0);
+   old.push({workflowId:id,runId,status:d.status.name,eventCount:history.events.length});
+  }
+  const gate=JSON.parse(fs.readFileSync('/app/gate.json'));
+  const h=c.workflow.getHandle(gate.workflowId,gate.runId),before=await h.describe(),history=await h.fetchHistory();
+  assert.equal(before.runId,gate.runId);assert.equal(before.status.name,'RUNNING');
+  assert(history.events.some(e=>e.activityTaskCompletedEventAttributes));
+  await h.signal('approve');const result=await h.result(),after=await h.describe();
+  assert.equal(after.runId,gate.runId);assert.equal(after.status.name,'COMPLETED');assert.equal(result.approved,true);assert.equal(result.runKey,gate.workflowId);
+  console.log(JSON.stringify({historicalRuns:old,gate:{workflowId:gate.workflowId,runId:gate.runId,statusBefore:before.status.name,statusAfter:after.status.name,sameRunId:true,activityAlreadyCompleted:true,signalAfterRestore:true,approved:result.approved}}));
+ }finally{await connection.close()}
+})().catch(e=>{console.error(e.name+': '+e.message);process.exitCode=1});

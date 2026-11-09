@@ -1,0 +1,37 @@
+[
+  {
+    "command": "id",
+    "rejected": true,
+    "returnCode": 1
+  },
+  {
+    "command": "status; id",
+    "rejected": true,
+    "returnCode": 1
+  },
+  {
+    "command": "fetch ../../.env",
+    "rejected": true,
+    "returnCode": 1
+  },
+  {
+    "command": "fetch 20261109T000000Z-../../xx",
+    "rejected": true,
+    "returnCode": 1
+  },
+  {
+    "command": "status ",
+    "rejected": true,
+    "returnCode": 1
+  },
+  {
+    "command": "",
+    "rejected": true,
+    "returnCode": 1
+  },
+  {
+    "command": "direct-tcpip forwarding",
+    "rejected": true,
+    "returnCode": 255
+  }
+]

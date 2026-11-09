@@ -1,0 +1,38 @@
+[
+  {
+    "id": 42538908337,
+    "name": "Temporal operations checks",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "head_sha": "8cfb2d9e5bde25c57176cc7b285a421b09367bc1",
+    "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42538908337"
+  },
+  {
+    "id": 42538908419,
+    "name": "CI",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "head_sha": "8cfb2d9e5bde25c57176cc7b285a421b09367bc1",
+    "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42538908419"
+  },
+  {
+    "id": 42538902652,
+    "name": "Temporal operations checks",
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "head_sha": "8cfb2d9e5bde25c57176cc7b285a421b09367bc1",
+    "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42538902652"
+  },
+  {
+    "id": 42538902878,
+    "name": "CI",
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "head_sha": "8cfb2d9e5bde25c57176cc7b285a421b09367bc1",
+    "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42538902878"
+  }
+]
