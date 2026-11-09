@@ -55,6 +55,7 @@ const simulated = [42, 43].map(repositoryId => {
 });
 const real = process.env.SF_TEST_REAL_GITHUB === '1';
 const publisherFixture = process.env.SF_TEST_PUBLISHER_FIXTURE === '1';
+const actualCoding = process.env.SF_TEST_REAL_CODING === '1';
 phase = 'prepare-repository-fixtures';
 const { fixtures, actor } = real ? await githubFixtures(release, store, temporal) : { fixtures: simulated, actor: 'maintainer' };
 const [repoA, repoB] = fixtures.map(f => f.repository.repositoryId) as [number, number];
@@ -117,26 +118,44 @@ try {
   assert.equal((await call(`/v1/repositories/${repoA}/runs/${row.executionId}/approve`, { actor, binding: row.binding })).status, 200);
   startWorker();
   phase = 'execution-and-publication';
+  let codingCrashRestart = false;
+  if (actualCoding) {
+    await wait(async () => (await store.pool.query('SELECT phase FROM factory_runtime_effects WHERE repository_id=$1 AND execution_id=$2 AND effect=$3', [repoA, row.executionId, 'coding-dispatch'])).rows[0]?.phase === 'confirmed', 120000);
+    child!.kill('SIGKILL'); await new Promise<void>(resolve => child!.once('exit', () => resolve()));
+    startWorker(); codingCrashRestart = true;
+  }
   const completed = await wait(async () => {
     const data = (await call(`/v1/repositories/${repoA}/runs`)).body as RuntimeObservation[];
     return data[0]?.status === 'completed' && data[0].result ? data[0] : null;
-  }, publisherFixture ? 180000 : 60000);
+  }, actualCoding ? 780000 : publisherFixture ? 180000 : 60000);
   assert.equal(completed.runId, row.runId); assert.equal(completed.result!.status, 'success');
-  assert(completed.result!.artifacts.some(a => publisherFixture ? a.startsWith('https://github.com/') && a.includes('/pull/') : a.startsWith('urn:sha256:')));
+  assert(completed.result!.artifacts.some(a => publisherFixture || actualCoding ? a.startsWith('https://github.com/') && a.includes('/pull/') : a.startsWith('urn:sha256:')));
   const resultComments = (await fixtures[0]!.github.comments(fixtures[0]!.issueNumber)).filter(c => c.body.includes('"type": "result"')); assert.equal(resultComments.length, 1);
   assert.equal((await call(`/v1/repositories/${repoB}/runs`)).body[0].phase, 'awaiting-approval');
-  await call(`/v1/repositories/${repoB}/runs/${rows[1]!.executionId}/cancel`, { actor });
-  await wait(async () => {
-    const data = (await call(`/v1/repositories/${repoB}/runs`)).body as RuntimeObservation[]; return data[0]?.status === 'cancelled' ? data[0] : null;
-  });
+  const codingRuns = [];
+  if (actualCoding) {
+    for (const f of fixtures) { assert('verifyCoding' in f); }
+    if ('verifyCoding' in fixtures[0]!) codingRuns.push(await fixtures[0].verifyCoding(row.executionId));
+    assert.equal((await call(`/v1/repositories/${repoB}/runs/${rows[1]!.executionId}/approve`, { actor, binding: rows[1]!.binding })).status, 200);
+    const other = await wait(async () => { const data = (await call(`/v1/repositories/${repoB}/runs`)).body as RuntimeObservation[];
+      return data[0]?.status === 'completed' && data[0].result ? data[0] : null; }, 780000);
+    assert.equal(other.runId, rows[1]!.runId); assert.equal(other.result!.status, 'success');
+    if ('verifyCoding' in fixtures[1]!) codingRuns.push(await fixtures[1].verifyCoding(other.executionId));
+  } else {
+    await call(`/v1/repositories/${repoB}/runs/${rows[1]!.executionId}/cancel`, { actor });
+    await wait(async () => {
+      const data = (await call(`/v1/repositories/${repoB}/runs`)).body as RuntimeObservation[]; return data[0]?.status === 'cancelled' ? data[0] : null;
+    });
+  }
+  const effectReceipts = (await store.pool.query('SELECT repository_id,execution_id,effect,payload_hash,phase,receipt FROM factory_runtime_effects ORDER BY repository_id,effect')).rows;
   const report = { passed: true, factorySha, release, runs: rows.map(r => ({ workflowId: r.workflowId, runId: r.runId })),
-    workerCrashRestartSameRunId: true, persistedApprovalWhileWorkerStopped: true, ...(publisherFixture ? { publisherResult: completed.result } : { realHarnessResult: completed.result }),
+    workerCrashRestartSameRunId: true, persistedApprovalWhileWorkerStopped: true, ...(publisherFixture ? { publisherResult: completed.result } : actualCoding ? { codingResult: completed.result } : { realHarnessResult: completed.result }),
     lostJournalResponseReconciled: true, resultJournalCount: resultComments.length, duplicateDispatchCount: (await store.list(repoA)).length,
     crossRepositoryGateRejected: true, untrustedActorRejected: true, staleBindingRejected: true, workerCannotCallManager: true,
-    sharedCluster: true, pinnedServerBehavior: true, githubAdapter: publisherFixture ? 'real repository-scoped GitHub App; deterministic artifact fixture and real Draft PR publisher' : real ? 'real repository-scoped GitHub App; result journal only, no PR publication' : 'simulated GitHub port; no real PR publication in this test',
+    sharedCluster: true, pinnedServerBehavior: true, githubAdapter: actualCoding ? 'real repository-scoped GitHub App; real pinned Codex compute and Draft PR publisher' : publisherFixture ? 'real repository-scoped GitHub App; deterministic artifact fixture and real Draft PR publisher' : real ? 'real repository-scoped GitHub App; result journal only, no PR publication' : 'simulated GitHub port; no real PR publication in this test',
     repositories: fixtures.map(f => ({ id: f.repository.repositoryId, name: f.repository.repository, issueNumber: f.issueNumber,
       retiredFixtureIssues: 'retiredFixtureIssues' in f ? f.retiredFixtureIssues : [] })),
-    publisherFixture, actualModelExecution: false,
+    publisherFixture, actualModelExecution: actualCoding, codingCrashRestart, codingRuns, effectReceipts,
     workerEnvironmentKeys: Object.keys(childEnvironment), checkedAt: new Date().toISOString() };
   await writeFile(resolve(directory, 'result.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
 } finally {

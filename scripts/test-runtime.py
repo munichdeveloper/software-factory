@@ -8,9 +8,10 @@ name='sf-factory-acceptance';pg=name+'-db';server=name+'-temporal';runner=name+'
 pg_image='postgres@sha256:5264710be20f409750ac6dc4e5706dcef929c87e241605463f0f9aefa932a8d9'
 server_image='temporalio/server@sha256:7bf69188a6232fea14869b9cef3d94aa82a1601d99517f7e86c71f22da4e0670'
 tools_image='temporalio/admin-tools@sha256:4a95866efba29d7e17ab012df5232795e8b0ad0f7d5f9d1ec4df321f7792a754'
-real_github=sys.argv[1:] in (['--github'],['--publisher'])
+real_github=sys.argv[1:] in (['--github'],['--publisher'],['--coding'])
 publisher_fixture=sys.argv[1:]==['--publisher']
-assert sys.argv[1:] in ([],['--github'],['--publisher']),'Unknown acceptance option'
+actual_coding=sys.argv[1:]==['--coding']
+assert sys.argv[1:] in ([],['--github'],['--publisher'],['--coding']),'Unknown acceptance option'
 github_input=sys.stdin.buffer.read(64001) if real_github else b''
 assert not real_github or 100<len(github_input)<=64000,'Bounded credential input required'
 created=[];network_created=False;egress_created=False;egress=name+'-github-egress'
@@ -54,9 +55,9 @@ try:
       '--mount','type=bind,source='+str(directory)+',target=/app/.runtime/runtime-acceptance']
  if real_github:
   run(['docker','network','create','--label',label,egress]);egress_created=True
-  run(['docker','create','-i',*runner_args,'-e','SF_TEST_REAL_GITHUB=1',*(['-e','SF_TEST_PUBLISHER_FIXTURE=1'] if publisher_fixture else []),name+':'+sha]);created.append(runner)
+  run(['docker','create','-i',*runner_args,'-e','SF_TEST_REAL_GITHUB=1',*(['-e','SF_TEST_PUBLISHER_FIXTURE=1'] if publisher_fixture else []),*(['-e','SF_TEST_REAL_CODING=1'] if actual_coding else []),name+':'+sha]);created.append(runner)
   run(['docker','network','connect',egress,runner])
-  run(['docker','start','--attach','--interactive',runner],input=github_input,timeout=300);github_input=b''
+  run(['docker','start','--attach','--interactive',runner],input=github_input,timeout=1800 if actual_coding else 300);github_input=b''
  else:
   run(['docker','run','-d',*runner_args,name+':'+sha]);created.append(runner)
  deadline=time.monotonic()+300
