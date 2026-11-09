@@ -1,0 +1,81 @@
+{
+  "passed": true,
+  "factorySha": "68173b885356904c367ddf99c55b1dcd780e676c",
+  "release": {
+    "factorySha": "68173b885356904c367ddf99c55b1dcd780e676c",
+    "harnessSha": "8f1732c05c351af32bd25a6306a92f3bb06c1bad",
+    "workflowHash": "035d189873fe96a5a909685c88299e2fd66620c3043d1834c10e678b3201c026",
+    "deploymentName": "sf-factory-acceptance",
+    "buildId": "68173b885356904c367ddf99c55b1dcd780e676c",
+    "taskQueue": "sf-factory-acceptance",
+    "schemaVersion": 1
+  },
+  "runs": [
+    {
+      "workflowId": "sf-1450715381-793ec5ac25aa321d6eb591e2ca506bd1",
+      "runId": "01a1c09e-a867-7a3b-8e45-b3979b056f72"
+    },
+    {
+      "workflowId": "sf-1450715704-de33fd5d538aec2afe8897dd567b460b",
+      "runId": "01a1c09e-e7c8-7345-afe6-206c22e0f802"
+    }
+  ],
+  "workerCrashRestartSameRunId": true,
+  "persistedApprovalWhileWorkerStopped": true,
+  "publisherResult": {
+    "contractVersion": "1.0",
+    "executionId": "793ec5ac25aa321d6eb591e2ca506bd1",
+    "issueNumber": 6,
+    "status": "success",
+    "summary": "Deterministic publisher acceptance fixture; no model execution.",
+    "artifacts": [
+      "https://github.com/munichdeveloper/sf-temporal-acceptance-a-20261108/pull/7"
+    ],
+    "error": null,
+    "proposedActions": []
+  },
+  "lostJournalResponseReconciled": true,
+  "resultJournalCount": 1,
+  "duplicateDispatchCount": 1,
+  "crossRepositoryGateRejected": true,
+  "untrustedActorRejected": true,
+  "staleBindingRejected": true,
+  "workerCannotCallManager": true,
+  "sharedCluster": true,
+  "pinnedServerBehavior": true,
+  "githubAdapter": "real repository-scoped GitHub App; deterministic artifact fixture and real Draft PR publisher",
+  "repositories": [
+    {
+      "id": 1450715381,
+      "name": "munichdeveloper/sf-temporal-acceptance-a-20261108",
+      "issueNumber": 6,
+      "retiredFixtureIssues": [
+        4
+      ]
+    },
+    {
+      "id": 1450715704,
+      "name": "munichdeveloper/sf-temporal-acceptance-b-20261108",
+      "issueNumber": 5,
+      "retiredFixtureIssues": [
+        4
+      ]
+    }
+  ],
+  "publisherFixture": true,
+  "actualModelExecution": false,
+  "workerEnvironmentKeys": [
+    "PATH",
+    "TEMPORAL_ADDRESS",
+    "TEMPORAL_NAMESPACE",
+    "FACTORY_BROKER_URL",
+    "FACTORY_WORKER_TOKEN"
+  ],
+  "checkedAt": "2026-11-09T14:04:37.795Z",
+  "testImage": "sha256:7e53d36ce364e4dc9965c9647af6714895e8e89a23ef3951fc96f11035ef561d",
+  "freshCluster": true,
+  "noPublishedPorts": true,
+  "githubEgress": true,
+  "sourceTree": "5158c7f578967f0a0fc0cf9c6a160b4d9ed8bb9f",
+  "runnerSourceSha256": "e6d8e7a478f752ad5edd14a8e3768f035046bb7447689963b29307bd3812ac69"
+}
