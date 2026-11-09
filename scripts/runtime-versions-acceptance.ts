@@ -16,7 +16,7 @@ import { githubFixtures } from './runtime-github-fixtures.js';
 import type { RuntimeRelease, RuntimeObservation } from '../src/runtime/contract.js';
 
 let phase='initialize';
-process.on('uncaughtException',()=>{console.error(JSON.stringify({code:'VERSION_MATRIX_FAILED',phase}));process.exit(1);});
+process.on('uncaughtException',(error:Error&{code?:unknown;status?:unknown})=>{console.error(JSON.stringify({code:'VERSION_MATRIX_FAILED',phase,reason:/^[A-Z_]+$/.test(error.message)?error.message:undefined,grpcStatus:typeof error.code==='number'?error.code:undefined,httpStatus:typeof error.status==='number'?error.status:undefined,frames:error.stack?.split('\n').slice(1,5)}));process.exit(1);});
 const directory=resolve('.runtime/runtime-acceptance'), oldRoot=resolve('.runtime/release-a/dist');
 const previousManager=await import(pathToFileURL(resolve(oldRoot,'manager/index.js')).href) as typeof import('../src/manager/index.js');
 const previousController=await import(pathToFileURL(resolve(oldRoot,'runtime/controller.js')).href) as typeof import('../src/runtime/controller.js');
@@ -51,7 +51,7 @@ async function runManager(f:typeof fa,old:boolean){const Constructor=old?previou
 async function gate(f:typeof fa,number:number){return wait(async()=>{const rows=await store.list(f.repository.repositoryId);const row=rows.find(r=>r.snapshot.admission.input.issueNumber===number);if(!row?.runId)return null;const observation=(await f.controller.observations([row.snapshot.admission.input.executionId]))[0];return observation?.phase==='awaiting-approval'?observation:null;});}
 async function admit(f:typeof fa,number:number,old:boolean){for(let attempt=0;attempt<3;attempt++){await runManager(f,old);if((await store.list(f.repository.repositoryId)).some(r=>r.snapshot.admission.input.issueNumber===number&&r.runId))return gate(f,number);await new Promise(r=>setTimeout(r,1000));}throw Error('MANAGER_DID_NOT_ADMIT_VERSION_TASK');}
 async function complete(f:typeof fa,row:RuntimeObservation){await f.controller.gate(row.executionId,row.binding,actor,true);const done=await wait(async()=>{const value=(await f.controller.observations([row.executionId]))[0];return value?.status==='completed'&&value.result?value:null;},180000);assert.equal(done.runId,row.runId);assert.equal(done.result?.status,'success');return done;}
-async function current(p:typeof a){await temporal.workflowService.setWorkerDeploymentCurrentVersion({namespace,deploymentName:p.release.deploymentName,buildId:p.release.buildId,identity:'isolated-version-acceptance'});}
+async function current(p:typeof a){await wait(async()=>{await temporal.workflowService.setWorkerDeploymentCurrentVersion({namespace,deploymentName:p.release.deploymentName,buildId:p.release.buildId,identity:'isolated-version-acceptance'});return true;});}
 const evidence:Record<string,unknown>={};
 try{
  phase='v1-human-gate';await start(a);await current(a);const first=await admit(fa,fa.issueNumber,true);
