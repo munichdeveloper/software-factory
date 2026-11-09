@@ -67,6 +67,15 @@ jobs:
           npm run schemas
           npm run contract
           git diff --exit-code -- schemas installation-contract.json
+      # Legacy integration above keeps runtime.json's pin. The opt-in Temporal
+      # executor uses the newer immutable action input contract.
+      - name: Load pinned Temporal Harness action metadata
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: munichdeveloper/dev-agent-harness
+          ref: f70d11556075e9764d69ac03e029720d12ccef65
+          path: .runtime/harness
+          persist-credentials: false
       - name: Validate Actions syntax with pinned actionlint
         run: |
           curl -fsSLo "$RUNNER_TEMP/actionlint.tar.gz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
