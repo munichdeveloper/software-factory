@@ -31,6 +31,10 @@ export async function githubFixtures(release: RuntimeRelease, store: RuntimeStor
   if (publisherFixture || actualCoding || versionMatrix) cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
   const publisherConfig = structuredClone(cfg);
   if (actualCoding || versionMatrix) { cfg.factory.scope = 'Isolated Temporal acceptance in this disposable repository; bounded coding tasks and Draft PR publication only.'; cfg.execution.workerTimeoutMinutes = 10; }
+  const codingConfig = structuredClone(cfg), matrixConfig = structuredClone(cfg);
+  if (matrixConfig.workers.coding) matrixConfig.workers.coding.enabled = false;
+  // Version routing exercises the real non-mutating Harness, not model compute.
+  if (versionMatrix) cfg.workers.coding!.enabled = false;
   class Target extends GitHubClient {
     lostResultResponse = false;
     override async writeEvent(...args: Parameters<GitHubClient['writeEvent']>) {
@@ -54,7 +58,7 @@ export async function githubFixtures(release: RuntimeRelease, store: RuntimeStor
     const path = '.github/software-factory.yml', content = JSON.stringify(cfg, null, 2) + '\n';
     try {
       const existing = loadConfig(await github.readConfig(path));
-      if ((publisherFixture || actualCoding) && [previousConfig, publisherConfig].some(c => JSON.stringify(existing) === JSON.stringify(c)) && JSON.stringify(existing) !== JSON.stringify(cfg)) {
+      if ((publisherFixture || actualCoding || versionMatrix) && [previousConfig, publisherConfig, codingConfig, matrixConfig].some(c => JSON.stringify(existing) === JSON.stringify(c)) && JSON.stringify(existing) !== JSON.stringify(cfg)) {
         const file = (await api.repos.getContent({ ...target, path, ref: metadata.default_branch })).data;
         assert('sha' in file && !Array.isArray(file));
         await api.repos.createOrUpdateFileContents({ ...target, path, sha: file.sha, message: actualCoding ? 'Configure bounded real Temporal coding acceptance' : 'Enable isolated publisher acceptance fixture (no model run)', content: Buffer.from(content).toString('base64') });
