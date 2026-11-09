@@ -120,7 +120,7 @@ try {
   const completed = await wait(async () => {
     const data = (await call(`/v1/repositories/${repoA}/runs`)).body as RuntimeObservation[];
     return data[0]?.status === 'completed' && data[0].result ? data[0] : null;
-  }, 60000);
+  }, publisherFixture ? 180000 : 60000);
   assert.equal(completed.runId, row.runId); assert.equal(completed.result!.status, 'success');
   assert(completed.result!.artifacts.some(a => publisherFixture ? a.startsWith('https://github.com/') && a.includes('/pull/') : a.startsWith('urn:sha256:')));
   const resultComments = (await fixtures[0]!.github.comments(fixtures[0]!.issueNumber)).filter(c => c.body.includes('"type": "result"')); assert.equal(resultComments.length, 1);

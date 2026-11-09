@@ -8,6 +8,7 @@ import type { RuntimeActivities } from './workflow.js';
 import { HarnessProcessClient } from '../workers/harness-client.js';
 import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
 import { hash } from '../state/identity.js';
+import { runtimeJson, runtimeUrl } from './transport.js';
 
 export interface WorkerPackage { release: ReturnType<typeof releaseSchema.parse>; bundlePath: string; harnessEntrypoint: string; harnessEntrypointHash: string }
 export function createActivities(pack: WorkerPackage, broker: (operation: string, snapshot: RunSnapshot, binding: string, result?: WorkerResult) => Promise<unknown>): RuntimeActivities {
@@ -38,7 +39,7 @@ export function createActivities(pack: WorkerPackage, broker: (operation: string
   };
 }
 export async function startRuntimeWorker(pack: WorkerPackage, address: string, namespace: string, brokerUrl: string, token: string) {
-  const release = releaseSchema.parse(pack.release), url = new URL(brokerUrl);
+  const release = releaseSchema.parse(pack.release), url = runtimeUrl(brokerUrl);
   if (!isAbsolute(pack.bundlePath) || !isAbsolute(pack.harnessEntrypoint) || token.length < 32 ||
     (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) || url.username || url.password) throw new Error('INVALID_WORKER_CONFIGURATION');
   for (const key of ['GITHUB_TOKEN', 'GH_TOKEN', 'OPENAI_API_KEY', 'DOCKER_HOST', 'NODE_OPTIONS']) {
@@ -49,10 +50,9 @@ export async function startRuntimeWorker(pack: WorkerPackage, address: string, n
   const activities = createActivities(pack, async (operation, snapshot, binding, result) => {
     const response = await fetch(new URL(`/v1/worker/${operation}`, url), { method: 'POST', redirect: 'error',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ snapshot, binding, ...(result ? { result } : {}) }), signal: AbortSignal.timeout(25000) });
+      body: JSON.stringify({ snapshot, binding, ...(result ? { result } : {}) }), signal: AbortSignal.timeout(operation === 'publish' ? 110000 : 25000) });
     if (!response.ok) { await response.body?.cancel(); throw new Error('BROKER_REJECTED_OR_UNAVAILABLE'); }
-    const text = await response.text(); if (Buffer.byteLength(text) > 100000) throw new Error('BROKER_RESPONSE_LIMIT');
-    return JSON.parse(text);
+    return runtimeJson(response, 100000);
   });
   const connection = await NativeConnection.connect({ address });
   try {

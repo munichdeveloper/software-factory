@@ -67,7 +67,7 @@ try:
  report=json.loads((directory/'result.json').read_text());assert report['passed'] and report['factorySha']==sha
  report['testImage']=inspect(runner)['Image'];report['freshCluster']=True;report['noPublishedPorts']=all(not inspect(c)['HostConfig']['PortBindings'] for c in created)
  report['githubEgress']=real_github
- report['sourceTree']=run(['git','rev-parse','HEAD^{tree}']).decode().strip();report['runnerSourceSha256']=hashlib.sha256((root/'scripts/runtime-acceptance.ts').read_bytes()).hexdigest()
+ report['sourceTree']=run(['git','rev-parse',sha+'^{tree}']).decode().strip();report['runnerSourceSha256']=hashlib.sha256(run(['git','show',sha+':scripts/runtime-acceptance.ts'])).hexdigest()
  (directory/'result.json').write_text(json.dumps(report,indent=2));print(json.dumps(report))
 except Exception:
  for container in created:

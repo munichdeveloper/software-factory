@@ -41230,13 +41230,48 @@ var observationSchema = external_exports.strictObject({
   result: workerResultSchema.nullable()
 });
 
+// src/runtime/transport.ts
+function runtimeUrl(value) {
+  const url2 = new URL(value);
+  if (!(url2.protocol === "https:" || url2.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url2.hostname)) || url2.username || url2.password || url2.search || url2.hash) throw new Error("INVALID_RUNTIME_ENDPOINT");
+  return url2;
+}
+async function runtimeJson(response, maxBytes) {
+  const advertised = response.headers.get("content-length");
+  if (advertised !== null && (!/^[0-9]+$/.test(advertised) || Number(advertised) > maxBytes)) {
+    await response.body?.cancel();
+    throw new Error("RUNTIME_RESPONSE_LIMIT");
+  }
+  if (!response.body) throw new Error("MISSING_RUNTIME_RESPONSE");
+  const reader = response.body.getReader(), chunks = [];
+  let size = 0;
+  try {
+    for (; ; ) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > maxBytes) throw new Error("RUNTIME_RESPONSE_LIMIT");
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+}
+
 // src/runtime/client.ts
 var RuntimeHttpClient = class {
   constructor(url2, token, repositoryId, fetcher = fetch) {
     this.token = token;
     this.repositoryId = repositoryId;
     this.fetcher = fetcher;
-    this.base = new URL(url2);
+    this.base = runtimeUrl(url2);
     if (this.base.protocol !== "https:" && !["127.0.0.1", "localhost", "[::1]"].includes(this.base.hostname) || this.base.username || this.base.password || this.base.search || this.base.hash || token.length < 32 || !Number.isSafeInteger(repositoryId) || repositoryId <= 0) throw new Error("Invalid Factory runtime connection");
   }
   token;
@@ -41255,9 +41290,7 @@ var RuntimeHttpClient = class {
       await response.body?.cancel();
       throw new Error("Factory runtime request rejected or unavailable");
     }
-    const text = await response.text();
-    if (Buffer.byteLength(text) > 1e6) throw new Error("Factory runtime response exceeds limit");
-    return JSON.parse(text);
+    return runtimeJson(response, 1e6);
   }
   async start(admission) {
     return observationSchema.parse(await this.request("runs", admissionSchema.parse(admission)));

@@ -13,9 +13,10 @@ export const runtimeState = defineQuery<RuntimeState>('factoryState');
 export const approvalChanged = defineSignal('approvalChanged');
 export const cancelRequested = defineSignal('cancelRequested');
 export async function factoryExecution(snapshot: RunSnapshot, binding: string): Promise<WorkerResult | null> {
-  const { authorize, gateApproved, publish } = proxyActivities<RuntimeActivities>({
+  const { authorize, gateApproved } = proxyActivities<RuntimeActivities>({
     startToCloseTimeout: '30 seconds', retry: { maximumAttempts: 5, initialInterval: '1 second', maximumInterval: '10 seconds' },
   });
+  const { publish } = proxyActivities<RuntimeActivities>({ startToCloseTimeout: '2 minutes', retry: { maximumAttempts: 5, initialInterval: '1 second', maximumInterval: '10 seconds' } });
   const { execute } = proxyActivities<RuntimeActivities>({
     startToCloseTimeout: `${snapshot.admission.input.limits.timeoutMinutes + 1} minutes`,
     scheduleToCloseTimeout: `${snapshot.admission.input.limits.timeoutMinutes + 2} minutes`,
