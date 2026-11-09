@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "partial": false,
+  "overallAcceptancePassed": true,
+  "generatedChecksVerified": true,
+  "network": "none",
+  "noCredentialsPassedToTestContainers": true,
+  "results": [
+    {
+      "repositoryId": 1450715381,
+      "pr": "https://github.com/munichdeveloper/sf-temporal-acceptance-a-20261108/pull/12",
+      "head": "51f34cca12e56c6ac6935348f52955369b8d358c",
+      "hashes": {
+        "acceptance/temporal-coding.txt": "0b629cfd962b0876ee8bf604ef6b61a519aaca61347393f581592e3c77fccc71",
+        "acceptance/verify-temporal-coding.mjs": "7cdc286848e530da0fddbb8d8d275e15f81a184296d72a51ee144f21775b8fb6"
+      },
+      "positiveCheck": true,
+      "negativeControl": true
+    },
+    {
+      "repositoryId": 1450715704,
+      "pr": "https://github.com/munichdeveloper/sf-temporal-acceptance-b-20261108/pull/9",
+      "head": "47638bb907b83eb1e655be6a63b57091425573ed",
+      "hashes": {
+        "acceptance/temporal-coding.txt": "0b629cfd962b0876ee8bf604ef6b61a519aaca61347393f581592e3c77fccc71",
+        "acceptance/verify-temporal-coding.mjs": "5dba2dad1423e786d5175603c576b5682b951942b5773df57d81c44263d90e04"
+      },
+      "positiveCheck": true,
+      "negativeControl": true
+    }
+  ],
+  "checkedAt": "2026-11-09T21:39:46.861Z"
+}
