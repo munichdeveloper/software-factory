@@ -1,5 +1,5 @@
 import { condition, defineQuery, defineSignal, proxyActivities, setHandler } from '@temporalio/workflow';
-import type { RunSnapshot, RuntimeState } from './contract.js';
+import type { RunSnapshot, RuntimeState, RuntimeRelease } from './contract.js';
 import type { WorkerResult } from '../workers/contract.js';
 
 export interface RuntimeActivities {
@@ -9,6 +9,7 @@ export interface RuntimeActivities {
   publish(snapshot: RunSnapshot, binding: string, result: WorkerResult): Promise<WorkerResult>;
 }
 export const runtimeState = defineQuery<RuntimeState>('factoryState');
+export const runtimeDefinition = defineQuery<{ revision: 2; release: RuntimeRelease }>('factoryDefinition');
 // Signals only wake the workflow. Permission is read from the broker, never trusted from signal payloads.
 export const approvalChanged = defineSignal('approvalChanged');
 export const cancelRequested = defineSignal('cancelRequested');
@@ -26,6 +27,7 @@ export async function factoryExecution(snapshot: RunSnapshot, binding: string): 
   const state: RuntimeState = { phase: 'starting', binding, result: null };
   let wake = false, cancelled = false;
   setHandler(runtimeState, () => state);
+  setHandler(runtimeDefinition, () => ({ revision: 2, release: snapshot.release }));
   setHandler(approvalChanged, () => { wake = true; });
   setHandler(cancelRequested, () => { cancelled = true; wake = true; });
   if (snapshot.requireHumanGate) {

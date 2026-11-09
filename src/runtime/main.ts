@@ -12,7 +12,7 @@ import { loadConfig } from '../config/index.js';
 import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
 import { MockPlanner, OpenAIPlanner } from '../llm/provider.js';
-import { hash } from '../state/identity.js';
+import { assertRetainedReleases } from './retention.js';
 import { releaseSchema } from './contract.js';
 import { RuntimeStore } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
@@ -77,10 +77,7 @@ export async function main(args = process.argv.slice(2)) {
         publish: async (snapshot, binding, artifact, createdAt) => new RuntimeCodingPublisher(api, effects(snapshot, binding),
           () => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors).publish(snapshot, artifact, createdAt) };
       // Refuse a registry rollout which would orphan any running version, including long human gates.
-      const rows = await store.list(item.repositoryId), observations = await controller.observations(rows.filter(r => r.runId).map(r => r.snapshot.admission.input.executionId));
-      for (const row of rows.filter(r => observations.find(o => o.executionId === r.snapshot.admission.input.executionId)?.status === 'running')) {
-        if (![item.release, ...item.retainedReleases].some(r => hash(r) === hash(row.snapshot.release))) throw new Error('OPEN_PINNED_RUN_REQUIRES_RETAINED_RELEASE');
-      }
+      await assertRetainedReleases(item.repositoryId, [item.release, ...item.retainedReleases], store, temporal);
       const config = await repository.config();
       bindings.push({ repository, controller, planner: config.llm.provider === 'mock' ? new MockPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '') });
     }

@@ -77,6 +77,16 @@ export class RuntimeStore {
     const { rows } = await this.db().query<Row>('SELECT * FROM factory_runtime_runs WHERE repository_id=$1 ORDER BY created_at DESC LIMIT 1000', [repositoryId]);
     return rows.map(decode);
   }
+  async *inFlight(repositoryId: number): AsyncGenerator<StoredRun> {
+    let after = '';
+    for (;;) {
+      const { rows } = await this.db().query<Row & { execution_id: string }>(
+        'SELECT * FROM factory_runtime_runs WHERE repository_id=$1 AND NOT terminal AND execution_id>$2 ORDER BY execution_id LIMIT 100', [repositoryId, after]);
+      if (!rows.length) return;
+      for (const row of rows) yield decode(row);
+      after = rows.at(-1)!.execution_id;
+    }
+  }
   async cancel(repositoryId: number, executionId: string) {
     await this.db().query('UPDATE factory_runtime_runs SET cancelled=true,approved=false WHERE repository_id=$1 AND execution_id=$2 AND NOT terminal', [repositoryId, executionId]);
   }
