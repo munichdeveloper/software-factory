@@ -12,6 +12,7 @@ export const eventSchema = z.strictObject({
   data: z.discriminatedUnion('type', [
     z.strictObject({ type: z.literal('intent'), input: workerInputSchema, actionId: z.string().length(64), attempt: z.number().int().nonnegative() }),
     z.strictObject({ type: z.literal('receipt'), executionId: z.string().length(32), runId: z.number().int().positive() }),
+    z.strictObject({ type: z.literal('temporal_receipt'), executionId: z.string().length(32), workflowId: z.string().max(200), runId: z.uuid(), binding: z.string().length(64) }),
     z.strictObject({ type: z.literal('result'), result: workerResultSchema }),
     z.strictObject({ type: z.literal('block_intent'), taskVersion: z.string().length(64), cause: blockCauseSchema, afterLabelEventId: z.number().int().nonnegative() }),
     z.strictObject({ type: z.literal('issue_creation_intent'), followupKey: z.string().regex(/^[a-f0-9]{64}$/), actionId: z.string().regex(/^[a-f0-9]{64}$/) }),

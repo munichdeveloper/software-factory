@@ -1,6 +1,6 @@
 {
   "name": "software-factory",
-  "version": "0.6.0",
+  "version": "0.7.0-temporal.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,17 +16,26 @@
     "validate:workflows": "tsx scripts/validate-workflows.ts",
     "bundle": "tsx scripts/bundle.ts",
     "test:integration": "vitest run tests/harness-integration.test.ts",
-    "contract": "tsx scripts/installation-contract.ts"
+    "contract": "tsx scripts/installation-contract.ts",
+    "runtime:serve": "node dist/runtime/main.js serve",
+    "runtime:worker": "node dist/runtime/main.js worker",
+    "runtime:pack": "node dist/runtime/main.js pack",
+    "test:runtime": "python3 scripts/test-runtime.py"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.0",
+    "@temporalio/client": "1.25.0",
+    "@temporalio/worker": "1.25.0",
+    "@temporalio/workflow": "1.25.0",
     "ajv": "^8.20.0",
+    "pg": "8.23.1",
     "yaml": "^2.8.1",
     "zod": "^4.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.19.0",
+    "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "^5.1.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",

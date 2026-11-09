@@ -21,6 +21,7 @@ export const configSchema = z.strictObject({
     overrides: z.partialRecord(z.enum(actionKinds), permissionSchema).default({})
   }).prefault({}),
   execution: z.strictObject({
+    engine: z.enum(['github-actions', 'temporal']).default('github-actions'),
     dryRun: z.boolean().default(false), maxParallelWorkers: bounded(1, 20, 1),
     maxRetries: bounded(0, 5, 2), maxNewIssues: bounded(0, 20, 3),
     workerTimeoutMinutes: bounded(1, 30, 30), dispatchGraceMinutes: bounded(1, 60, 10)

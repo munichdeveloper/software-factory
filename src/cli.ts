@@ -19,6 +19,7 @@ import { GitHubDeployPort } from './deploy/github.js';
 import { deploySummary, executeDeploy, planDeploy, readEvent } from './deploy/index.js';
 import { resolveTarget } from './deploy/target.js';
 import { SshTransport } from './deploy/transport.js';
+import { RuntimeHttpClient } from './runtime/client.js';
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
@@ -141,6 +142,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     }
     const planner = config.llm.provider === 'mock' ? new MockPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
     const report = await new Manager(github, config, planner, { correlationId,
+      workerRuntime: config.execution.engine === 'temporal' ? new RuntimeHttpClient(process.env.FACTORY_RUNTIME_URL ?? '',
+        process.env.FACTORY_RUNTIME_TOKEN ?? '', Number(process.env.GITHUB_REPOSITORY_ID)) : undefined,
       notifications: new SlackSink(process.env.SLACK_BOT_TOKEN ?? '') }).run();
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary(report));
     console.log(JSON.stringify({ correlationId, outcome: report.outcome, tasks: report.tasks,

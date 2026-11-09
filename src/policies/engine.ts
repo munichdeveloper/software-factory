@@ -55,7 +55,7 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
       if (action.attempt !== 0) return deny('Initial execution must use attempt zero');
     }
   }
-  if (action.kind === 'cancel_worker' && !task.executions.some(e => e.active && e.timedOut && e.run)) return deny('No timed out workflow to cancel');
+  if (action.kind === 'cancel_worker' && !task.executions.some(e => e.active && e.timedOut && (e.run || e.runtime))) return deny('No timed out workflow to cancel');
   if (action.kind === 'create_followup') {
     if (!action.followup) return deny('Follow-up details are required');
     if (budget.newIssues >= config.execution.maxNewIssues) return deny('Maximum new issues per run reached');

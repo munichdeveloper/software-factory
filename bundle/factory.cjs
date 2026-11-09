@@ -34600,6 +34600,7 @@ var configSchema = external_exports.strictObject({
     overrides: external_exports.partialRecord(external_exports.enum(actionKinds), permissionSchema).default({})
   }).prefault({}),
   execution: external_exports.strictObject({
+    engine: external_exports.enum(["github-actions", "temporal"]).default("github-actions"),
     dryRun: external_exports.boolean().default(false),
     maxParallelWorkers: bounded(1, 20, 1),
     maxRetries: bounded(0, 5, 2),
@@ -38845,6 +38846,7 @@ var eventSchema = external_exports.strictObject({
   data: external_exports.discriminatedUnion("type", [
     external_exports.strictObject({ type: external_exports.literal("intent"), input: workerInputSchema, actionId: external_exports.string().length(64), attempt: external_exports.number().int().nonnegative() }),
     external_exports.strictObject({ type: external_exports.literal("receipt"), executionId: external_exports.string().length(32), runId: external_exports.number().int().positive() }),
+    external_exports.strictObject({ type: external_exports.literal("temporal_receipt"), executionId: external_exports.string().length(32), workflowId: external_exports.string().max(200), runId: external_exports.uuid(), binding: external_exports.string().length(64) }),
     external_exports.strictObject({ type: external_exports.literal("result"), result: workerResultSchema }),
     external_exports.strictObject({ type: external_exports.literal("block_intent"), taskVersion: external_exports.string().length(64), cause: blockCauseSchema, afterLabelEventId: external_exports.number().int().nonnegative() }),
     external_exports.strictObject({ type: external_exports.literal("issue_creation_intent"), followupKey: external_exports.string().regex(/^[a-f0-9]{64}$/), actionId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
@@ -39103,8 +39105,19 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       if (input2.issueNumber !== issue2.number) continue;
       const matching = snapshot.runs.filter((r) => [`Factory worker ${input2.executionId}`, `Harness worker ${input2.executionId}`].includes(r.title));
       const run = matching.find((r) => r.status !== "completed") ?? matching[0];
+      const runtime = snapshot.runtimeExecutions?.find((r) => r.executionId === input2.executionId);
       const found = events.find((e) => e.data.type === "result" && e.data.result.executionId === input2.executionId && e.data.result.issueNumber === issue2.number);
-      let result = found?.data.type === "result" ? found.data.result : void 0;
+      let result = runtime?.result ?? (found?.data.type === "result" ? found.data.result : void 0);
+      if (!result && runtime && !["running"].includes(runtime.status)) result = {
+        contractVersion: "1.0",
+        executionId: input2.executionId,
+        issueNumber: issue2.number,
+        status: runtime.status === "cancelled" ? "cancelled" : "failed",
+        summary: "Temporal execution ended without a committed worker result",
+        artifacts: [],
+        error: runtime.status,
+        proposedActions: []
+      };
       if (!result && run?.status === "completed") {
         result = {
           contractVersion: "1.0",
@@ -39117,17 +39130,18 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
           proposedActions: []
         };
       }
-      const elapsed = now.getTime() - new Date(run?.createdAt ?? event.at).getTime();
-      const active = run ? run.status !== "completed" : !result;
+      const elapsed = now.getTime() - new Date(runtime?.createdAt ?? run?.createdAt ?? event.at).getTime();
+      const active = runtime ? runtime.status === "running" : run ? run.status !== "completed" : !result;
       executions.push({
         input: input2,
         attempt,
         at: event.at,
         run,
+        runtime,
         result,
         active,
-        ambiguous: !run && !result && elapsed > config2.execution.dispatchGraceMinutes * 6e4,
-        timedOut: !!run && active && elapsed > input2.limits.timeoutMinutes * 6e4
+        ambiguous: !runtime && !run && !result && elapsed > config2.execution.dispatchGraceMinutes * 6e4,
+        timedOut: runtime?.phase !== "awaiting-approval" && !!(run || runtime) && active && elapsed > input2.limits.timeoutMinutes * 6e4
       });
     }
     const currentExecutions = executions.filter((e) => e.input.taskVersion === version2);
@@ -39147,7 +39161,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     if (issue2.state === "closed") desiredStatus = "done";
     else if (explicitBlock) desiredStatus = "blocked";
     else if (issueStatus(issue2) === "done") desiredStatus = "backlog";
-    else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : "running";
+    else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : executions.some((e) => e.runtime?.phase === "awaiting-approval") ? "awaiting-approval" : "running";
     else if (hasClosingMerge) desiredStatus = "done";
     else if (blockReason) desiredStatus = "blocked";
     else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
@@ -39222,7 +39236,7 @@ function evaluate(action, ctx) {
       if (action.attempt !== 0) return deny("Initial execution must use attempt zero");
     }
   }
-  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.active && e.timedOut && e.run)) return deny("No timed out workflow to cancel");
+  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.active && e.timedOut && (e.run || e.runtime))) return deny("No timed out workflow to cancel");
   if (action.kind === "create_followup") {
     if (!action.followup) return deny("Follow-up details are required");
     if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
@@ -39343,7 +39357,7 @@ var OpenAIPlanner = class {
 function reconciliationPlan(tasks, config2) {
   return tasks.flatMap((t) => {
     const actions = [];
-    if (t.executions.some((e) => e.active && e.timedOut && e.run)) actions.push(proposal(t, "cancel_worker", "Worker exceeded its configured time limit"));
+    if (t.executions.some((e) => e.active && e.timedOut && (e.run || e.runtime))) actions.push(proposal(t, "cancel_worker", "Worker exceeded its configured time limit"));
     if (t.issue.state === "open" && t.hasClosingMerge && !t.executions.some((e) => e.active)) {
       actions.push(proposal(t, "close_issue", "Verified native closing reference to a merged pull request"));
     } else if (!t.issue.labels.includes(`harness:${t.desiredStatus}`) || t.issue.labels.filter((l) => lifecycleLabels.includes(l)).length !== 1 || t.executions.some((e) => e.result && !t.events.some((event) => event.data.type === "result" && event.data.result.executionId === e.input.executionId))) {
@@ -39547,6 +39561,18 @@ var Manager = class {
   planner;
   options;
   now;
+  async snapshot() {
+    const snapshot = await this.github.snapshot(this.config.manager.workflow);
+    if (this.config.execution.engine === "temporal") {
+      if (!this.options.workerRuntime) throw new Error("Temporal runtime is required; legacy dispatch is forbidden");
+      const ids = [...new Set([...snapshot.comments.values()].flatMap((comments) => comments.flatMap((comment) => {
+        const event = decodeEvent(comment, this.config.manager.trustedActors);
+        return event?.data.type === "intent" ? [event.data.input.executionId] : [];
+      })))];
+      snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
+    }
+    return snapshot;
+  }
   async hasApproval(issue2, id) {
     let approved = false;
     for (const comment of await this.github.comments(issue2)) {
@@ -39654,6 +39680,22 @@ ${marker2}`;
           worker: this.config.workers.coding && this.config.workers.coding.enabled ? "codex" : "test"
         });
         await this.event(live.number, `intent:${id}`, { type: "intent", input: input2, actionId: actionId(action, policyVersion(this.config)), attempt });
+        if (this.config.execution.engine === "temporal") {
+          if (!this.options.workerRuntime) throw new Error("Temporal runtime is required; legacy dispatch is forbidden");
+          const receipt = await this.options.workerRuntime.start({ input: input2, actionId: actionId(action, policyVersion(this.config)), policyHash: policyVersion(this.config) });
+          await this.event(live.number, `temporal-receipt:${id}`, {
+            type: "temporal_receipt",
+            executionId: id,
+            workflowId: receipt.workflowId,
+            runId: receipt.runId,
+            binding: receipt.binding
+          });
+          const fresh2 = await this.github.getIssue(live.number);
+          if (taskVersion(fresh2) === action.taskVersion && fresh2.state === "open" && !fresh2.labels.includes("harness:blocked")) {
+            await this.github.updateIssue(live.number, { labels: withStatus(fresh2, receipt.phase === "awaiting-approval" ? "awaiting-approval" : "running") });
+          }
+          return true;
+        }
         const existing = (await this.github.runs(this.config.manager.workflow)).find((r) => r.title === `Factory worker ${id}`);
         if (!existing) await this.github.dispatch(this.config.manager.workflow, snapshot.defaultBranch, id, live.number);
         const run = existing ?? (await this.github.runs(this.config.manager.workflow)).find((r) => r.title === `Factory worker ${id}`);
@@ -39663,6 +39705,10 @@ ${marker2}`;
         return true;
       }
       case "cancel_worker": {
+        for (const execution of task.executions.filter((e) => e.timedOut && e.runtime)) {
+          if (!this.options.workerRuntime) throw new Error("Temporal cancellation requires the runtime");
+          await this.options.workerRuntime.cancel(execution.input.executionId);
+        }
         const runs = await this.github.runs(this.config.manager.workflow);
         for (const e of task.executions.filter((e2) => e2.timedOut && e2.run)) {
           if (runs.some((r) => r.id === e.run.id && r.status !== "completed")) await this.github.cancelRun(e.run.id);
@@ -39690,7 +39736,7 @@ ${marker2}`;
       report.outcome = "disabled";
       return report;
     }
-    let snapshot = await this.github.snapshot(this.config.manager.workflow);
+    let snapshot = await this.snapshot();
     let tasks = reconstruct(snapshot, this.config, this.now());
     report.tasks = tasks.length;
     for (const t of tasks) {
@@ -39734,7 +39780,7 @@ ${marker2}`;
         break;
       }
       try {
-        snapshot = await this.github.snapshot(this.config.manager.workflow);
+        snapshot = await this.snapshot();
         tasks = reconstruct(snapshot, this.config, this.now());
         const task = tasks.find((t) => t.issue.number === action.issueNumber);
         if (!task) {
@@ -40600,15 +40646,15 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
   eligible(f, snapshot) {
     return f.labels.includes(this.config.merge.adoptLabel) || this.config.merge.includeFactoryPRs && !!this.owned(f, snapshot);
   }
-  async dispatch(f, workflow, ref, sha2) {
-    const key = `merge-ci:${hash2({ workflow, ref, sha: sha2 })}`;
+  async dispatch(f, workflow, ref, sha3) {
+    const key = `merge-ci:${hash2({ workflow, ref, sha: sha3 })}`;
     if (this.events(f).some((e) => e.key === key)) return;
     await this.api.dispatch(workflow, ref);
-    await this.event(f, key, { type: "workflow_dispatch", workflow, ref, sha: sha2 });
+    await this.event(f, key, { type: "workflow_dispatch", workflow, ref, sha: sha3 });
   }
-  async postMerge(f, sha2) {
+  async postMerge(f, sha3) {
     for (const workflow of new Set(this.config.merge.postMergeWorkflows)) {
-      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha2);
+      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha3);
     }
   }
   async run(snapshot) {
@@ -40732,18 +40778,18 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         }
         await this.event(live, `merge-intent:${reviewKey}`, { type: "merge_intent", prNumber: number4, head: f.head, base: f.base, reviewKey });
         phase = "GitHub-Merge";
-        const sha2 = await this.api.merge(number4, f.head, this.config.merge.method);
+        const sha3 = await this.api.merge(number4, f.head, this.config.merge.method);
         report.merged++;
         f.state = "closed";
-        f.mergeSha = sha2;
+        f.mergeSha = sha3;
         await this.event(
           live,
           `merge-completed:${f.head}`,
-          { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: sha2 },
-          `**Gemergt.** Die KI hat den gepr\xFCften Commit freigegeben; GitHub hat den Merge best\xE4tigt: \`${sha2}\`.`
+          { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: sha3 },
+          `**Gemergt.** Die KI hat den gepr\xFCften Commit freigegeben; GitHub hat den Merge best\xE4tigt: \`${sha3}\`.`
         );
         phase = "Workflows nach Merge";
-        await this.postMerge(live, sha2);
+        await this.postMerge(live, sha3);
       } catch (error62) {
         const status = error62 instanceof Error && "status" in error62 ? String(error62.status) : "unavailable";
         report.errors.push(`PR #${number4}: review/update/merge not confirmed (${status}); no unreviewed merge performed`);
@@ -40784,14 +40830,14 @@ var GitHubDeployPort = class {
     const { data: ref } = await this.api.git.getRef({ ...this.target, ref: `heads/${repo.default_branch}` });
     return { name: repo.default_branch, sha: ref.object.sha };
   }
-  async workflowRuns(sha2) {
-    const rows = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: sha2, per_page: 100 });
+  async workflowRuns(sha3) {
+    const rows = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: sha3, per_page: 100 });
     return rows.map((r) => ({ name: r.name ?? "", event: r.event, status: r.status ?? "unknown", conclusion: r.conclusion, createdAt: r.created_at }));
   }
-  async createDeployment(sha2, environment, description) {
+  async createDeployment(sha3, environment, description) {
     const { data } = await this.api.repos.createDeployment({
       ...this.target,
-      ref: sha2,
+      ref: sha3,
       environment,
       description,
       auto_merge: false,
@@ -41010,33 +41056,33 @@ async function planDeploy(config2, event, port) {
   const deploy = config2.deploy;
   if (!deploy.enabled) return { deploy: false, reason: "disabled" };
   const branch = await port.defaultBranch();
-  let sha2;
+  let sha3;
   let source = event.name;
-  if (event.name === "workflow_dispatch") sha2 = branch.sha;
+  if (event.name === "workflow_dispatch") sha3 = branch.sha;
   else if (event.name === "push") {
     if (deploy.trigger !== "push") return { deploy: false, reason: "waiting-for-checks" };
     if (event.ref !== `refs/heads/${branch.name}`) return { deploy: false, reason: "not-default-branch" };
-    sha2 = String(event.payload.after ?? "");
+    sha3 = String(event.payload.after ?? "");
   } else if (event.name === "workflow_run") {
     if (deploy.trigger !== "checks") return { deploy: false, reason: "push-trigger-configured" };
     const run = event.payload.workflow_run ?? {};
     if (run.event !== "push" || run.head_branch !== branch.name) return { deploy: false, reason: "not-default-branch" };
     if (!deploy.workflows.includes(String(run.name))) return { deploy: false, reason: "unrelated-workflow" };
     if (run.conclusion !== "success") return { deploy: false, reason: "checks-failed", sha: String(run.head_sha ?? "") };
-    sha2 = String(run.head_sha ?? "");
+    sha3 = String(run.head_sha ?? "");
     source = `workflow_run:${String(run.name)}`;
   } else return { deploy: false, reason: "unsupported-event" };
-  if (!SHA.test(sha2)) return { deploy: false, reason: "invalid-commit" };
-  if (sha2 !== branch.sha) return { deploy: false, reason: "superseded", sha: sha2 };
+  if (!SHA.test(sha3)) return { deploy: false, reason: "invalid-commit" };
+  if (sha3 !== branch.sha) return { deploy: false, reason: "superseded", sha: sha3 };
   if (deploy.trigger === "checks") {
-    const runs = await port.workflowRuns(sha2);
+    const runs = await port.workflowRuns(sha3);
     for (const name of deploy.workflows) {
       const latest = runs.filter((r) => r.name === name && r.event === "push").sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-      if (!latest || latest.status !== "completed") return { deploy: false, reason: "checks-pending", sha: sha2 };
-      if (latest.conclusion !== "success") return { deploy: false, reason: "checks-failed", sha: sha2 };
+      if (!latest || latest.status !== "completed") return { deploy: false, reason: "checks-pending", sha: sha3 };
+      if (latest.conclusion !== "success") return { deploy: false, reason: "checks-failed", sha: sha3 };
     }
   }
-  return { deploy: true, sha: sha2, source };
+  return { deploy: true, sha: sha3, source };
 }
 function archive(sourceDir) {
   const child = (0, import_node_child_process3.spawn)("git", ["-C", sourceDir, "archive", "--format=tar", "HEAD"], { stdio: ["ignore", "pipe", "ignore"] });
@@ -41052,33 +41098,33 @@ function archive(sourceDir) {
   return { stream, done };
 }
 async function executeDeploy(context) {
-  const { config: config2, sha: sha2, sourceDir, transport, port, logUrl } = context;
+  const { config: config2, sha: sha3, sourceDir, transport, port, logUrl } = context;
   const deploy = config2.deploy;
   const log = context.log ?? (() => {
   });
   const head = await runProcess("git", ["-C", sourceDir, "rev-parse", "HEAD"]);
-  if (head.code !== 0 || head.stdout.trim() !== sha2) throw new Error("Deployment source does not match the planned commit");
+  if (head.code !== 0 || head.stdout.trim() !== sha3) throw new Error("Deployment source does not match the planned commit");
   let deploymentId = null;
   const status = async (state, description) => {
     if (deploymentId !== null) await port.setDeploymentStatus(deploymentId, state, description, logUrl).catch(() => log("Deployment status could not be recorded"));
   };
   if (deploy.githubDeployment) {
-    deploymentId = await port.createDeployment(sha2, deploy.environment, `Software Factory docker-ssh deploy of ${sha2.slice(0, 12)}`);
+    deploymentId = await port.createDeployment(sha3, deploy.environment, `Software Factory docker-ssh deploy of ${sha3.slice(0, 12)}`);
     await status("in_progress", "Uploading release");
   }
   const timeoutMs = deploy.timeoutMinutes * 6e4;
   try {
     const tar = archive(sourceDir);
-    const upload = await transport.run(uploadScript, [deploy.path, sha2], tar.stream, timeoutMs);
-    if (await tar.done !== 0 || upload.code !== 0 || remoteValue(upload.stdout, "SF_DEPLOY_UPLOADED") !== sha2) {
+    const upload = await transport.run(uploadScript, [deploy.path, sha3], tar.stream, timeoutMs);
+    if (await tar.done !== 0 || upload.code !== 0 || remoteValue(upload.stdout, "SF_DEPLOY_UPLOADED") !== sha3) {
       log(upload.stderr.trim());
       throw new Error(`Deployment upload failed (exit ${upload.code})`);
     }
-    log(`Uploaded ${sha2} to ${deploy.path}/releases/${sha2}`);
+    log(`Uploaded ${sha3} to ${deploy.path}/releases/${sha3}`);
     const project = deploy.project ?? deploy.path.split("/").at(-1).toLowerCase().replace(/[^a-z0-9_-]/g, "-");
     const result = await transport.run(activateScript, [
       deploy.path,
-      sha2,
+      sha3,
       project,
       deploy.composeFile,
       deploy.envFile ?? "",
@@ -41093,12 +41139,12 @@ async function executeDeploy(context) {
     const error62 = remoteValue(result.stdout, "SF_DEPLOY_ERROR");
     const outcome = remoteValue(result.stdout, "SF_DEPLOY_RESULT");
     if (result.code === 0 && outcome === "deployed") {
-      await status("success", `Deployed ${sha2.slice(0, 12)}`);
-      return { outcome: "deployed", sha: sha2, previous, deploymentId, detail: "Release started and verified" };
+      await status("success", `Deployed ${sha3.slice(0, 12)}`);
+      return { outcome: "deployed", sha: sha3, previous, deploymentId, detail: "Release started and verified" };
     }
     const detail = error62 ? `Precondition failed: ${error62}` : outcome === "rolled-back" ? `Release failed; previous release ${previous?.slice(0, 12)} restored` : outcome === "rollback-failed" ? "Release failed and the rollback also failed" : `Release failed (exit ${result.code})`;
     await status("failure", detail);
-    return { outcome: outcome === "rolled-back" ? "rolled-back" : "failed", sha: sha2, previous, deploymentId, detail };
+    return { outcome: outcome === "rolled-back" ? "rolled-back" : "failed", sha: sha3, previous, deploymentId, detail };
   } catch (error62) {
     await status("error", error62 instanceof Error ? error62.message : "Deployment failed");
     throw error62;
@@ -41146,6 +41192,83 @@ function resolveTarget(config2, env = process.env) {
   if (!/PRIVATE KEY-----/.test(privateKey)) throw new Error("Deployment SSH key must be an unencrypted OpenSSH/PEM private key");
   return { host, user, port, privateKey, knownHosts };
 }
+
+// src/runtime/contract.ts
+var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var digest = external_exports.string().regex(/^[a-f0-9]{64}$/);
+var executionKey = external_exports.string().regex(/^[a-f0-9]{32}$/);
+var releaseSchema = external_exports.strictObject({
+  factorySha: sha2,
+  harnessSha: sha2,
+  workflowHash: digest,
+  deploymentName: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
+  buildId: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  taskQueue: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
+  schemaVersion: external_exports.literal(1)
+});
+var admissionSchema = external_exports.strictObject({ input: workerInputSchema, actionId: digest, policyHash: digest });
+var snapshotSchema = external_exports.strictObject({
+  version: external_exports.literal(1),
+  repositoryId: external_exports.number().int().positive().safe(),
+  repository: external_exports.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+  release: releaseSchema,
+  admission: admissionSchema,
+  baseSha: sha2,
+  specHash: digest,
+  configHash: digest,
+  requireHumanGate: external_exports.boolean()
+});
+var observationSchema = external_exports.strictObject({
+  issueNumber: external_exports.number().int().positive(),
+  executionId: executionKey,
+  workflowId: external_exports.string().min(1).max(200),
+  runId: external_exports.uuid(),
+  status: external_exports.enum(["running", "completed", "failed", "cancelled", "timed_out"]),
+  phase: external_exports.enum(["starting", "awaiting-approval", "authorizing", "running", "publishing", "completed", "cancelled"]),
+  binding: digest,
+  createdAt: external_exports.iso.datetime(),
+  result: workerResultSchema.nullable()
+});
+
+// src/runtime/client.ts
+var RuntimeHttpClient = class {
+  constructor(url2, token, repositoryId, fetcher = fetch) {
+    this.token = token;
+    this.repositoryId = repositoryId;
+    this.fetcher = fetcher;
+    this.base = new URL(url2);
+    if (this.base.protocol !== "https:" && !["127.0.0.1", "localhost", "[::1]"].includes(this.base.hostname) || this.base.username || this.base.password || this.base.search || this.base.hash || token.length < 32 || !Number.isSafeInteger(repositoryId) || repositoryId <= 0) throw new Error("Invalid Factory runtime connection");
+  }
+  token;
+  repositoryId;
+  fetcher;
+  base;
+  async request(path, body) {
+    const response = await this.fetcher(new URL(`/v1/repositories/${this.repositoryId}/${path}`, this.base), {
+      method: body === void 0 ? "GET" : "POST",
+      headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+      ...body === void 0 ? {} : { body: JSON.stringify(body) },
+      signal: AbortSignal.timeout(15e3),
+      redirect: "error"
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error("Factory runtime request rejected or unavailable");
+    }
+    const text = await response.text();
+    if (Buffer.byteLength(text) > 1e6) throw new Error("Factory runtime response exceeds limit");
+    return JSON.parse(text);
+  }
+  async start(admission) {
+    return observationSchema.parse(await this.request("runs", admissionSchema.parse(admission)));
+  }
+  async observations(executionIds) {
+    return observationSchema.array().max(1e3).parse(await this.request("observations", { executionIds }));
+  }
+  async cancel(executionId2) {
+    await this.request(`runs/${executionId2}/cancel`, {});
+  }
+};
 
 // src/cli.ts
 async function main(args = process.argv.slice(2)) {
@@ -41339,6 +41462,11 @@ base-branch=${prepared.base.branch}
     const planner = config2.llm.provider === "mock" ? new MockPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? "");
     const report = await new Manager(github, config2, planner, {
       correlationId,
+      workerRuntime: config2.execution.engine === "temporal" ? new RuntimeHttpClient(
+        process.env.FACTORY_RUNTIME_URL ?? "",
+        process.env.FACTORY_RUNTIME_TOKEN ?? "",
+        Number(process.env.GITHUB_REPOSITORY_ID)
+      ) : void 0,
       notifications: new SlackSink(process.env.SLACK_BOT_TOKEN ?? "")
     }).run();
     if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));

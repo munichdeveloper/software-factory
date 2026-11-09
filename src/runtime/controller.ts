@@ -1,0 +1,136 @@
+import { WorkflowExecutionAlreadyStartedError, type Client } from '@temporalio/client';
+import type { Config } from '../config/index.js';
+import type { GitHubPort } from '../github/port.js';
+import { hash } from '../state/identity.js';
+import { policyVersion } from '../policies/engine.js';
+import { authorizeDelegation } from '../workers/execute-delegation.js';
+import { decodeEvent } from '../state/events.js';
+import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
+import { RuntimeStore, type StoredRun } from './store.js';
+import { admissionSchema, snapshotSchema, workflowId, type Admission, type RunSnapshot, type RuntimeObservation, type RuntimeRelease, type RuntimeState, type WorkerRuntimePort } from './contract.js';
+
+export interface RuntimeRepository {
+  repositoryId: number; repository: string; release: RuntimeRelease; retainedReleases?: RuntimeRelease[]; requireHumanGate: boolean;
+  github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
+}
+export class RuntimeController implements WorkerRuntimePort {
+  constructor(private repo: RuntimeRepository, private store: RuntimeStore, private temporal: Client) {}
+  private async current(snapshot: RunSnapshot) {
+    const config = await this.repo.config();
+    if (this.repo.repositoryId !== snapshot.repositoryId || this.repo.repository !== snapshot.repository ||
+      ![this.repo.release, ...(this.repo.retainedReleases ?? [])].some(r => hash(r) === hash(snapshot.release)) || config.execution.engine !== 'temporal' ||
+      hash(config) !== snapshot.configHash || policyVersion(config) !== snapshot.admission.policyHash || await this.repo.baseSha() !== snapshot.baseSha) throw new Error('STALE_SNAPSHOT');
+    const auth = await authorizeDelegation(this.repo.github, config, snapshot.admission.input.issueNumber, snapshot.admission.input.executionId);
+    if (auth.cancelled || hash(auth.input) !== hash(snapshot.admission.input)) throw new Error('DELEGATION_REVOKED');
+    return config;
+  }
+  async start(value: Admission): Promise<RuntimeObservation> {
+    const admission = admissionSchema.parse(value), id = admission.input.executionId;
+    if (admission.input.repository !== this.repo.repository) throw new Error('REPOSITORY_MISMATCH');
+    await this.store.locked(this.repo.repositoryId, id, async () => {
+      let stored = await this.store.get(this.repo.repositoryId, id);
+      if (stored) {
+        if (hash(stored.snapshot.admission) !== hash(admission)) throw new Error('ADMISSION_CONFLICT');
+      } else {
+        const config = await this.repo.config();
+        if (policyVersion(config) !== admission.policyHash || config.execution.engine !== 'temporal') throw new Error('POLICY_MISMATCH');
+        const comments = await this.repo.github.comments(admission.input.issueNumber);
+        const intent = comments.map(c => decodeEvent(c, config.manager.trustedActors)).find(e => e?.data.type === 'intent' && e.data.input.executionId === id);
+        if (intent?.data.type !== 'intent' || intent.data.actionId !== admission.actionId) throw new Error('NO_MATCHING_INTENT');
+        const snapshot = snapshotSchema.parse({ version: 1, repositoryId: this.repo.repositoryId, repository: this.repo.repository,
+          release: this.repo.release, admission, baseSha: await this.repo.baseSha(), specHash: admission.input.taskVersion,
+          configHash: hash(config), requireHumanGate: this.repo.requireHumanGate });
+        await this.current(snapshot);
+        stored = await this.store.insert(snapshot, hash(snapshot), workflowId(this.repo.repositoryId, id));
+      }
+      if (!stored.runId) {
+        if (stored.cancelled) throw new Error('ADMISSION_CANCELLED');
+        await this.current(stored.snapshot);
+        try {
+          const handle = await this.temporal.workflow.start('factoryExecution', { workflowId: stored.workflowId,
+            taskQueue: stored.snapshot.release.taskQueue, args: [stored.snapshot, stored.binding],
+            versioningOverride: { pinnedTo: { deploymentName: stored.snapshot.release.deploymentName, buildId: stored.snapshot.release.buildId } },
+            workflowIdReusePolicy: 'REJECT_DUPLICATE', workflowExecutionTimeout: '30 days' });
+          await this.store.started(this.repo.repositoryId, id, handle.firstExecutionRunId);
+        } catch (error) {
+          if (!(error instanceof WorkflowExecutionAlreadyStartedError)) throw error;
+          // A lost start response is reconciled with immutable workflow input, not just a matching name.
+          const handle = this.temporal.workflow.getHandle(stored.workflowId), history = await handle.fetchHistory();
+          const first = history.events?.find(e => e.workflowExecutionStartedEventAttributes)?.workflowExecutionStartedEventAttributes;
+          const payload = first?.input?.payloads?.[1];
+          if (!payload?.data || JSON.parse(Buffer.from(payload.data).toString('utf8')) !== stored.binding) throw new Error('WORKFLOW_BINDING_CONFLICT', { cause: error });
+          await this.store.started(this.repo.repositoryId, id, (await handle.describe()).runId);
+        }
+      }
+    });
+    return (await this.observations([id]))[0]!;
+  }
+  async observations(ids: string[]): Promise<RuntimeObservation[]> {
+    const result: RuntimeObservation[] = [];
+    for (const id of ids) {
+      const row = await this.store.get(this.repo.repositoryId, id);
+      if (!row) continue;
+      if (!row.runId) { if (!row.cancelled) result.push(await this.start(row.snapshot.admission)); continue; }
+      const handle = this.temporal.workflow.getHandle(row.workflowId, row.runId), description = await handle.describe();
+      const status: RuntimeObservation['status'] = description.status.name === 'RUNNING' ? 'running' : description.status.name === 'COMPLETED' ? (row.cancelled ? 'cancelled' : 'completed')
+        : description.status.name === 'CANCELLED' ? 'cancelled' : description.status.name === 'TIMED_OUT' ? 'timed_out' : 'failed';
+      let state: RuntimeState = { phase: row.cancelled ? 'cancelled' : row.result ? 'completed' : 'starting', binding: row.binding, result: row.result };
+      if (status === 'running') state = await handle.query<RuntimeState>('factoryState');
+      if (state.binding !== row.binding) throw new Error('WORKFLOW_BINDING_CONFLICT');
+      if (status !== 'running') await this.store.terminal(this.repo.repositoryId, id);
+      result.push({ issueNumber: row.snapshot.admission.input.issueNumber, executionId: id, workflowId: row.workflowId, runId: row.runId, status, phase: state.phase, binding: row.binding, createdAt: row.createdAt, result: row.result });
+    }
+    return result;
+  }
+  async authorize(snapshot: RunSnapshot, binding: string): Promise<StoredRun> {
+    const stored = await this.store.get(this.repo.repositoryId, snapshot.admission.input.executionId);
+    if (!stored || stored.binding !== binding || hash(snapshot) !== binding || stored.cancelled) throw new Error('UNKNOWN_OR_CANCELLED_RUN');
+    if (snapshot.requireHumanGate && !stored.approved) throw new Error('APPROVAL_REQUIRED');
+    await this.current(snapshot);
+    return stored;
+  }
+  async gateApproved(snapshot: RunSnapshot, binding: string) {
+    const row = await this.store.get(this.repo.repositoryId, snapshot.admission.input.executionId);
+    if (!row || row.binding !== binding || row.cancelled || hash(snapshot) !== binding) throw new Error('UNKNOWN_OR_CANCELLED_RUN');
+    return row.approved;
+  }
+  async gate(id: string, binding: string, actor: string, approved: boolean) {
+    if (!await this.repo.github.canApprove(actor)) throw new Error('ACTOR_NOT_AUTHORIZED');
+    const row = await this.store.get(this.repo.repositoryId, id);
+    if (!row || row.binding !== binding) throw new Error('STALE_APPROVAL');
+    await this.current(row.snapshot);
+    await this.store.gate(this.repo.repositoryId, id, binding, actor, approved);
+    if (row.runId) await this.temporal.workflow.getHandle(row.workflowId, row.runId).signal('approvalChanged');
+  }
+  async cancel(id: string) {
+    const row = await this.store.get(this.repo.repositoryId, id);
+    if (!row) throw new Error('UNKNOWN_RUN');
+    await this.store.cancel(this.repo.repositoryId, id);
+    if (row.runId) await this.temporal.workflow.getHandle(row.workflowId, row.runId).signal('cancelRequested');
+  }
+  async publish(snapshot: RunSnapshot, binding: string, value: WorkerResult): Promise<WorkerResult> {
+    const result = workerResultSchema.parse(value), id = snapshot.admission.input.executionId;
+    if (result.executionId !== id || result.issueNumber !== snapshot.admission.input.issueNumber) throw new Error('RESULT_MISMATCH');
+    return this.store.locked(this.repo.repositoryId, id, async client => {
+      const row = await this.store.get(this.repo.repositoryId, id);
+      if (!row || row.binding !== binding || hash(snapshot) !== binding) throw new Error('UNKNOWN_RUN');
+      if (row.result) { if (hash(row.result) !== hash(result)) throw new Error('RESULT_CONFLICT'); return row.result; }
+      await this.authorize(snapshot, binding);
+      const config = await this.repo.config(), digest = hash(result);
+      const events = (await this.repo.github.comments(result.issueNumber)).map(c => decodeEvent(c, config.manager.trustedActors));
+      const published = events.find(e => e?.data.type === 'result' && e.data.result.executionId === id);
+      if (published?.data.type === 'result') {
+        if (hash(published.data.result) !== digest) throw new Error('RESULT_CONFLICT');
+      } else {
+        const prior = await client.query<{ payload_hash: string; phase: string }>('SELECT * FROM factory_runtime_effects WHERE repository_id=$1 AND execution_id=$2 AND effect=$3', [this.repo.repositoryId, id, 'result-journal']);
+        if (prior.rows[0]) throw new Error('PUBLICATION_UNCERTAIN_RECONCILIATION_REQUIRED');
+        // Durable claim BEFORE GitHub. An unknown outcome remains fail-closed until actual journal evidence exists.
+        await client.query('INSERT INTO factory_runtime_effects(repository_id,execution_id,effect,payload_hash,phase) VALUES($1,$2,$3,$4,$5)', [this.repo.repositoryId, id, 'result-journal', digest, 'attempted']);
+        await this.repo.github.writeEvent(result.issueNumber, { version: 1, key: `result:${id}`, at: new Date().toISOString(), correlationId: row.workflowId, data: { type: 'result', result } });
+      }
+      await client.query('UPDATE factory_runtime_effects SET phase=$3 WHERE repository_id=$1 AND execution_id=$2 AND effect=$4', [this.repo.repositoryId, id, 'confirmed', 'result-journal']);
+      await this.store.complete(this.repo.repositoryId, id, result);
+      return result;
+    });
+  }
+}
