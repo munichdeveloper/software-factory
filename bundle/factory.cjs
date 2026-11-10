@@ -38894,7 +38894,7 @@ function dependencies(body) {
   return [...new Set(lines.flatMap((line) => [...line.matchAll(/#(\d+)/g)].map((m) => Number(m[1]))))];
 }
 function acceptanceCriteria(body) {
-  const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
+  const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien|Abnahmekriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
   return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
 }
 
