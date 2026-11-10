@@ -22,6 +22,7 @@ export const snapshotSchema = z.strictObject({
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
   release: releaseSchema, admission: admissionSchema, baseSha: sha,
   baseRef: baseRefSchema.optional(), executorWorkflow: executorWorkflowSchema.optional(),
+  allowedPaths: z.array(z.string().min(1).max(500)).min(1).max(100).optional(),
   specHash: digest, configHash: digest, requireHumanGate: z.boolean(),
 });
 export type RunSnapshot = z.infer<typeof snapshotSchema>;

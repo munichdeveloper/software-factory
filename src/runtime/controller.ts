@@ -13,7 +13,7 @@ import type { CodingArtifact } from '../workers/coding.js';
 
 export interface RuntimeRepository {
   repositoryId: number; repository: string; release: RuntimeRelease; retainedReleases?: RuntimeRelease[]; requireHumanGate: boolean;
-  baseRef?: string; executorWorkflow?: string; issueNumbers?: number[];
+  baseRef?: string; executorWorkflow?: string; issueNumbers?: number[]; allowedPaths?: string[];
   github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
   coding?: { executor: CodingExecutionPort; publish(snapshot: RunSnapshot, binding: string, artifact: CodingArtifact, createdAt: string): Promise<{ url: string }> };
 }
@@ -22,7 +22,7 @@ export class RuntimeController implements WorkerRuntimePort {
   private scope(number: number) { if (this.repo.issueNumbers && !this.repo.issueNumbers.includes(number)) throw new Error('ISSUE_OUTSIDE_RUNTIME_SCOPE'); }
   private async current(snapshot: RunSnapshot) {
     const config = await this.repo.config();
-    if (this.repo.repositoryId !== snapshot.repositoryId || this.repo.repository !== snapshot.repository || this.repo.baseRef !== snapshot.baseRef || this.repo.executorWorkflow !== snapshot.executorWorkflow ||
+    if (this.repo.repositoryId !== snapshot.repositoryId || this.repo.repository !== snapshot.repository || this.repo.baseRef !== snapshot.baseRef || this.repo.executorWorkflow !== snapshot.executorWorkflow || hash(this.repo.allowedPaths ?? null) !== hash(snapshot.allowedPaths ?? null) ||
       ![this.repo.release, ...(this.repo.retainedReleases ?? [])].some(r => hash(r) === hash(snapshot.release)) || config.execution.engine !== 'temporal' ||
       hash(config) !== snapshot.configHash || policyVersion(config) !== snapshot.admission.policyHash || await this.repo.baseSha() !== snapshot.baseSha) throw new Error('STALE_SNAPSHOT');
     const auth = await authorizeDelegation(this.repo.github, config, snapshot.admission.input.issueNumber, snapshot.admission.input.executionId);
@@ -46,6 +46,7 @@ export class RuntimeController implements WorkerRuntimePort {
         const snapshot = snapshotSchema.parse({ version: 1, repositoryId: this.repo.repositoryId, repository: this.repo.repository,
           release: this.repo.release, admission, baseSha: await this.repo.baseSha(), specHash: admission.input.taskVersion,
           ...(this.repo.baseRef ? { baseRef: this.repo.baseRef } : {}), ...(this.repo.executorWorkflow ? { executorWorkflow: this.repo.executorWorkflow } : {}),
+          ...(this.repo.allowedPaths ? { allowedPaths: this.repo.allowedPaths } : {}),
           configHash: hash(config), requireHumanGate: this.repo.requireHumanGate });
         await this.current(snapshot);
         const info = (await this.temporal.workflowService.describeWorkerDeploymentVersion({ namespace: this.temporal.options.namespace,
@@ -127,6 +128,7 @@ export class RuntimeController implements WorkerRuntimePort {
     if (row.runId) await this.temporal.workflow.getHandle(row.workflowId, row.runId).signal('cancelRequested');
   }
   private codingResult(snapshot: RunSnapshot, artifact: CodingArtifact): WorkerResult {
+    if (snapshot.allowedPaths && artifact.changes.some(c => !snapshot.allowedPaths!.includes(c.path))) throw new Error('ARTIFACT_OUTSIDE_RUNTIME_SCOPE');
     const input = snapshot.admission.input;
     if (artifact.baseSha !== snapshot.baseSha || artifact.result.executionId !== input.executionId || artifact.result.taskVersion !== snapshot.specHash ||
       artifact.result.taskId !== `github:${snapshot.repository}#${input.issueNumber}`) throw new Error('UNRELATED_EXECUTOR_ARTIFACT');

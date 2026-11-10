@@ -21,6 +21,7 @@ export class RuntimeCodingPublisher {
       artifact.result.taskVersion !== snapshot.specHash || artifact.result.taskId !== `github:${snapshot.repository}#${input.issueNumber}` ||
       artifact.result.status !== 'success' || !artifact.changes.length) throw new Error('UNRELATED_OR_UNSUCCESSFUL_ARTIFACT');
     validateChanges(artifact); z.iso.datetime().parse(createdAt);
+    if (snapshot.allowedPaths && artifact.changes.some(c => !snapshot.allowedPaths!.includes(c.path))) throw new Error('ARTIFACT_OUTSIDE_RUNTIME_SCOPE');
     const [owner, repo] = snapshot.repository.split('/') as [string, string], target = { owner, repo };
     const live = (await this.api.repos.get(target)).data;
     if (live.id !== snapshot.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');

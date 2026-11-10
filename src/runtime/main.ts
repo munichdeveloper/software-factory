@@ -31,6 +31,7 @@ const registrySchema = z.strictObject({
     baseRef: baseRefSchema.optional(), executorWorkflow: executorWorkflowSchema.optional(),
     configPath: z.string().regex(/^\.github\/[\w.-]+\.ya?ml$/).default('.github/software-factory.yml'),
     issueNumbers: z.array(z.number().int().positive().safe()).min(1).max(100).optional(),
+    allowedPaths: z.array(z.string().min(1).max(500)).min(1).max(100).optional(),
     retainedReleases: releaseSchema.array().default([]), requireHumanGate: z.boolean().default(true) })
     .refine(item => Number(!!item.githubTokenEnv) + Number(!!item.githubInstallationId) === 1, 'Select exactly one scoped credential source')).min(1).max(100),
 });

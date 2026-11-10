@@ -88,6 +88,12 @@ it('publishes canary changes only against the frozen integration branch', async 
   const moved=fixture(snapshotSchema.parse({...snapshot,baseRef:'test/temporal-rc'}));moved.move();
   await expect(moved.publish()).rejects.toThrow('BASE_MOVED'); expect(moved.writes).toEqual([]);
 });
+it('cannot publish a model change outside the frozen canary path scope', async () => {
+  const f=fixture(snapshotSchema.parse({...snapshot,allowedPaths:['docs/canary.md']}));
+  await expect(f.publish()).rejects.toThrow('ARTIFACT_OUTSIDE_RUNTIME_SCOPE');expect(f.writes).toEqual([]);
+  const allowed=fixture(snapshotSchema.parse({...snapshot,allowedPaths:['result.txt']}));await allowed.publish();
+  expect(allowed.writes.filter(w=>w.kind==='draft-pr')).toHaveLength(1);
+});
 it.each(['blob', 'tree', 'commit', 'branch', 'draft-pr', 'publication-comment'])('reconciles lost %s response across a fresh publisher instance', async key => {
   const f = fixture(); f.lose(key); await expect(f.publish()).rejects.toThrow();
   const result = await f.publish(); expect(result.number).toBe(9);
