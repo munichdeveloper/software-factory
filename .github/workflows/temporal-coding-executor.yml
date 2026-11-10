@@ -64,6 +64,14 @@ jobs:
           ref: ${{ inputs.harness-ref }}
           path: .runtime/harness
           persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Prepare locked npm dependencies before network-isolated coding
+        if: ${{ hashFiles('target/package-lock.json') != '' }}
+        working-directory: target
+        timeout-minutes: 5
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - id: codex
         uses: ./.runtime/harness
         with:
