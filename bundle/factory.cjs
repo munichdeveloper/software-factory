@@ -41218,6 +41218,7 @@ var snapshotSchema = external_exports.strictObject({
   baseSha: sha2,
   baseRef: baseRefSchema.optional(),
   executorWorkflow: executorWorkflowSchema.optional(),
+  allowedPaths: external_exports.array(external_exports.string().min(1).max(500)).min(1).max(100).optional(),
   specHash: digest,
   configHash: digest,
   requireHumanGate: external_exports.boolean()
