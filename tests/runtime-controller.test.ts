@@ -60,6 +60,21 @@ async function fixture(requireHumanGate = true, coding = false) {
   return { cfg, github, store, start, deployment, signal, handle, repo, controller, admission, result, status: (value: string) => { status = value; } };
 }
 describe('Temporal admission, identity and approval', () => {
+  it('freezes authenticated ready-label evidence and runs without a second manual gate', async () => {
+    const f=await fixture(false),proof={eventId:123,actor:'maintainer',createdAt:clock.toISOString()};
+    f.repo.readyApproval=vi.fn(async()=>proof);await f.controller.start(f.admission);
+    const row=f.store.row!;expect(row.snapshot.readyApproval).toEqual(proof);expect(row.snapshot.requireHumanGate).toBe(false);expect(row.approved).toBe(false);
+    await expect(f.controller.authorize(row.snapshot,row.binding)).resolves.toBeTruthy();
+    f.repo.readyApproval=async()=>{throw new Error('READY_APPROVAL_REVOKED');};
+    await expect(f.controller.authorize(row.snapshot,row.binding)).rejects.toThrow('READY_APPROVAL_REVOKED');
+  });
+  it('does not admit an unapproved ready-label task and cannot switch approval modes on an existing run', async () => {
+    const f=await fixture(false);f.repo.readyApproval=async()=>{throw new Error('READY_ACTOR_NOT_AUTHORIZED');};
+    await expect(f.controller.start(f.admission)).rejects.toThrow('READY_ACTOR_NOT_AUTHORIZED');expect(f.store.row).toBeNull();expect(f.start).not.toHaveBeenCalled();
+    delete f.repo.readyApproval;await f.controller.start(f.admission);const row=f.store.row!;
+    f.repo.readyApproval=async()=>({eventId:123,actor:'maintainer',createdAt:clock.toISOString()});
+    await expect(f.controller.authorize(row.snapshot,row.binding)).rejects.toThrow('APPROVAL_MODE_CHANGED');
+  });
   it('freezes canary branch/workflow and rejects later target changes', async () => {
     const f = await fixture(); f.repo.baseRef = 'test/temporal-rc'; f.repo.executorWorkflow = 'factory-manager.yml';
     await f.controller.start(f.admission); expect(f.store.row!.snapshot).toMatchObject({baseRef:'test/temporal-rc',executorWorkflow:'factory-manager.yml'});

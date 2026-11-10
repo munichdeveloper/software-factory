@@ -1,6 +1,8 @@
 import { Octokit } from '@octokit/rest';
 import type { GitHubPort } from './port.js';
-import type { Comment, Issue, PullRequest, Snapshot, WorkflowRun } from '../types.js';
+import type { BlockLabelEvent, Comment, Issue, PullRequest, Snapshot, WorkflowRun } from '../types.js';
+import { authorizeReadyLabel } from '../runtime/ready-approval.js';
+import type { ReadyApproval } from '../runtime/contract.js';
 import { allLabels, dependencies, managedLabel } from '../state/lifecycle.js';
 import { encodeEvent, type HarnessEvent } from '../state/events.js';
 
@@ -55,6 +57,16 @@ export class GitHubClient implements GitHubPort {
       const { data } = await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login });
       return ['admin', 'maintain', 'write'].includes(data.permission);
     } catch { return false; }
+  }
+  async readyApproval(number: number, trustedActors: string[], expected?: ReadyApproval): Promise<ReadyApproval> {
+    const issue = await this.getIssue(number);
+    const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number, per_page: 100 });
+    const events: BlockLabelEvent[] = timeline.flatMap(e => {
+      if ((e.event !== 'labeled' && e.event !== 'unlabeled') || !('label' in e) || e.label?.name !== 'harness:ready' ||
+        !('id' in e) || typeof e.id !== 'number' || !('created_at' in e) || typeof e.created_at !== 'string') return [];
+      return [{ id: e.id, event: e.event as 'labeled' | 'unlabeled', actor: 'actor' in e ? e.actor?.login ?? '' : '', createdAt: e.created_at }];
+    });
+    return authorizeReadyLabel(issue, events, actor => this.canApprove(actor), trustedActors, expected);
   }
   async runs(workflow: string): Promise<WorkflowRun[]> {
     const rows = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...this.target, workflow_id: workflow, event: 'workflow_dispatch', per_page: 100 });

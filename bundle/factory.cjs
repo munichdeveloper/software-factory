@@ -38767,6 +38767,107 @@ var actionSchema = external_exports.strictObject({
 });
 var planSchema = external_exports.strictObject({ version: external_exports.literal(1), actions: external_exports.array(actionSchema).max(100) });
 
+// src/workers/contract.ts
+var workerInputSchema = external_exports.strictObject({
+  contractVersion: external_exports.literal("1.0"),
+  repository: external_exports.string().regex(/^[\w.-]+\/[\w.-]+$/),
+  issueNumber: external_exports.number().int().positive(),
+  taskVersion: external_exports.string().length(64),
+  description: external_exports.string().min(1).max(2e4),
+  acceptanceCriteria: external_exports.array(external_exports.string().min(1)).min(1).max(20),
+  contextReferences: external_exports.array(external_exports.string().max(1e3)).max(30),
+  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  allowedActions: external_exports.array(external_exports.literal("publish_result")).length(1),
+  limits: external_exports.strictObject({ timeoutMinutes: external_exports.number().int().min(1).max(30), maxOutputBytes: external_exports.literal(16e3) }),
+  operation: external_exports.enum(["sha256", "fail", "blocked"]),
+  worker: external_exports.enum(["test", "codex"]).default("test")
+});
+var workerResultSchema = external_exports.strictObject({
+  contractVersion: external_exports.literal("1.0"),
+  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  issueNumber: external_exports.number().int().positive(),
+  status: external_exports.enum(["success", "failed", "blocked", "needs_approval", "cancelled"]),
+  summary: external_exports.string().min(1).max(2e3),
+  artifacts: external_exports.array(external_exports.string().max(2e3)).max(20),
+  error: external_exports.string().max(2e3).nullable(),
+  proposedActions: external_exports.array(actionSchema).max(10)
+});
+
+// src/runtime/contract.ts
+var sha = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var digest = external_exports.string().regex(/^[a-f0-9]{64}$/);
+var baseRefSchema = external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/).refine((v) => !v.includes("..") && !v.includes("//") && !v.endsWith("/") && !v.endsWith(".lock") && !v.startsWith("refs/"));
+var executorWorkflowSchema = external_exports.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}\.ya?ml$/);
+var executionKey = external_exports.string().regex(/^[a-f0-9]{32}$/);
+var releaseSchema = external_exports.strictObject({
+  factorySha: sha,
+  harnessSha: sha,
+  workflowHash: digest,
+  deploymentName: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
+  buildId: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  taskQueue: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
+  schemaVersion: external_exports.literal(1)
+});
+var admissionSchema = external_exports.strictObject({ input: workerInputSchema, actionId: digest, policyHash: digest });
+var readyApprovalSchema = external_exports.strictObject({ eventId: external_exports.number().int().positive().safe(), actor: external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/), createdAt: external_exports.iso.datetime() });
+var snapshotSchema = external_exports.strictObject({
+  version: external_exports.literal(1),
+  repositoryId: external_exports.number().int().positive().safe(),
+  repository: external_exports.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+  release: releaseSchema,
+  admission: admissionSchema,
+  baseSha: sha,
+  baseRef: baseRefSchema.optional(),
+  executorWorkflow: executorWorkflowSchema.optional(),
+  allowedPaths: external_exports.array(external_exports.string().min(1).max(500)).min(1).max(100).optional(),
+  readyApproval: readyApprovalSchema.optional(),
+  specHash: digest,
+  configHash: digest,
+  requireHumanGate: external_exports.boolean()
+});
+var observationSchema = external_exports.strictObject({
+  issueNumber: external_exports.number().int().positive(),
+  executionId: executionKey,
+  workflowId: external_exports.string().min(1).max(200),
+  runId: external_exports.uuid(),
+  status: external_exports.enum(["running", "completed", "failed", "cancelled", "timed_out"]),
+  phase: external_exports.enum(["starting", "awaiting-approval", "authorizing", "running", "publishing", "completed", "cancelled"]),
+  binding: digest,
+  createdAt: external_exports.iso.datetime(),
+  result: workerResultSchema.nullable()
+});
+
+// src/state/identity.ts
+var import_node_crypto = require("node:crypto");
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, canonical(v)]));
+  return value;
+}
+var hash2 = (value) => (0, import_node_crypto.createHash)("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+var taskVersion = (issue2) => hash2({ title: issue2.title, body: issue2.body });
+function actionId(action, policyVersion2) {
+  const { reason: _reason, ...semantic } = action;
+  void _reason;
+  return hash2({ action: semantic, policyVersion: policyVersion2 });
+}
+var executionId = (repo, issue2, attempt) => hash2({ repo, issue: issue2.number, version: taskVersion(issue2), attempt }).slice(0, 32);
+
+// src/runtime/ready-approval.ts
+async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected) {
+  if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("READY_APPROVAL_REQUIRED");
+  const ordered = [...events].sort((a, b) => a.id - b.id);
+  const grant = ordered.filter((e) => e.event === "labeled").at(-1);
+  if (!grant) throw new Error("READY_APPROVAL_REQUIRED");
+  const proof = readyApprovalSchema.parse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (!await canApprove(proof.actor)) throw new Error("READY_ACTOR_NOT_AUTHORIZED");
+  if (expected && hash2(proof) !== hash2(expected)) throw new Error("READY_APPROVAL_CHANGED");
+  const later = ordered.filter((e) => e.id > grant.id);
+  const consumed = expected && later.length === 1 && later[0].event === "unlabeled" && trustedActors.includes(later[0].actor) && issue2.labels.includes("harness:running");
+  if (later.length && !consumed || !issue2.labels.includes("harness:ready") && !consumed) throw new Error("READY_APPROVAL_REVOKED");
+  return proof;
+}
+
 // src/state/lifecycle.ts
 var managedLabel = "harness:managed";
 var lifecycleLabels = statuses.map((s) => `harness:${s}`);
@@ -38796,32 +38897,6 @@ function acceptanceCriteria(body) {
   const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
   return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
 }
-
-// src/workers/contract.ts
-var workerInputSchema = external_exports.strictObject({
-  contractVersion: external_exports.literal("1.0"),
-  repository: external_exports.string().regex(/^[\w.-]+\/[\w.-]+$/),
-  issueNumber: external_exports.number().int().positive(),
-  taskVersion: external_exports.string().length(64),
-  description: external_exports.string().min(1).max(2e4),
-  acceptanceCriteria: external_exports.array(external_exports.string().min(1)).min(1).max(20),
-  contextReferences: external_exports.array(external_exports.string().max(1e3)).max(30),
-  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
-  allowedActions: external_exports.array(external_exports.literal("publish_result")).length(1),
-  limits: external_exports.strictObject({ timeoutMinutes: external_exports.number().int().min(1).max(30), maxOutputBytes: external_exports.literal(16e3) }),
-  operation: external_exports.enum(["sha256", "fail", "blocked"]),
-  worker: external_exports.enum(["test", "codex"]).default("test")
-});
-var workerResultSchema = external_exports.strictObject({
-  contractVersion: external_exports.literal("1.0"),
-  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
-  issueNumber: external_exports.number().int().positive(),
-  status: external_exports.enum(["success", "failed", "blocked", "needs_approval", "cancelled"]),
-  summary: external_exports.string().min(1).max(2e3),
-  artifacts: external_exports.array(external_exports.string().max(2e3)).max(20),
-  error: external_exports.string().max(2e3).nullable(),
-  proposedActions: external_exports.array(actionSchema).max(10)
-});
 
 // src/merge/contract.ts
 var mergeReviewSchema = external_exports.strictObject({
@@ -38949,6 +39024,15 @@ var GitHubClient = class {
       return false;
     }
   }
+  async readyApproval(number4, trustedActors, expected) {
+    const issue2 = await this.getIssue(number4);
+    const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number4, per_page: 100 });
+    const events = timeline.flatMap((e) => {
+      if (e.event !== "labeled" && e.event !== "unlabeled" || !("label" in e) || e.label?.name !== "harness:ready" || !("id" in e) || typeof e.id !== "number" || !("created_at" in e) || typeof e.created_at !== "string") return [];
+      return [{ id: e.id, event: e.event, actor: "actor" in e ? e.actor?.login ?? "" : "", createdAt: e.created_at }];
+    });
+    return authorizeReadyLabel(issue2, events, (actor) => this.canApprove(actor), trustedActors, expected);
+  }
   async runs(workflow) {
     const rows = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...this.target, workflow_id: workflow, event: "workflow_dispatch", per_page: 100 });
     return rows.map((r) => ({
@@ -39056,22 +39140,6 @@ var GitHubClient = class {
     await this.api.actions.cancelWorkflowRun({ ...this.target, run_id: id });
   }
 };
-
-// src/state/identity.ts
-var import_node_crypto = require("node:crypto");
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, canonical(v)]));
-  return value;
-}
-var hash2 = (value) => (0, import_node_crypto.createHash)("sha256").update(JSON.stringify(canonical(value))).digest("hex");
-var taskVersion = (issue2) => hash2({ title: issue2.title, body: issue2.body });
-function actionId(action, policyVersion2) {
-  const { reason: _reason, ...semantic } = action;
-  void _reason;
-  return hash2({ action: semantic, policyVersion: policyVersion2 });
-}
-var executionId = (repo, issue2, attempt) => hash2({ repo, issue: issue2.number, version: taskVersion(issue2), attempt }).slice(0, 32);
 
 // src/state/blocks.ts
 var lastBlockLabelEventId = (issue2) => issue2.blockedLabelEvents?.at(-1)?.id ?? 0;
@@ -40274,10 +40342,10 @@ Software Factory execution: \`${id}\`. Generated by the isolated Codex Harness. 
 };
 
 // src/workers/coding.ts
-var sha = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
 var codingArtifactSchema = external_exports.strictObject({
   contractVersion: external_exports.literal("3.0"),
-  baseSha: sha,
+  baseSha: sha2,
   result: external_exports.strictObject({
     contractVersion: external_exports.literal("2.0"),
     executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
@@ -40321,7 +40389,7 @@ async function prepareCoding(github, config2, repository, issue2, id, correlatio
   }
   if (auth2.input.worker !== "codex" || !config2.workers.coding || !config2.workers.coding.enabled) throw new Error("Coding worker disabled");
   const base = await repository.base();
-  sha.parse(base.sha);
+  sha2.parse(base.sha);
   return { base, request: {
     contractVersion: "3.0",
     executionId: id,
@@ -41192,48 +41260,6 @@ function resolveTarget(config2, env = process.env) {
   if (!/PRIVATE KEY-----/.test(privateKey)) throw new Error("Deployment SSH key must be an unencrypted OpenSSH/PEM private key");
   return { host, user, port, privateKey, knownHosts };
 }
-
-// src/runtime/contract.ts
-var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
-var digest = external_exports.string().regex(/^[a-f0-9]{64}$/);
-var baseRefSchema = external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/).refine((v) => !v.includes("..") && !v.includes("//") && !v.endsWith("/") && !v.endsWith(".lock") && !v.startsWith("refs/"));
-var executorWorkflowSchema = external_exports.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}\.ya?ml$/);
-var executionKey = external_exports.string().regex(/^[a-f0-9]{32}$/);
-var releaseSchema = external_exports.strictObject({
-  factorySha: sha2,
-  harnessSha: sha2,
-  workflowHash: digest,
-  deploymentName: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
-  buildId: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
-  taskQueue: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
-  schemaVersion: external_exports.literal(1)
-});
-var admissionSchema = external_exports.strictObject({ input: workerInputSchema, actionId: digest, policyHash: digest });
-var snapshotSchema = external_exports.strictObject({
-  version: external_exports.literal(1),
-  repositoryId: external_exports.number().int().positive().safe(),
-  repository: external_exports.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
-  release: releaseSchema,
-  admission: admissionSchema,
-  baseSha: sha2,
-  baseRef: baseRefSchema.optional(),
-  executorWorkflow: executorWorkflowSchema.optional(),
-  allowedPaths: external_exports.array(external_exports.string().min(1).max(500)).min(1).max(100).optional(),
-  specHash: digest,
-  configHash: digest,
-  requireHumanGate: external_exports.boolean()
-});
-var observationSchema = external_exports.strictObject({
-  issueNumber: external_exports.number().int().positive(),
-  executionId: executionKey,
-  workflowId: external_exports.string().min(1).max(200),
-  runId: external_exports.uuid(),
-  status: external_exports.enum(["running", "completed", "failed", "cancelled", "timed_out"]),
-  phase: external_exports.enum(["starting", "awaiting-approval", "authorizing", "running", "publishing", "completed", "cancelled"]),
-  binding: digest,
-  createdAt: external_exports.iso.datetime(),
-  result: workerResultSchema.nullable()
-});
 
 // src/runtime/transport.ts
 function runtimeUrl(value) {

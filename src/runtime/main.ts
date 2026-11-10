@@ -32,8 +32,10 @@ const registrySchema = z.strictObject({
     configPath: z.string().regex(/^\.github\/[\w.-]+\.ya?ml$/).default('.github/software-factory.yml'),
     issueNumbers: z.array(z.number().int().positive().safe()).min(1).max(100).optional(),
     allowedPaths: z.array(z.string().min(1).max(500)).min(1).max(100).optional(),
+    approvalMode: z.enum(['manual', 'ready-label']).default('manual'),
     retainedReleases: releaseSchema.array().default([]), requireHumanGate: z.boolean().default(true) })
-    .refine(item => Number(!!item.githubTokenEnv) + Number(!!item.githubInstallationId) === 1, 'Select exactly one scoped credential source')).min(1).max(100),
+    .refine(item => Number(!!item.githubTokenEnv) + Number(!!item.githubInstallationId) === 1, 'Select exactly one scoped credential source')
+    .refine(item => item.approvalMode !== 'ready-label' || !item.requireHumanGate, 'Ready label replaces the manual gate')).min(1).max(100),
 });
 export async function main(args = process.argv.slice(2)) {
   const { positionals, values } = parseArgs({ args, allowPositionals: true, options: {
@@ -78,6 +80,7 @@ export async function main(args = process.argv.slice(2)) {
       const repository: RuntimeRepository = { ...item, github, config: async () => loadConfig(await source.readConfig(item.configPath, item.baseRef)),
         baseSha: async () => item.baseRef ? (await api.git.getRef({ ...{ owner, repo }, ref: `heads/${item.baseRef}` })).data.object.sha : (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
       const controller = new RuntimeController(repository, store, temporal);
+      if (item.approvalMode === 'ready-label') repository.readyApproval = async (number, expected) => source.readyApproval(number, (await repository.config()).manager.trustedActors, expected);
       const effects = (snapshot: Parameters<ActionsCodingExecutor['poll']>[0], binding: string) => new RuntimeEffects(store, repository.repositoryId, snapshot.admission.input.executionId, binding);
       repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors),
         publish: async (snapshot, binding, artifact, createdAt) => new RuntimeCodingPublisher(api, effects(snapshot, binding),

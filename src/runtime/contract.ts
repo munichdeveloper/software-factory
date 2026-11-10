@@ -17,12 +17,15 @@ export const releaseSchema = z.strictObject({
 export type RuntimeRelease = z.infer<typeof releaseSchema>;
 export const admissionSchema = z.strictObject({ input: workerInputSchema, actionId: digest, policyHash: digest });
 export type Admission = z.infer<typeof admissionSchema>;
+export const readyApprovalSchema = z.strictObject({ eventId: z.number().int().positive().safe(), actor: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/), createdAt: z.iso.datetime() });
+export type ReadyApproval = z.infer<typeof readyApprovalSchema>;
 export const snapshotSchema = z.strictObject({
   version: z.literal(1), repositoryId: z.number().int().positive().safe(),
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
   release: releaseSchema, admission: admissionSchema, baseSha: sha,
   baseRef: baseRefSchema.optional(), executorWorkflow: executorWorkflowSchema.optional(),
   allowedPaths: z.array(z.string().min(1).max(500)).min(1).max(100).optional(),
+  readyApproval: readyApprovalSchema.optional(),
   specHash: digest, configHash: digest, requireHumanGate: z.boolean(),
 });
 export type RunSnapshot = z.infer<typeof snapshotSchema>;
