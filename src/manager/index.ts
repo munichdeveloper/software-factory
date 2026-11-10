@@ -12,10 +12,23 @@ import { workerInputSchema } from '../workers/contract.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
 import { deliverNotifications, type NotificationSink } from '../notifications/slack.js';
+import type { WorkerRuntimePort } from '../runtime/contract.js';
 
-export interface ManagerOptions { correlationId: string; now?: () => Date; notifications?: NotificationSink }
+export interface ManagerOptions { correlationId: string; now?: () => Date; notifications?: NotificationSink; workerRuntime?: WorkerRuntimePort }
 export class Manager {
   private now: () => Date;
+  private async snapshot(): Promise<Snapshot> {
+    const snapshot = await this.github.snapshot(this.config.execution.engine === 'temporal' ? null : this.config.manager.workflow);
+    if (this.config.execution.engine === 'temporal') {
+      if (!this.options.workerRuntime) throw new Error('Temporal runtime is required; legacy dispatch is forbidden');
+      const ids = [...new Set([...snapshot.comments.values()].flatMap(comments => comments.flatMap(comment => {
+        const event = decodeEvent(comment, this.config.manager.trustedActors);
+        return event?.data.type === 'intent' ? [event.data.input.executionId] : [];
+      })))];
+      snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
+    }
+    return snapshot;
+  }
   constructor(private github: GitHubPort, private config: Config, private planner: Planner, private options: ManagerOptions) {
     this.now = options.now ?? (() => new Date());
   }
@@ -97,6 +110,17 @@ export class Manager {
           operation: this.config.workers.test.operation,
           worker: this.config.workers.coding && this.config.workers.coding.enabled ? 'codex' : 'test' });
         await this.event(live.number, `intent:${id}`, { type: 'intent', input, actionId: actionId(action, policyVersion(this.config)), attempt });
+        if (this.config.execution.engine === 'temporal') {
+          if (!this.options.workerRuntime) throw new Error('Temporal runtime is required; legacy dispatch is forbidden');
+          const receipt = await this.options.workerRuntime.start({ input, actionId: actionId(action, policyVersion(this.config)), policyHash: policyVersion(this.config) });
+          await this.event(live.number, `temporal-receipt:${id}`, { type: 'temporal_receipt', executionId: id,
+            workflowId: receipt.workflowId, runId: receipt.runId, binding: receipt.binding });
+          const fresh = await this.github.getIssue(live.number);
+          if (taskVersion(fresh) === action.taskVersion && fresh.state === 'open' && !fresh.labels.includes('harness:blocked')) {
+            await this.github.updateIssue(live.number, { labels: withStatus(fresh, receipt.phase === 'awaiting-approval' ? 'awaiting-approval' : 'running') });
+          }
+          return true;
+        }
         // Recheck actual workflow state immediately before dispatch; never retry the dispatch call itself.
         const existing = (await this.github.runs(this.config.manager.workflow)).find(r => r.title === `Factory worker ${id}`);
         if (!existing) await this.github.dispatch(this.config.manager.workflow, snapshot.defaultBranch, id, live.number);
@@ -107,6 +131,10 @@ export class Manager {
         return true;
       }
       case 'cancel_worker': {
+        for (const execution of task.executions.filter(e => e.timedOut && e.runtime)) {
+          if (!this.options.workerRuntime) throw new Error('Temporal cancellation requires the runtime');
+          await this.options.workerRuntime.cancel(execution.input.executionId);
+        }
         const runs = await this.github.runs(this.config.manager.workflow);
         for (const e of task.executions.filter(e => e.timedOut && e.run)) {
           if (runs.some(r => r.id === e.run!.id && r.status !== 'completed')) await this.github.cancelRun(e.run!.id);
@@ -121,7 +149,7 @@ export class Manager {
     const report: RunReport = { correlationId: this.options.correlationId, startedAt: started.toISOString(), durationMs: 0,
       outcome: 'success', tasks: 0, decisions: [], errors: [], blockers: [], nextSteps: [] };
     if (!this.config.factory.enabled) { report.outcome = 'disabled'; return report; }
-    let snapshot = await this.github.snapshot(this.config.manager.workflow);
+    let snapshot = await this.snapshot();
     let tasks = reconstruct(snapshot, this.config, this.now());
     report.tasks = tasks.length;
     for (const t of tasks) {
@@ -157,7 +185,7 @@ export class Manager {
       if (this.now().getTime() - started.getTime() > this.config.manager.timeoutMinutes * 60000) { report.errors.push('Manager time budget exhausted'); break; }
       try {
         // Refresh every proposal: concurrent human changes, dependency closure and new PRs invalidate stale facts.
-        snapshot = await this.github.snapshot(this.config.manager.workflow);
+        snapshot = await this.snapshot();
         tasks = reconstruct(snapshot, this.config, this.now());
         const task = tasks.find(t => t.issue.number === action.issueNumber);
         if (!task) { report.errors.push(`Proposal references unmanaged issue #${action.issueNumber}`); continue; }

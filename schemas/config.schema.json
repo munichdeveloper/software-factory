@@ -118,6 +118,14 @@
       "default": {},
       "type": "object",
       "properties": {
+        "engine": {
+          "default": "github-actions",
+          "type": "string",
+          "enum": [
+            "github-actions",
+            "temporal"
+          ]
+        },
         "dryRun": {
           "default": false,
           "type": "boolean"

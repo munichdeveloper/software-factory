@@ -4,7 +4,7 @@ import type { HarnessEvent } from '../state/events.js';
 export interface GitHubPort {
   readonly repository: string;
   readConfig(path: string): Promise<string>;
-  snapshot(workflow: string): Promise<Snapshot>;
+  snapshot(workflow: string | null): Promise<Snapshot>;
   getIssue(number: number): Promise<Issue>;
   comments(number: number): Promise<Comment[]>;
   canApprove(login: string): Promise<boolean>;

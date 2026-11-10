@@ -1,0 +1,22 @@
+{
+  "passed": false,
+  "factorySha": "9e237ff0e0a87a6def3db8534175aa58a00d9971",
+  "harnessSha": "8f1732c05c351af32bd25a6306a92f3bb06c1bad",
+  "modelStarted": false,
+  "actionsRunId": 42661988863,
+  "jobId": 129315813043,
+  "temporalRuns": [
+    "01a1c149-21ab-700e-b814-f14b71665148",
+    "01a1c149-66ab-73ce-b0b4-a47714a3bd92"
+  ],
+  "reason": "Official Codex Action rejected App bot without repository collaborator permission; explicit bot allowlist required.",
+  "logExcerpt": [
+    "2026-11-09T17:10:57.8484353Z   codex-version: 0.167.0",
+    "2026-11-09T17:10:57.8484601Z   model: gpt-6.1-sol",
+    "2026-11-09T17:10:58.9755819Z Actor 'munichdeveloper-sf-manager-local[bot]' is not permitted to run this action: Actor 'munichdeveloper-sf-manager-local[bot]' must have write access to munichdeveloper/sf-temporal-acceptance-a-20261108. Detected permission: 'none'.",
+    "2026-11-09T17:10:58.9758103Z Actor 'munichdeveloper-sf-manager-local[bot]' has permission level 'none'.",
+    "2026-11-09T17:10:58.9873160Z Error: Actor 'munichdeveloper-sf-manager-local[bot]' is not permitted to run this action: Actor 'munichdeveloper-sf-manager-local[bot]' must have write access to munichdeveloper/sf-temporal-acceptance-a-20261108. Detected permission: 'none'.",
+    "2026-11-09T17:10:59.0377718Z ##[error]Process completed with exit code 1."
+  ],
+  "cleanup": "Both temporary secrets removed; isolated test containers/networks removed."
+}

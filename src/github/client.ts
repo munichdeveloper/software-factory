@@ -1,6 +1,8 @@
 import { Octokit } from '@octokit/rest';
 import type { GitHubPort } from './port.js';
-import type { Comment, Issue, PullRequest, Snapshot, WorkflowRun } from '../types.js';
+import type { BlockLabelEvent, Comment, Issue, PullRequest, Snapshot, WorkflowRun } from '../types.js';
+import { authorizeReadyLabel } from '../runtime/ready-approval.js';
+import type { ReadyApproval } from '../runtime/contract.js';
 import { allLabels, dependencies, managedLabel } from '../state/lifecycle.js';
 import { encodeEvent, type HarnessEvent } from '../state/events.js';
 
@@ -15,17 +17,17 @@ type PRNode = { number: number; state: string; merged: boolean; mergedAt: string
 export class GitHubClient implements GitHubPort {
   private api: Octokit;
   private target: { owner: string; repo: string };
-  constructor(readonly repository: string, token: string, timeoutMs = 30000, fetcher: typeof fetch = fetch) {
+  constructor(readonly repository: string, token: string, timeoutMs = 30000, fetcher: typeof fetch = fetch, api?: Octokit) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('Repository must be owner/name');
-    if (!token) throw new Error('GITHUB_TOKEN is required');
+    if (!token && !api) throw new Error('GITHUB_TOKEN is required');
     const [owner, repo] = repository.split('/') as [string, string];
     this.target = { owner, repo };
-    this.api = new Octokit({ auth: token, request: { timeout: timeoutMs, fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
+    this.api = api ?? new Octokit({ auth: token, request: { timeout: timeoutMs, fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
   }
-  async readConfig(path: string): Promise<string> {
+  async readConfig(path: string, ref?: string): Promise<string> {
     if (!/^\.github\/[\w./-]+\.ya?ml$/.test(path) || path.includes('..')) throw new Error('Configuration must be a YAML file under .github/');
     const { data: repo } = await this.api.repos.get(this.target);
-    const { data } = await this.api.repos.getContent({ ...this.target, path, ref: repo.default_branch });
+    const { data } = await this.api.repos.getContent({ ...this.target, path, ref: ref ?? repo.default_branch });
     if (!('content' in data) || data.encoding !== 'base64') throw new Error(`Cannot read config ${path}`);
     return Buffer.from(data.content, 'base64').toString('utf8');
   }
@@ -55,6 +57,16 @@ export class GitHubClient implements GitHubPort {
       const { data } = await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login });
       return ['admin', 'maintain', 'write'].includes(data.permission);
     } catch { return false; }
+  }
+  async readyApproval(number: number, trustedActors: string[], expected?: ReadyApproval): Promise<ReadyApproval> {
+    const issue = await this.getIssue(number);
+    const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number, per_page: 100 });
+    const events: BlockLabelEvent[] = timeline.flatMap(e => {
+      if ((e.event !== 'labeled' && e.event !== 'unlabeled') || !('label' in e) || e.label?.name !== 'harness:ready' ||
+        !('id' in e) || typeof e.id !== 'number' || !('created_at' in e) || typeof e.created_at !== 'string') return [];
+      return [{ id: e.id, event: e.event as 'labeled' | 'unlabeled', actor: 'actor' in e ? e.actor?.login ?? '' : '', createdAt: e.created_at }];
+    });
+    return authorizeReadyLabel(issue, events, actor => this.canApprove(actor), trustedActors, expected);
   }
   async runs(workflow: string): Promise<WorkflowRun[]> {
     const rows = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...this.target, workflow_id: workflow, event: 'workflow_dispatch', per_page: 100 });
@@ -89,11 +101,11 @@ export class GitHubClient implements GitHubPort {
     } while (cursor);
     return result;
   }
-  async snapshot(workflow: string): Promise<Snapshot> {
+  async snapshot(workflow: string | null): Promise<Snapshot> {
     const [{ data: repo }, rows, prs, runs] = await Promise.all([
       this.api.repos.get(this.target),
       this.api.paginate(this.api.issues.listForRepo, { ...this.target, labels: managedLabel, state: 'all', per_page: 100 }),
-      this.pullRequests(), this.runs(workflow)
+      this.pullRequests(), workflow === null ? Promise.resolve([]) : this.runs(workflow)
     ]);
     if (!repo.has_issues) throw new Error('GitHub Issues must be enabled');
     // Repository push is contents-write, not issues/actions-write. A least-privilege

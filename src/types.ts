@@ -25,5 +25,6 @@ export interface Comment { id: number; body: string; author: string; createdAt: 
 export interface PullRequest { number: number; state: 'open' | 'closed'; merged: boolean; mergedAt?: string; closingIssues: number[]; referencedIssues: number[];
   title?: string; headRefName?: string; headSha?: string; mergedBy?: { login: string; type: string } }
 export interface WorkflowRun { id: number; title: string; status: string; conclusion: string | null; createdAt: string; url: string }
-export interface Snapshot { issues: Issue[]; comments: Map<number, Comment[]>; prs: PullRequest[]; runs: WorkflowRun[]; defaultBranch: string; dependencyStates: Map<number, boolean> }
+export interface Snapshot { issues: Issue[]; comments: Map<number, Comment[]>; prs: PullRequest[]; runs: WorkflowRun[]; defaultBranch: string; dependencyStates: Map<number, boolean>;
+  runtimeExecutions?: import('./runtime/contract.js').RuntimeObservation[] }
 export type Decision = { outcome: 'allow' | 'deny' | 'approval'; reason: string; actionId: string };

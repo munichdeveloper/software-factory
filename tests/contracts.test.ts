@@ -15,6 +15,7 @@ describe('configuration, protocol and OpenAI transport', () => {
   });
   it('parses task sections and explicit dependencies without interpreting arbitrary instructions', () => {
     expect(acceptanceCriteria('## Acceptance criteria\n- [ ] A\n- B\n\n## Other\nC')).toEqual(['A', 'B']);
+    expect(acceptanceCriteria('## Abnahmekriterien\n- Foto aufnehmen\n- Datei weiterhin auswählen\n\n## Nachweise\n- Smartphone prüfen')).toEqual(['Foto aufnehmen', 'Datei weiterhin auswählen']);
     expect(dependencies('References #123\nDepends on: #4, #5\nDepends on: #4')).toEqual([4, 5]);
     expect(canTransition('done', 'running')).toBe(false); expect(canTransition('running', 'awaiting-pr')).toBe(true);
   });

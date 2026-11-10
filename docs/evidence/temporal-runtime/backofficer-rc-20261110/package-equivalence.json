@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "scope": "Canary and final RC use the same exact image and compiled Factory/Harness files.",
+  "packages": [
+    {
+      "compiledRuntimeHash": "afcebed20fd45a18cbd4f91e910d8692e78a65ba76a94420ea18f8049ded8463",
+      "version": "0.7.0-rc.1",
+      "harness": "f70d11556075e9764d69ac03e029720d12ccef65",
+      "tag": "sf-temporal-rc:0.7.0-rc.1",
+      "imageId": "sha256:4ee3c88f61fa5b41044454e764e0b50fb5c5a3bf5ddf5618c549c622bc309087",
+      "revision": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0"
+    },
+    {
+      "compiledRuntimeHash": "afcebed20fd45a18cbd4f91e910d8692e78a65ba76a94420ea18f8049ded8463",
+      "version": "0.7.0-rc.1",
+      "harness": "f70d11556075e9764d69ac03e029720d12ccef65",
+      "tag": "sf-temporal-rc:0.7.0-rc.1-final",
+      "imageId": "sha256:4ee3c88f61fa5b41044454e764e0b50fb5c5a3bf5ddf5618c549c622bc309087",
+      "revision": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0"
+    }
+  ]
+}

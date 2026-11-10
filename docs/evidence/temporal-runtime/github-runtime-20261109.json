@@ -1,0 +1,73 @@
+{
+  "passed": true,
+  "factorySha": "2552c46bc7a44b565287cc7c75fc37e41d69804e",
+  "release": {
+    "factorySha": "2552c46bc7a44b565287cc7c75fc37e41d69804e",
+    "harnessSha": "8f1732c05c351af32bd25a6306a92f3bb06c1bad",
+    "workflowHash": "a2a771aa40c09b9087c5df07021a948370f34be3499112c828b290d568163b03",
+    "deploymentName": "sf-factory-acceptance",
+    "buildId": "2552c46bc7a44b565287cc7c75fc37e41d69804e",
+    "taskQueue": "sf-factory-acceptance",
+    "schemaVersion": 1
+  },
+  "runs": [
+    {
+      "workflowId": "sf-1450715381-80929bbf922856ad6ab27bc71c1a957f",
+      "runId": "01a1c087-b93d-7c53-b5a0-49ce2daff428"
+    },
+    {
+      "workflowId": "sf-1450715704-760bf47e2fbf8c7e1176a450705f365b",
+      "runId": "01a1c088-0540-7d05-b873-78075a40af6d"
+    }
+  ],
+  "workerCrashRestartSameRunId": true,
+  "persistedApprovalWhileWorkerStopped": true,
+  "realHarnessResult": {
+    "contractVersion": "1.0",
+    "executionId": "80929bbf922856ad6ab27bc71c1a957f",
+    "issueNumber": 2,
+    "status": "success",
+    "summary": "Validated task and calculated SHA-256: 7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236",
+    "artifacts": [
+      "urn:sha256:7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236"
+    ],
+    "error": null,
+    "proposedActions": []
+  },
+  "lostJournalResponseReconciled": true,
+  "resultJournalCount": 1,
+  "duplicateDispatchCount": 1,
+  "crossRepositoryGateRejected": true,
+  "untrustedActorRejected": true,
+  "staleBindingRejected": true,
+  "workerCannotCallManager": true,
+  "sharedCluster": true,
+  "pinnedServerBehavior": true,
+  "githubAdapter": "real repository-scoped GitHub App; result journal only, no PR publication",
+  "repositories": [
+    {
+      "id": 1450715381,
+      "name": "munichdeveloper/sf-temporal-acceptance-a-20261108",
+      "issueNumber": 2
+    },
+    {
+      "id": 1450715704,
+      "name": "munichdeveloper/sf-temporal-acceptance-b-20261108",
+      "issueNumber": 2
+    }
+  ],
+  "workerEnvironmentKeys": [
+    "PATH",
+    "TEMPORAL_ADDRESS",
+    "TEMPORAL_NAMESPACE",
+    "FACTORY_BROKER_URL",
+    "FACTORY_WORKER_TOKEN"
+  ],
+  "checkedAt": "2026-11-09T13:38:56.367Z",
+  "testImage": "sha256:ef040ddc80dccb5cb14ce74b9e18d3419d909a4fe4505f2b588324ec2f0d3e9c",
+  "freshCluster": true,
+  "noPublishedPorts": true,
+  "githubEgress": true,
+  "sourceTree": "7ab6bf8fee1e963f93a4014667038af66e540b23",
+  "runnerSourceSha256": "6f88bee138df3b6e64d2d854727892666d6e927ed7054ed9aa4b31316008ead2"
+}

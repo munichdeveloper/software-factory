@@ -11,6 +11,16 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     }) as typeof fetch;
   }
   const json = (body: unknown, headers?: Record<string, string>) => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json', ...headers } });
+  it('authenticates ready approval against native label events and current repository permission', async () => {
+    let permission='write';
+    const gh=new GitHubClient('owner/target','token',1000,transport(url=>{
+      if(url.pathname.endsWith('/permission'))return json({permission});
+      if(url.pathname.endsWith('/timeline'))return json([{id:123,event:'labeled',label:{name:'harness:ready'},actor:{login:'maintainer'},created_at:'2026-11-06T10:00:00Z'}]);
+      return json({number:1,title:'Task',body:'Implement',state:'open',labels:['harness:managed','harness:ready'],updated_at:'2026-11-06T10:00:00Z'});
+    }));
+    expect(await gh.readyApproval(1,[])).toMatchObject({eventId:123,actor:'maintainer'});
+    permission='read';await expect(gh.readyApproval(1,[])).rejects.toThrow('READY_ACTOR_NOT_AUTHORIZED');
+  });
   it('paginates managed issues/comments, includes merged PRs and targets the caller repository', async () => {
     const requested: string[] = [];
     const gh = new GitHubClient('owner/target', 'token', 1000, transport((url) => {
@@ -34,6 +44,15 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     expect(state.prs[0]!.closingIssues).toEqual([1]); expect(state.prs[0]!.merged).toBe(true);
     expect(state.prs[0]!.mergedBy).toEqual({ login: 'merge-agent[bot]', type: 'Bot' });
     expect(requested.some(u => u.includes('page=2'))).toBe(true);
+  });
+  it('observes Temporal repositories without requiring a legacy Actions workflow', async () => {
+    const gh = new GitHubClient('owner/target', 'token', 1000, transport(url => {
+      if (url.pathname === '/graphql') return json({ data: { repository: { pullRequests: { nodes: [], pageInfo: { hasNextPage: false } } } } });
+      if (url.pathname.endsWith('/issues')) return json([]);
+      if (url.pathname === '/repos/owner/target') return json({ default_branch: 'main', has_issues: true });
+      throw new Error('Unexpected legacy workflow access');
+    }));
+    expect((await gh.snapshot(null)).runs).toEqual([]);
   });
   it('bootstrap preserves existing labels and is repeatable', async () => {
     const labels = [{ name: allLabels[0], color: 'custom' }]; let posts = 0;

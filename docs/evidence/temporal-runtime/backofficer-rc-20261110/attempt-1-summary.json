@@ -1,0 +1,16 @@
+{
+  "passed": false,
+  "acceptedAsCodingSuccess": false,
+  "factorySha": "1e29a4dcee669fc0349c32ce2005d28af97d4661",
+  "issue": "https://github.com/munichdeveloper/Backofficer/issues/10",
+  "executionId": "be8072feb7438c4a99b7fd3a6458dfd7",
+  "runId": "01a1c452-6648-7328-95d5-d9bec56e1dde",
+  "actionsRun": "https://github.com/munichdeveloper/Backofficer/actions/runs/42774412076",
+  "actionsTransportConclusion": "success",
+  "codingResult": "blocked",
+  "reason": "Dependency installation inside the isolated model environment failed with EAI_AGAIN; mandatory repository Next.js guide was unavailable.",
+  "changes": 0,
+  "pullRequestsCreated": 0,
+  "recovery": "Prepare locked npm dependencies without lifecycle scripts before isolated model execution, in a new issue and fresh cluster. No blind repeat of the prior execution.",
+  "separatePackagingCorrection": "CI also required regenerating the committed action bundle; corrected before the next accepted candidate."
+}

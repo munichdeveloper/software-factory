@@ -1,0 +1,298 @@
+{
+  "passed": true,
+  "factorySha": "13258f2b2259f937a2dc55a842b0ac444fd64298",
+  "release": {
+    "factorySha": "13258f2b2259f937a2dc55a842b0ac444fd64298",
+    "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+    "workflowHash": "035d189873fe96a5a909685c88299e2fd66620c3043d1834c10e678b3201c026",
+    "deploymentName": "sf-factory-acceptance",
+    "buildId": "13258f2b2259f937a2dc55a842b0ac444fd64298",
+    "taskQueue": "sf-factory-acceptance",
+    "schemaVersion": 1
+  },
+  "runs": [
+    {
+      "workflowId": "sf-1450715381-eb3deb8011da8c24e277250a8eb1a873",
+      "runId": "01a1c23b-f476-7772-9f5e-c1067d15388f"
+    },
+    {
+      "workflowId": "sf-1450715704-120740eb28ef67391ec674a966ff4645",
+      "runId": "01a1c23c-30a4-7457-857c-0c536ac201a2"
+    }
+  ],
+  "workerCrashRestartSameRunId": true,
+  "persistedApprovalWhileWorkerStopped": true,
+  "codingResult": {
+    "contractVersion": "1.0",
+    "executionId": "eb3deb8011da8c24e277250a8eb1a873",
+    "issueNumber": 11,
+    "status": "success",
+    "summary": "Created both acceptance files with the exact required content and a Node built-ins-only verifier. `node acceptance/verify-temporal-coding.mjs` passed. Existing files are unchanged; nothing was published or pushed.",
+    "artifacts": [
+      "https://github.com/munichdeveloper/sf-temporal-acceptance-a-20261108/pull/12"
+    ],
+    "error": null,
+    "proposedActions": []
+  },
+  "lostJournalResponseReconciled": true,
+  "resultJournalCount": 1,
+  "duplicateDispatchCount": 1,
+  "crossRepositoryGateRejected": true,
+  "untrustedActorRejected": true,
+  "staleBindingRejected": true,
+  "workerCannotCallManager": true,
+  "sharedCluster": true,
+  "pinnedServerBehavior": true,
+  "githubAdapter": "real repository-scoped GitHub App; real pinned Codex compute and Draft PR publisher",
+  "repositories": [
+    {
+      "id": 1450715381,
+      "name": "munichdeveloper/sf-temporal-acceptance-a-20261108",
+      "issueNumber": 11,
+      "retiredFixtureIssues": [
+        9
+      ]
+    },
+    {
+      "id": 1450715704,
+      "name": "munichdeveloper/sf-temporal-acceptance-b-20261108",
+      "issueNumber": 8,
+      "retiredFixtureIssues": [
+        7
+      ]
+    }
+  ],
+  "publisherFixture": false,
+  "actualModelExecution": true,
+  "codingCrashRestart": true,
+  "codingRuns": [
+    {
+      "id": 42703936405,
+      "url": "https://github.com/munichdeveloper/sf-temporal-acceptance-a-20261108/actions/runs/42703936405",
+      "head": "96df2b2f1e745d85406b3bb775493716df1f3c9d",
+      "artifactHash": "6cc3eebd58e6ff59963391acba29e591cef54562a07ca8f2e0d755d4b2cda258"
+    },
+    {
+      "id": 42704298268,
+      "url": "https://github.com/munichdeveloper/sf-temporal-acceptance-b-20261108/actions/runs/42704298268",
+      "head": "8570b486c905f2fb18543ca35ec4e1e7dfe412d8",
+      "artifactHash": "ae1b9151187517c105df3ab14777a95fa56c7e5f83f29f1e02fd35163490de2c"
+    }
+  ],
+  "effectReceipts": [
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "blob:4d690581c276bb29d13fa0c38b99414a9409cbef",
+      "payload_hash": "de2184665de82eb355c266eab5ff73537147d8fb24222f10a05dafcf41ff0b81",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "4d690581c276bb29d13fa0c38b99414a9409cbef"
+      }
+    },
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "blob:dbe75e44cea8e4d4ee57c3ffd9d6ac5fcf6822fe",
+      "payload_hash": "074d55bc3751226424b47249e7f5636d2b63a75c898021aabf6fb1ee66b47331",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "dbe75e44cea8e4d4ee57c3ffd9d6ac5fcf6822fe"
+      }
+    },
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "branch",
+      "payload_hash": "ceeade379578a8523cf4f759c1bf94c4e67d23a1d69be134f855f3d08d58887a",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "51f34cca12e56c6ac6935348f52955369b8d358c"
+      }
+    },
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "coding-dispatch",
+      "payload_hash": "127f6ffde2ac49ec206a6ea6481d749800284d76a776d74593465563e7275d42",
+      "phase": "confirmed",
+      "receipt": {
+        "accepted": true
+      }
+    },
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "commit",
+      "payload_hash": "c1ac2b96c868a6828d6674f6364a4b474881b21cb67aff9cfeeced0aa662119f",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "51f34cca12e56c6ac6935348f52955369b8d358c"
+      }
+    },
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "draft-pr",
+      "payload_hash": "b76ce7f1fef85edca62abdc1c291e703d67e9c2833a883c9e77f3265afb0f7d2",
+      "phase": "confirmed",
+      "receipt": {
+        "url": "https://github.com/munichdeveloper/sf-temporal-acceptance-a-20261108/pull/12",
+        "head": "51f34cca12e56c6ac6935348f52955369b8d358c",
+        "number": 12
+      }
+    },
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "executor-ref",
+      "payload_hash": "20523d82c8e99f9d70e764ccfe8278b78e48cd1614f6aedf1bb8303aa476627e",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "96df2b2f1e745d85406b3bb775493716df1f3c9d"
+      }
+    },
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "publication-comment",
+      "payload_hash": "fe105d7f39f96555939f06b80aa06550fbc9cbdcb9e21814e717e687c45851d8",
+      "phase": "confirmed",
+      "receipt": {
+        "id": 6752109867
+      }
+    },
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "result-journal",
+      "payload_hash": "a97823cf69d874da67368e4dd67b32e1a9a4dc903781680462ec001f77a29683",
+      "phase": "confirmed",
+      "receipt": null
+    },
+    {
+      "repository_id": "1450715381",
+      "execution_id": "eb3deb8011da8c24e277250a8eb1a873",
+      "effect": "tree",
+      "payload_hash": "458543d56e0b73f658b2a59a134cb3beae56cc3b9f8aa47508e85a1b48f58e27",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "0e127ed00a1ad8743962896440bc7db30a9b89f3"
+      }
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "blob:4b4c463a8e5c13b6907a07788d20c3fbe667c0c5",
+      "payload_hash": "08af4534e33ac06a2a75d118ce7da65288ea37a237baa6fc69f8d31e317390ad",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "4b4c463a8e5c13b6907a07788d20c3fbe667c0c5"
+      }
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "blob:4d690581c276bb29d13fa0c38b99414a9409cbef",
+      "payload_hash": "1c550e13698541550ad94b56e4611e7c14c37f41908589a8f01cb4e189c8cf77",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "4d690581c276bb29d13fa0c38b99414a9409cbef"
+      }
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "branch",
+      "payload_hash": "e3dbc2fd3f0ceaee549926d1158f308682517aecbab26297549f7ebb8d28b654",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "47638bb907b83eb1e655be6a63b57091425573ed"
+      }
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "coding-dispatch",
+      "payload_hash": "bee17e47443a36366c3e9c82a2b34ace67ef101fd5ad680bd530e069f647fa9e",
+      "phase": "confirmed",
+      "receipt": {
+        "accepted": true
+      }
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "commit",
+      "payload_hash": "7179877a9d65d8d3dc220c6d20a25c93cd472b170add014c9f3c40a81dcb8fc1",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "47638bb907b83eb1e655be6a63b57091425573ed"
+      }
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "draft-pr",
+      "payload_hash": "12fd081279a7fd8e65db9ce1204a92ac6b8916298e49775c07396d819160a5ff",
+      "phase": "confirmed",
+      "receipt": {
+        "url": "https://github.com/munichdeveloper/sf-temporal-acceptance-b-20261108/pull/9",
+        "head": "47638bb907b83eb1e655be6a63b57091425573ed",
+        "number": 9
+      }
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "executor-ref",
+      "payload_hash": "ef2bb4881f81b2da4f4bb33e0aac90c268540095ab0519a0ef4a57c55cffd88f",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "8570b486c905f2fb18543ca35ec4e1e7dfe412d8"
+      }
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "publication-comment",
+      "payload_hash": "ce34a4559a4346fe01c42be4efb1b823685ef82a57a5d31d553af19779ec6326",
+      "phase": "confirmed",
+      "receipt": {
+        "id": 6752160854
+      }
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "result-journal",
+      "payload_hash": "e3bdc3b3b0f33783dddb87e44f52d5451305dd671d34aa2f4193e4687744294c",
+      "phase": "confirmed",
+      "receipt": null
+    },
+    {
+      "repository_id": "1450715704",
+      "execution_id": "120740eb28ef67391ec674a966ff4645",
+      "effect": "tree",
+      "payload_hash": "ed342f434883fddd3be5250cd1857c866bd1d450ba30d8880a5023a77e8b6620",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "b08badb621fa8ba7400841fd72ad00ad2c9b02d9"
+      }
+    }
+  ],
+  "workerEnvironmentKeys": [
+    "PATH",
+    "TEMPORAL_ADDRESS",
+    "TEMPORAL_NAMESPACE",
+    "FACTORY_BROKER_URL",
+    "FACTORY_WORKER_TOKEN"
+  ],
+  "checkedAt": "2026-11-09T21:39:36.056Z",
+  "testImage": "sha256:008a5c87cc693f46099ce1d72a1328a37202abf2c71416be58c3278deaf9812e",
+  "freshCluster": true,
+  "noPublishedPorts": true,
+  "githubEgress": true,
+  "sourceTree": "8cc1756bc69cffa447ad7e103dee4420248c61e7",
+  "runnerSourceSha256": "3ddc75cdc3dcb85a15b48813d498f645c934811b0315356eda58a448a8b5e532"
+}

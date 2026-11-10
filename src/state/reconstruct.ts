@@ -6,7 +6,7 @@ import { currentAutomaticBlock } from './blocks.js';
 import { acceptanceCriteria, dependencies, issueStatus } from './lifecycle.js';
 import { taskVersion } from './identity.js';
 
-export interface Execution { input: WorkerInput; attempt: number; at: string; run?: WorkflowRun; result?: WorkerResult; active: boolean; ambiguous: boolean; timedOut: boolean }
+export interface Execution { input: WorkerInput; attempt: number; at: string; run?: WorkflowRun; runtime?: import('../runtime/contract.js').RuntimeObservation; result?: WorkerResult; active: boolean; ambiguous: boolean; timedOut: boolean }
 export interface Task {
   issue: Issue; version: string; status: Status; desiredStatus: Status; events: HarnessEvent[];
   executions: Execution[]; latest?: Execution; blocked: boolean; blockReason?: string;
@@ -27,19 +27,22 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
       if (input.issueNumber !== issue.number) continue;
       const matching = snapshot.runs.filter(r => [`Factory worker ${input.executionId}`, `Harness worker ${input.executionId}`].includes(r.title));
       const run = matching.find(r => r.status !== 'completed') ?? matching[0];
+      const runtime = snapshot.runtimeExecutions?.find(r => r.executionId === input.executionId);
       const found = events.find(e => e.data.type === 'result' && e.data.result.executionId === input.executionId && e.data.result.issueNumber === issue.number);
-      let result = found?.data.type === 'result' ? found.data.result : undefined;
+      let result = runtime?.result ?? (found?.data.type === 'result' ? found.data.result : undefined);
+      if (!result && runtime && !['running'].includes(runtime.status)) result = { contractVersion: '1.0', executionId: input.executionId, issueNumber: issue.number,
+        status: runtime.status === 'cancelled' ? 'cancelled' : 'failed', summary: 'Temporal execution ended without a committed worker result', artifacts: [], error: runtime.status, proposedActions: [] };
       if (!result && run?.status === 'completed') {
         result = { contractVersion: '1.0', executionId: input.executionId, issueNumber: issue.number,
           status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', summary: 'Workflow ended without a valid durable worker result',
           artifacts: [run.url], error: `Workflow conclusion: ${run.conclusion}`, proposedActions: [] };
       }
-      const elapsed = now.getTime() - new Date(run?.createdAt ?? event.at).getTime();
+      const elapsed = now.getTime() - new Date(runtime?.createdAt ?? run?.createdAt ?? event.at).getTime();
       // A result cannot release a slot while the corresponding workflow is still running.
-      const active = run ? run.status !== 'completed' : !result;
-      executions.push({ input, attempt, at: event.at, run, result, active,
-        ambiguous: !run && !result && elapsed > config.execution.dispatchGraceMinutes * 60000,
-        timedOut: !!run && active && elapsed > input.limits.timeoutMinutes * 60000 });
+      const active = runtime ? runtime.status === 'running' : run ? run.status !== 'completed' : !result;
+      executions.push({ input, attempt, at: event.at, run, runtime, result, active,
+        ambiguous: !runtime && !run && !result && elapsed > config.execution.dispatchGraceMinutes * 60000,
+        timedOut: runtime?.phase !== 'awaiting-approval' && !!(run || runtime) && active && elapsed > input.limits.timeoutMinutes * 60000 });
     }
     const currentExecutions = executions.filter(e => e.input.taskVersion === version);
     const latest = currentExecutions.sort((a, b) => a.attempt - b.attempt).at(-1);
@@ -64,7 +67,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     if (issue.state === 'closed') desiredStatus = 'done';
     else if (explicitBlock) desiredStatus = 'blocked';
     else if (issueStatus(issue) === 'done') desiredStatus = 'backlog';
-    else if (executions.some(e => e.active)) desiredStatus = executions.some(e => e.ambiguous) ? 'blocked' : 'running';
+    else if (executions.some(e => e.active)) desiredStatus = executions.some(e => e.ambiguous) ? 'blocked' : executions.some(e => e.runtime?.phase === 'awaiting-approval') ? 'awaiting-approval' : 'running';
     else if (hasClosingMerge) desiredStatus = 'done';
     else if (blockReason) desiredStatus = 'blocked';
     else if (latest?.result) desiredStatus = ({ success: 'awaiting-pr', failed: 'failed', cancelled: 'failed', blocked: 'blocked', needs_approval: 'awaiting-approval' } as const)[latest.result.status];

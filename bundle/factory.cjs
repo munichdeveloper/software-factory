@@ -10314,7 +10314,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve3.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -10341,7 +10341,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve3(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -11205,7 +11205,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve3(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -11241,50 +11241,50 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse5(serialize(base, options), options);
-        relative = parse5(serialize(relative, options), options);
+        relative2 = parse5(serialize(relative2, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative2.scheme) {
+        target.scheme = relative2.scheme;
+        target.userinfo = relative2.userinfo;
+        target.host = relative2.host;
+        target.port = relative2.port;
+        target.path = removeDotSegments(relative2.path || "");
+        target.query = relative2.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
+          target.userinfo = relative2.userinfo;
+          target.host = relative2.host;
+          target.port = relative2.port;
+          target.path = removeDotSegments(relative2.path || "");
+          target.query = relative2.query;
         } else {
-          if (!relative.path) {
+          if (!relative2.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative2.query !== void 0) {
+              target.query = relative2.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative2.path[0] === "/") {
+              target.path = removeDotSegments(relative2.path);
             } else {
               const baseHasAuthority = base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0;
               if (baseHasAuthority && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative2.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative2.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
               target.path = base.scheme === void 0 && !baseHasAuthority && target.path[0] !== "/" ? removeDotSegmentsRelative(target.path) : removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative2.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -11292,7 +11292,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative2.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -11596,7 +11596,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve3,
       resolveComponent,
       equal,
       serialize,
@@ -14844,7 +14844,7 @@ var require__ = __commonJS({
 });
 
 // src/cli.ts
-var import_promises3 = require("node:fs/promises");
+var import_promises4 = require("node:fs/promises");
 var import_node_crypto3 = require("node:crypto");
 var import_node_util = require("node:util");
 var import_node_url = require("node:url");
@@ -19916,7 +19916,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve) {
+function isRecursive(inst, stack, resolve3) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -19926,7 +19926,7 @@ function isRecursive(inst, stack, resolve) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve);
+      const answer = isRecursive(child, stack, resolve3);
       if (answer > result)
         result = answer;
     }
@@ -19937,7 +19937,7 @@ function isRecursive(inst, stack, resolve) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve3) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -20001,7 +20001,7 @@ function isRecursive(inst, stack, resolve) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve3 ? inst._zod.innerType : void 0);
       merge3(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -34600,6 +34600,7 @@ var configSchema = external_exports.strictObject({
     overrides: external_exports.partialRecord(external_exports.enum(actionKinds), permissionSchema).default({})
   }).prefault({}),
   execution: external_exports.strictObject({
+    engine: external_exports.enum(["github-actions", "temporal"]).default("github-actions"),
     dryRun: external_exports.boolean().default(false),
     maxParallelWorkers: bounded(1, 20, 1),
     maxRetries: bounded(0, 5, 2),
@@ -38766,36 +38767,6 @@ var actionSchema = external_exports.strictObject({
 });
 var planSchema = external_exports.strictObject({ version: external_exports.literal(1), actions: external_exports.array(actionSchema).max(100) });
 
-// src/state/lifecycle.ts
-var managedLabel = "harness:managed";
-var lifecycleLabels = statuses.map((s) => `harness:${s}`);
-var priorityLabels = ["harness:priority-high", "harness:priority-normal", "harness:priority-low"];
-var allLabels = [managedLabel, ...lifecycleLabels, ...priorityLabels, "sf:automerge", "sf:blocked"];
-var transitions = {
-  backlog: ["ready", "running", "failed", "awaiting-pr", "blocked", "awaiting-approval", "done"],
-  ready: ["running", "failed", "blocked", "awaiting-approval", "awaiting-pr", "done", "backlog"],
-  running: ["awaiting-pr", "failed", "blocked", "awaiting-approval", "done"],
-  "awaiting-pr": ["running", "failed", "blocked", "done", "backlog", "ready", "awaiting-approval"],
-  "awaiting-approval": ["ready", "running", "blocked", "backlog", "done", "awaiting-pr", "failed"],
-  blocked: ["ready", "running", "backlog", "awaiting-approval", "failed", "done", "awaiting-pr"],
-  failed: ["running", "ready", "blocked", "awaiting-approval", "done", "awaiting-pr"],
-  done: ["backlog"]
-};
-var issueStatus = (issue2) => statuses.find((s) => issue2.labels.includes(`harness:${s}`));
-var canTransition = (from, to) => from === void 0 || from === to || transitions[from].includes(to);
-function withStatus(issue2, to) {
-  if (!canTransition(issueStatus(issue2), to)) throw new Error(`Invalid lifecycle transition ${issueStatus(issue2)} -> ${to}`);
-  return [...issue2.labels.filter((l) => !lifecycleLabels.includes(l)), `harness:${to}`];
-}
-function dependencies(body) {
-  const lines = body.match(/^Depends on:\s*.+$/gim) ?? [];
-  return [...new Set(lines.flatMap((line) => [...line.matchAll(/#(\d+)/g)].map((m) => Number(m[1]))))];
-}
-function acceptanceCriteria(body) {
-  const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
-  return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
-}
-
 // src/workers/contract.ts
 var workerInputSchema = external_exports.strictObject({
   contractVersion: external_exports.literal("1.0"),
@@ -38822,6 +38793,149 @@ var workerResultSchema = external_exports.strictObject({
   proposedActions: external_exports.array(actionSchema).max(10)
 });
 
+// src/state/identity.ts
+var import_node_crypto = require("node:crypto");
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, canonical(v)]));
+  return value;
+}
+var hash2 = (value) => (0, import_node_crypto.createHash)("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+var taskVersion = (issue2) => hash2({ title: issue2.title, body: issue2.body });
+function actionId(action, policyVersion2) {
+  const { reason: _reason, ...semantic } = action;
+  void _reason;
+  return hash2({ action: semantic, policyVersion: policyVersion2 });
+}
+var executionId = (repo, issue2, attempt) => hash2({ repo, issue: issue2.number, version: taskVersion(issue2), attempt }).slice(0, 32);
+
+// src/runtime/validation-contract.ts
+var digest = external_exports.string().regex(/^[a-f0-9]{64}$/);
+var sha = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var reserved = /^(?:PATH|HOME|USER|SHELL|CI|NODE_OPTIONS|NODE_PATH|DATABASE_URL|COMPOSE_PROJECT_NAME|COMPOSE_FILE|DOCKER_HOST|DOCKER_CONTEXT|LD_.+|GITHUB_.+|GH_.+|ACTIONS_.+|RUNNER_.+|OPENAI_.+|ANTHROPIC_.+|AI_API_KEY|FACTORY_.+|AWS_.+|NPM_CONFIG_.+)$/i;
+var validationPlanSchema = external_exports.strictObject({
+  version: external_exports.literal(1).default(1),
+  profile: external_exports.enum(["npm", "npm-docker"]).default("npm"),
+  timeoutMinutes: external_exports.number().int().min(1).max(30).default(20),
+  composeProjectPrefix: external_exports.string().regex(/^[a-z][a-z0-9-]{0,30}-(?:ci|test|validation)$/).default("sf-validation"),
+  environment: external_exports.record(
+    external_exports.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine((k) => !reserved.test(k), "Reserved validation environment key"),
+    external_exports.string().max(1e3).refine((v) => !v.includes("${{"), "Only literal test values are allowed")
+  ).default({})
+}).refine((p) => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6e3, "Validation plan limit");
+var validationCheckSchema = external_exports.strictObject({
+  name: external_exports.enum(["install", "test", "build", "browser-install", "browser", "compose-config", "docker-start", "docker-smoke", "docker-stop", "source-integrity"]),
+  status: external_exports.enum(["passed", "failed", "skipped"]),
+  exitCode: external_exports.number().int().min(-1).max(255).nullable()
+});
+var validationReportSchema = external_exports.strictObject({
+  version: external_exports.literal(1),
+  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  taskId: external_exports.string().max(200),
+  taskVersion: digest,
+  baseSha: sha,
+  artifactHash: digest,
+  planHash: digest,
+  workflowRunId: external_exports.number().int().positive().safe(),
+  sourceRunId: external_exports.number().int().positive().safe(),
+  runAttempt: external_exports.literal(1),
+  status: external_exports.enum(["passed", "failed", "unsupported", "invalid"]),
+  checks: validationCheckSchema.array().max(10),
+  reason: external_exports.enum(["CHECKS_COMPLETED", "CHECK_FAILED", "NO_PUBLISHABLE_CHANGES", "UNSUPPORTED_PROJECT", "VALIDATION_SETUP_FAILED", "SOURCE_CHANGED"]),
+  modelSecretPresent: external_exports.literal(false),
+  workspaceUnchanged: external_exports.boolean()
+});
+
+// src/runtime/contract.ts
+var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var digest2 = external_exports.string().regex(/^[a-f0-9]{64}$/);
+var baseRefSchema = external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/).refine((v) => !v.includes("..") && !v.includes("//") && !v.endsWith("/") && !v.endsWith(".lock") && !v.startsWith("refs/"));
+var executorWorkflowSchema = external_exports.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}\.ya?ml$/);
+var executionKey = external_exports.string().regex(/^[a-f0-9]{32}$/);
+var releaseSchema = external_exports.strictObject({
+  factorySha: sha2,
+  harnessSha: sha2,
+  workflowHash: digest2,
+  deploymentName: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
+  buildId: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  taskQueue: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
+  schemaVersion: external_exports.literal(1)
+});
+var admissionSchema = external_exports.strictObject({ input: workerInputSchema, actionId: digest2, policyHash: digest2 });
+var readyApprovalSchema = external_exports.strictObject({ eventId: external_exports.number().int().positive().safe(), actor: external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/), createdAt: external_exports.iso.datetime() });
+var snapshotSchema = external_exports.strictObject({
+  version: external_exports.literal(1),
+  repositoryId: external_exports.number().int().positive().safe(),
+  repository: external_exports.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+  release: releaseSchema,
+  admission: admissionSchema,
+  baseSha: sha2,
+  baseRef: baseRefSchema.optional(),
+  executorWorkflow: executorWorkflowSchema.optional(),
+  allowedPaths: external_exports.array(external_exports.string().min(1).max(500)).min(1).max(100).optional(),
+  readyApproval: readyApprovalSchema.optional(),
+  validationPlan: validationPlanSchema.optional(),
+  specHash: digest2,
+  configHash: digest2,
+  requireHumanGate: external_exports.boolean()
+});
+var observationSchema = external_exports.strictObject({
+  issueNumber: external_exports.number().int().positive(),
+  executionId: executionKey,
+  workflowId: external_exports.string().min(1).max(200),
+  runId: external_exports.uuid(),
+  status: external_exports.enum(["running", "completed", "failed", "cancelled", "timed_out"]),
+  phase: external_exports.enum(["starting", "awaiting-approval", "authorizing", "running", "publishing", "completed", "cancelled"]),
+  binding: digest2,
+  createdAt: external_exports.iso.datetime(),
+  result: workerResultSchema.nullable()
+});
+
+// src/runtime/ready-approval.ts
+async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected) {
+  if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("READY_APPROVAL_REQUIRED");
+  const ordered = [...events].sort((a, b) => a.id - b.id);
+  const grant = ordered.filter((e) => e.event === "labeled").at(-1);
+  if (!grant) throw new Error("READY_APPROVAL_REQUIRED");
+  const proof = readyApprovalSchema.parse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (!await canApprove(proof.actor)) throw new Error("READY_ACTOR_NOT_AUTHORIZED");
+  if (expected && hash2(proof) !== hash2(expected)) throw new Error("READY_APPROVAL_CHANGED");
+  const later = ordered.filter((e) => e.id > grant.id);
+  const consumed = expected && later.length === 1 && later[0].event === "unlabeled" && trustedActors.includes(later[0].actor) && issue2.labels.includes("harness:running");
+  if (later.length && !consumed || !issue2.labels.includes("harness:ready") && !consumed) throw new Error("READY_APPROVAL_REVOKED");
+  return proof;
+}
+
+// src/state/lifecycle.ts
+var managedLabel = "harness:managed";
+var lifecycleLabels = statuses.map((s) => `harness:${s}`);
+var priorityLabels = ["harness:priority-high", "harness:priority-normal", "harness:priority-low"];
+var allLabels = [managedLabel, ...lifecycleLabels, ...priorityLabels, "sf:automerge", "sf:blocked"];
+var transitions = {
+  backlog: ["ready", "running", "failed", "awaiting-pr", "blocked", "awaiting-approval", "done"],
+  ready: ["running", "failed", "blocked", "awaiting-approval", "awaiting-pr", "done", "backlog"],
+  running: ["awaiting-pr", "failed", "blocked", "awaiting-approval", "done"],
+  "awaiting-pr": ["running", "failed", "blocked", "done", "backlog", "ready", "awaiting-approval"],
+  "awaiting-approval": ["ready", "running", "blocked", "backlog", "done", "awaiting-pr", "failed"],
+  blocked: ["ready", "running", "backlog", "awaiting-approval", "failed", "done", "awaiting-pr"],
+  failed: ["running", "ready", "blocked", "awaiting-approval", "done", "awaiting-pr"],
+  done: ["backlog"]
+};
+var issueStatus = (issue2) => statuses.find((s) => issue2.labels.includes(`harness:${s}`));
+var canTransition = (from, to) => from === void 0 || from === to || transitions[from].includes(to);
+function withStatus(issue2, to) {
+  if (!canTransition(issueStatus(issue2), to)) throw new Error(`Invalid lifecycle transition ${issueStatus(issue2)} -> ${to}`);
+  return [...issue2.labels.filter((l) => !lifecycleLabels.includes(l)), `harness:${to}`];
+}
+function dependencies(body) {
+  const lines = body.match(/^Depends on:\s*.+$/gim) ?? [];
+  return [...new Set(lines.flatMap((line) => [...line.matchAll(/#(\d+)/g)].map((m) => Number(m[1]))))];
+}
+function acceptanceCriteria(body) {
+  const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien|Abnahmekriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
+  return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
+}
+
 // src/merge/contract.ts
 var mergeReviewSchema = external_exports.strictObject({
   decision: external_exports.enum(["merge", "update_branch", "request_changes", "defer"]),
@@ -38845,6 +38959,7 @@ var eventSchema = external_exports.strictObject({
   data: external_exports.discriminatedUnion("type", [
     external_exports.strictObject({ type: external_exports.literal("intent"), input: workerInputSchema, actionId: external_exports.string().length(64), attempt: external_exports.number().int().nonnegative() }),
     external_exports.strictObject({ type: external_exports.literal("receipt"), executionId: external_exports.string().length(32), runId: external_exports.number().int().positive() }),
+    external_exports.strictObject({ type: external_exports.literal("temporal_receipt"), executionId: external_exports.string().length(32), workflowId: external_exports.string().max(200), runId: external_exports.uuid(), binding: external_exports.string().length(64) }),
     external_exports.strictObject({ type: external_exports.literal("result"), result: workerResultSchema }),
     external_exports.strictObject({ type: external_exports.literal("block_intent"), taskVersion: external_exports.string().length(64), cause: blockCauseSchema, afterLabelEventId: external_exports.number().int().nonnegative() }),
     external_exports.strictObject({ type: external_exports.literal("issue_creation_intent"), followupKey: external_exports.string().regex(/^[a-f0-9]{64}$/), actionId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
@@ -38897,13 +39012,13 @@ var normalizeIssue = (i) => ({
   authorType: i.user?.type
 });
 var GitHubClient = class {
-  constructor(repository, token, timeoutMs = 3e4, fetcher = fetch) {
+  constructor(repository, token, timeoutMs = 3e4, fetcher = fetch, api) {
     this.repository = repository;
     if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error("Repository must be owner/name");
-    if (!token) throw new Error("GITHUB_TOKEN is required");
+    if (!token && !api) throw new Error("GITHUB_TOKEN is required");
     const [owner, repo] = repository.split("/");
     this.target = { owner, repo };
-    this.api = new Octokit2({ auth: token, request: { timeout: timeoutMs, fetch: fetcher }, log: { debug() {
+    this.api = api ?? new Octokit2({ auth: token, request: { timeout: timeoutMs, fetch: fetcher }, log: { debug() {
     }, info() {
     }, warn() {
     }, error() {
@@ -38912,10 +39027,10 @@ var GitHubClient = class {
   repository;
   api;
   target;
-  async readConfig(path) {
+  async readConfig(path, ref) {
     if (!/^\.github\/[\w./-]+\.ya?ml$/.test(path) || path.includes("..")) throw new Error("Configuration must be a YAML file under .github/");
     const { data: repo } = await this.api.repos.get(this.target);
-    const { data } = await this.api.repos.getContent({ ...this.target, path, ref: repo.default_branch });
+    const { data } = await this.api.repos.getContent({ ...this.target, path, ref: ref ?? repo.default_branch });
     if (!("content" in data) || data.encoding !== "base64") throw new Error(`Cannot read config ${path}`);
     return Buffer.from(data.content, "base64").toString("utf8");
   }
@@ -38946,6 +39061,15 @@ var GitHubClient = class {
     } catch {
       return false;
     }
+  }
+  async readyApproval(number4, trustedActors, expected) {
+    const issue2 = await this.getIssue(number4);
+    const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number4, per_page: 100 });
+    const events = timeline.flatMap((e) => {
+      if (e.event !== "labeled" && e.event !== "unlabeled" || !("label" in e) || e.label?.name !== "harness:ready" || !("id" in e) || typeof e.id !== "number" || !("created_at" in e) || typeof e.created_at !== "string") return [];
+      return [{ id: e.id, event: e.event, actor: "actor" in e ? e.actor?.login ?? "" : "", createdAt: e.created_at }];
+    });
+    return authorizeReadyLabel(issue2, events, (actor) => this.canApprove(actor), trustedActors, expected);
   }
   async runs(workflow) {
     const rows = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...this.target, workflow_id: workflow, event: "workflow_dispatch", per_page: 100 });
@@ -39000,7 +39124,7 @@ var GitHubClient = class {
       this.api.repos.get(this.target),
       this.api.paginate(this.api.issues.listForRepo, { ...this.target, labels: managedLabel, state: "all", per_page: 100 }),
       this.pullRequests(),
-      this.runs(workflow)
+      workflow === null ? Promise.resolve([]) : this.runs(workflow)
     ]);
     if (!repo.has_issues) throw new Error("GitHub Issues must be enabled");
     const issues = rows.filter((i) => !i.pull_request).map(normalizeIssue);
@@ -39055,22 +39179,6 @@ var GitHubClient = class {
   }
 };
 
-// src/state/identity.ts
-var import_node_crypto = require("node:crypto");
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, canonical(v)]));
-  return value;
-}
-var hash2 = (value) => (0, import_node_crypto.createHash)("sha256").update(JSON.stringify(canonical(value))).digest("hex");
-var taskVersion = (issue2) => hash2({ title: issue2.title, body: issue2.body });
-function actionId(action, policyVersion2) {
-  const { reason: _reason, ...semantic } = action;
-  void _reason;
-  return hash2({ action: semantic, policyVersion: policyVersion2 });
-}
-var executionId = (repo, issue2, attempt) => hash2({ repo, issue: issue2.number, version: taskVersion(issue2), attempt }).slice(0, 32);
-
 // src/state/blocks.ts
 var lastBlockLabelEventId = (issue2) => issue2.blockedLabelEvents?.at(-1)?.id ?? 0;
 function currentAutomaticBlock(issue2, events, trustedActors) {
@@ -39103,8 +39211,19 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       if (input2.issueNumber !== issue2.number) continue;
       const matching = snapshot.runs.filter((r) => [`Factory worker ${input2.executionId}`, `Harness worker ${input2.executionId}`].includes(r.title));
       const run = matching.find((r) => r.status !== "completed") ?? matching[0];
+      const runtime = snapshot.runtimeExecutions?.find((r) => r.executionId === input2.executionId);
       const found = events.find((e) => e.data.type === "result" && e.data.result.executionId === input2.executionId && e.data.result.issueNumber === issue2.number);
-      let result = found?.data.type === "result" ? found.data.result : void 0;
+      let result = runtime?.result ?? (found?.data.type === "result" ? found.data.result : void 0);
+      if (!result && runtime && !["running"].includes(runtime.status)) result = {
+        contractVersion: "1.0",
+        executionId: input2.executionId,
+        issueNumber: issue2.number,
+        status: runtime.status === "cancelled" ? "cancelled" : "failed",
+        summary: "Temporal execution ended without a committed worker result",
+        artifacts: [],
+        error: runtime.status,
+        proposedActions: []
+      };
       if (!result && run?.status === "completed") {
         result = {
           contractVersion: "1.0",
@@ -39117,17 +39236,18 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
           proposedActions: []
         };
       }
-      const elapsed = now.getTime() - new Date(run?.createdAt ?? event.at).getTime();
-      const active = run ? run.status !== "completed" : !result;
+      const elapsed = now.getTime() - new Date(runtime?.createdAt ?? run?.createdAt ?? event.at).getTime();
+      const active = runtime ? runtime.status === "running" : run ? run.status !== "completed" : !result;
       executions.push({
         input: input2,
         attempt,
         at: event.at,
         run,
+        runtime,
         result,
         active,
-        ambiguous: !run && !result && elapsed > config2.execution.dispatchGraceMinutes * 6e4,
-        timedOut: !!run && active && elapsed > input2.limits.timeoutMinutes * 6e4
+        ambiguous: !runtime && !run && !result && elapsed > config2.execution.dispatchGraceMinutes * 6e4,
+        timedOut: runtime?.phase !== "awaiting-approval" && !!(run || runtime) && active && elapsed > input2.limits.timeoutMinutes * 6e4
       });
     }
     const currentExecutions = executions.filter((e) => e.input.taskVersion === version2);
@@ -39147,7 +39267,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     if (issue2.state === "closed") desiredStatus = "done";
     else if (explicitBlock) desiredStatus = "blocked";
     else if (issueStatus(issue2) === "done") desiredStatus = "backlog";
-    else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : "running";
+    else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : executions.some((e) => e.runtime?.phase === "awaiting-approval") ? "awaiting-approval" : "running";
     else if (hasClosingMerge) desiredStatus = "done";
     else if (blockReason) desiredStatus = "blocked";
     else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
@@ -39222,7 +39342,7 @@ function evaluate(action, ctx) {
       if (action.attempt !== 0) return deny("Initial execution must use attempt zero");
     }
   }
-  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.active && e.timedOut && e.run)) return deny("No timed out workflow to cancel");
+  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.active && e.timedOut && (e.run || e.runtime))) return deny("No timed out workflow to cancel");
   if (action.kind === "create_followup") {
     if (!action.followup) return deny("Follow-up details are required");
     if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
@@ -39343,7 +39463,7 @@ var OpenAIPlanner = class {
 function reconciliationPlan(tasks, config2) {
   return tasks.flatMap((t) => {
     const actions = [];
-    if (t.executions.some((e) => e.active && e.timedOut && e.run)) actions.push(proposal(t, "cancel_worker", "Worker exceeded its configured time limit"));
+    if (t.executions.some((e) => e.active && e.timedOut && (e.run || e.runtime))) actions.push(proposal(t, "cancel_worker", "Worker exceeded its configured time limit"));
     if (t.issue.state === "open" && t.hasClosingMerge && !t.executions.some((e) => e.active)) {
       actions.push(proposal(t, "close_issue", "Verified native closing reference to a merged pull request"));
     } else if (!t.issue.labels.includes(`harness:${t.desiredStatus}`) || t.issue.labels.filter((l) => lifecycleLabels.includes(l)).length !== 1 || t.executions.some((e) => e.result && !t.events.some((event) => event.data.type === "result" && event.data.result.executionId === e.input.executionId))) {
@@ -39390,7 +39510,7 @@ var SlackSink = class {
   async send(channel, notification) {
     if (!this.token) throw new Error("Slack token missing");
     const delay = this.lastCall + 1100 - Date.now();
-    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    if (delay > 0) await new Promise((resolve3) => setTimeout(resolve3, delay));
     this.lastCall = Date.now();
     const label = notification.event === "issue_created" ? "SF: Issue autonom angelegt" : "SF: PR durch Bot gemergt";
     const text = `${label}
@@ -39547,6 +39667,18 @@ var Manager = class {
   planner;
   options;
   now;
+  async snapshot() {
+    const snapshot = await this.github.snapshot(this.config.execution.engine === "temporal" ? null : this.config.manager.workflow);
+    if (this.config.execution.engine === "temporal") {
+      if (!this.options.workerRuntime) throw new Error("Temporal runtime is required; legacy dispatch is forbidden");
+      const ids = [...new Set([...snapshot.comments.values()].flatMap((comments) => comments.flatMap((comment) => {
+        const event = decodeEvent(comment, this.config.manager.trustedActors);
+        return event?.data.type === "intent" ? [event.data.input.executionId] : [];
+      })))];
+      snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
+    }
+    return snapshot;
+  }
   async hasApproval(issue2, id) {
     let approved = false;
     for (const comment of await this.github.comments(issue2)) {
@@ -39654,6 +39786,22 @@ ${marker2}`;
           worker: this.config.workers.coding && this.config.workers.coding.enabled ? "codex" : "test"
         });
         await this.event(live.number, `intent:${id}`, { type: "intent", input: input2, actionId: actionId(action, policyVersion(this.config)), attempt });
+        if (this.config.execution.engine === "temporal") {
+          if (!this.options.workerRuntime) throw new Error("Temporal runtime is required; legacy dispatch is forbidden");
+          const receipt = await this.options.workerRuntime.start({ input: input2, actionId: actionId(action, policyVersion(this.config)), policyHash: policyVersion(this.config) });
+          await this.event(live.number, `temporal-receipt:${id}`, {
+            type: "temporal_receipt",
+            executionId: id,
+            workflowId: receipt.workflowId,
+            runId: receipt.runId,
+            binding: receipt.binding
+          });
+          const fresh2 = await this.github.getIssue(live.number);
+          if (taskVersion(fresh2) === action.taskVersion && fresh2.state === "open" && !fresh2.labels.includes("harness:blocked")) {
+            await this.github.updateIssue(live.number, { labels: withStatus(fresh2, receipt.phase === "awaiting-approval" ? "awaiting-approval" : "running") });
+          }
+          return true;
+        }
         const existing = (await this.github.runs(this.config.manager.workflow)).find((r) => r.title === `Factory worker ${id}`);
         if (!existing) await this.github.dispatch(this.config.manager.workflow, snapshot.defaultBranch, id, live.number);
         const run = existing ?? (await this.github.runs(this.config.manager.workflow)).find((r) => r.title === `Factory worker ${id}`);
@@ -39663,6 +39811,10 @@ ${marker2}`;
         return true;
       }
       case "cancel_worker": {
+        for (const execution of task.executions.filter((e) => e.timedOut && e.runtime)) {
+          if (!this.options.workerRuntime) throw new Error("Temporal cancellation requires the runtime");
+          await this.options.workerRuntime.cancel(execution.input.executionId);
+        }
         const runs = await this.github.runs(this.config.manager.workflow);
         for (const e of task.executions.filter((e2) => e2.timedOut && e2.run)) {
           if (runs.some((r) => r.id === e.run.id && r.status !== "completed")) await this.github.cancelRun(e.run.id);
@@ -39690,7 +39842,7 @@ ${marker2}`;
       report.outcome = "disabled";
       return report;
     }
-    let snapshot = await this.github.snapshot(this.config.manager.workflow);
+    let snapshot = await this.snapshot();
     let tasks = reconstruct(snapshot, this.config, this.now());
     report.tasks = tasks.length;
     for (const t of tasks) {
@@ -39734,7 +39886,7 @@ ${marker2}`;
         break;
       }
       try {
-        snapshot = await this.github.snapshot(this.config.manager.workflow);
+        snapshot = await this.snapshot();
         tasks = reconstruct(snapshot, this.config, this.now());
         const task = tasks.find((t) => t.issue.number === action.issueNumber);
         if (!task) {
@@ -40098,7 +40250,7 @@ var HarnessProcessClient = class {
       operation: input2.operation
     };
     if (!validateRequest(request2)) throw new Error("Delegation cannot be represented by Harness contract 2.0");
-    const raw = await new Promise((resolve, reject) => {
+    const raw = await new Promise((resolve3, reject) => {
       const env = {};
       for (const key of ["SystemRoot", "WINDIR", "TEMP", "TMP"]) if (process.env[key]) env[key] = process.env[key];
       const child = (0, import_node_child_process.spawn)(process.execPath, [this.entrypoint, "run"], { env, windowsHide: true, shell: false });
@@ -40125,7 +40277,7 @@ var HarnessProcessClient = class {
       child.on("close", (code) => {
         clearTimeout(timer);
         if (code !== 0 || exceeded) reject(new Error("Harness process failed or exceeded output limit"));
-        else resolve(output2);
+        else resolve3(output2);
       });
       child.stdin.end(JSON.stringify(request2));
     });
@@ -40151,10 +40303,10 @@ var import_node_crypto2 = require("node:crypto");
 var CodingRepository = class {
   api;
   target;
-  constructor(repository, token, fetcher = fetch) {
+  constructor(repository, token, fetcher = fetch, api) {
     const [owner, repo] = repository.split("/");
     this.target = { owner, repo };
-    this.api = new Octokit2({ auth: token, request: { timeout: 3e4, fetch: fetcher }, log: { debug() {
+    this.api = api ?? new Octokit2({ auth: token, request: { timeout: 3e4, fetch: fetcher }, log: { debug() {
     }, info() {
     }, warn() {
     }, error() {
@@ -40192,11 +40344,11 @@ var CodingRepository = class {
     if (newTree.sha === parent.tree.sha) throw new Error("No changes to publish");
     const id = artifact.result.executionId;
     const branch = `sf/issue-${issue2}/${id}`;
-    const fingerprint = (0, import_node_crypto2.createHash)("sha256").update(JSON.stringify(artifact)).digest("hex");
+    const fingerprint2 = (0, import_node_crypto2.createHash)("sha256").update(JSON.stringify(artifact)).digest("hex");
     const message = `Implement #${issue2} with Codex
 
 SF execution: ${id}
-Artifact: ${fingerprint}`;
+Artifact: ${fingerprint2}`;
     let existing = null;
     try {
       existing = (await this.api.git.getRef({ ...this.target, ref: `heads/${branch}` })).data.object.sha;
@@ -40228,10 +40380,10 @@ Software Factory execution: \`${id}\`. Generated by the isolated Codex Harness. 
 };
 
 // src/workers/coding.ts
-var sha = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var sha3 = external_exports.string().regex(/^[a-f0-9]{40}$/);
 var codingArtifactSchema = external_exports.strictObject({
   contractVersion: external_exports.literal("3.0"),
-  baseSha: sha,
+  baseSha: sha3,
   result: external_exports.strictObject({
     contractVersion: external_exports.literal("2.0"),
     executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
@@ -40275,7 +40427,7 @@ async function prepareCoding(github, config2, repository, issue2, id, correlatio
   }
   if (auth2.input.worker !== "codex" || !config2.workers.coding || !config2.workers.coding.enabled) throw new Error("Coding worker disabled");
   const base = await repository.base();
-  sha.parse(base.sha);
+  sha3.parse(base.sha);
   return { base, request: {
     contractVersion: "3.0",
     executionId: id,
@@ -40445,7 +40597,7 @@ var GitHubMergePort = class {
     for (let i = 0; i < 15; i++) {
       const { data } = await this.api.pulls.get({ ...this.target, pull_number: number4 });
       if (data.head.sha !== head) return data.head.sha;
-      await new Promise((resolve) => setTimeout(resolve, 1e3));
+      await new Promise((resolve3) => setTimeout(resolve3, 1e3));
     }
     throw new Error("Branch update pending; next run will recover");
   }
@@ -40600,15 +40752,15 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
   eligible(f, snapshot) {
     return f.labels.includes(this.config.merge.adoptLabel) || this.config.merge.includeFactoryPRs && !!this.owned(f, snapshot);
   }
-  async dispatch(f, workflow, ref, sha2) {
-    const key = `merge-ci:${hash2({ workflow, ref, sha: sha2 })}`;
+  async dispatch(f, workflow, ref, sha4) {
+    const key = `merge-ci:${hash2({ workflow, ref, sha: sha4 })}`;
     if (this.events(f).some((e) => e.key === key)) return;
     await this.api.dispatch(workflow, ref);
-    await this.event(f, key, { type: "workflow_dispatch", workflow, ref, sha: sha2 });
+    await this.event(f, key, { type: "workflow_dispatch", workflow, ref, sha: sha4 });
   }
-  async postMerge(f, sha2) {
+  async postMerge(f, sha4) {
     for (const workflow of new Set(this.config.merge.postMergeWorkflows)) {
-      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha2);
+      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha4);
     }
   }
   async run(snapshot) {
@@ -40732,18 +40884,18 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         }
         await this.event(live, `merge-intent:${reviewKey}`, { type: "merge_intent", prNumber: number4, head: f.head, base: f.base, reviewKey });
         phase = "GitHub-Merge";
-        const sha2 = await this.api.merge(number4, f.head, this.config.merge.method);
+        const sha4 = await this.api.merge(number4, f.head, this.config.merge.method);
         report.merged++;
         f.state = "closed";
-        f.mergeSha = sha2;
+        f.mergeSha = sha4;
         await this.event(
           live,
           `merge-completed:${f.head}`,
-          { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: sha2 },
-          `**Gemergt.** Die KI hat den gepr\xFCften Commit freigegeben; GitHub hat den Merge best\xE4tigt: \`${sha2}\`.`
+          { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: sha4 },
+          `**Gemergt.** Die KI hat den gepr\xFCften Commit freigegeben; GitHub hat den Merge best\xE4tigt: \`${sha4}\`.`
         );
         phase = "Workflows nach Merge";
-        await this.postMerge(live, sha2);
+        await this.postMerge(live, sha4);
       } catch (error62) {
         const status = error62 instanceof Error && "status" in error62 ? String(error62.status) : "unavailable";
         report.errors.push(`PR #${number4}: review/update/merge not confirmed (${status}); no unreviewed merge performed`);
@@ -40784,14 +40936,14 @@ var GitHubDeployPort = class {
     const { data: ref } = await this.api.git.getRef({ ...this.target, ref: `heads/${repo.default_branch}` });
     return { name: repo.default_branch, sha: ref.object.sha };
   }
-  async workflowRuns(sha2) {
-    const rows = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: sha2, per_page: 100 });
+  async workflowRuns(sha4) {
+    const rows = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: sha4, per_page: 100 });
     return rows.map((r) => ({ name: r.name ?? "", event: r.event, status: r.status ?? "unknown", conclusion: r.conclusion, createdAt: r.created_at }));
   }
-  async createDeployment(sha2, environment, description) {
+  async createDeployment(sha4, environment, description) {
     const { data } = await this.api.repos.createDeployment({
       ...this.target,
-      ref: sha2,
+      ref: sha4,
       environment,
       description,
       auto_merge: false,
@@ -40906,7 +41058,7 @@ var import_node_os = require("node:os");
 var import_node_path2 = require("node:path");
 var limit = (text) => text.length > 2e4 ? text.slice(-2e4) : text;
 function runProcess(command, args, stdin, timeoutMs = 6e5, env) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve3, reject) => {
     const child = (0, import_node_child_process2.spawn)(command, args, { stdio: ["pipe", "pipe", "pipe"], env: env ?? process.env });
     let stdout = "", stderr = "";
     child.stdout.on("data", (chunk) => {
@@ -40925,7 +41077,7 @@ function runProcess(command, args, stdin, timeoutMs = 6e5, env) {
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolve({ code: code ?? 1, stdout, stderr });
+      resolve3({ code: code ?? 1, stdout, stderr });
     });
     child.stdin.on("error", () => {
     });
@@ -41010,75 +41162,75 @@ async function planDeploy(config2, event, port) {
   const deploy = config2.deploy;
   if (!deploy.enabled) return { deploy: false, reason: "disabled" };
   const branch = await port.defaultBranch();
-  let sha2;
+  let sha4;
   let source = event.name;
-  if (event.name === "workflow_dispatch") sha2 = branch.sha;
+  if (event.name === "workflow_dispatch") sha4 = branch.sha;
   else if (event.name === "push") {
     if (deploy.trigger !== "push") return { deploy: false, reason: "waiting-for-checks" };
     if (event.ref !== `refs/heads/${branch.name}`) return { deploy: false, reason: "not-default-branch" };
-    sha2 = String(event.payload.after ?? "");
+    sha4 = String(event.payload.after ?? "");
   } else if (event.name === "workflow_run") {
     if (deploy.trigger !== "checks") return { deploy: false, reason: "push-trigger-configured" };
     const run = event.payload.workflow_run ?? {};
     if (run.event !== "push" || run.head_branch !== branch.name) return { deploy: false, reason: "not-default-branch" };
     if (!deploy.workflows.includes(String(run.name))) return { deploy: false, reason: "unrelated-workflow" };
     if (run.conclusion !== "success") return { deploy: false, reason: "checks-failed", sha: String(run.head_sha ?? "") };
-    sha2 = String(run.head_sha ?? "");
+    sha4 = String(run.head_sha ?? "");
     source = `workflow_run:${String(run.name)}`;
   } else return { deploy: false, reason: "unsupported-event" };
-  if (!SHA.test(sha2)) return { deploy: false, reason: "invalid-commit" };
-  if (sha2 !== branch.sha) return { deploy: false, reason: "superseded", sha: sha2 };
+  if (!SHA.test(sha4)) return { deploy: false, reason: "invalid-commit" };
+  if (sha4 !== branch.sha) return { deploy: false, reason: "superseded", sha: sha4 };
   if (deploy.trigger === "checks") {
-    const runs = await port.workflowRuns(sha2);
+    const runs = await port.workflowRuns(sha4);
     for (const name of deploy.workflows) {
       const latest = runs.filter((r) => r.name === name && r.event === "push").sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-      if (!latest || latest.status !== "completed") return { deploy: false, reason: "checks-pending", sha: sha2 };
-      if (latest.conclusion !== "success") return { deploy: false, reason: "checks-failed", sha: sha2 };
+      if (!latest || latest.status !== "completed") return { deploy: false, reason: "checks-pending", sha: sha4 };
+      if (latest.conclusion !== "success") return { deploy: false, reason: "checks-failed", sha: sha4 };
     }
   }
-  return { deploy: true, sha: sha2, source };
+  return { deploy: true, sha: sha4, source };
 }
 function archive(sourceDir) {
   const child = (0, import_node_child_process3.spawn)("git", ["-C", sourceDir, "archive", "--format=tar", "HEAD"], { stdio: ["ignore", "pipe", "ignore"] });
   const stream = new import_node_stream.PassThrough({ highWaterMark: 1 << 20 });
   child.stdout.pipe(stream);
-  const done = new Promise((resolve) => {
-    child.on("close", (code) => resolve(code ?? 1));
+  const done = new Promise((resolve3) => {
+    child.on("close", (code) => resolve3(code ?? 1));
     child.on("error", () => {
       stream.destroy();
-      resolve(1);
+      resolve3(1);
     });
   });
   return { stream, done };
 }
 async function executeDeploy(context) {
-  const { config: config2, sha: sha2, sourceDir, transport, port, logUrl } = context;
+  const { config: config2, sha: sha4, sourceDir, transport, port, logUrl } = context;
   const deploy = config2.deploy;
   const log = context.log ?? (() => {
   });
   const head = await runProcess("git", ["-C", sourceDir, "rev-parse", "HEAD"]);
-  if (head.code !== 0 || head.stdout.trim() !== sha2) throw new Error("Deployment source does not match the planned commit");
+  if (head.code !== 0 || head.stdout.trim() !== sha4) throw new Error("Deployment source does not match the planned commit");
   let deploymentId = null;
   const status = async (state, description) => {
     if (deploymentId !== null) await port.setDeploymentStatus(deploymentId, state, description, logUrl).catch(() => log("Deployment status could not be recorded"));
   };
   if (deploy.githubDeployment) {
-    deploymentId = await port.createDeployment(sha2, deploy.environment, `Software Factory docker-ssh deploy of ${sha2.slice(0, 12)}`);
+    deploymentId = await port.createDeployment(sha4, deploy.environment, `Software Factory docker-ssh deploy of ${sha4.slice(0, 12)}`);
     await status("in_progress", "Uploading release");
   }
   const timeoutMs = deploy.timeoutMinutes * 6e4;
   try {
     const tar = archive(sourceDir);
-    const upload = await transport.run(uploadScript, [deploy.path, sha2], tar.stream, timeoutMs);
-    if (await tar.done !== 0 || upload.code !== 0 || remoteValue(upload.stdout, "SF_DEPLOY_UPLOADED") !== sha2) {
+    const upload = await transport.run(uploadScript, [deploy.path, sha4], tar.stream, timeoutMs);
+    if (await tar.done !== 0 || upload.code !== 0 || remoteValue(upload.stdout, "SF_DEPLOY_UPLOADED") !== sha4) {
       log(upload.stderr.trim());
       throw new Error(`Deployment upload failed (exit ${upload.code})`);
     }
-    log(`Uploaded ${sha2} to ${deploy.path}/releases/${sha2}`);
+    log(`Uploaded ${sha4} to ${deploy.path}/releases/${sha4}`);
     const project = deploy.project ?? deploy.path.split("/").at(-1).toLowerCase().replace(/[^a-z0-9_-]/g, "-");
     const result = await transport.run(activateScript, [
       deploy.path,
-      sha2,
+      sha4,
       project,
       deploy.composeFile,
       deploy.envFile ?? "",
@@ -41093,12 +41245,12 @@ async function executeDeploy(context) {
     const error62 = remoteValue(result.stdout, "SF_DEPLOY_ERROR");
     const outcome = remoteValue(result.stdout, "SF_DEPLOY_RESULT");
     if (result.code === 0 && outcome === "deployed") {
-      await status("success", `Deployed ${sha2.slice(0, 12)}`);
-      return { outcome: "deployed", sha: sha2, previous, deploymentId, detail: "Release started and verified" };
+      await status("success", `Deployed ${sha4.slice(0, 12)}`);
+      return { outcome: "deployed", sha: sha4, previous, deploymentId, detail: "Release started and verified" };
     }
     const detail = error62 ? `Precondition failed: ${error62}` : outcome === "rolled-back" ? `Release failed; previous release ${previous?.slice(0, 12)} restored` : outcome === "rollback-failed" ? "Release failed and the rollback also failed" : `Release failed (exit ${result.code})`;
     await status("failure", detail);
-    return { outcome: outcome === "rolled-back" ? "rolled-back" : "failed", sha: sha2, previous, deploymentId, detail };
+    return { outcome: outcome === "rolled-back" ? "rolled-back" : "failed", sha: sha4, previous, deploymentId, detail };
   } catch (error62) {
     await status("error", error62 instanceof Error ? error62.message : "Deployment failed");
     throw error62;
@@ -41147,7 +41299,285 @@ function resolveTarget(config2, env = process.env) {
   return { host, user, port, privateKey, knownHosts };
 }
 
+// src/runtime/transport.ts
+function runtimeUrl(value) {
+  const url2 = new URL(value);
+  if (!(url2.protocol === "https:" || url2.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url2.hostname)) || url2.username || url2.password || url2.search || url2.hash) throw new Error("INVALID_RUNTIME_ENDPOINT");
+  return url2;
+}
+async function runtimeJson(response, maxBytes) {
+  const advertised = response.headers.get("content-length");
+  if (advertised !== null && (!/^[0-9]+$/.test(advertised) || Number(advertised) > maxBytes)) {
+    await response.body?.cancel();
+    throw new Error("RUNTIME_RESPONSE_LIMIT");
+  }
+  if (!response.body) throw new Error("MISSING_RUNTIME_RESPONSE");
+  const reader = response.body.getReader(), chunks = [];
+  let size = 0;
+  try {
+    for (; ; ) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > maxBytes) throw new Error("RUNTIME_RESPONSE_LIMIT");
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+}
+
+// src/runtime/client.ts
+var RuntimeHttpClient = class {
+  constructor(url2, token, repositoryId, fetcher = fetch) {
+    this.token = token;
+    this.repositoryId = repositoryId;
+    this.fetcher = fetcher;
+    this.base = runtimeUrl(url2);
+    if (this.base.protocol !== "https:" && !["127.0.0.1", "localhost", "[::1]"].includes(this.base.hostname) || this.base.username || this.base.password || this.base.search || this.base.hash || token.length < 32 || !Number.isSafeInteger(repositoryId) || repositoryId <= 0) throw new Error("Invalid Factory runtime connection");
+  }
+  token;
+  repositoryId;
+  fetcher;
+  base;
+  async request(path, body) {
+    const response = await this.fetcher(new URL(`/v1/repositories/${this.repositoryId}/${path}`, this.base), {
+      method: body === void 0 ? "GET" : "POST",
+      headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+      ...body === void 0 ? {} : { body: JSON.stringify(body) },
+      signal: AbortSignal.timeout(15e3),
+      redirect: "error"
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error("Factory runtime request rejected or unavailable");
+    }
+    return runtimeJson(response, 1e6);
+  }
+  async start(admission) {
+    return observationSchema.parse(await this.request("runs", admissionSchema.parse(admission)));
+  }
+  async observations(executionIds) {
+    return observationSchema.array().max(1e3).parse(await this.request("observations", { executionIds }));
+  }
+  async cancel(executionId2) {
+    await this.request(`runs/${executionId2}/cancel`, {});
+  }
+};
+
+// src/runtime/coding-contract.ts
+var codingExecutionSchema = external_exports.strictObject({
+  contractVersion: external_exports.literal("3.0"),
+  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  worker: external_exports.literal("codex"),
+  task: external_exports.strictObject({
+    id: external_exports.string().min(1).max(200),
+    version: external_exports.string().regex(/^[a-f0-9]{64}$/),
+    description: external_exports.string().min(1).max(2e4),
+    acceptanceCriteria: external_exports.string().min(1).array().min(1).max(20),
+    contextReferences: external_exports.string().max(1e3).array().max(30)
+  }),
+  baseSha: external_exports.string().regex(/^[a-f0-9]{40}$/),
+  allowedActions: external_exports.tuple([external_exports.literal("edit_workspace"), external_exports.literal("run_commands")]),
+  model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  effort: external_exports.enum(["low", "medium", "high", "xhigh"]),
+  limits: external_exports.strictObject({ timeoutMinutes: external_exports.number().int().min(1).max(30), maxFiles: external_exports.literal(100), maxPatchBytes: external_exports.literal(5e6) })
+});
+
+// src/runtime/validation.ts
+var import_promises3 = require("node:fs/promises");
+var import_node_path3 = require("node:path");
+var import_node_child_process4 = require("node:child_process");
+async function regularPath(root, path) {
+  const full = (0, import_node_path3.resolve)(root, path), part = (0, import_node_path3.relative)(root, full);
+  if (!part || part.startsWith("..") || (0, import_node_path3.isAbsolute)(part)) throw new Error("INVALID_VALIDATION_PATH");
+  for (let current = full; current !== root; current = (0, import_node_path3.dirname)(current)) {
+    try {
+      const stat2 = await (0, import_promises3.lstat)(current);
+      if (stat2.isSymbolicLink() || current !== full && !stat2.isDirectory()) throw new Error("NON_REGULAR_VALIDATION_PATH");
+    } catch (e) {
+      if (!(e && typeof e === "object" && "code" in e && e.code === "ENOENT")) throw e;
+    }
+  }
+  return full;
+}
+async function materializeCodingArtifact(target, source, request2) {
+  const artifact = codingArtifactSchema.parse(source), input2 = codingExecutionSchema.parse(request2);
+  validateChanges(artifact);
+  if (artifact.baseSha !== input2.baseSha || artifact.result.executionId !== input2.executionId || artifact.result.taskId !== input2.task.id || artifact.result.taskVersion !== input2.task.version) throw new Error("UNRELATED_CODING_ARTIFACT");
+  const root = await (0, import_promises3.realpath)((0, import_node_path3.resolve)(target));
+  const current = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const dirty = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim();
+  if (current !== input2.baseSha || dirty) throw new Error("VALIDATION_BASE_MISMATCH");
+  for (const change of artifact.changes) {
+    const full = await regularPath(root, change.path);
+    try {
+      if (!(await (0, import_promises3.lstat)(full)).isFile()) throw new Error("NON_REGULAR_VALIDATION_PATH");
+    } catch (e) {
+      if (!(e && typeof e === "object" && "code" in e && e.code === "ENOENT")) throw e;
+    }
+    if (change.content === null) await (0, import_promises3.unlink)(full);
+    else {
+      await (0, import_promises3.mkdir)((0, import_node_path3.dirname)(full), { recursive: true });
+      await (0, import_promises3.writeFile)(full, Buffer.from(change.content, "base64"));
+      await (0, import_promises3.chmod)(full, change.mode === "100755" ? 493 : 420);
+    }
+  }
+  return artifact;
+}
+async function fingerprint(root, paths) {
+  const entries = [];
+  for (const path of [...new Set(paths)].sort()) {
+    const full = await regularPath(root, path);
+    try {
+      const stat2 = await (0, import_promises3.lstat)(full);
+      if (!stat2.isFile()) throw new Error("NON_REGULAR_VALIDATION_PATH");
+      entries.push([path, hash2((await (0, import_promises3.readFile)(full)).toString("base64")), stat2.mode & 73]);
+    } catch (e) {
+      if (e && typeof e === "object" && "code" in e && e.code === "ENOENT") entries.push([path, null]);
+      else throw e;
+    }
+  }
+  return hash2(entries);
+}
+async function runCodingValidation(options) {
+  const { artifact, command } = options, plan = validationPlanSchema.parse(options.plan), root = await (0, import_promises3.realpath)((0, import_node_path3.resolve)(options.target));
+  const report = {
+    version: 1,
+    executionId: artifact.result.executionId,
+    taskId: artifact.result.taskId,
+    taskVersion: artifact.result.taskVersion,
+    baseSha: artifact.baseSha,
+    artifactHash: hash2(artifact),
+    planHash: hash2(plan),
+    workflowRunId: options.workflowRunId,
+    sourceRunId: options.sourceRunId ?? options.workflowRunId,
+    runAttempt: 1,
+    status: "invalid",
+    checks: [],
+    reason: "VALIDATION_SETUP_FAILED",
+    modelSecretPresent: false,
+    workspaceUnchanged: false
+  };
+  if (!["success", "blocked"].includes(artifact.result.status) || !artifact.changes.length) return { ...report, status: "unsupported", reason: "NO_PUBLISHABLE_CHANGES" };
+  const started = Date.now(), budget = plan.timeoutMinutes * 60;
+  const check2 = async (name, args, limit2 = 300) => {
+    const remaining = Math.floor(budget - (Date.now() - started) / 1e3);
+    const exitCode = remaining > 0 ? await command(name, args, Math.min(limit2, remaining), environment).catch(() => -1) : -1;
+    report.checks.push({ name, status: exitCode === 0 ? "passed" : "failed", exitCode });
+    return exitCode === 0;
+  };
+  const environment = { ...plan.environment, CI: "true", COMPOSE_PROJECT_NAME: `${plan.composeProjectPrefix}-${options.workflowRunId}` };
+  let paths = [], before = "", docker = false;
+  try {
+    if (plan.profile === "npm-docker" && !options.hosted) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
+    const packageFile = JSON.parse(await (0, import_promises3.readFile)((0, import_node_path3.join)(root, "package.json"), "utf8"));
+    await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "package-lock.json"));
+    if (!packageFile.scripts?.test || !packageFile.scripts?.build) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
+    const listed = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1e6 });
+    paths = [...listed.split("\0").filter(Boolean), ...artifact.changes.map((c) => c.path)];
+    before = await fingerprint(root, paths);
+    report.status = "failed";
+    report.reason = "CHECK_FAILED";
+    const installed = await check2("install", ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]);
+    if (installed) {
+      await check2("test", ["npm", "test"]);
+      const built = await check2("build", ["npm", "run", "build"]);
+      if (packageFile.scripts["test:e2e"]) {
+        if (built) {
+          try {
+            await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "node_modules/playwright/cli.js"));
+            await check2("browser-install", ["node", "node_modules/playwright/cli.js", "install", "chromium"], 180);
+          } catch {
+          }
+          await check2("browser", ["npm", "run", "test:e2e"]);
+        } else report.checks.push({ name: "browser", status: "skipped", exitCode: null });
+      } else report.checks.push({ name: "browser", status: "skipped", exitCode: null });
+      if (plan.profile === "npm-docker") {
+        const compose = ["docker", "compose", "--file", "compose.yaml", "--project-name", environment.COMPOSE_PROJECT_NAME];
+        if (await check2("compose-config", [...compose, "config", "--quiet"], 60)) {
+          docker = true;
+          if (await check2("docker-start", [...compose, "up", "--build", "-d", "--wait", "--wait-timeout", "180"], 600)) await check2("docker-smoke", ["node", "tests/docker-smoke.mjs"], 300);
+        }
+      }
+    }
+  } catch {
+    report.status = "unsupported";
+    report.reason = "UNSUPPORTED_PROJECT";
+  } finally {
+    if (docker) {
+      const exitCode = await command("docker-stop", ["docker", "compose", "--file", "compose.yaml", "--project-name", environment.COMPOSE_PROJECT_NAME, "down", "--volumes", "--remove-orphans"], 60, environment).catch(() => -1);
+      report.checks.push({ name: "docker-stop", status: exitCode === 0 ? "passed" : "failed", exitCode });
+    }
+    if (before) {
+      try {
+        report.workspaceUnchanged = await fingerprint(root, paths) === before;
+      } catch {
+        report.workspaceUnchanged = false;
+      }
+      report.checks.push({ name: "source-integrity", status: report.workspaceUnchanged ? "passed" : "failed", exitCode: report.workspaceUnchanged ? 0 : 1 });
+      if (!report.workspaceUnchanged) {
+        report.status = "failed";
+        report.reason = "SOURCE_CHANGED";
+      }
+    }
+  }
+  if (report.status === "failed" && report.workspaceUnchanged && report.checks.length && report.checks.every((c) => c.status !== "failed")) {
+    report.status = "passed";
+    report.reason = "CHECKS_COMPLETED";
+  }
+  return validationReportSchema.parse(report);
+}
+function hostedValidationCommand(target, logs) {
+  return async (name, args, seconds, values) => {
+    await (0, import_promises3.mkdir)(logs, { recursive: true });
+    const path = `${(0, import_node_path3.dirname)(process.execPath)}:/usr/local/bin:/usr/bin:/bin`;
+    return new Promise((resolveExit) => {
+      const child = (0, import_node_child_process4.spawn)(
+        "sudo",
+        [
+          "-n",
+          "-u",
+          "sf-validator",
+          "--",
+          "env",
+          "-i",
+          "HOME=/home/sf-validator",
+          `PATH=${path}`,
+          ...Object.entries(values).map(([key, value]) => `${key}=${value}`),
+          "timeout",
+          "--kill-after=5s",
+          `${seconds}s`,
+          ...args
+        ],
+        { cwd: target, env: { PATH: process.env.PATH, LANG: "C.UTF-8" }, stdio: ["ignore", "pipe", "pipe"] }
+      );
+      let text = "", size = 0;
+      const consume = (chunk) => {
+        if (size < 64e3) text += chunk.subarray(0, 64e3 - size).toString();
+        size += chunk.length;
+      };
+      child.stdout.on("data", consume);
+      child.stderr.on("data", consume);
+      child.once("error", () => resolveExit(-1));
+      child.once("exit", (code) => {
+        void (0, import_promises3.writeFile)((0, import_node_path3.join)(logs, `${name}.log`), text).finally(() => resolveExit(code ?? -1));
+      });
+    });
+  };
+}
+
 // src/cli.ts
+var import_promises5 = require("node:fs/promises");
+var import_node_path4 = require("node:path");
+var import_node_child_process5 = require("node:child_process");
 async function main(args = process.argv.slice(2)) {
   const { values, positionals } = (0, import_node_util.parseArgs)({ args, allowPositionals: true, options: {
     repository: { type: "string" },
@@ -41158,12 +41588,49 @@ async function main(args = process.argv.slice(2)) {
     issue: { type: "string" },
     execution: { type: "string" },
     sha: { type: "string" },
-    source: { type: "string" }
+    source: { type: "string" },
+    output: { type: "string" }
   } });
   const command = positionals[0] ?? "manager";
+  if (command === "validate-coding-execution") {
+    const request2 = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ""));
+    const text = JSON.stringify(request2);
+    if (Buffer.byteLength(text) > 6e4 || !process.env.GITHUB_OUTPUT) throw new Error("Invalid coding executor request");
+    const validation = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN || "{}"));
+    await (0, import_promises4.appendFile)(process.env.GITHUB_OUTPUT, `request=${text}
+execution-id=${request2.executionId}
+base-sha=${request2.baseSha}
+validation=${JSON.stringify(validation)}
+`);
+    return;
+  }
+  if (command === "validate-coding-artifact") {
+    if (process.platform !== "linux" || process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted" || process.env.GITHUB_RUN_ATTEMPT !== "1") throw new Error("Validation requires a fresh hosted job");
+    if (!/^[1-9][0-9]{0,15}$/.test(process.env.GITHUB_RUN_ID ?? "") || !/^[1-9][0-9]{0,15}$/.test(process.env.SF_SOURCE_RUN_ID ?? "")) throw new Error("Invalid validation run identity");
+    for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AI_API_KEY", "GITHUB_APP_PRIVATE_KEY", "FACTORY_MANAGER_TOKEN"]) if (process.env[key]) throw new Error("Validation secret boundary violation");
+    if (!values.file || !values.source || !values.output || (await (0, import_promises5.stat)(values.file)).size > 7e6) throw new Error("Invalid validation files");
+    const request2 = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ""));
+    const plan = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN ?? "{}"));
+    const artifact = await materializeCodingArtifact(values.source, JSON.parse(await (0, import_promises4.readFile)(values.file, "utf8")), request2);
+    (0, import_node_child_process5.execFileSync)("sudo", ["-n", "chown", "-R", "sf-validator:sf-validator", (0, import_node_path4.resolve)(values.source)]);
+    const output2 = (0, import_node_path4.resolve)(values.output);
+    await (0, import_promises5.mkdir)((0, import_node_path4.dirname)(output2), { recursive: true });
+    const report = await runCodingValidation({
+      target: (0, import_node_path4.resolve)(values.source),
+      artifact,
+      plan,
+      workflowRunId: Number(process.env.GITHUB_RUN_ID),
+      sourceRunId: Number(process.env.SF_SOURCE_RUN_ID),
+      hosted: true,
+      command: hostedValidationCommand((0, import_node_path4.resolve)(values.source), (0, import_node_path4.resolve)((0, import_node_path4.dirname)(output2), "logs"))
+    });
+    await (0, import_promises4.writeFile)(output2, JSON.stringify(report, null, 2));
+    console.log(JSON.stringify({ validation: report.status, executionId: report.executionId, originalModelStatus: artifact.result.status }));
+    return;
+  }
   if (command === "validate") {
     if (!values.file) throw new Error("validate requires --file");
-    loadConfig(await (0, import_promises3.readFile)(values.file, "utf8"));
+    loadConfig(await (0, import_promises4.readFile)(values.file, "utf8"));
     console.log("Configuration valid");
     return;
   }
@@ -41173,7 +41640,7 @@ async function main(args = process.argv.slice(2)) {
   let config2 = loadConfig(await github.readConfig(values["config-path"]));
   if (values["dry-run"]) config2 = configSchema.parse({ ...config2, execution: { ...config2.execution, dryRun: true } });
   if (!config2.factory.enabled) {
-    if (values["dry-run"] && process.env.SF_SANITY_REPORT) await (0, import_promises3.writeFile)(
+    if (values["dry-run"] && process.env.SF_SANITY_REPORT) await (0, import_promises4.writeFile)(
       process.env.SF_SANITY_REPORT,
       JSON.stringify({
         formatVersion: 1,
@@ -41186,7 +41653,7 @@ async function main(args = process.argv.slice(2)) {
       })
     );
     console.log(JSON.stringify({ outcome: "disabled" }));
-    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, "# Software Factory\n\nGlobally disabled. No repository changes.\n");
+    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises4.appendFile)(process.env.GITHUB_STEP_SUMMARY, "# Software Factory\n\nGlobally disabled. No repository changes.\n");
     return;
   }
   if (process.env.GITHUB_ACTIONS !== "true" && !values["allow-local-writes"] && !config2.execution.dryRun && config2.autonomy.profile !== "advisory") {
@@ -41205,7 +41672,7 @@ async function main(args = process.argv.slice(2)) {
       const mutationFree = config2.execution.dryRun || config2.autonomy.profile === "advisory";
       const target = decision.deploy ? resolveTarget(config2) : null;
       const writeSummary = async (text) => {
-        if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, text);
+        if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises4.appendFile)(process.env.GITHUB_STEP_SUMMARY, text);
       };
       if (command === "deploy-plan") {
         let reason = decision.deploy ? mutationFree ? "mutation-free" : null : decision.reason;
@@ -41214,7 +41681,7 @@ async function main(args = process.argv.slice(2)) {
           console.log(`::warning title=Software Factory deploy::Deployment skipped: missing ${target.missing.join(", ")} (Actions secrets or deploy.* configuration).`);
         }
         const ready = decision.deploy && !reason;
-        if (process.env.GITHUB_OUTPUT) await (0, import_promises3.appendFile)(process.env.GITHUB_OUTPUT, `deploy=${ready}
+        if (process.env.GITHUB_OUTPUT) await (0, import_promises4.appendFile)(process.env.GITHUB_OUTPUT, `deploy=${ready}
 sha=${decision.deploy ? decision.sha : ""}
 `);
         if (!ready) await writeSummary(deploySummary(null, decision.deploy ? { deploy: false, reason, sha: decision.sha } : decision, config2.deploy.environment));
@@ -41292,7 +41759,7 @@ sha=${decision.deploy ? decision.sha : ""}
       if (!/^[1-9]\d*$/.test(issue2) || !/^[a-f0-9]{32}$/.test(id)) throw new Error("Invalid worker issue or execution ID");
       if (command === "prepare-coding") {
         const prepared = await prepareCoding(github, config2, new CodingRepository(repository, process.env.GITHUB_TOKEN ?? ""), Number(issue2), id, correlationId);
-        if (process.env.GITHUB_OUTPUT) await (0, import_promises3.appendFile)(process.env.GITHUB_OUTPUT, prepared ? `ready=true
+        if (process.env.GITHUB_OUTPUT) await (0, import_promises4.appendFile)(process.env.GITHUB_OUTPUT, prepared ? `ready=true
 request=${JSON.stringify(prepared.request)}
 base-sha=${prepared.base.sha}
 base-branch=${prepared.base.branch}
@@ -41303,7 +41770,7 @@ base-branch=${prepared.base.branch}
       if (command === "publish-coding") {
         let artifact = null;
         if (process.env.SF_ARTIFACT) {
-          const source = await (0, import_promises3.readFile)(process.env.SF_ARTIFACT, "utf8").catch(() => "null");
+          const source = await (0, import_promises4.readFile)(process.env.SF_ARTIFACT, "utf8").catch(() => "null");
           if (Buffer.byteLength(source) <= 7e6) {
             try {
               artifact = JSON.parse(source);
@@ -41339,9 +41806,14 @@ base-branch=${prepared.base.branch}
     const planner = config2.llm.provider === "mock" ? new MockPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? "");
     const report = await new Manager(github, config2, planner, {
       correlationId,
+      workerRuntime: config2.execution.engine === "temporal" ? new RuntimeHttpClient(
+        process.env.FACTORY_RUNTIME_URL ?? "",
+        process.env.FACTORY_RUNTIME_TOKEN ?? "",
+        Number(process.env.GITHUB_REPOSITORY_ID)
+      ) : void 0,
       notifications: new SlackSink(process.env.SLACK_BOT_TOKEN ?? "")
     }).run();
-    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));
+    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises4.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));
     console.log(JSON.stringify({
       correlationId,
       outcome: report.outcome,
@@ -41350,7 +41822,7 @@ base-branch=${prepared.base.branch}
       errors: report.errors,
       nextSteps: report.nextSteps
     }));
-    if (config2.execution.dryRun && process.env.SF_SANITY_REPORT) await (0, import_promises3.writeFile)(process.env.SF_SANITY_REPORT, JSON.stringify({
+    if (config2.execution.dryRun && process.env.SF_SANITY_REPORT) await (0, import_promises4.writeFile)(process.env.SF_SANITY_REPORT, JSON.stringify({
       formatVersion: 1,
       mutationFree: true,
       passed: report.errors.length === 0,
@@ -41373,7 +41845,7 @@ async function handleError(error62) {
   const httpStatus2 = error62 instanceof Error && "status" in error62 && typeof error62.status === "number" ? error62.status : null;
   const category = error62 instanceof Error ? error62.name.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UnknownError";
   console.error(JSON.stringify({ error: safe2, category, httpStatus: httpStatus2 }));
-  if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises3.appendFile)(process.env.GITHUB_STEP_SUMMARY, `# Software Factory failed
+  if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises4.appendFile)(process.env.GITHUB_STEP_SUMMARY, `# Software Factory failed
 
 ${safe2.replace(/[<>`]/g, "")}
 

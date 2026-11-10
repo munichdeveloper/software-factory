@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "factoryVersion": "0.7.0",
+  "experimental": true,
+  "snapshotSchemaVersion": 1,
+  "harness": {
+    "repository": "munichdeveloper/dev-agent-harness",
+    "ref": "f70d11556075e9764d69ac03e029720d12ccef65",
+    "codingContractVersion": "3.0"
+  },
+  "dockerfile": "operations/temporal-runtime/Dockerfile",
+  "entrypoint": "dist/runtime/main.js",
+  "installation": "Explicit broker registry and immutable worker package; opt-in only",
+  "legacyInstallationContract": "installation-contract.json",
+  "limitations": [
+    "Managed retirement, scale-down and poller-capacity integration remain incomplete",
+    "Manager issue/label outbox and operator recovery for uncertain writes remain incomplete",
+    "Full authenticated Manager UI integration and joint broker/Temporal restore remain unaccepted",
+    "No production migration, automatic merge or deployment is included"
+  ]
+}

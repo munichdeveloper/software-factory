@@ -1,0 +1,199 @@
+{
+  "passed": true,
+  "checkedAt": "2026-11-10T10:56:08.415Z",
+  "version": "independent-validation-acceptance",
+  "factorySha": "6e783573cc4f70562ad4167a068b83f69b71f1a5",
+  "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+  "baseRef": "test/temporal-validation-stage",
+  "baseSha": "8594c43542662303098c50adae53d3e842ba5f72",
+  "mainBefore": "f2fe7c392ac2c29d9911e5f2837dfb315046ad82",
+  "mainUnchanged": true,
+  "issueNumber": 15,
+  "workflowId": "sf-1448541967-89c2be073cf2de847d7b00de2e6e6042",
+  "runId": "01a1c512-8abf-7e21-8f6f-d538efa206d1",
+  "executionId": "89c2be073cf2de847d7b00de2e6e6042",
+  "binding": "99494b5677443dd608bc69ee33e193ec3e1227a63351cf02a588cddda8f352c8",
+  "release": {
+    "factorySha": "6e783573cc4f70562ad4167a068b83f69b71f1a5",
+    "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+    "workflowHash": "6a999ba497370e8057dcc7a0a4510edeff3ba098efdb28c675814fd89bee1f20",
+    "deploymentName": "sf-validation-stage",
+    "buildId": "6e783573cc4f70562ad4167a068b83f69b71f1a5",
+    "taskQueue": "sf-validation-stage",
+    "schemaVersion": 1
+  },
+  "pinned": true,
+  "automaticPublication": true,
+  "validation": {
+    "version": 1,
+    "executionId": "89c2be073cf2de847d7b00de2e6e6042",
+    "taskId": "github:munichdeveloper/Backofficer#15",
+    "taskVersion": "fca896a5e6cd9ccbe8ced55a6719635008c4811cab1e62f44adf1eb926584539",
+    "baseSha": "8594c43542662303098c50adae53d3e842ba5f72",
+    "artifactHash": "e185559e6b3e1db294a29a715440f1e8841f858f16aefabecc06d8b707bafdcb",
+    "planHash": "bca635c9759143ab9cb7b57abba8fc979ff1b266c9f481ffcfc9fc1f6e402d33",
+    "workflowRunId": 42802269137,
+    "sourceRunId": 42802269137,
+    "runAttempt": 1,
+    "status": "passed",
+    "checks": [
+      {
+        "name": "install",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "test",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "build",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "browser-install",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "browser",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "compose-config",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "docker-start",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "docker-smoke",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "docker-stop",
+        "status": "passed",
+        "exitCode": 0
+      },
+      {
+        "name": "source-integrity",
+        "status": "passed",
+        "exitCode": 0
+      }
+    ],
+    "reason": "CHECKS_COMPLETED",
+    "modelSecretPresent": false,
+    "workspaceUnchanged": true
+  },
+  "humanGate": false,
+  "readyLabelApproval": {
+    "eventId": 35671324352,
+    "actor": "munichdeveloper",
+    "createdAt": "2026-11-10T10:47:14Z"
+  },
+  "manualApprovalCalls": 0,
+  "workerCrashAfterDispatch": true,
+  "sameRunId": true,
+  "workerRoleRejected": true,
+  "issueScoped": true,
+  "allowedPaths": [
+    "docs/independent-validation-canary.md",
+    "tests/regression.test.ts"
+  ],
+  "actions": {
+    "id": 42802269137,
+    "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42802269137",
+    "head": "8594c43542662303098c50adae53d3e842ba5f72"
+  },
+  "pullRequest": {
+    "number": 16,
+    "url": "https://github.com/munichdeveloper/Backofficer/pull/16",
+    "head": "7e1ad718e055542a406bb5d956eda3dc72fca581",
+    "base": "test/temporal-validation-stage",
+    "draft": true
+  },
+  "effects": [
+    {
+      "effect": "blob:31b591b86a01410d453b5496b324703c44152ee2",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "31b591b86a01410d453b5496b324703c44152ee2"
+      }
+    },
+    {
+      "effect": "blob:8b0ec8d30ac4aa6b9c80bbed5a534f949727f2f8",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "8b0ec8d30ac4aa6b9c80bbed5a534f949727f2f8"
+      }
+    },
+    {
+      "effect": "branch",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "7e1ad718e055542a406bb5d956eda3dc72fca581"
+      }
+    },
+    {
+      "effect": "coding-dispatch",
+      "phase": "confirmed",
+      "receipt": {
+        "accepted": true
+      }
+    },
+    {
+      "effect": "commit",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "7e1ad718e055542a406bb5d956eda3dc72fca581"
+      }
+    },
+    {
+      "effect": "draft-pr",
+      "phase": "confirmed",
+      "receipt": {
+        "url": "https://github.com/munichdeveloper/Backofficer/pull/16",
+        "head": "7e1ad718e055542a406bb5d956eda3dc72fca581",
+        "number": 16
+      }
+    },
+    {
+      "effect": "executor-ref",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "8594c43542662303098c50adae53d3e842ba5f72"
+      }
+    },
+    {
+      "effect": "publication-comment",
+      "phase": "confirmed",
+      "receipt": {
+        "id": 6765520389
+      }
+    },
+    {
+      "effect": "result-journal",
+      "phase": "confirmed",
+      "receipt": null
+    },
+    {
+      "effect": "tree",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "0e22bc727ea7b32c5ecc3b67d0f64aaeefaddf6c"
+      }
+    }
+  ],
+  "artifactHash": "e185559e6b3e1db294a29a715440f1e8841f858f16aefabecc06d8b707bafdcb",
+  "originalModelStatus": "blocked",
+  "image": "sha256:177625709a8e5b1e98f2078005d4d6f4468f20a8de2cf59b268353fee54e9849",
+  "freshCluster": true,
+  "noPublishedPorts": true
+}

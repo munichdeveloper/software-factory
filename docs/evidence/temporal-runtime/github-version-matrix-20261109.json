@@ -1,0 +1,299 @@
+{
+  "passed": true,
+  "scope": "actual-two-factory-build-version-matrix",
+  "factorySha": "9b67ec1fd6e93cd1065bc7f2d4987e3531b9b7bf",
+  "previousFactorySha": "13258f2b2259f937a2dc55a842b0ac444fd64298",
+  "releases": [
+    {
+      "factorySha": "13258f2b2259f937a2dc55a842b0ac444fd64298",
+      "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+      "workflowHash": "441964ae2e1669cb481302b0aa2f363d24899f67c84dc5ceb6fb0b186657a5cf",
+      "deploymentName": "sf-version-matrix",
+      "buildId": "13258f2b2259f937a2dc55a842b0ac444fd64298",
+      "taskQueue": "sf-version-matrix",
+      "schemaVersion": 1
+    },
+    {
+      "factorySha": "9b67ec1fd6e93cd1065bc7f2d4987e3531b9b7bf",
+      "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+      "workflowHash": "05315687d15f025c699c8492985426b37ea9edbcc998a6975ad36860c032e812",
+      "deploymentName": "sf-version-matrix",
+      "buildId": "9b67ec1fd6e93cd1065bc7f2d4987e3531b9b7bf",
+      "taskQueue": "sf-version-matrix",
+      "schemaVersion": 1
+    }
+  ],
+  "realRepositoryIds": [
+    1450715381,
+    1450715704
+  ],
+  "sharedTaskQueue": true,
+  "actualFactoryManagers": [
+    "13258f2b2259f937a2dc55a842b0ac444fd64298",
+    "9b67ec1fd6e93cd1065bc7f2d4987e3531b9b7bf"
+  ],
+  "pinned": true,
+  "retentionGuard": true,
+  "wrongWorkerBlocked": true,
+  "approvalWhileStopped": true,
+  "sameRunIdAfterRestart": true,
+  "unknownVersionBlocked": true,
+  "upgradeRollback": true,
+  "evidence": {
+    "retainedV1": {
+      "issueNumber": 21,
+      "executionId": "a937f78301edfaa11b3fc2234d683c7c",
+      "workflowId": "sf-1450715381-a937f78301edfaa11b3fc2234d683c7c",
+      "runId": "01a1c25b-a402-79a7-aff1-2331795b203d",
+      "status": "completed",
+      "phase": "completed",
+      "binding": "a7884a09aaf72f6e91889b780a623637ec304f23ea2f4003bc27737a355d03fb",
+      "createdAt": "2026-11-09T22:09:05.272Z",
+      "result": {
+        "contractVersion": "1.0",
+        "executionId": "a937f78301edfaa11b3fc2234d683c7c",
+        "issueNumber": 21,
+        "status": "success",
+        "summary": "Validated task and calculated SHA-256: 7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236",
+        "artifacts": [
+          "urn:sha256:7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236"
+        ],
+        "error": null,
+        "proposedActions": []
+      },
+      "factorySha": "13258f2b2259f937a2dc55a842b0ac444fd64298"
+    },
+    "v2Gate": {
+      "issueNumber": 14,
+      "executionId": "47d7fd26ee02ac536c2f1b87865c164c",
+      "workflowId": "sf-1450715704-47d7fd26ee02ac536c2f1b87865c164c",
+      "runId": "01a1c25b-e1fc-78c0-b282-7ce00161e631",
+      "status": "running",
+      "phase": "awaiting-approval",
+      "binding": "16dfd7677932663f0f580421c182f89d84fadc5240090fed2e1708f755047ae1",
+      "createdAt": "2026-11-09T22:09:21.274Z",
+      "result": null
+    },
+    "upgrade": {
+      "issueNumber": 22,
+      "executionId": "f53997a0aef735bd1001aacc2c25477f",
+      "workflowId": "sf-1450715381-f53997a0aef735bd1001aacc2c25477f",
+      "runId": "01a1c25c-959b-7a0b-83bb-8397c7d7f426",
+      "status": "completed",
+      "phase": "completed",
+      "binding": "3ff81fb0fbaeaf8cd6976ea93d30e838fddd42f8e05873c0b66d8ebbbea7ef3f",
+      "createdAt": "2026-11-09T22:10:07.263Z",
+      "result": {
+        "contractVersion": "1.0",
+        "executionId": "f53997a0aef735bd1001aacc2c25477f",
+        "issueNumber": 22,
+        "status": "success",
+        "summary": "Validated task and calculated SHA-256: 7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236",
+        "artifacts": [
+          "urn:sha256:7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236"
+        ],
+        "error": null,
+        "proposedActions": []
+      }
+    },
+    "rollback": {
+      "issueNumber": 23,
+      "executionId": "a733af9d4d917bd8c92b6be2ef32fcfe",
+      "workflowId": "sf-1450715381-a733af9d4d917bd8c92b6be2ef32fcfe",
+      "runId": "01a1c25d-3acd-709d-b879-924350017b8c",
+      "status": "completed",
+      "phase": "completed",
+      "binding": "9c471f5035c93ee2fbea7222c9fadd961ac17d421bb463c42c800fae969ed872",
+      "createdAt": "2026-11-09T22:10:49.690Z",
+      "result": {
+        "contractVersion": "1.0",
+        "executionId": "a733af9d4d917bd8c92b6be2ef32fcfe",
+        "issueNumber": 23,
+        "status": "success",
+        "summary": "Validated task and calculated SHA-256: 7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236",
+        "artifacts": [
+          "urn:sha256:7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236"
+        ],
+        "error": null,
+        "proposedActions": []
+      }
+    },
+    "v2AfterRollback": {
+      "issueNumber": 14,
+      "executionId": "47d7fd26ee02ac536c2f1b87865c164c",
+      "workflowId": "sf-1450715704-47d7fd26ee02ac536c2f1b87865c164c",
+      "runId": "01a1c25b-e1fc-78c0-b282-7ce00161e631",
+      "status": "completed",
+      "phase": "completed",
+      "binding": "16dfd7677932663f0f580421c182f89d84fadc5240090fed2e1708f755047ae1",
+      "createdAt": "2026-11-09T22:09:21.274Z",
+      "result": {
+        "contractVersion": "1.0",
+        "executionId": "47d7fd26ee02ac536c2f1b87865c164c",
+        "issueNumber": 14,
+        "status": "success",
+        "summary": "Validated task and calculated SHA-256: 7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236",
+        "artifacts": [
+          "urn:sha256:7c01f12c4137e424ff95b87f3baa7536acb97e134211880cbb85efddda9ae236"
+        ],
+        "error": null,
+        "proposedActions": []
+      }
+    }
+  },
+  "managerCycles": [
+    {
+      "phase": "v1-human-gate",
+      "repositoryId": 1450715381,
+      "old": true,
+      "outcome": "success",
+      "tasks": 1,
+      "errors": [],
+      "decisions": [
+        {
+          "issue": 21,
+          "kind": "start_worker",
+          "outcome": "allow",
+          "reason": "Permitted by configured autonomy policy",
+          "executed": true
+        }
+      ]
+    },
+    {
+      "phase": "parallel-v2-and-rollout",
+      "repositoryId": 1450715704,
+      "old": false,
+      "outcome": "success",
+      "tasks": 1,
+      "errors": [],
+      "decisions": [
+        {
+          "issue": 14,
+          "kind": "start_worker",
+          "outcome": "allow",
+          "reason": "Permitted by configured autonomy policy",
+          "executed": true
+        }
+      ]
+    },
+    {
+      "phase": "upgrade-new-run",
+      "repositoryId": 1450715381,
+      "old": false,
+      "outcome": "success",
+      "tasks": 1,
+      "errors": [],
+      "decisions": [
+        {
+          "issue": 21,
+          "kind": "transition",
+          "outcome": "allow",
+          "reason": "Permitted by configured autonomy policy",
+          "executed": true
+        }
+      ]
+    },
+    {
+      "phase": "upgrade-new-run",
+      "repositoryId": 1450715381,
+      "old": false,
+      "outcome": "success",
+      "tasks": 2,
+      "errors": [],
+      "decisions": [
+        {
+          "issue": 22,
+          "kind": "start_worker",
+          "outcome": "allow",
+          "reason": "Permitted by configured autonomy policy",
+          "executed": true
+        }
+      ]
+    },
+    {
+      "phase": "rollback-new-run",
+      "repositoryId": 1450715381,
+      "old": true,
+      "outcome": "success",
+      "tasks": 2,
+      "errors": [],
+      "decisions": [
+        {
+          "issue": 22,
+          "kind": "transition",
+          "outcome": "allow",
+          "reason": "Permitted by configured autonomy policy",
+          "executed": true
+        }
+      ]
+    },
+    {
+      "phase": "rollback-new-run",
+      "repositoryId": 1450715381,
+      "old": true,
+      "outcome": "success",
+      "tasks": 3,
+      "errors": [],
+      "decisions": [
+        {
+          "issue": 23,
+          "kind": "start_worker",
+          "outcome": "allow",
+          "reason": "Permitted by configured autonomy policy",
+          "executed": true
+        }
+      ]
+    },
+    {
+      "phase": "unknown-version",
+      "repositoryId": 1450715381,
+      "old": false,
+      "outcome": "success",
+      "tasks": 3,
+      "errors": [],
+      "decisions": [
+        {
+          "issue": 23,
+          "kind": "transition",
+          "outcome": "allow",
+          "reason": "Permitted by configured autonomy policy",
+          "executed": true
+        }
+      ]
+    },
+    {
+      "phase": "unknown-version",
+      "repositoryId": 1450715381,
+      "old": false,
+      "outcome": "partial",
+      "tasks": 4,
+      "errors": [
+        "Action start_worker on #24 failed (HTTP unknown); durable intents preserved for recovery"
+      ],
+      "decisions": [
+        {
+          "issue": 24,
+          "kind": "start_worker",
+          "outcome": "allow",
+          "reason": "Permitted by configured autonomy policy",
+          "executed": false
+        }
+      ]
+    }
+  ],
+  "workerEnvironmentKeys": [
+    "PATH",
+    "TEMPORAL_ADDRESS",
+    "TEMPORAL_NAMESPACE",
+    "FACTORY_BROKER_URL",
+    "FACTORY_WORKER_TOKEN"
+  ],
+  "checkedAt": "2026-11-09T22:11:59.612Z",
+  "testImage": "sha256:f7c81ffea8e8f09e468b680544868416df137052b678c8da381a0a88a014a560",
+  "freshCluster": true,
+  "noPublishedPorts": true,
+  "githubEgress": true,
+  "previousTestImage": "sha256:008a5c87cc693f46099ce1d72a1328a37202abf2c71416be58c3278deaf9812e",
+  "sourceTree": "c4bb1639ab995b956c4a6c4e31c1075e9a2d7c9a",
+  "runnerSourceSha256": "87a9a645f14655ecf1d27917c77e20a4e5c3ba4017021c96b9f995bdc7fd546d"
+}
