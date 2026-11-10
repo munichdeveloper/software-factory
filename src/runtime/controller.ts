@@ -11,19 +11,22 @@ import { admissionSchema, snapshotSchema, workflowId, type Admission, type RunSn
 import type { CodingExecutionPort } from './coding-executor.js';
 import type { CodingArtifact } from '../workers/coding.js';
 import type { ReadyApproval } from './contract.js';
+import { bindValidation, type ValidationPlan, type ValidationReport } from './validation-contract.js';
 
 export interface RuntimeRepository {
   repositoryId: number; repository: string; release: RuntimeRelease; retainedReleases?: RuntimeRelease[]; requireHumanGate: boolean;
   baseRef?: string; executorWorkflow?: string; issueNumbers?: number[]; allowedPaths?: string[];
   readyApproval?(issueNumber: number, expected?: ReadyApproval): Promise<ReadyApproval>;
+  validationPlan?(): Promise<ValidationPlan>;
   github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
-  coding?: { executor: CodingExecutionPort; publish(snapshot: RunSnapshot, binding: string, artifact: CodingArtifact, createdAt: string): Promise<{ url: string }> };
+  coding?: { executor: CodingExecutionPort; publish(snapshot: RunSnapshot, binding: string, artifact: CodingArtifact, createdAt: string, validation?: ValidationReport): Promise<{ url: string }> };
 }
 export class RuntimeController implements WorkerRuntimePort {
   constructor(private repo: RuntimeRepository, private store: RuntimeStore, private temporal: Client) {}
   private scope(number: number) { if (this.repo.issueNumbers && !this.repo.issueNumbers.includes(number)) throw new Error('ISSUE_OUTSIDE_RUNTIME_SCOPE'); }
   private async current(snapshot: RunSnapshot) {
     const config = await this.repo.config();
+    if (snapshot.validationPlan && !this.repo.validationPlan) throw new Error('VALIDATION_MODE_CHANGED');
     if (Boolean(this.repo.readyApproval) !== Boolean(snapshot.readyApproval)) throw new Error('APPROVAL_MODE_CHANGED');
     if (snapshot.readyApproval) {
       if (snapshot.requireHumanGate || !this.repo.readyApproval || hash(await this.repo.readyApproval(snapshot.admission.input.issueNumber, snapshot.readyApproval)) !== hash(snapshot.readyApproval)) throw new Error('READY_APPROVAL_CHANGED');
@@ -54,6 +57,7 @@ export class RuntimeController implements WorkerRuntimePort {
           ...(this.repo.baseRef ? { baseRef: this.repo.baseRef } : {}), ...(this.repo.executorWorkflow ? { executorWorkflow: this.repo.executorWorkflow } : {}),
           ...(this.repo.allowedPaths ? { allowedPaths: this.repo.allowedPaths } : {}),
           ...(this.repo.readyApproval ? { readyApproval: await this.repo.readyApproval(admission.input.issueNumber) } : {}),
+          ...(admission.input.worker === 'codex' && this.repo.validationPlan ? { validationPlan: await this.repo.validationPlan() } : {}),
           configHash: hash(config), requireHumanGate: this.repo.requireHumanGate });
         await this.current(snapshot);
         const info = (await this.temporal.workflowService.describeWorkerDeploymentVersion({ namespace: this.temporal.options.namespace,
@@ -134,26 +138,35 @@ export class RuntimeController implements WorkerRuntimePort {
     if (row.snapshot.admission.input.worker === 'codex' && this.repo.coding) await this.repo.coding.executor.cancel(row.snapshot, row.binding);
     if (row.runId) await this.temporal.workflow.getHandle(row.workflowId, row.runId).signal('cancelRequested');
   }
-  private codingResult(snapshot: RunSnapshot, artifact: CodingArtifact): WorkerResult {
+  private codingResult(snapshot: RunSnapshot, artifact: CodingArtifact, validation?: ValidationReport | null): WorkerResult {
     if (snapshot.allowedPaths && artifact.changes.some(c => !snapshot.allowedPaths!.includes(c.path))) throw new Error('ARTIFACT_OUTSIDE_RUNTIME_SCOPE');
     const input = snapshot.admission.input;
     if (artifact.baseSha !== snapshot.baseSha || artifact.result.executionId !== input.executionId || artifact.result.taskVersion !== snapshot.specHash ||
       artifact.result.taskId !== `github:${snapshot.repository}#${input.issueNumber}`) throw new Error('UNRELATED_EXECUTOR_ARTIFACT');
+    if (snapshot.validationPlan) {
+      if (!validation) throw new Error('VALIDATION_REPORT_REQUIRED');
+      bindValidation(validation, artifact, snapshot.validationPlan);
+    }
+    const validationBlocked = validation && validation.status !== 'passed';
+    const summary = validation ? `${artifact.result.summary.slice(0, 1650)}\nOriginal model status: ${artifact.result.status}. Independent automated validation: ${validation.status}. Manual acceptance is not implied.` : artifact.result.summary;
     return workerResultSchema.parse({ contractVersion: '1.0', executionId: input.executionId, issueNumber: input.issueNumber,
-      status: artifact.result.status === 'timed_out' ? 'failed' : artifact.result.status === 'success' && !artifact.changes.length ? 'blocked' : artifact.result.status,
-      summary: artifact.result.summary, error: artifact.result.error, artifacts: [`urn:sf-artifact:${hash(artifact)}`], proposedActions: [] });
+      status: artifact.result.status === 'timed_out' ? 'failed' : artifact.result.status === 'success' && (!artifact.changes.length || validationBlocked) ? 'blocked' : artifact.result.status,
+      summary, error: artifact.result.error, artifacts: [`urn:sf-artifact:${hash(artifact)}`, ...(validation ? [`urn:sf-validation:${hash(validation)}`] : [])], proposedActions: [] });
   }
   async executeCoding(snapshot: RunSnapshot, binding: string): Promise<WorkerResult | null> {
     await this.authorize(snapshot, binding);
     if (snapshot.admission.input.worker !== 'codex' || !this.repo.coding) throw new Error('CODING_EXECUTOR_UNAVAILABLE');
     const id = snapshot.admission.input.executionId, previous = await this.store.artifact(this.repo.repositoryId, id);
-    if (previous) return this.codingResult(snapshot, previous);
+    const validation = snapshot.validationPlan ? await this.store.validation(this.repo.repositoryId, id) : null;
+    if (previous && (!snapshot.validationPlan || validation)) return this.codingResult(snapshot, previous, validation);
     const outcome = await this.repo.coding.executor.poll(snapshot, binding, await this.current(snapshot));
     if (!outcome) return null;
     if ('failed' in outcome) return workerResultSchema.parse({ contractVersion: '1.0', executionId: id, issueNumber: snapshot.admission.input.issueNumber,
       status: 'failed', summary: 'Isolated coding executor failed', error: 'Inspect the scoped executor run', artifacts: [], proposedActions: [] });
-    const result = this.codingResult(snapshot, outcome.artifact);
-    await this.store.saveArtifact(this.repo.repositoryId, id, outcome.artifact); return result;
+    const result = this.codingResult(snapshot, outcome.artifact, outcome.validation);
+    await this.store.saveArtifact(this.repo.repositoryId, id, outcome.artifact);
+    if (outcome.validation) await this.store.saveValidation(this.repo.repositoryId, id, outcome.validation);
+    return result;
   }
   async publish(snapshot: RunSnapshot, binding: string, value: WorkerResult): Promise<WorkerResult> {
     let result = workerResultSchema.parse(value); const id = snapshot.admission.input.executionId;
@@ -163,13 +176,14 @@ export class RuntimeController implements WorkerRuntimePort {
       const row = await this.store.get(this.repo.repositoryId, id);
       if (!row || row.binding !== binding || hash(snapshot) !== binding) throw new Error('UNKNOWN_RUN');
       const artifact = snapshot.admission.input.worker === 'codex' ? await this.store.artifact(this.repo.repositoryId, id) : null;
-      if (artifact && hash(this.codingResult(snapshot, artifact)) !== hash(result)) throw new Error('RESULT_CONFLICT');
+      const validation = snapshot.validationPlan ? await this.store.validation(this.repo.repositoryId, id) : null;
+      if (artifact && hash(this.codingResult(snapshot, artifact, validation)) !== hash(result)) throw new Error('RESULT_CONFLICT');
       if (row.result) { if (!artifact && hash(row.result) !== hash(result)) throw new Error('RESULT_CONFLICT'); return row.result; }
       await this.authorize(snapshot, binding);
-      if (snapshot.admission.input.worker === 'codex' && result.status === 'success') {
+      if (snapshot.admission.input.worker === 'codex' && (result.status === 'success' || snapshot.validationPlan && artifact?.changes.length && ['success', 'blocked'].includes(artifact.result.status))) {
         if (!artifact || !this.repo.coding) throw new Error('MISSING_CODING_ARTIFACT');
-        const pr = await this.repo.coding.publish(snapshot, binding, artifact, row.createdAt);
-        result = { ...result, artifacts: [pr.url] };
+        const pr = await this.repo.coding.publish(snapshot, binding, artifact, row.createdAt, validation ?? undefined);
+        result = { ...result, artifacts: [pr.url, ...(validation ? [`urn:sf-validation:${hash(validation)}`] : [])] };
       }
       const config = await this.repo.config(), digest = hash(result);
       const events = (await this.repo.github.comments(result.issueNumber)).map(c => decodeEvent(c, config.manager.trustedActors));

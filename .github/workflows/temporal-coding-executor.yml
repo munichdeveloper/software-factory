@@ -11,6 +11,10 @@ on:
       request:
         type: string
         required: true
+      validation:
+        type: string
+        required: false
+        default: ''
     secrets:
       OPENAI_API_KEY:
         required: true
@@ -25,6 +29,7 @@ jobs:
       request: ${{ steps.request.outputs.request }}
       execution-id: ${{ steps.request.outputs.execution-id }}
       base-sha: ${{ steps.request.outputs.base-sha }}
+      validation: ${{ steps.request.outputs.validation }}
     steps:
       - name: Validate immutable runtime references
         shell: bash
@@ -45,6 +50,7 @@ jobs:
       - id: request
         env:
           SF_CODING_REQUEST: ${{ inputs.request }}
+          SF_VALIDATION_PLAN: ${{ inputs.validation }}
         run: node bundle/factory.cjs validate-coding-execution
   code:
     needs: validate
@@ -86,3 +92,15 @@ jobs:
           path: ${{ steps.codex.outputs.artifact }}
           if-no-files-found: error
           retention-days: 7
+  independent-validation:
+    needs: [validate, code]
+    if: inputs.validation != ''
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/temporal-artifact-validator.yml
+    with:
+      factory-ref: ${{ inputs.factory-ref }}
+      request: ${{ needs.validate.outputs.request }}
+      validation: ${{ needs.validate.outputs.validation }}
+      source-run-id: ${{ github.run_id }}

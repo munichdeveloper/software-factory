@@ -4,6 +4,7 @@ import { snapshotSchema, type RunSnapshot } from './contract.js';
 import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
 import { codingArtifactSchema, type CodingArtifact } from '../workers/coding.js';
 import { hash } from '../state/identity.js';
+import { validationReportSchema, type ValidationReport } from './validation-contract.js';
 
 export interface StoredRun {
   snapshot: RunSnapshot; binding: string; workflowId: string; runId: string | null; createdAt: string;
@@ -33,7 +34,9 @@ export class RuntimeStore {
       ALTER TABLE factory_runtime_effects ADD COLUMN IF NOT EXISTS receipt jsonb;
       CREATE TABLE IF NOT EXISTS factory_runtime_artifacts (
         repository_id bigint NOT NULL, execution_id text NOT NULL, digest text NOT NULL, artifact jsonb NOT NULL,
-        PRIMARY KEY(repository_id,execution_id));`);
+        PRIMARY KEY(repository_id,execution_id));
+      ALTER TABLE factory_runtime_artifacts ADD COLUMN IF NOT EXISTS validation jsonb;
+      ALTER TABLE factory_runtime_artifacts ADD COLUMN IF NOT EXISTS validation_digest text;`);
   }
   async locked<T>(repositoryId: number, executionId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
     const inherited = this.context.getStore(), client = inherited ?? await this.pool.connect(), key = `${repositoryId}:${executionId}`;
@@ -107,5 +110,18 @@ export class RuntimeStore {
     const artifact = codingArtifactSchema.parse(value), digest = hash(artifact);
     await this.db().query('INSERT INTO factory_runtime_artifacts(repository_id,execution_id,digest,artifact) VALUES($1,$2,$3,$4) ON CONFLICT(repository_id,execution_id) DO NOTHING', [repositoryId, executionId, digest, JSON.stringify(artifact)]);
     if (hash(await this.artifact(repositoryId, executionId)) !== digest) throw new Error('CODING_ARTIFACT_CONFLICT');
+  }
+  async validation(repositoryId: number, executionId: string): Promise<ValidationReport | null> {
+    const { rows } = await this.db().query('SELECT validation,validation_digest FROM factory_runtime_artifacts WHERE repository_id=$1 AND execution_id=$2', [repositoryId, executionId]);
+    if (!rows[0]?.validation) return null;
+    const report = validationReportSchema.parse(rows[0].validation);
+    if (hash(report) !== rows[0].validation_digest) throw new Error('STORED_VALIDATION_INTEGRITY_FAILED');
+    return report;
+  }
+  async saveValidation(repositoryId: number, executionId: string, value: ValidationReport) {
+    const report = validationReportSchema.parse(value), digest = hash(report), artifact = await this.artifact(repositoryId, executionId);
+    if (!artifact || hash(artifact) !== report.artifactHash) throw new Error('VALIDATION_ARTIFACT_CONFLICT');
+    await this.db().query('UPDATE factory_runtime_artifacts SET validation=$3,validation_digest=$4 WHERE repository_id=$1 AND execution_id=$2 AND (validation IS NULL OR validation_digest=$4)', [repositoryId, executionId, JSON.stringify(report), digest]);
+    if (hash(await this.validation(repositoryId, executionId)) !== digest) throw new Error('VALIDATION_REPORT_CONFLICT');
   }
 }

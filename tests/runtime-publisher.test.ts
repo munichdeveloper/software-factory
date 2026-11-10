@@ -8,6 +8,8 @@ import { RuntimeCodingPublisher } from '../src/runtime/publisher.js';
 import { snapshotSchema } from '../src/runtime/contract.js';
 import { hash } from '../src/state/identity.js';
 import type { CodingArtifact } from '../src/workers/coding.js';
+import { defaultValidationPlan, type ValidationReport } from '../src/runtime/validation-contract.js';
+import { reportFor } from './validation-fixtures.js';
 
 class Store extends RuntimeStore {
   effects = new Map<string, { payload_hash: string; phase: string; receipt: unknown }>();
@@ -73,7 +75,7 @@ function fixture(selectedSnapshot = snapshot) {
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
   const authorize = vi.fn(async () => {});
   const publisher = () => new RuntimeCodingPublisher(api, new RuntimeEffects(store, 42, snapshot.admission.input.executionId, hash(selectedSnapshot)), authorize, ['factory[bot]']);
-  const publish = (source = artifact()) => publisher().publish(selectedSnapshot, source, '2026-11-09T13:00:00.000Z');
+  const publish = (source = artifact(), validation?: ValidationReport) => publisher().publish(selectedSnapshot, source, '2026-11-09T13:00:00.000Z', validation);
   return { store, writes, publish, authorize, lose: (key: string) => { lost = key; }, failBefore: (key: string) => { before = key; }, collide: () => { collision = true; }, duplicate: () => { duplicate = true; }, move: () => { moved = true; } };
 }
 it('serializes concurrent publishers, creates exactly one draft and reuses durable receipts', async () => {
@@ -81,6 +83,19 @@ it('serializes concurrent publishers, creates exactly one draft and reuses durab
   expect(f.writes.filter(w => w.kind === 'draft-pr')).toHaveLength(1); expect(f.writes.filter(w => w.kind === 'publication-comment')).toHaveLength(1);
   const pr = f.writes.find(w => w.kind === 'draft-pr')!; expect(pr.body.draft).toBe(true); expect(pr.body.body).toContain('＠nobody &lt;untrusted&gt;');
   expect(f.writes.find(w => w.kind === 'commit')!.body.author).toMatchObject({ date: '2026-11-09T13:00:00.000Z' });
+});
+it('keeps original blocked status and separate validation visible while reconciling a lost review-PR response', async()=>{
+  const plan=defaultValidationPlan(),selected=snapshotSchema.parse({...snapshot,validationPlan:plan}),source=artifact();source.result.status='blocked';const validation=reportFor(source,plan);
+  const f=fixture(selected);f.lose('draft-pr');await expect(f.publish(source,validation)).rejects.toThrow();await f.publish(source,validation);
+  const prs=f.writes.filter(w=>w.kind==='draft-pr');expect(prs).toHaveLength(1);expect(prs[0]!.body.draft).toBe(true);expect(prs[0]!.body.title).toContain('Review');
+  expect(prs[0]!.body.body).toContain('Original model status: **blocked**');expect(prs[0]!.body.body).toContain('validation: **passed**');expect(source.result.status).toBe('blocked');
+});
+it('requires exact independent evidence and marks failed checks as review-required without changing the model result', async()=>{
+  const plan=defaultValidationPlan(),selected=snapshotSchema.parse({...snapshot,validationPlan:plan}),source=artifact(),f=fixture(selected);
+  await expect(f.publish(source)).rejects.toThrow('VALIDATION_REPORT_REQUIRED');expect(f.writes).toEqual([]);
+  const report=reportFor(source,plan,'failed');await f.publish(source,report);const pr=f.writes.find(w=>w.kind==='draft-pr')!;
+  expect(pr.body.title).toContain('Review');expect(pr.body.body).toContain('validation: **failed**');expect(source.result.status).toBe('success');
+  const forged=fixture(selected);await expect(forged.publish(source,{...report,artifactHash:'f'.repeat(64)})).rejects.toThrow('UNRELATED_VALIDATION_REPORT');expect(forged.writes).toEqual([]);
 });
 it('publishes canary changes only against the frozen integration branch', async () => {
   const f = fixture(snapshotSchema.parse({...snapshot,baseRef:'test/temporal-rc'})); await f.publish();

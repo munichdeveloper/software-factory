@@ -21,20 +21,41 @@ import { resolveTarget } from './deploy/target.js';
 import { SshTransport } from './deploy/transport.js';
 import { RuntimeHttpClient } from './runtime/client.js';
 import { codingExecutionSchema } from './runtime/coding-contract.js';
+import { validationPlanSchema } from './runtime/validation-contract.js';
+import { hostedValidationCommand, materializeCodingArtifact, runCodingValidation } from './runtime/validation.js';
+import { mkdir, stat } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     repository: { type: 'string' }, 'config-path': { type: 'string', default: '.github/software-factory.yml' },
     file: { type: 'string' }, 'dry-run': { type: 'boolean', default: false },
     'allow-local-writes': { type: 'boolean', default: false }, issue: { type: 'string' }, execution: { type: 'string' },
-    sha: { type: 'string' }, source: { type: 'string' }
+    sha: { type: 'string' }, source: { type: 'string' }, output: { type: 'string' }
   } });
   const command = positionals[0] ?? 'manager';
   if (command === 'validate-coding-execution') {
     const request = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ''));
     const text = JSON.stringify(request);
     if (Buffer.byteLength(text) > 60000 || !process.env.GITHUB_OUTPUT) throw new Error('Invalid coding executor request');
-    await appendFile(process.env.GITHUB_OUTPUT, `request=${text}\nexecution-id=${request.executionId}\nbase-sha=${request.baseSha}\n`); return;
+    const validation = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN || '{}'));
+    await appendFile(process.env.GITHUB_OUTPUT, `request=${text}\nexecution-id=${request.executionId}\nbase-sha=${request.baseSha}\nvalidation=${JSON.stringify(validation)}\n`); return;
+  }
+  if (command === 'validate-coding-artifact') {
+    if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || process.env.GITHUB_RUN_ATTEMPT !== '1') throw new Error('Validation requires a fresh hosted job');
+    if (!/^[1-9][0-9]{0,15}$/.test(process.env.GITHUB_RUN_ID ?? '') || !/^[1-9][0-9]{0,15}$/.test(process.env.SF_SOURCE_RUN_ID ?? '')) throw new Error('Invalid validation run identity');
+    for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AI_API_KEY', 'GITHUB_APP_PRIVATE_KEY', 'FACTORY_MANAGER_TOKEN']) if (process.env[key]) throw new Error('Validation secret boundary violation');
+    if (!values.file || !values.source || !values.output || (await stat(values.file)).size > 7000000) throw new Error('Invalid validation files');
+    const request = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ''));
+    const plan = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN ?? '{}'));
+    const artifact = await materializeCodingArtifact(values.source, JSON.parse(await readFile(values.file, 'utf8')), request);
+    execFileSync('sudo', ['-n', 'chown', '-R', 'sf-validator:sf-validator', resolve(values.source)]);
+    const output = resolve(values.output); await mkdir(dirname(output), { recursive: true });
+    const report = await runCodingValidation({ target: resolve(values.source), artifact, plan, workflowRunId: Number(process.env.GITHUB_RUN_ID),
+      sourceRunId: Number(process.env.SF_SOURCE_RUN_ID), hosted: true, command: hostedValidationCommand(resolve(values.source), resolve(dirname(output), 'logs')) });
+    await writeFile(output, JSON.stringify(report, null, 2));
+    console.log(JSON.stringify({ validation: report.status, executionId: report.executionId, originalModelStatus: artifact.result.status })); return;
   }
   if (command === 'validate') {
     if (!values.file) throw new Error('validate requires --file');

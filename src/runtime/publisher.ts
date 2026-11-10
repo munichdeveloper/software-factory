@@ -5,6 +5,7 @@ import { codingArtifactSchema, validateChanges, type CodingArtifact } from '../w
 import type { RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
+import { bindValidation, type ValidationReport } from './validation-contract.js';
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const objectReceipt = z.strictObject({ sha });
@@ -15,11 +16,15 @@ const missing = (error: unknown) => !!error && typeof error === 'object' && 'sta
 /** Trusted broker only: validates artifacts and publishes API data, never executes target code. */
 export class RuntimeCodingPublisher {
   constructor(private api: Octokit, private effects: EffectPort, private authorize: () => Promise<unknown>, private trustedActors: string[]) {}
-  async publish(snapshot: RunSnapshot, source: unknown, createdAt: string) {
+  async publish(snapshot: RunSnapshot, source: unknown, createdAt: string, validation?: ValidationReport) {
     const artifact: CodingArtifact = codingArtifactSchema.parse(source), input = snapshot.admission.input;
     if (input.worker !== 'codex' || artifact.baseSha !== snapshot.baseSha || artifact.result.executionId !== input.executionId ||
       artifact.result.taskVersion !== snapshot.specHash || artifact.result.taskId !== `github:${snapshot.repository}#${input.issueNumber}` ||
-      artifact.result.status !== 'success' || !artifact.changes.length) throw new Error('UNRELATED_OR_UNSUCCESSFUL_ARTIFACT');
+      (!snapshot.validationPlan && artifact.result.status !== 'success') || !['success', 'blocked'].includes(artifact.result.status) || !artifact.changes.length) throw new Error('UNRELATED_OR_UNSUCCESSFUL_ARTIFACT');
+    if (snapshot.validationPlan) {
+      if (!validation) throw new Error('VALIDATION_REPORT_REQUIRED');
+      bindValidation(validation, artifact, snapshot.validationPlan);
+    }
     validateChanges(artifact); z.iso.datetime().parse(createdAt);
     if (snapshot.allowedPaths && artifact.changes.some(c => !snapshot.allowedPaths!.includes(c.path))) throw new Error('ARTIFACT_OUTSIDE_RUNTIME_SCOPE');
     const [owner, repo] = snapshot.repository.split('/') as [string, string], target = { owner, repo };
@@ -77,8 +82,10 @@ export class RuntimeCodingPublisher {
         if (value.object.sha !== commit.sha) throw new Error('EXECUTION_BRANCH_CONFLICT'); return { sha: value.object.sha }; } });
     const marker = `<!-- sf-publication:${snapshot.repositoryId}:${input.executionId}:${hash(snapshot)}:${fingerprint} -->`;
     const summary = artifact.result.summary.replaceAll('@', '＠').replaceAll('<', '&lt;').replaceAll('>', '&gt;').split('\n').map(line => `> ${line}`).join('\n');
-    const body = `Closes #${input.issueNumber}\n\n${summary}\n\n${marker}\n\nReview changes and required checks before merging.`;
-    const title = `Implement #${input.issueNumber} with Codex`;
+    const validationText = validation ? `\n\nOriginal model status: **${artifact.result.status}**\nIndependent automated validation: **${validation.status}**\n${validation.checks.map(c => `- ${c.name}: ${c.status}`).join('\n')}\n\nValidation run: https://github.com/${snapshot.repository}/actions/runs/${validation.workflowRunId}\nValidation digest: ${hash(validation)}\nPassing automated checks does not verify manual acceptance criteria.` : '';
+    const body = `Closes #${input.issueNumber}\n\n${summary}${validationText}\n\n${marker}\n\nReview changes and required checks before merging.`;
+    const review = validation && (artifact.result.status !== 'success' || validation.status !== 'passed');
+    const title = `${review ? 'Review' : 'Implement'} #${input.issueNumber} with Codex`;
     const pr = await this.effects.perform({ key: 'draft-pr', payload: { baseBranch, branch, head: commit.sha, title, body, draft: true }, authorize,
       validate: prReceipt.parse, reconcile: async () => {
         const prs = await this.api.paginate(this.api.pulls.list, { ...target, state: 'all', head: `${owner}:${branch}`, base: baseBranch, per_page: 100 });

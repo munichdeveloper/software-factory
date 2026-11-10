@@ -24,13 +24,14 @@ export function createActivities(pack: WorkerPackage, broker: (operation: string
       const snapshot = validate(value);
       await broker('authorize', snapshot, binding);
       if (snapshot.admission.input.worker === 'codex') {
-        const deadline = Date.now() + snapshot.admission.input.limits.timeoutMinutes * 60000;
-        while (Date.now() < deadline) {
-          Context.current().heartbeat();
+        const deadline = Date.now() + (snapshot.admission.input.limits.timeoutMinutes + (snapshot.validationPlan ? 40 : 0)) * 60000;
+        const context = Context.current(), heartbeat = setInterval(() => context.heartbeat(), 10000);
+        try { while (Date.now() < deadline) {
+          context.heartbeat();
           const result = await broker('coding-execution', snapshot, binding);
           if (result !== null) return workerResultSchema.parse(result);
-          await new Promise(resolve => setTimeout(resolve, 4000));
-        }
+          await new Promise(resolve => setTimeout(resolve, snapshot.validationPlan ? 15000 : 4000));
+        } } finally { clearInterval(heartbeat); }
         throw new Error('CODING_EXECUTOR_DEADLINE');
       }
       return new HarnessProcessClient(pack.harnessEntrypoint).execute(snapshot.admission.input);

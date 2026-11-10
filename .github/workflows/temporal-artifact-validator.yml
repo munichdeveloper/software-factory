@@ -1,0 +1,87 @@
+name: Independent Temporal artifact validation
+on:
+  workflow_call:
+    inputs:
+      factory-ref:
+        type: string
+        required: true
+      request:
+        type: string
+        required: true
+      validation:
+        type: string
+        required: true
+      source-run-id:
+        type: string
+        required: true
+# No model secret is declared, forwarded, or inherited by this reusable workflow.
+permissions: {}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: munichdeveloper/software-factory
+          ref: ${{ inputs.factory-ref }}
+          path: .runtime/factory
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Validate bound request and plan before materializing target changes
+        id: request
+        env:
+          SF_CODING_REQUEST: ${{ inputs.request }}
+          SF_VALIDATION_PLAN: ${{ inputs.validation }}
+          FACTORY_REF: ${{ inputs.factory-ref }}
+          SOURCE_RUN: ${{ inputs.source-run-id }}
+        run: |
+          [[ "$FACTORY_REF" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$SOURCE_RUN" =~ ^[1-9][0-9]{0,15}$ ]]
+          node .runtime/factory/bundle/factory.cjs validate-coding-execution
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ steps.request.outputs.base-sha }}
+          path: target
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: coding-result-${{ steps.request.outputs.execution-id }}
+          path: ${{ runner.temp }}/coding-source
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source-run-id }}
+      - name: Prepare separate validation account on this fresh hosted runner
+        env:
+          VALIDATION_PROFILE: ${{ fromJSON(steps.request.outputs.validation).profile }}
+        run: |
+          sudo adduser --system --home /home/sf-validator --shell /bin/bash --group sf-validator
+          sudo install -d -o sf-validator -g sf-validator /home/sf-validator
+          if [[ "$VALIDATION_PROFILE" == npm-docker ]]; then sudo usermod -aG docker sf-validator; fi
+          sudo chmod o+x /home/runner /home/runner/work "$GITHUB_WORKSPACE"
+      - name: Apply bounded artifact and run checks without model or broker credentials
+        env:
+          SF_CODING_REQUEST: ${{ steps.request.outputs.request }}
+          SF_VALIDATION_PLAN: ${{ steps.request.outputs.validation }}
+          SF_SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+        run: node .runtime/factory/bundle/factory.cjs validate-coding-artifact --source "$GITHUB_WORKSPACE/target" --file "$RUNNER_TEMP/coding-source/artifact.json" --output "$RUNNER_TEMP/sf-validation/validation.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coding-validation-${{ steps.request.outputs.execution-id }}
+          path: ${{ runner.temp }}/sf-validation/validation.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: coding-validation-logs-${{ steps.request.outputs.execution-id }}
+          path: ${{ runner.temp }}/sf-validation/logs/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop remaining per-job target processes
+        if: always()
+        run: sudo pkill -KILL -u sf-validator || true

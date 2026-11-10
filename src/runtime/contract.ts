@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { workerInputSchema, workerResultSchema } from '../workers/contract.js';
+import { validationPlanSchema } from './validation-contract.js';
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -26,6 +27,7 @@ export const snapshotSchema = z.strictObject({
   baseRef: baseRefSchema.optional(), executorWorkflow: executorWorkflowSchema.optional(),
   allowedPaths: z.array(z.string().min(1).max(500)).min(1).max(100).optional(),
   readyApproval: readyApprovalSchema.optional(),
+  validationPlan: validationPlanSchema.optional(),
   specHash: digest, configHash: digest, requireHumanGate: z.boolean(),
 });
 export type RunSnapshot = z.infer<typeof snapshotSchema>;

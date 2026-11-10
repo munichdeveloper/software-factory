@@ -11,10 +11,13 @@ import { hash } from '../src/state/identity.js';
 import type { WorkerResult } from '../src/workers/contract.js';
 import { createActivities } from '../src/runtime/worker.js';
 import type { CodingArtifact } from '../src/workers/coding.js';
+import { defaultValidationPlan, type ValidationReport } from '../src/runtime/validation-contract.js';
+import { reportFor } from './validation-fixtures.js';
 
 class MemoryStore extends RuntimeStore {
   row: StoredRun | null = null; effect = false; private tail = Promise.resolve();
   codingArtifact: CodingArtifact | null = null;
+  validationState: ValidationReport | null = null;
   constructor() { super(new Pool()); }
   override async get() { return this.row; }
   override async insert(snapshot: StoredRun['snapshot'], binding: string, workflowId: string) {
@@ -26,6 +29,8 @@ class MemoryStore extends RuntimeStore {
   override async terminal() { this.row!.terminal = true; }
   override async artifact() { return this.codingArtifact; }
   override async saveArtifact(_repo: number, _id: string, artifact: CodingArtifact) { this.codingArtifact = artifact; }
+  override async validation() { return this.validationState; }
+  override async saveValidation(_repo: number, _id: string, report: ValidationReport) { this.validationState = report; }
   override async cancel() { this.row!.cancelled = true; this.row!.approved = false; }
   override async gate(_repositoryId: number, _executionId: string, binding: string, _actor: string, approved: boolean) {
     if (this.row?.binding !== binding || this.row.terminal || this.row.cancelled) throw new Error('STALE_APPROVAL'); this.row.approved = approved;
@@ -138,6 +143,24 @@ describe('Temporal admission, identity and approval', () => {
   });
 });
 describe('durable result outbox', () => {
+  it.each(['passed', 'failed'] as const)('publishes a review draft for original blocked code after %s independent validation without promoting its status', async status => {
+    const f=await fixture(false,true),plan=defaultValidationPlan();f.repo.validationPlan=async()=>plan;
+    await f.controller.start(f.admission);const row=f.store.row!;
+    const artifact:CodingArtifact={contractVersion:'3.0',baseSha:row.snapshot.baseSha,result:{contractVersion:'2.0',executionId:f.admission.input.executionId,taskId:`github:${f.github.repository}#1`,taskVersion:f.admission.input.taskVersion,status:'blocked',summary:'Implementation exists; manual acceptance remains open',artifacts:[],error:null},changes:[{path:'result.txt',content:'eA==',mode:'100644'}]};
+    const report=reportFor(artifact,plan,status),poll=vi.fn(async()=>({artifact,validation:report})),publish=vi.fn(async()=>({url:'https://github.com/owner/target/pull/3'}));
+    f.repo.coding={executor:{poll,cancel:async()=>{}},publish};
+    const result=(await f.controller.executeCoding(row.snapshot,row.binding))!;expect(result.status).toBe('blocked');
+    expect(await f.controller.executeCoding(row.snapshot,row.binding)).toEqual(result);expect(poll).toHaveBeenCalledOnce();
+    const final=await f.controller.publish(row.snapshot,row.binding,result);expect(final.status).toBe('blocked');expect(final.artifacts[0]).toBe('https://github.com/owner/target/pull/3');
+    expect(publish).toHaveBeenCalledWith(row.snapshot,row.binding,artifact,row.createdAt,report);expect(f.store.codingArtifact?.result.status).toBe('blocked');
+    expect(await f.controller.publish(row.snapshot,row.binding,result)).toEqual(final);expect(publish).toHaveBeenCalledOnce();
+  });
+  it('blocks missing independent evidence before storing or publishing new-mode code', async()=>{
+    const f=await fixture(false,true);f.repo.validationPlan=async()=>defaultValidationPlan();await f.controller.start(f.admission);const row=f.store.row!;
+    const artifact:CodingArtifact={contractVersion:'3.0',baseSha:row.snapshot.baseSha,result:{contractVersion:'2.0',executionId:f.admission.input.executionId,taskId:`github:${f.github.repository}#1`,taskVersion:f.admission.input.taskVersion,status:'success',summary:'Code',artifacts:[],error:null},changes:[{path:'result.txt',content:'eA==',mode:'100644'}]};
+    f.repo.coding={executor:{poll:async()=>({artifact}),cancel:async()=>{}},publish:vi.fn()};
+    await expect(f.controller.executeCoding(row.snapshot,row.binding)).rejects.toThrow('VALIDATION_REPORT_REQUIRED');expect(f.store.codingArtifact).toBeNull();expect(f.repo.coding.publish).not.toHaveBeenCalled();
+  });
   it('persists a correlated coding artifact, publishes a draft result and reuses it after restart', async () => {
     const f = await fixture(true, true); await f.controller.start(f.admission); const row = f.store.row!;
     const artifact: CodingArtifact = { contractVersion: '3.0', baseSha: row.snapshot.baseSha,

@@ -23,6 +23,7 @@ import { ActionsCodingExecutor } from './coding-executor.js';
 import { RuntimeEffects } from './effects.js';
 import { RuntimeCodingPublisher } from './publisher.js';
 import { IssueScopedGitHub } from './issue-scope.js';
+import { defaultValidationPlan, validationPlanSchema } from './validation-contract.js';
 
 const registrySchema = z.strictObject({
   namespace: z.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
@@ -33,6 +34,7 @@ const registrySchema = z.strictObject({
     issueNumbers: z.array(z.number().int().positive().safe()).min(1).max(100).optional(),
     allowedPaths: z.array(z.string().min(1).max(500)).min(1).max(100).optional(),
     approvalMode: z.enum(['manual', 'ready-label']).default('manual'),
+    validateCoding: z.boolean().default(true),
     retainedReleases: releaseSchema.array().default([]), requireHumanGate: z.boolean().default(true) })
     .refine(item => Number(!!item.githubTokenEnv) + Number(!!item.githubInstallationId) === 1, 'Select exactly one scoped credential source')
     .refine(item => item.approvalMode !== 'ready-label' || !item.requireHumanGate, 'Ready label replaces the manual gate')).min(1).max(100),
@@ -81,10 +83,20 @@ export async function main(args = process.argv.slice(2)) {
         baseSha: async () => item.baseRef ? (await api.git.getRef({ ...{ owner, repo }, ref: `heads/${item.baseRef}` })).data.object.sha : (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
       const controller = new RuntimeController(repository, store, temporal);
       if (item.approvalMode === 'ready-label') repository.readyApproval = async (number, expected) => source.readyApproval(number, (await repository.config()).manager.trustedActors, expected);
+      if (item.validateCoding) repository.validationPlan = async () => {
+        try {
+          const data = (await api.repos.getContent({ owner, repo, path: '.github/software-factory.validation.json', ref: await repository.baseSha() })).data;
+          if (!('content' in data) || data.encoding !== 'base64' || data.size > 6000) throw new Error('INVALID_VALIDATION_PLAN');
+          return validationPlanSchema.parse(JSON.parse(Buffer.from(data.content, 'base64').toString('utf8')));
+        } catch (error) {
+          if (error && typeof error === 'object' && 'status' in error && error.status === 404) return defaultValidationPlan();
+          throw error;
+        }
+      };
       const effects = (snapshot: Parameters<ActionsCodingExecutor['poll']>[0], binding: string) => new RuntimeEffects(store, repository.repositoryId, snapshot.admission.input.executionId, binding);
       repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors),
-        publish: async (snapshot, binding, artifact, createdAt) => new RuntimeCodingPublisher(api, effects(snapshot, binding),
-          () => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors).publish(snapshot, artifact, createdAt) };
+        publish: async (snapshot, binding, artifact, createdAt, validation) => new RuntimeCodingPublisher(api, effects(snapshot, binding),
+          () => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors).publish(snapshot, artifact, createdAt, validation) };
       // Refuse a registry rollout which would orphan any running version, including long human gates.
       await assertRetainedReleases(item.repositoryId, [item.release, ...item.retainedReleases], store, temporal);
       const config = await repository.config();

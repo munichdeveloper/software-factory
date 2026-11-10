@@ -19,8 +19,8 @@ export async function factoryExecution(snapshot: RunSnapshot, binding: string): 
   });
   const { publish } = proxyActivities<RuntimeActivities>({ startToCloseTimeout: '2 minutes', retry: { maximumAttempts: 5, initialInterval: '1 second', maximumInterval: '10 seconds' } });
   const { execute } = proxyActivities<RuntimeActivities>({
-    startToCloseTimeout: `${snapshot.admission.input.limits.timeoutMinutes + 1} minutes`,
-    scheduleToCloseTimeout: `${snapshot.admission.input.limits.timeoutMinutes + 2} minutes`,
+    startToCloseTimeout: `${snapshot.admission.input.limits.timeoutMinutes + 1 + (snapshot.validationPlan ? 40 : 0)} minutes`,
+    scheduleToCloseTimeout: `${snapshot.admission.input.limits.timeoutMinutes + 2 + (snapshot.validationPlan ? 40 : 0)} minutes`,
     heartbeatTimeout: snapshot.admission.input.worker === 'codex' ? '45 seconds' : undefined,
     retry: { maximumAttempts: snapshot.admission.input.worker === 'codex' ? 5 : 1, initialInterval: '5 seconds' },
   });
