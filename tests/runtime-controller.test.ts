@@ -65,6 +65,17 @@ async function fixture(requireHumanGate = true, coding = false) {
   return { cfg, github, store, start, deployment, signal, handle, repo, controller, admission, result, status: (value: string) => { status = value; } };
 }
 describe('Temporal admission, identity and approval', () => {
+  it('requires an actual successful health workflow pinned to the selected package', async () => {
+    const f = await fixture(false);
+    const execute = vi.fn(async () => 'sf-runtime-ready-v1');
+    const controller = new RuntimeController(f.repo, f.store, { workflow: { execute } } as unknown as Client);
+    expect((await controller.deployment()).workerReady).toBe(true);
+    expect(execute).toHaveBeenCalledWith('factoryHealth', expect.objectContaining({ taskQueue: release.taskQueue,
+      workflowExecutionTimeout: '10 seconds', versioningOverride: { pinnedTo: { deploymentName: release.deploymentName, buildId: release.buildId } } }));
+    execute.mockRejectedValueOnce(new Error('unavailable'));
+    await expect(controller.deployment()).rejects.toThrow('unavailable');
+    execute.mockResolvedValueOnce('wrong-package'); await expect(controller.deployment()).rejects.toThrow('WORKER_READINESS_FAILED');
+  });
   it('freezes authenticated ready-label evidence and runs without a second manual gate', async () => {
     const f=await fixture(false),proof={eventId:123,actor:'maintainer',createdAt:clock.toISOString()};
     f.repo.readyApproval=vi.fn(async()=>proof);await f.controller.start(f.admission);

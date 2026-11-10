@@ -38,11 +38,14 @@ export function runtimeServer(options: ServerOptions) {
         else throw new Error('UNKNOWN_OPERATION');
         return;
       }
-      const match = path.match(/^\/v1\/repositories\/([1-9][0-9]*)\/(runs|observations|reconcile)(?:\/([a-f0-9]{32})(?:\/(approve|revoke|cancel))?)?$/);
+      const match = path.match(/^\/v1\/repositories\/([1-9][0-9]*)\/(runs|observations|reconcile|deployment)(?:\/([a-f0-9]{32})(?:\/(approve|revoke|cancel))?)?$/);
       if (!match) { send(response, 404, { code: 'NOT_FOUND' }); return; }
       const binding = options.bindings.find(b => b.repository.repositoryId === Number(match[1]));
       if (!binding) throw new Error('UNKNOWN_REPOSITORY');
       const [, , resource, id, action] = match;
+      if (request.method === 'GET' && resource === 'deployment' && !id) {
+        send(response, 200, await binding.controller.deployment()); return;
+      }
       if (request.method === 'GET' && resource === 'runs' && !id) {
         const rows = await options.store.list(binding.repository.repositoryId);
         send(response, 200, await binding.controller.observations(rows.map(r => r.snapshot.admission.input.executionId))); return;

@@ -93,6 +93,10 @@ try {
     deploymentVersion: { deploymentName: release.deploymentName, buildId: release.buildId } })).workerDeploymentVersionInfo);
   assert.equal((await call(`/v1/repositories/${repoA}/reconcile`, { actor }, workerToken)).status, 401);
   assert.equal((await call('/v1/repositories/999/runs')).status, 409);
+  const readiness = await call(`/v1/repositories/${repoA}/deployment`);
+  assert.equal(readiness.status, 200);
+  assert.equal((readiness.body as { workerReady: boolean }).workerReady, true);
+  assert.equal((readiness.body as { release: RuntimeRelease }).release.factorySha, release.factorySha);
   phase = 'reconcile';
   const first = await call(`/v1/repositories/${repoA}/reconcile`, { actor }); assert.equal(first.status, 200);
   const second = await call(`/v1/repositories/${repoB}/reconcile`, { actor }); assert.equal(second.status, 200);

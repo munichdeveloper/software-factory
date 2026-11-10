@@ -10,7 +10,7 @@ afterEach(async () => { await Promise.all(servers.splice(0).map(server => new Pr
 async function fixture() {
   const cfg = config(), github = new MemoryGitHub(); cfg.execution.engine = 'temporal';
   const controller = { observations: vi.fn(async () => []), gateApproved: vi.fn(async () => false), authorize: vi.fn(async () => ({})),
-    publish: vi.fn(), gate: vi.fn(async () => {}), cancel: vi.fn(async () => {}), start: vi.fn() };
+    publish: vi.fn(), gate: vi.fn(async () => {}), cancel: vi.fn(async () => {}), start: vi.fn(), deployment: vi.fn(async () => ({ workerReady: true })) };
   const repository = { repositoryId: 42, github, config: async () => cfg };
   const store = { list: vi.fn(async () => []), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
   const managerToken = 'm'.repeat(32), workerToken = 'w'.repeat(32);
@@ -24,6 +24,14 @@ async function fixture() {
   return { call, controller, managerToken, workerToken, cfg, store };
 }
 describe('private runtime HTTP boundaries', () => {
+  it('exposes deployment readiness only to the manager and fails closed on probe errors', async () => {
+    const f = await fixture();
+    expect((await f.call('/v1/repositories/42/deployment', undefined, f.workerToken)).status).toBe(401);
+    expect(await (await f.call('/v1/repositories/42/deployment')).json()).toEqual({ workerReady: true });
+    f.controller.deployment.mockRejectedValueOnce(new Error('private Temporal connection error'));
+    const blocked = await f.call('/v1/repositories/42/deployment'); expect(blocked.status).toBe(409);
+    expect(await blocked.text()).not.toContain('private');
+  });
   it('separates manager and worker capabilities; requires nontrivial distinct credentials', async () => {
     const f = await fixture();
     expect((await f.call('/v1/repositories/42/runs', undefined, '')).status).toBe(401);

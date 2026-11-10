@@ -52,3 +52,5 @@ export async function factoryExecution(snapshot: RunSnapshot, binding: string): 
   state.phase = 'completed';
   return state.result;
 }
+/** Readiness probe: executes on the exact PINNED package, without activities or GitHub writes. */
+export async function factoryHealth() { return 'sf-runtime-ready-v1'; }

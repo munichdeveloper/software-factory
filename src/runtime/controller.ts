@@ -1,4 +1,5 @@
 import { WorkflowExecutionAlreadyStartedError, type Client } from '@temporalio/client';
+import { randomUUID } from 'node:crypto';
 import type { Config } from '../config/index.js';
 import type { GitHubPort } from '../github/port.js';
 import { hash } from '../state/identity.js';
@@ -23,6 +24,20 @@ export interface RuntimeRepository {
 }
 export class RuntimeController implements WorkerRuntimePort {
   constructor(private repo: RuntimeRepository, private store: RuntimeStore, private temporal: Client) {}
+  async deployment() {
+    const release = this.repo.release;
+    const result = await this.temporal.workflow.execute('factoryHealth', {
+      workflowId: `sf-health-${this.repo.repositoryId}-${randomUUID()}`, taskQueue: release.taskQueue,
+      args: [], workflowExecutionTimeout: '10 seconds',
+      versioningOverride: { pinnedTo: { deploymentName: release.deploymentName, buildId: release.buildId } },
+    });
+    if (result !== 'sf-runtime-ready-v1') throw new Error('WORKER_READINESS_FAILED');
+    return { version: 1, repositoryId: this.repo.repositoryId, repository: this.repo.repository, release,
+      executorWorkflow: this.repo.executorWorkflow ?? 'factory-temporal-executor.yml',
+      baseRef: this.repo.baseRef ?? null, issueNumbers: this.repo.issueNumbers ?? null,
+      approvalMode: this.repo.readyApproval ? 'ready-label' : 'manual', requireHumanGate: this.repo.requireHumanGate,
+      validationEnabled: !!this.repo.validationPlan, workerReady: true as const, checkedAt: new Date().toISOString() };
+  }
   private scope(number: number) { if (this.repo.issueNumbers && !this.repo.issueNumbers.includes(number)) throw new Error('ISSUE_OUTSIDE_RUNTIME_SCOPE'); }
   private async current(snapshot: RunSnapshot) {
     const config = await this.repo.config();
