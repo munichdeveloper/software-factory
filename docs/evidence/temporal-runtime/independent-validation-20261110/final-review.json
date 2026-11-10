@@ -1,0 +1,19 @@
+{
+  "checkedAt": "2026-11-10T10:56:40.120Z",
+  "mainUnchanged": true,
+  "existingSecretUnchanged": true,
+  "originalModelStatus": "blocked",
+  "validationStatus": "passed",
+  "automaticPublication": true,
+  "pullRequest": {
+    "number": 16,
+    "url": "https://github.com/munichdeveloper/Backofficer/pull/16",
+    "head": "7e1ad718e055542a406bb5d956eda3dc72fca581",
+    "base": "test/temporal-validation-stage",
+    "draft": true
+  },
+  "files": [
+    "docs/independent-validation-canary.md",
+    "tests/regression.test.ts"
+  ]
+}

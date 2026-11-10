@@ -1,0 +1,336 @@
+{
+  "factory": [
+    {
+      "conclusion": "success",
+      "databaseId": 42800878924,
+      "event": "push",
+      "headSha": "6e783573cc4f70562ad4167a068b83f69b71f1a5",
+      "status": "completed",
+      "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42800878924"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 42800891761,
+      "event": "pull_request",
+      "headSha": "6e783573cc4f70562ad4167a068b83f69b71f1a5",
+      "status": "completed",
+      "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42800891761"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 42802682239,
+      "event": "push",
+      "headSha": "c4b981d043eda40511945bf00bd0a77f79fc8bbd",
+      "status": "completed",
+      "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42802682239"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 42802689741,
+      "event": "pull_request",
+      "headSha": "c4b981d043eda40511945bf00bd0a77f79fc8bbd",
+      "status": "completed",
+      "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42802689741"
+    }
+  ],
+  "application": {
+    "conclusion": "success",
+    "databaseId": 42803276347,
+    "event": "pull_request",
+    "headSha": "7e1ad718e055542a406bb5d956eda3dc72fca581",
+    "jobs": [
+      {
+        "completedAt": "2026-11-10T10:58:21Z",
+        "conclusion": "success",
+        "databaseId": 129785943596,
+        "name": "docker",
+        "startedAt": "2026-11-10T10:56:06Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-10T10:56:08Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-10T10:56:07Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:09Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v4",
+            "number": 2,
+            "startedAt": "2026-11-10T10:56:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:10Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@v4",
+            "number": 3,
+            "startedAt": "2026-11-10T10:56:09Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:10Z",
+            "conclusion": "success",
+            "name": "Run docker compose config --quiet",
+            "number": 4,
+            "startedAt": "2026-11-10T10:56:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:10Z",
+            "conclusion": "success",
+            "name": "Validate production Compose configuration",
+            "number": 5,
+            "startedAt": "2026-11-10T10:56:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:50Z",
+            "conclusion": "success",
+            "name": "Run docker compose up --build -d --wait",
+            "number": 6,
+            "startedAt": "2026-11-10T10:56:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:58:18Z",
+            "conclusion": "success",
+            "name": "Run node tests/docker-smoke.mjs",
+            "number": 7,
+            "startedAt": "2026-11-10T10:57:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:58:18Z",
+            "conclusion": "skipped",
+            "name": "Run docker compose logs",
+            "number": 8,
+            "startedAt": "2026-11-10T10:58:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:58:18Z",
+            "conclusion": "success",
+            "name": "Run docker compose down",
+            "number": 9,
+            "startedAt": "2026-11-10T10:58:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:58:18Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@v4",
+            "number": 17,
+            "startedAt": "2026-11-10T10:58:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:58:19Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v4",
+            "number": 18,
+            "startedAt": "2026-11-10T10:58:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:58:19Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 19,
+            "startedAt": "2026-11-10T10:58:19Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42803276347/job/129785943596"
+      },
+      {
+        "completedAt": "2026-11-10T10:57:31Z",
+        "conclusion": "success",
+        "databaseId": 129785944108,
+        "name": "test-and-build (22.13.0)",
+        "startedAt": "2026-11-10T10:56:06Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-10T10:56:09Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-10T10:56:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:10Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v4",
+            "number": 2,
+            "startedAt": "2026-11-10T10:56:09Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:21Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@v4",
+            "number": 3,
+            "startedAt": "2026-11-10T10:56:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:50Z",
+            "conclusion": "success",
+            "name": "Run npm ci",
+            "number": 4,
+            "startedAt": "2026-11-10T10:56:21Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:54Z",
+            "conclusion": "success",
+            "name": "Run npm test",
+            "number": 5,
+            "startedAt": "2026-11-10T10:56:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:28Z",
+            "conclusion": "success",
+            "name": "Run npm run build",
+            "number": 6,
+            "startedAt": "2026-11-10T10:56:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:28Z",
+            "conclusion": "skipped",
+            "name": "Run npm run test:e2e",
+            "number": 7,
+            "startedAt": "2026-11-10T10:57:28Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:28Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@v4",
+            "number": 13,
+            "startedAt": "2026-11-10T10:57:28Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:28Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v4",
+            "number": 14,
+            "startedAt": "2026-11-10T10:57:28Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:28Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-11-10T10:57:28Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42803276347/job/129785944108"
+      },
+      {
+        "completedAt": "2026-11-10T10:57:43Z",
+        "conclusion": "success",
+        "databaseId": 129785944211,
+        "name": "test-and-build (24)",
+        "startedAt": "2026-11-10T10:56:06Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-10T10:56:08Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-10T10:56:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:10Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v4",
+            "number": 2,
+            "startedAt": "2026-11-10T10:56:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:17Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@v4",
+            "number": 3,
+            "startedAt": "2026-11-10T10:56:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:39Z",
+            "conclusion": "success",
+            "name": "Run npm ci",
+            "number": 4,
+            "startedAt": "2026-11-10T10:56:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:56:45Z",
+            "conclusion": "success",
+            "name": "Run npm test",
+            "number": 5,
+            "startedAt": "2026-11-10T10:56:39Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:13Z",
+            "conclusion": "success",
+            "name": "Run npm run build",
+            "number": 6,
+            "startedAt": "2026-11-10T10:56:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:40Z",
+            "conclusion": "success",
+            "name": "Run npm run test:e2e",
+            "number": 7,
+            "startedAt": "2026-11-10T10:57:13Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:40Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@v4",
+            "number": 13,
+            "startedAt": "2026-11-10T10:57:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:40Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v4",
+            "number": 14,
+            "startedAt": "2026-11-10T10:57:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-10T10:57:40Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-11-10T10:57:40Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42803276347/job/129785944211"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42803276347"
+  },
+  "checkedAt": "2026-11-10T12:32:04.1133919Z"
+}

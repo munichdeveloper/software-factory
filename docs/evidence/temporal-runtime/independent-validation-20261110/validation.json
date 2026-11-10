@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "executionId": "89c2be073cf2de847d7b00de2e6e6042",
+  "taskId": "github:munichdeveloper/Backofficer#15",
+  "taskVersion": "fca896a5e6cd9ccbe8ced55a6719635008c4811cab1e62f44adf1eb926584539",
+  "baseSha": "8594c43542662303098c50adae53d3e842ba5f72",
+  "artifactHash": "e185559e6b3e1db294a29a715440f1e8841f858f16aefabecc06d8b707bafdcb",
+  "planHash": "bca635c9759143ab9cb7b57abba8fc979ff1b266c9f481ffcfc9fc1f6e402d33",
+  "workflowRunId": 42802269137,
+  "sourceRunId": 42802269137,
+  "runAttempt": 1,
+  "status": "passed",
+  "checks": [
+    {
+      "name": "install",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "name": "test",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "name": "build",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "name": "browser-install",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "name": "browser",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "name": "compose-config",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "name": "docker-start",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "name": "docker-smoke",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "name": "docker-stop",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "name": "source-integrity",
+      "status": "passed",
+      "exitCode": 0
+    }
+  ],
+  "reason": "CHECKS_COMPLETED",
+  "modelSecretPresent": false,
+  "workspaceUnchanged": true
+}
