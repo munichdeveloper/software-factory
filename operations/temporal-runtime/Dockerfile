@@ -13,6 +13,7 @@ WORKDIR /app
 ARG FACTORY_SHA
 RUN node -e "if(!/^[a-f0-9]{40}$/.test(process.env.FACTORY_SHA||''))process.exit(1)"
 LABEL org.opencontainers.image.title="Software Factory Temporal RC" org.opencontainers.image.version="0.7.0-rc.1" org.opencontainers.image.revision=$FACTORY_SHA
+RUN mkdir -p /run/factory-package && chown node:node /run/factory-package
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

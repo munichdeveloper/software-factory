@@ -24,6 +24,7 @@ export function runtimeServer(options: ServerOptions) {
   return createServer(async (request, response) => {
     try {
       const path = new URL(request.url ?? '/', 'http://localhost').pathname, token = request.headers.authorization?.replace(/^Bearer /, '') ?? '';
+      if (path === '/health' && request.method === 'GET') { send(response, 200, { service: 'factory-runtime', alive: true }); return; }
       const worker = path.startsWith('/v1/worker/');
       if (!secureEqual(token, worker ? options.workerToken : options.managerToken)) { send(response, 401, { code: 'UNAUTHORIZED' }); return; }
       if (worker) {
