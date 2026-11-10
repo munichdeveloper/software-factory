@@ -1,0 +1,28 @@
+{
+  "url": "https://github.com/munichdeveloper/software-factory/releases/tag/untagged-b42749fbfe684690bad6",
+  "id": 440059499,
+  "tagName": "v0.7.0-rc.1",
+  "isDraft": true,
+  "isPrerelease": true,
+  "targetCommitish": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0",
+  "assets": [
+    {
+      "name": "backofficer-canary-evidence.json",
+      "bytes": 10094,
+      "sha256": "d2a91050e9d5d4d8ff41e1713ce125c1dea2f9fb141dbbde8154d64093a1041e",
+      "downloadReadbackMatched": true
+    },
+    {
+      "name": "SHA256SUMS",
+      "bytes": 207,
+      "sha256": "534b51d33ac99979bc913038e4b7feffaa682a481d9bf0402d9b610828a6127f",
+      "downloadReadbackMatched": true
+    },
+    {
+      "name": "software-factory-v0.7.0-rc.1-source.zip",
+      "bytes": 602702,
+      "sha256": "66c7d7db8869a11a21ec002947048a60d81a85b9ec86e1e3dc1e6c63fa2b9ca6",
+      "downloadReadbackMatched": true
+    }
+  ]
+}

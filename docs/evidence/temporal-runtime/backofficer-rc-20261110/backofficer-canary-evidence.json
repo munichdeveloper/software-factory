@@ -1,0 +1,273 @@
+{
+  "runtime": {
+    "passed": true,
+    "checkedAt": "2026-11-10T07:27:54.348Z",
+    "version": "0.7.0-rc.1",
+    "factorySha": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0",
+    "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+    "baseRef": "test/temporal-v0.7.0-rc.1",
+    "baseSha": "52c04224afcfaaed4b56aa590bd6812ed969e7b8",
+    "mainBefore": "f2fe7c392ac2c29d9911e5f2837dfb315046ad82",
+    "mainUnchanged": true,
+    "issueNumber": 11,
+    "workflowId": "sf-1448541967-c4e9a3d3d19d6d2e155ed98873f7ec26",
+    "runId": "01a1c458-f430-7e43-8cd5-629391cf60c6",
+    "executionId": "c4e9a3d3d19d6d2e155ed98873f7ec26",
+    "binding": "63870159c49f68a089d39d80006150fe3fc05b895749b2dbea0999da6d9bd8b9",
+    "release": {
+      "factorySha": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0",
+      "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+      "workflowHash": "ce75baa38d91a7bbf2fcd5f15541202d021930196e37352bb62c80390f1512cf",
+      "deploymentName": "sf-backofficer-rc",
+      "buildId": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0",
+      "taskQueue": "sf-backofficer-rc",
+      "schemaVersion": 1
+    },
+    "pinned": true,
+    "humanGate": true,
+    "workerCrashAtGate": true,
+    "workerCrashAfterDispatch": true,
+    "sameRunId": true,
+    "workerRoleRejected": true,
+    "wrongBindingRejected": true,
+    "issueScoped": true,
+    "allowedPaths": [
+      "docs/temporal-rc-canary.md",
+      "tests/temporal-rc-canary.mjs"
+    ],
+    "actions": {
+      "id": 42775252097,
+      "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42775252097",
+      "head": "52c04224afcfaaed4b56aa590bd6812ed969e7b8"
+    },
+    "pullRequest": {
+      "number": 12,
+      "url": "https://github.com/munichdeveloper/Backofficer/pull/12",
+      "head": "78acccaa40bd58cb040e1b7b1b91757fd73478dc",
+      "base": "test/temporal-v0.7.0-rc.1",
+      "draft": true
+    },
+    "effects": [
+      {
+        "effect": "blob:28b4b2cbd694d9e28458f8c585ac5aa2922adecc",
+        "phase": "confirmed",
+        "receipt": {
+          "sha": "28b4b2cbd694d9e28458f8c585ac5aa2922adecc"
+        }
+      },
+      {
+        "effect": "blob:7e7c51f9771fb06a2ff662ec52f0751bc33cb6db",
+        "phase": "confirmed",
+        "receipt": {
+          "sha": "7e7c51f9771fb06a2ff662ec52f0751bc33cb6db"
+        }
+      },
+      {
+        "effect": "branch",
+        "phase": "confirmed",
+        "receipt": {
+          "sha": "78acccaa40bd58cb040e1b7b1b91757fd73478dc"
+        }
+      },
+      {
+        "effect": "coding-dispatch",
+        "phase": "confirmed",
+        "receipt": {
+          "accepted": true
+        }
+      },
+      {
+        "effect": "commit",
+        "phase": "confirmed",
+        "receipt": {
+          "sha": "78acccaa40bd58cb040e1b7b1b91757fd73478dc"
+        }
+      },
+      {
+        "effect": "draft-pr",
+        "phase": "confirmed",
+        "receipt": {
+          "url": "https://github.com/munichdeveloper/Backofficer/pull/12",
+          "head": "78acccaa40bd58cb040e1b7b1b91757fd73478dc",
+          "number": 12
+        }
+      },
+      {
+        "effect": "executor-ref",
+        "phase": "confirmed",
+        "receipt": {
+          "sha": "52c04224afcfaaed4b56aa590bd6812ed969e7b8"
+        }
+      },
+      {
+        "effect": "publication-comment",
+        "phase": "confirmed",
+        "receipt": {
+          "id": 6761632527
+        }
+      },
+      {
+        "effect": "result-journal",
+        "phase": "confirmed",
+        "receipt": null
+      },
+      {
+        "effect": "tree",
+        "phase": "confirmed",
+        "receipt": {
+          "sha": "892bf1f2a32f9c270180c2faf4f3f6f5477f8aa9"
+        }
+      }
+    ],
+    "artifact": {
+      "contractVersion": "3.0",
+      "baseSha": "52c04224afcfaaed4b56aa590bd6812ed969e7b8",
+      "result": {
+        "contractVersion": "2.0",
+        "executionId": "c4e9a3d3d19d6d2e155ed98873f7ec26",
+        "taskId": "github:munichdeveloper/Backofficer#11",
+        "taskVersion": "dfc0b6d5cb27303721fa1ab41140a28e662bc6e2f84e60855defe139dfe7b6b0",
+        "status": "success",
+        "summary": "Added the exact canary documentation and Node built-ins-only assertion test. `node tests/temporal-rc-canary.mjs` passed. Verified only the two requested new files changed; existing files remain unchanged. Changes are left in the workspace for the caller to publish.",
+        "artifacts": [],
+        "error": null
+      },
+      "changes": [
+        {
+          "path": "docs/temporal-rc-canary.md",
+          "content": "QmFja29mZmljZXIgVGVtcG9yYWwgUkMgY2FuYXJ5IHBhc3NlZC4K",
+          "mode": "100644"
+        },
+        {
+          "path": "tests/temporal-rc-canary.mjs",
+          "content": "aW1wb3J0IGFzc2VydCBmcm9tICJub2RlOmFzc2VydC9zdHJpY3QiOwppbXBvcnQgeyByZWFkRmlsZSB9IGZyb20gIm5vZGU6ZnMvcHJvbWlzZXMiOwoKY29uc3QgY29udGVudCA9IGF3YWl0IHJlYWRGaWxlKAogIG5ldyBVUkwoIi4uL2RvY3MvdGVtcG9yYWwtcmMtY2FuYXJ5Lm1kIiwgaW1wb3J0Lm1ldGEudXJsKSwKICAidXRmOCIsCik7Cgphc3NlcnQuZXF1YWwoY29udGVudCwgIkJhY2tvZmZpY2VyIFRlbXBvcmFsIFJDIGNhbmFyeSBwYXNzZWQuXG4iKTsK",
+          "mode": "100644"
+        }
+      ]
+    },
+    "image": "sha256:4ee3c88f61fa5b41044454e764e0b50fb5c5a3bf5ddf5618c549c622bc309087",
+    "freshCluster": true,
+    "noPublishedPorts": true
+  },
+  "independentGeneratedCheck": {
+    "positivePassed": true,
+    "negativeRejected": true,
+    "node": "v22.23.4",
+    "network": "none",
+    "credentials": false,
+    "checkedAt": "2026-11-10T07:28:16.805Z",
+    "runId": "01a1c458-f430-7e43-8cd5-629391cf60c6",
+    "head": "78acccaa40bd58cb040e1b7b1b91757fd73478dc"
+  },
+  "repositoryReview": {
+    "checkedAt": "2026-11-10T07:28:20.108Z",
+    "mainUnchanged": true,
+    "mainSha": "f2fe7c392ac2c29d9911e5f2837dfb315046ad82",
+    "existingSecretUnchanged": true,
+    "productionFiles": [
+      {
+        "path": ".github/software-factory.yml",
+        "sha": "82b8077a65b5a105c8a11803f3de5208ed219ee4",
+        "unchanged": true
+      },
+      {
+        "path": ".github/workflows/factory-deploy.yml",
+        "sha": "2669b48993529f619923c6ce785b9c71de16bd9d",
+        "unchanged": true
+      }
+    ],
+    "pullRequest": {
+      "number": 12,
+      "url": "https://github.com/munichdeveloper/Backofficer/pull/12",
+      "draft": true,
+      "base": "test/temporal-v0.7.0-rc.1",
+      "head": "78acccaa40bd58cb040e1b7b1b91757fd73478dc",
+      "files": [
+        {
+          "path": "docs/temporal-rc-canary.md",
+          "status": "added"
+        },
+        {
+          "path": "tests/temporal-rc-canary.mjs",
+          "status": "added"
+        }
+      ]
+    }
+  },
+  "ci": {
+    "factory": [
+      {
+        "conclusion": "success",
+        "databaseId": 42774905488,
+        "headSha": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0",
+        "status": "completed",
+        "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42774905488"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 42774897960,
+        "headSha": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0",
+        "status": "completed",
+        "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42774897960"
+      }
+    ],
+    "backofficerApplicationChecks": [
+      {
+        "id": 42775457537,
+        "name": "Application checks",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42775457537",
+        "headSha": "78acccaa40bd58cb040e1b7b1b91757fd73478dc"
+      }
+    ],
+    "passed": true
+  },
+  "package": {
+    "passed": true,
+    "scope": "Canary and final RC use the same exact image and compiled Factory/Harness files.",
+    "packages": [
+      {
+        "compiledRuntimeHash": "afcebed20fd45a18cbd4f91e910d8692e78a65ba76a94420ea18f8049ded8463",
+        "version": "0.7.0-rc.1",
+        "harness": "f70d11556075e9764d69ac03e029720d12ccef65",
+        "tag": "sf-temporal-rc:0.7.0-rc.1",
+        "imageId": "sha256:4ee3c88f61fa5b41044454e764e0b50fb5c5a3bf5ddf5618c549c622bc309087",
+        "revision": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0"
+      },
+      {
+        "compiledRuntimeHash": "afcebed20fd45a18cbd4f91e910d8692e78a65ba76a94420ea18f8049ded8463",
+        "version": "0.7.0-rc.1",
+        "harness": "f70d11556075e9764d69ac03e029720d12ccef65",
+        "tag": "sf-temporal-rc:0.7.0-rc.1-final",
+        "imageId": "sha256:4ee3c88f61fa5b41044454e764e0b50fb5c5a3bf5ddf5618c549c622bc309087",
+        "revision": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0"
+      }
+    ]
+  },
+  "cleanup": {
+    "checkedAt": "2026-11-10T07:30:34.634783+00:00",
+    "containersRemoved": true,
+    "networksRemoved": true,
+    "temporaryDatabaseEnvironmentRemoved": true,
+    "existingSecretUnchanged": true,
+    "noMergeOrProductionDeploymentRequested": true,
+    "backupAutomationRemainsPaused": true
+  },
+  "unacceptedFirstAttempt": {
+    "passed": false,
+    "acceptedAsCodingSuccess": false,
+    "factorySha": "1e29a4dcee669fc0349c32ce2005d28af97d4661",
+    "issue": "https://github.com/munichdeveloper/Backofficer/issues/10",
+    "executionId": "be8072feb7438c4a99b7fd3a6458dfd7",
+    "runId": "01a1c452-6648-7328-95d5-d9bec56e1dde",
+    "actionsRun": "https://github.com/munichdeveloper/Backofficer/actions/runs/42774412076",
+    "actionsTransportConclusion": "success",
+    "codingResult": "blocked",
+    "reason": "Dependency installation inside the isolated model environment failed with EAI_AGAIN; mandatory repository Next.js guide was unavailable.",
+    "changes": 0,
+    "pullRequestsCreated": 0,
+    "recovery": "Prepare locked npm dependencies without lifecycle scripts before isolated model execution, in a new issue and fresh cluster. No blind repeat of the prior execution.",
+    "separatePackagingCorrection": "CI also required regenerating the committed action bundle; corrected before the next accepted candidate."
+  }
+}

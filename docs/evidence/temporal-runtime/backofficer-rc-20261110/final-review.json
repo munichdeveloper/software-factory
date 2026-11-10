@@ -1,0 +1,35 @@
+{
+  "checkedAt": "2026-11-10T07:28:20.108Z",
+  "mainUnchanged": true,
+  "mainSha": "f2fe7c392ac2c29d9911e5f2837dfb315046ad82",
+  "existingSecretUnchanged": true,
+  "productionFiles": [
+    {
+      "path": ".github/software-factory.yml",
+      "sha": "82b8077a65b5a105c8a11803f3de5208ed219ee4",
+      "unchanged": true
+    },
+    {
+      "path": ".github/workflows/factory-deploy.yml",
+      "sha": "2669b48993529f619923c6ce785b9c71de16bd9d",
+      "unchanged": true
+    }
+  ],
+  "pullRequest": {
+    "number": 12,
+    "url": "https://github.com/munichdeveloper/Backofficer/pull/12",
+    "draft": true,
+    "base": "test/temporal-v0.7.0-rc.1",
+    "head": "78acccaa40bd58cb040e1b7b1b91757fd73478dc",
+    "files": [
+      {
+        "path": "docs/temporal-rc-canary.md",
+        "status": "added"
+      },
+      {
+        "path": "tests/temporal-rc-canary.mjs",
+        "status": "added"
+      }
+    ]
+  }
+}

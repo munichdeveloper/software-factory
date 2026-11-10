@@ -1,0 +1,150 @@
+{
+  "passed": true,
+  "checkedAt": "2026-11-10T07:27:54.348Z",
+  "version": "0.7.0-rc.1",
+  "factorySha": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0",
+  "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+  "baseRef": "test/temporal-v0.7.0-rc.1",
+  "baseSha": "52c04224afcfaaed4b56aa590bd6812ed969e7b8",
+  "mainBefore": "f2fe7c392ac2c29d9911e5f2837dfb315046ad82",
+  "mainUnchanged": true,
+  "issueNumber": 11,
+  "workflowId": "sf-1448541967-c4e9a3d3d19d6d2e155ed98873f7ec26",
+  "runId": "01a1c458-f430-7e43-8cd5-629391cf60c6",
+  "executionId": "c4e9a3d3d19d6d2e155ed98873f7ec26",
+  "binding": "63870159c49f68a089d39d80006150fe3fc05b895749b2dbea0999da6d9bd8b9",
+  "release": {
+    "factorySha": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0",
+    "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+    "workflowHash": "ce75baa38d91a7bbf2fcd5f15541202d021930196e37352bb62c80390f1512cf",
+    "deploymentName": "sf-backofficer-rc",
+    "buildId": "1d7ac107c2a1ca67e1a45f6daa1ad6f0cd97d3e0",
+    "taskQueue": "sf-backofficer-rc",
+    "schemaVersion": 1
+  },
+  "pinned": true,
+  "humanGate": true,
+  "workerCrashAtGate": true,
+  "workerCrashAfterDispatch": true,
+  "sameRunId": true,
+  "workerRoleRejected": true,
+  "wrongBindingRejected": true,
+  "issueScoped": true,
+  "allowedPaths": [
+    "docs/temporal-rc-canary.md",
+    "tests/temporal-rc-canary.mjs"
+  ],
+  "actions": {
+    "id": 42775252097,
+    "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42775252097",
+    "head": "52c04224afcfaaed4b56aa590bd6812ed969e7b8"
+  },
+  "pullRequest": {
+    "number": 12,
+    "url": "https://github.com/munichdeveloper/Backofficer/pull/12",
+    "head": "78acccaa40bd58cb040e1b7b1b91757fd73478dc",
+    "base": "test/temporal-v0.7.0-rc.1",
+    "draft": true
+  },
+  "effects": [
+    {
+      "effect": "blob:28b4b2cbd694d9e28458f8c585ac5aa2922adecc",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "28b4b2cbd694d9e28458f8c585ac5aa2922adecc"
+      }
+    },
+    {
+      "effect": "blob:7e7c51f9771fb06a2ff662ec52f0751bc33cb6db",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "7e7c51f9771fb06a2ff662ec52f0751bc33cb6db"
+      }
+    },
+    {
+      "effect": "branch",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "78acccaa40bd58cb040e1b7b1b91757fd73478dc"
+      }
+    },
+    {
+      "effect": "coding-dispatch",
+      "phase": "confirmed",
+      "receipt": {
+        "accepted": true
+      }
+    },
+    {
+      "effect": "commit",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "78acccaa40bd58cb040e1b7b1b91757fd73478dc"
+      }
+    },
+    {
+      "effect": "draft-pr",
+      "phase": "confirmed",
+      "receipt": {
+        "url": "https://github.com/munichdeveloper/Backofficer/pull/12",
+        "head": "78acccaa40bd58cb040e1b7b1b91757fd73478dc",
+        "number": 12
+      }
+    },
+    {
+      "effect": "executor-ref",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "52c04224afcfaaed4b56aa590bd6812ed969e7b8"
+      }
+    },
+    {
+      "effect": "publication-comment",
+      "phase": "confirmed",
+      "receipt": {
+        "id": 6761632527
+      }
+    },
+    {
+      "effect": "result-journal",
+      "phase": "confirmed",
+      "receipt": null
+    },
+    {
+      "effect": "tree",
+      "phase": "confirmed",
+      "receipt": {
+        "sha": "892bf1f2a32f9c270180c2faf4f3f6f5477f8aa9"
+      }
+    }
+  ],
+  "artifact": {
+    "contractVersion": "3.0",
+    "baseSha": "52c04224afcfaaed4b56aa590bd6812ed969e7b8",
+    "result": {
+      "contractVersion": "2.0",
+      "executionId": "c4e9a3d3d19d6d2e155ed98873f7ec26",
+      "taskId": "github:munichdeveloper/Backofficer#11",
+      "taskVersion": "dfc0b6d5cb27303721fa1ab41140a28e662bc6e2f84e60855defe139dfe7b6b0",
+      "status": "success",
+      "summary": "Added the exact canary documentation and Node built-ins-only assertion test. `node tests/temporal-rc-canary.mjs` passed. Verified only the two requested new files changed; existing files remain unchanged. Changes are left in the workspace for the caller to publish.",
+      "artifacts": [],
+      "error": null
+    },
+    "changes": [
+      {
+        "path": "docs/temporal-rc-canary.md",
+        "content": "QmFja29mZmljZXIgVGVtcG9yYWwgUkMgY2FuYXJ5IHBhc3NlZC4K",
+        "mode": "100644"
+      },
+      {
+        "path": "tests/temporal-rc-canary.mjs",
+        "content": "aW1wb3J0IGFzc2VydCBmcm9tICJub2RlOmFzc2VydC9zdHJpY3QiOwppbXBvcnQgeyByZWFkRmlsZSB9IGZyb20gIm5vZGU6ZnMvcHJvbWlzZXMiOwoKY29uc3QgY29udGVudCA9IGF3YWl0IHJlYWRGaWxlKAogIG5ldyBVUkwoIi4uL2RvY3MvdGVtcG9yYWwtcmMtY2FuYXJ5Lm1kIiwgaW1wb3J0Lm1ldGEudXJsKSwKICAidXRmOCIsCik7Cgphc3NlcnQuZXF1YWwoY29udGVudCwgIkJhY2tvZmZpY2VyIFRlbXBvcmFsIFJDIGNhbmFyeSBwYXNzZWQuXG4iKTsK",
+        "mode": "100644"
+      }
+    ]
+  },
+  "image": "sha256:4ee3c88f61fa5b41044454e764e0b50fb5c5a3bf5ddf5618c549c622bc309087",
+  "freshCluster": true,
+  "noPublishedPorts": true
+}
