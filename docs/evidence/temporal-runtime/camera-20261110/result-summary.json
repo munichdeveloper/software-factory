@@ -1,0 +1,152 @@
+{
+  "checkedAt": "2026-11-10T08:55:46.856823+00:00",
+  "labelDelegationPassed": true,
+  "automatedFeatureValidationPassed": true,
+  "automaticPublicationPassed": false,
+  "physicalSmartphoneTest": false,
+  "acceptanceComplete": false,
+  "factorySha": "be366e7ce63bcaf6d728e76742e4d4852a93c082",
+  "harnessSha": "f70d11556075e9764d69ac03e029720d12ccef65",
+  "runId": "01a1c491-a84d-79ff-b96a-a8b81b256c70",
+  "executionId": "856d67ff01a76a8aa99d0e7a36dbd8fe",
+  "actionsRunId": 42782837029,
+  "readyLabelProof": {
+    "eventId": 35659470074,
+    "actor": "munichdeveloper",
+    "createdAt": "2026-11-10T08:26:36Z"
+  },
+  "secondHumanApprovalRequired": false,
+  "originalModelStatus": "blocked",
+  "originalArtifactSha256": "6bef792b734edebf66e4bd5e656bc451b3b9f4a2c47079c0a58bedabd326cced",
+  "reviewRecovery": true,
+  "pullRequest": {
+    "number": 14,
+    "url": "https://github.com/munichdeveloper/Backofficer/pull/14",
+    "draft": true,
+    "base": "test/temporal-camera-issue-13",
+    "head": "c0e586cf37018a38c1029668a6f86ea97ac97677",
+    "files": [
+      {
+        "path": "README.md",
+        "status": "modified"
+      },
+      {
+        "path": "docs/camera-upload.md",
+        "status": "added"
+      },
+      {
+        "path": "src/app/globals.css",
+        "status": "modified"
+      },
+      {
+        "path": "src/app/icons.tsx",
+        "status": "modified"
+      },
+      {
+        "path": "src/app/page.tsx",
+        "status": "modified"
+      },
+      {
+        "path": "tests/browser/camera-upload.spec.ts",
+        "status": "added"
+      },
+      {
+        "path": "tests/documents.test.ts",
+        "status": "modified"
+      }
+    ]
+  },
+  "factoryCi": [
+    {
+      "conclusion": "success",
+      "databaseId": 42782396391,
+      "headSha": "be366e7ce63bcaf6d728e76742e4d4852a93c082",
+      "status": "completed",
+      "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42782396391"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 42782386924,
+      "headSha": "be366e7ce63bcaf6d728e76742e4d4852a93c082",
+      "status": "completed",
+      "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42782386924"
+    }
+  ],
+  "codeCi": {
+    "conclusion": "success",
+    "databaseId": 42785462976,
+    "headSha": "487f9c2b1a400d099510bf0daaad3d9b92bea936",
+    "status": "completed",
+    "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42785462976"
+  },
+  "documentationCi": {
+    "conclusion": "success",
+    "databaseId": 42786041626,
+    "headSha": "c0e586cf37018a38c1029668a6f86ea97ac97677",
+    "status": "completed",
+    "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42786041626"
+  },
+  "independentBrowser": {
+    "passed": true,
+    "checkedAt": "2026-11-10T08:49:03.281Z",
+    "checks": [
+      "separate-camera-action-and-ordinary-chooser",
+      "cancel-preserves-draft-and-ocr-opt-out",
+      "real-upload-one-photo-with-ocr-off",
+      "search-and-byte-equal-download",
+      "ordinary-file-upload-still-works"
+    ],
+    "syntheticPhotoSha256": "fa49f9e73c06de86e9dcab77d32180ceed8415fce19fd0ab2e843bd447209a40",
+    "physicalSmartphoneTest": false,
+    "viewport": "390x844 mobile simulation",
+    "baseUrl": "http://127.0.0.1:3113"
+  },
+  "mainUnchanged": true,
+  "productionConfigurationUnchanged": true,
+  "existingSecretUnchanged": true,
+  "disposableClusterRemoved": true,
+  "temporaryDatabaseEnvironmentRemoved": true,
+  "localPreviewStopped": true,
+  "backupAutomationRemainsPaused": true,
+  "changedFileHashes": [
+    {
+      "path": "README.md",
+      "bytes": 26484,
+      "sha256": "e287759565d2150ce7d304dd108ec571f7cf7fd951bd3396ca20e752dc356796"
+    },
+    {
+      "path": "docs/camera-upload.md",
+      "bytes": 8256,
+      "sha256": "b6082470f76c5dcca60708df1711e8dc1b71ccd4f8a86c444225aa37562841bf"
+    },
+    {
+      "path": "src/app/globals.css",
+      "bytes": 29601,
+      "sha256": "0488dd1d1abaaa7c2b1cecc78a99e98e0be4dd23aad5561e692c64b4466a11f1"
+    },
+    {
+      "path": "src/app/icons.tsx",
+      "bytes": 3145,
+      "sha256": "d33f4a3b3304f7e7ad85c0bf52bc69a98b009c2b16b77a35ea59c357c435efd2"
+    },
+    {
+      "path": "src/app/page.tsx",
+      "bytes": 39555,
+      "sha256": "e1085c1f808e9008f3beaf6a59cb850554589f9b321c7cd9d00f8fb2ee6acf0c"
+    },
+    {
+      "path": "tests/browser/camera-upload.spec.ts",
+      "bytes": 16331,
+      "sha256": "a7f6a13751ae4cfb73bc9ecd80370c71ed1b2e81c7cd27301e33dfe530b8f3f4"
+    },
+    {
+      "path": "tests/documents.test.ts",
+      "bytes": 25762,
+      "sha256": "953f24a40c7d12d4617510cb3d07f63919adc8f988748212d2cbb48b6a314a92"
+    }
+  ],
+  "remaining": [
+    "Actual smartphone capture/device/browser acceptance",
+    "Factory review-publication and independent validation path for blocked but usable artifacts, preserving blocked status and idempotency"
+  ]
+}

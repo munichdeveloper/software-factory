@@ -1,0 +1,33 @@
+{
+  "factory": [
+    {
+      "conclusion": "success",
+      "databaseId": 42782396391,
+      "headSha": "be366e7ce63bcaf6d728e76742e4d4852a93c082",
+      "status": "completed",
+      "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42782396391"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 42782386924,
+      "headSha": "be366e7ce63bcaf6d728e76742e4d4852a93c082",
+      "status": "completed",
+      "url": "https://github.com/munichdeveloper/software-factory/actions/runs/42782386924"
+    }
+  ],
+  "feature": {
+    "conclusion": "success",
+    "databaseId": 42785462976,
+    "headSha": "487f9c2b1a400d099510bf0daaad3d9b92bea936",
+    "status": "completed",
+    "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42785462976"
+  },
+  "documentation": {
+    "conclusion": "success",
+    "databaseId": 42786041626,
+    "headSha": "c0e586cf37018a38c1029668a6f86ea97ac97677",
+    "status": "completed",
+    "url": "https://github.com/munichdeveloper/Backofficer/actions/runs/42786041626"
+  },
+  "passed": true
+}
