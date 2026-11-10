@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "factoryVersion": "0.7.0-rc.1",
+  "factoryVersion": "0.7.0",
   "experimental": true,
   "snapshotSchemaVersion": 1,
   "harness": {
