@@ -145,6 +145,8 @@ This repository deploys its own runtime stack (broker, worker, SF Manager and th
   `MANAGER_SHA` in the host's `.env`. A deployment never changes them. Rolling out a new worker release
   (new package, registry entry and executor wrapper) remains a deliberate, separate step.
 - Credentials (`*.env`) and `registry.json` stay on the host in the deploy path and never pass through GitHub.
+- The public host name of the Manager is read from `SFM_HOST` in the host's `.env`. Without it the compose file
+  does not resolve and the deployment fails before any container changes.
 
 One-time setup: add `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST` and `DEPLOY_USER` to the
 `production` environment of this repository. Until they exist every deployment is skipped with a warning.
