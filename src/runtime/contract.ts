@@ -41,7 +41,17 @@ export const observationSchema = z.strictObject({
   binding: digest, createdAt: z.iso.datetime(), result: workerResultSchema.nullable(),
 });
 export type RuntimeObservation = z.infer<typeof observationSchema>;
+/**
+ * A deterministic policy rejection raised before any run was persisted or started.
+ * The caller may record a definite outcome; no workflow can exist for this execution.
+ */
+export class RuntimeAdmissionRejected extends Error {
+  constructor(readonly code: string) { super(code); this.name = 'RuntimeAdmissionRejected'; }
+}
+export const admissionCode = (error: unknown) => error instanceof Error && /^[A-Z][A-Z_]+$/.test(error.message) ? error.message : null;
 export interface WorkerRuntimePort {
+  /** Checks grants that must exist before a durable intent is written. Rejects with RuntimeAdmissionRejected. */
+  preflight?(issueNumber: number): Promise<void>;
   start(admission: Admission): Promise<RuntimeObservation>;
   observations(executionIds: string[]): Promise<RuntimeObservation[]>;
   cancel(executionId: string): Promise<void>;

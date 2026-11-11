@@ -38890,6 +38890,15 @@ var observationSchema = external_exports.strictObject({
   createdAt: external_exports.iso.datetime(),
   result: workerResultSchema.nullable()
 });
+var RuntimeAdmissionRejected = class extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+    this.name = "RuntimeAdmissionRejected";
+  }
+  code;
+};
+var admissionCode = (error62) => error62 instanceof Error && /^[A-Z][A-Z_]+$/.test(error62.message) ? error62.message : null;
 
 // src/runtime/ready-approval.ts
 async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected) {
@@ -38897,8 +38906,9 @@ async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, ex
   const ordered = [...events].sort((a, b) => a.id - b.id);
   const grant = ordered.filter((e) => e.event === "labeled").at(-1);
   if (!grant) throw new Error("READY_APPROVAL_REQUIRED");
-  const proof = readyApprovalSchema.parse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
-  if (!await canApprove(proof.actor)) throw new Error("READY_ACTOR_NOT_AUTHORIZED");
+  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error("READY_ACTOR_NOT_AUTHORIZED");
+  const proof = parsed.data;
   if (expected && hash2(proof) !== hash2(expected)) throw new Error("READY_APPROVAL_CHANGED");
   const later = ordered.filter((e) => e.id > grant.id);
   const consumed = expected && later.length === 1 && later[0].event === "unlabeled" && trustedActors.includes(later[0].actor) && issue2.labels.includes("harness:running");
@@ -39667,6 +39677,8 @@ var Manager = class {
   planner;
   options;
   now;
+  /** Definite runtime admission rejections of the current run; reported as blockers, never as uncertain dispatches. */
+  rejections = [];
   async snapshot() {
     const snapshot = await this.github.snapshot(this.config.execution.engine === "temporal" ? null : this.config.manager.workflow);
     if (this.config.execution.engine === "temporal") {
@@ -39771,6 +39783,15 @@ ${marker2}`;
       case "retry_worker": {
         const attempt = action.attempt;
         const id = executionId(this.github.repository, live, attempt);
+        if (this.config.execution.engine === "temporal" && this.options.workerRuntime?.preflight) {
+          try {
+            await this.options.workerRuntime.preflight(live.number);
+          } catch (error62) {
+            if (!(error62 instanceof RuntimeAdmissionRejected)) throw error62;
+            this.rejections.push({ issueNumber: live.number, code: error62.code, recorded: false });
+            return false;
+          }
+        }
         const input2 = workerInputSchema.parse({
           contractVersion: "1.0",
           repository: this.github.repository,
@@ -39788,7 +39809,24 @@ ${marker2}`;
         await this.event(live.number, `intent:${id}`, { type: "intent", input: input2, actionId: actionId(action, policyVersion(this.config)), attempt });
         if (this.config.execution.engine === "temporal") {
           if (!this.options.workerRuntime) throw new Error("Temporal runtime is required; legacy dispatch is forbidden");
-          const receipt = await this.options.workerRuntime.start({ input: input2, actionId: actionId(action, policyVersion(this.config)), policyHash: policyVersion(this.config) });
+          let receipt;
+          try {
+            receipt = await this.options.workerRuntime.start({ input: input2, actionId: actionId(action, policyVersion(this.config)), policyHash: policyVersion(this.config) });
+          } catch (error62) {
+            if (!(error62 instanceof RuntimeAdmissionRejected)) throw error62;
+            await this.event(live.number, `result:${id}`, { type: "result", result: {
+              contractVersion: "1.0",
+              executionId: id,
+              issueNumber: live.number,
+              status: "cancelled",
+              summary: `Runtime admission rejected before start: ${error62.code}`,
+              artifacts: [],
+              error: error62.code,
+              proposedActions: []
+            } });
+            this.rejections.push({ issueNumber: live.number, code: error62.code, recorded: true });
+            return false;
+          }
           await this.event(live.number, `temporal-receipt:${id}`, {
             type: "temporal_receipt",
             executionId: id,
@@ -39827,6 +39865,7 @@ ${marker2}`;
   }
   async run() {
     const started = this.now();
+    this.rejections = [];
     const report = {
       correlationId: this.options.correlationId,
       startedAt: started.toISOString(),
@@ -39908,9 +39947,14 @@ ${marker2}`;
         }
       } catch (error62) {
         const status = error62 instanceof Error && "status" in error62 ? String(error62.status) : "unknown";
-        report.errors.push(`Action ${action.kind} on #${action.issueNumber} failed (HTTP ${status}); durable intents preserved for recovery`);
+        const code = admissionCode(error62);
+        report.errors.push(`Action ${action.kind} on #${action.issueNumber} failed (HTTP ${status}${code ? `, ${code}` : ""}); durable intents preserved for recovery`);
         break;
       }
+    }
+    for (const r of this.rejections) {
+      report.blockers.push(`#${r.issueNumber}: runtime admission rejected (${r.code}); ${r.recorded ? "the execution was closed as cancelled" : "no execution was created"}`);
+      report.nextSteps.push(r.code.startsWith("READY_") ? `#${r.issueNumber}: an authorized human must apply harness:ready (remove and re-add it if the Manager set it), then run the manager again` : `#${r.issueNumber}: resolve ${r.code} in the runtime registry or task, then run the manager again`);
     }
     if (this.config.notifications.slack.enabled && !this.config.execution.dryRun && this.config.autonomy.profile !== "advisory") {
       try {

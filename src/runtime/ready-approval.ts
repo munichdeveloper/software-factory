@@ -9,8 +9,10 @@ export async function authorizeReadyLabel(issue: Issue, events: BlockLabelEvent[
   const ordered = [...events].sort((a, b) => a.id - b.id);
   const grant = ordered.filter(e => e.event === 'labeled').at(-1);
   if (!grant) throw new Error('READY_APPROVAL_REQUIRED');
-  const proof = readyApprovalSchema.parse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
-  if (!await canApprove(proof.actor)) throw new Error('READY_ACTOR_NOT_AUTHORIZED');
+  // A label applied by an App or the Manager itself (e.g. "name[bot]") is a status, never a grant.
+  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error('READY_ACTOR_NOT_AUTHORIZED');
+  const proof = parsed.data;
   if (expected && hash(proof) !== hash(expected)) throw new Error('READY_APPROVAL_CHANGED');
   const later = ordered.filter(e => e.id > grant.id);
   // The Manager consumes the ready status when moving the same execution to running.
