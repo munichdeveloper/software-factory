@@ -15,10 +15,13 @@ import { config, issue, MemoryGitHub } from './helpers.js';
 const bot = 'github-actions[bot]';
 /** Records native harness:ready label events with their real actor, as the GitHub timeline does. */
 class TimelineGitHub extends MemoryGitHub {
-  ready: BlockLabelEvent[] = []; private nextReady = 1000; now = new Date('2026-11-10T08:00:00.000Z');
+  private readyBy = new Map<number, BlockLabelEvent[]>(); private nextReady = 1000;
+  readyFor(number: number) { let events = this.readyBy.get(number); if (!events) this.readyBy.set(number, events = []); return events; }
+  get ready() { return this.readyFor(1); }
+  now = new Date('2026-11-10T08:00:00.000Z');
   private record(number: number, labels: string[], actor: string) {
     const before = this.state.issues.find(i => i.number === number)!.labels.includes('harness:ready'), after = labels.includes('harness:ready');
-    if (before !== after) this.ready.push({ id: this.nextReady++, event: after ? 'labeled' : 'unlabeled', actor, createdAt: this.now.toISOString() });
+    if (before !== after) this.readyFor(number).push({ id: this.nextReady++, event: after ? 'labeled' : 'unlabeled', actor, createdAt: this.now.toISOString() });
   }
   override async updateIssue(number: number, update: { labels?: string[]; state?: 'open' | 'closed' }) {
     if (update.labels) this.record(number, update.labels, bot);
@@ -59,7 +62,7 @@ function fixture() {
     workflow: { start: async (_type: string, options: { workflowId: string }) => { if (startError) throw startError; status.set(options.workflowId, 'RUNNING'); return { firstExecutionRunId: `00000000-0000-4000-8000-00000000000${++runs}` }; },
       getHandle: (workflowId: string) => handleFor(workflowId) } } as unknown as Client;
   const repo: RuntimeRepository = { repositoryId: 42, repository: github.repository, release, github, requireHumanGate: false, config: async () => cfg, baseSha: async () => 'd'.repeat(40),
-    readyApproval: async (number, expected) => authorizeReadyLabel(await github.getIssue(number), github.ready, actor => github.canApprove(actor), cfg.manager.trustedActors, expected) };
+    readyApproval: async (number, expected) => authorizeReadyLabel(await github.getIssue(number), github.readyFor(number), actor => github.canApprove(actor), cfg.manager.trustedActors, expected) };
   const controller = new RuntimeController(repo, store, client);
   const manager = () => new Manager(github, cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => github.now, workerRuntime: controller }).run();
   const events = () => (github.state.comments.get(1) ?? []).flatMap(c => { const e = decodeEvent(c, cfg.manager.trustedActors); return e ? [e.data] : []; });
@@ -187,7 +190,7 @@ describe('recovering an intent the runtime has no record of', () => {
     f.advance(30); const later = await f.manager();
     expect(later.blockers.some(b => b.includes('uncertain'))).toBe(false); expect(intents(f)).toBe(1);
   });
-  it('keeps the intent unresolved while the runtime cannot answer, and never recovers closed or dry-run tasks', async () => {
+  it('keeps the intent unresolved while the runtime cannot answer, and never recovers dry-run tasks', async () => {
     const f = fixture(); await dangling(f);
     f.repo.readyApproval = async () => { throw new Error('GitHub 502 for https://api.github.com'); };
     f.advance(1); const failing = await f.manager();
@@ -195,7 +198,26 @@ describe('recovering an intent the runtime has no record of', () => {
     expect(f.events().some(e => e.type === 'result')).toBe(false);
     const g = fixture(); await dangling(g); g.cfg.execution.dryRun = true;
     g.advance(1); await g.manager(); expect(g.store.rows.size).toBe(0);
-    const h = fixture(); await dangling(h); h.github.state.issues[0]!.state = 'closed';
-    h.advance(1); await h.manager(); expect(h.store.rows.size).toBe(0); expect(h.events().some(e => e.type === 'result')).toBe(false);
+  });
+  it('closes the intent of a closed task so it stops occupying a worker slot (Backofficer#13 after #21)', async () => {
+    const f = fixture(); await dangling(f);
+    // The stuck task is closed and replaced by a new one, which a human grants.
+    f.github.state.issues[0]!.state = 'closed';
+    f.github.state.issues.push(issue(2, ['harness:managed']));
+    f.github.human(2, ['harness:managed', 'harness:ready']);
+    f.advance(30); const report = await f.manager();
+    expect(report.decisions.filter(d => d.decision.reason === 'Maximum parallel workers reached')).toEqual([]);
+    expect(f.events().find(e => e.type === 'result')).toMatchObject({ result: { status: 'cancelled', executionId: expect.stringMatching(/^[a-f0-9]{32}$/) } });
+    expect(f.store.rows.size).toBe(1);
+    expect([...f.store.rows.values()][0]!.snapshot.admission.input.issueNumber).toBe(2);
+    expect(f.github.state.issues[1]!.labels).toContain('harness:running');
+  });
+  it('also closes the intent of a closed task when no ready-label grant is configured', async () => {
+    const f = fixture(); await dangling(f);
+    delete f.repo.readyApproval; f.github.state.issues[0]!.state = 'closed';
+    f.advance(30); const report = await f.manager();
+    expect(report.blockers).toContain('#1: runtime admission rejected (DELEGATION_REVOKED); the execution was closed as cancelled');
+    expect(f.store.rows.size).toBe(0);
+    expect(f.events().find(e => e.type === 'result')).toMatchObject({ result: { status: 'cancelled', error: 'DELEGATION_REVOKED' } });
   });
 });

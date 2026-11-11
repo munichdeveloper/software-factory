@@ -73,7 +73,9 @@ export class Manager {
   private async recover(tasks: Task[], report: RunReport): Promise<boolean> {
     if (this.config.execution.engine !== 'temporal' || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return false;
     let changed = false;
-    for (const task of tasks.filter(t => t.issue.state === 'open')) {
+    // Closed tasks are included: their unresolved intent would otherwise occupy a worker slot forever.
+    // The runtime never admits a closed task, so presenting it can only close the intent.
+    for (const task of tasks) {
       for (const execution of task.executions.filter(e => !e.runtime && !e.run && !e.result)) {
         try { await this.admit(execution.input, execution.actionId); changed = true; }
         catch (error) {
