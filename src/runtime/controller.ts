@@ -53,6 +53,7 @@ export class RuntimeController implements WorkerRuntimePort {
     if (auth.cancelled || hash(auth.input) !== hash(snapshot.admission.input)) throw new Error('DELEGATION_REVOKED');
     return config;
   }
+  get readyIsGrant() { return !!this.repo.readyApproval; }
   async preflight(issueNumber: number): Promise<void> {
     try {
       this.scope(issueNumber);

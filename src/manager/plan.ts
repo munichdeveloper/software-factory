@@ -8,6 +8,7 @@ export function reconciliationPlan(tasks: Task[], config: Config): Action[] {
   return tasks.flatMap(t => {
     const actions: Action[] = [];
     if (t.executions.some(e => e.active && e.timedOut && (e.run || e.runtime))) actions.push(proposal(t, 'cancel_worker', 'Worker exceeded its configured time limit'));
+    else if (t.executions.some(e => e.orphaned)) actions.push(proposal(t, 'cancel_worker', 'Task was closed or revised while its worker was running'));
     if (t.issue.state === 'open' && t.hasClosingMerge && !t.executions.some(e => e.active)) {
       actions.push(proposal(t, 'close_issue', 'Verified native closing reference to a merged pull request'));
     } else if (!t.issue.labels.includes(`harness:${t.desiredStatus}`) || t.issue.labels.filter(l => lifecycleLabels.includes(l)).length !== 1 ||

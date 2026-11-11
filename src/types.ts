@@ -26,5 +26,7 @@ export interface PullRequest { number: number; state: 'open' | 'closed'; merged:
   title?: string; headRefName?: string; headSha?: string; mergedBy?: { login: string; type: string } }
 export interface WorkflowRun { id: number; title: string; status: string; conclusion: string | null; createdAt: string; url: string }
 export interface Snapshot { issues: Issue[]; comments: Map<number, Comment[]>; prs: PullRequest[]; runs: WorkflowRun[]; defaultBranch: string; dependencyStates: Map<number, boolean>;
-  runtimeExecutions?: import('./runtime/contract.js').RuntimeObservation[] }
+  runtimeExecutions?: import('./runtime/contract.js').RuntimeObservation[];
+  /** harness:ready is a person's grant in this repository; the Manager must never apply it itself. */
+  readyIsGrant?: boolean }
 export type Decision = { outcome: 'allow' | 'deny' | 'approval'; reason: string; actionId: string };

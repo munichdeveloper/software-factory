@@ -43,7 +43,10 @@ export interface CodingExecutionPort {
 /** Actions supplies disposable compute only. Temporal/broker retain dispatch, gate and publication authority. */
 export class ActionsCodingExecutor implements CodingExecutionPort {
   constructor(private api: Octokit, private effects: (snapshot: RunSnapshot, binding: string) => EffectPort,
-    private authorize: (snapshot: RunSnapshot, binding: string) => Promise<unknown>, private trustedActors: string[]) {}
+    private authorize: (snapshot: RunSnapshot, binding: string) => Promise<unknown>,
+    /** A list fixed at construction, or a provider read at use so a repository's current configuration applies. */
+    private trustedActors: string[] | (() => Promise<string[]>)) {}
+  private async actors() { return typeof this.trustedActors === 'function' ? this.trustedActors() : this.trustedActors; }
   async cancel(snapshot: RunSnapshot, binding: string) {
     if (binding !== hash(snapshot)) throw new Error('EXECUTOR_BINDING_MISMATCH');
     const [owner, repo] = snapshot.repository.split('/') as [string, string], target = { owner, repo }, id = snapshot.admission.input.executionId;
@@ -52,7 +55,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     const matches = runs.filter(r => r.display_title === `SF Temporal ${id} ${binding}`);
     if (matches.length > 1) throw new Error('MULTIPLE_EXECUTOR_RUNS');
     const run = matches[0]; if (!run || run.status === 'completed') return;
-    if (run.head_sha !== snapshot.baseSha || !this.trustedActors.includes(run.actor?.login ?? '')) throw new Error('EXECUTOR_RUN_CONFLICT');
+    if (run.head_sha !== snapshot.baseSha || !(await this.actors()).includes(run.actor?.login ?? '')) throw new Error('EXECUTOR_RUN_CONFLICT');
     try { await this.api.actions.cancelWorkflowRun({ ...target, run_id: run.id }); }
     catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 409)) throw error; }
   }
@@ -89,7 +92,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     if (matching.length > 1) throw new Error('MULTIPLE_EXECUTOR_RUNS');
     const run = matching[0];
     if (run && (run.head_sha !== snapshot.baseSha || run.event !== 'workflow_dispatch' || run.run_attempt !== 1 ||
-      !this.trustedActors.includes(run.actor?.login ?? ''))) throw new Error('EXECUTOR_RUN_CONFLICT');
+      !(await this.actors()).includes(run.actor?.login ?? ''))) throw new Error('EXECUTOR_RUN_CONFLICT');
     try {
       await effects.perform({ key: 'coding-dispatch', payload: { ref, request, binding, workflow }, authorize,
         validate: z.strictObject({ accepted: z.literal(true) }).parse, reconcile: async () => run ? { accepted: true as const } : null,

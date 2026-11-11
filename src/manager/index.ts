@@ -28,6 +28,7 @@ export class Manager {
         return event?.data.type === 'intent' ? [event.data.input.executionId] : [];
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
+      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant;
     }
     return snapshot;
   }
@@ -120,6 +121,8 @@ export class Manager {
       case 'close_issue':
         await this.github.updateIssue(live.number, { state: 'closed', labels: withStatus(live, 'done') }); return true;
       case 'approve_task': {
+        // Where the label is a person's grant, no planner or Manager action may stand in for it.
+        if (snapshot.readyIsGrant) return false;
         const labels = withStatus(live, 'ready');
         if ([...live.labels].sort().join('\0') === [...labels].sort().join('\0')) return false;
         await this.github.updateIssue(live.number, { labels }); return true;
@@ -179,7 +182,7 @@ export class Manager {
         return true;
       }
       case 'cancel_worker': {
-        for (const execution of task.executions.filter(e => e.timedOut && e.runtime)) {
+        for (const execution of task.executions.filter(e => (e.timedOut || e.orphaned) && e.runtime)) {
           if (!this.options.workerRuntime) throw new Error('Temporal cancellation requires the runtime');
           await this.options.workerRuntime.cancel(execution.input.executionId);
         }
@@ -264,7 +267,7 @@ export class Manager {
     for (const r of this.rejections) {
       report.blockers.push(`#${r.issueNumber}: runtime admission rejected (${r.code}); ${r.recorded ? 'the execution was closed as cancelled' : 'no execution was created'}`);
       report.nextSteps.push(r.code.startsWith('READY_')
-        ? `#${r.issueNumber}: an authorized human must apply harness:ready (remove and re-add it if the Manager set it), then run the manager again`
+        ? `#${r.issueNumber}: an authorized human must apply harness:ready, then run the manager again`
         : `#${r.issueNumber}: resolve ${r.code} in the runtime registry or task, then run the manager again`);
     }
     if (this.config.notifications.slack.enabled && !this.config.execution.dryRun && this.config.autonomy.profile !== 'advisory') {

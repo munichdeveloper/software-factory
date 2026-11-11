@@ -94,13 +94,15 @@ export async function main(args = process.argv.slice(2)) {
         }
       };
       const effects = (snapshot: Parameters<ActionsCodingExecutor['poll']>[0], binding: string) => new RuntimeEffects(store, repository.repositoryId, snapshot.admission.input.executionId, binding);
-      repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors),
+      repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), async () => (await repository.config()).manager.trustedActors),
         publish: async (snapshot, binding, artifact, createdAt, validation) => new RuntimeCodingPublisher(api, effects(snapshot, binding),
           () => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors).publish(snapshot, artifact, createdAt, validation) };
       // Refuse a registry rollout which would orphan any running version, including long human gates.
       await assertRetainedReleases(item.repositoryId, [item.release, ...item.retainedReleases], store, temporal);
-      const config = await repository.config();
-      bindings.push({ repository, controller, planner: config.llm.provider === 'mock' ? new MockPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '') });
+      await repository.config(); // An unreadable or invalid configuration fails the start, not the first reconciliation.
+      // Chosen per reconciliation: a configuration change in the repository applies without restarting the broker.
+      const mock = new MockPlanner(), openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
+      bindings.push({ repository, controller, planner: config => config.llm.provider === 'mock' ? mock : openai });
     }
     const server = runtimeServer({ managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store });
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');

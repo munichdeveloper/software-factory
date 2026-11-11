@@ -3,12 +3,15 @@ import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { Manager } from '../manager/index.js';
 import type { Planner } from '../llm/provider.js';
+import type { Config } from '../config/index.js';
 import { admissionSchema, executionKey, snapshotSchema } from './contract.js';
 import { workerResultSchema } from '../workers/contract.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import type { RuntimeStore } from './store.js';
 
-export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController; planner: Planner }
+export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController;
+  /** A planner, or a choice made from the repository configuration that is current at each reconciliation. */
+  planner: Planner | ((config: Config) => Planner) }
 export interface ServerOptions { managerToken: string; workerToken: string; bindings: RuntimeBinding[]; store: RuntimeStore }
 const secureEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 const actorSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}(?:\[bot\])?$/);
@@ -63,8 +66,15 @@ export function runtimeServer(options: ServerOptions) {
         if (!await binding.repository.github.canApprove(input.actor)) throw new Error('ACTOR_NOT_AUTHORIZED');
         const config = await binding.repository.config();
         if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
-        send(response, 200, await options.store.locked(binding.repository.repositoryId, 'manager', () => new Manager(binding.repository.github, config, binding.planner,
-          { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller }).run())); return;
+        const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
+        const report = await options.store.locked(binding.repository.repositoryId, 'manager', () => new Manager(binding.repository.github, config, planner,
+          { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller }).run());
+        // One line per reconciliation that did or could not do something. Blockers and errors carry only
+        // issue numbers and fixed codes, never repository content or external error text.
+        const executed = report.decisions.filter(d => d.executed).map(d => `${d.action.kind}#${d.action.issueNumber}${d.action.status ? `:${d.action.status}` : ''}`);
+        if (executed.length || report.errors.length || report.blockers.length) console.log(JSON.stringify({ event: 'factory-reconcile',
+          repositoryId: binding.repository.repositoryId, outcome: report.outcome, executed, errors: report.errors, blockers: report.blockers }));
+        send(response, 200, report); return;
       }
       if (resource === 'runs' && id && action === 'cancel') {
         // Machine callers are authorized by the scoped admission identity; UI additionally checks its actor.
