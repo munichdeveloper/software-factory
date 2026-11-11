@@ -39257,6 +39257,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
         runtime,
         result,
         active,
+        orphaned: active && !!runtime && (issue2.state === "closed" || input2.taskVersion !== version2),
         ambiguous: !runtime && !run && !result && elapsed > config2.execution.dispatchGraceMinutes * 6e4,
         timedOut: runtime?.phase !== "awaiting-approval" && !!(run || runtime) && active && elapsed > input2.limits.timeoutMinutes * 6e4
       });
@@ -39283,7 +39284,9 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     else if (blockReason) desiredStatus = "blocked";
     else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
     else if (hasOpenPR) desiredStatus = "awaiting-pr";
-    else if (["backlog", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = "ready";
+    else if (snapshot.readyIsGrant) {
+      if (["backlog", "ready", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = issue2.labels.includes("harness:ready") ? "ready" : "backlog";
+    } else if (["backlog", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = "ready";
     return {
       issue: issue2,
       version: version2,
@@ -39353,7 +39356,7 @@ function evaluate(action, ctx) {
       if (action.attempt !== 0) return deny("Initial execution must use attempt zero");
     }
   }
-  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.active && e.timedOut && (e.run || e.runtime))) return deny("No timed out workflow to cancel");
+  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.orphaned || e.active && e.timedOut && (e.run || e.runtime))) return deny("No timed out or orphaned workflow to cancel");
   if (action.kind === "create_followup") {
     if (!action.followup) return deny("Follow-up details are required");
     if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
@@ -39475,6 +39478,7 @@ function reconciliationPlan(tasks, config2) {
   return tasks.flatMap((t) => {
     const actions = [];
     if (t.executions.some((e) => e.active && e.timedOut && (e.run || e.runtime))) actions.push(proposal(t, "cancel_worker", "Worker exceeded its configured time limit"));
+    else if (t.executions.some((e) => e.orphaned)) actions.push(proposal(t, "cancel_worker", "Task was closed or revised while its worker was running"));
     if (t.issue.state === "open" && t.hasClosingMerge && !t.executions.some((e) => e.active)) {
       actions.push(proposal(t, "close_issue", "Verified native closing reference to a merged pull request"));
     } else if (!t.issue.labels.includes(`harness:${t.desiredStatus}`) || t.issue.labels.filter((l) => lifecycleLabels.includes(l)).length !== 1 || t.executions.some((e) => e.result && !t.events.some((event) => event.data.type === "result" && event.data.result.executionId === e.input.executionId))) {
@@ -39689,6 +39693,7 @@ var Manager = class {
         return event?.data.type === "intent" ? [event.data.input.executionId] : [];
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
+      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant;
     }
     return snapshot;
   }
@@ -39796,6 +39801,7 @@ var Manager = class {
         await this.github.updateIssue(live.number, { state: "closed", labels: withStatus(live, "done") });
         return true;
       case "approve_task": {
+        if (snapshot.readyIsGrant) return false;
         const labels = withStatus(live, "ready");
         if ([...live.labels].sort().join("\0") === [...labels].sort().join("\0")) return false;
         await this.github.updateIssue(live.number, { labels });
@@ -39881,7 +39887,7 @@ ${marker2}`;
         return true;
       }
       case "cancel_worker": {
-        for (const execution of task.executions.filter((e) => e.timedOut && e.runtime)) {
+        for (const execution of task.executions.filter((e) => (e.timedOut || e.orphaned) && e.runtime)) {
           if (!this.options.workerRuntime) throw new Error("Temporal cancellation requires the runtime");
           await this.options.workerRuntime.cancel(execution.input.executionId);
         }
@@ -39990,7 +39996,7 @@ ${marker2}`;
     }
     for (const r of this.rejections) {
       report.blockers.push(`#${r.issueNumber}: runtime admission rejected (${r.code}); ${r.recorded ? "the execution was closed as cancelled" : "no execution was created"}`);
-      report.nextSteps.push(r.code.startsWith("READY_") ? `#${r.issueNumber}: an authorized human must apply harness:ready (remove and re-add it if the Manager set it), then run the manager again` : `#${r.issueNumber}: resolve ${r.code} in the runtime registry or task, then run the manager again`);
+      report.nextSteps.push(r.code.startsWith("READY_") ? `#${r.issueNumber}: an authorized human must apply harness:ready, then run the manager again` : `#${r.issueNumber}: resolve ${r.code} in the runtime registry or task, then run the manager again`);
     }
     if (this.config.notifications.slack.enabled && !this.config.execution.dryRun && this.config.autonomy.profile !== "advisory") {
       try {

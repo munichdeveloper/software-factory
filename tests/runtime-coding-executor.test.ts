@@ -61,7 +61,7 @@ function fixture(requestSnapshot = snapshot) {
     const response = status === 204 ? new Response(null, { status }) : Response.json(data, { status }); Object.defineProperty(response, 'url', { value: String(input) }); return response;
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
-  const executor = new ActionsCodingExecutor(api, () => effects, authorize, ['factory[bot]']);
+  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]']);
   return { poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
     lose: () => { lost = true; }, before: () => { before = true; }, wrong: () => { wrongHead = true; }, duplicate: () => { duplicate = true; },
     badWrapper: () => { badWrapper = true; }, unrelated: () => { source = { ...source, baseSha: '9'.repeat(40) }; },missingValidation:()=>{missingValidation=true;},forgeValidation:()=>{forgedValidation=true;},blocked:()=>{source.result.status='blocked';} };

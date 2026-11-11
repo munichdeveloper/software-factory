@@ -50,6 +50,8 @@ export class RuntimeAdmissionRejected extends Error {
 }
 export const admissionCode = (error: unknown) => error instanceof Error && /^[A-Z][A-Z_]+$/.test(error.message) ? error.message : null;
 export interface WorkerRuntimePort {
+  /** True when harness:ready, applied by an authorized person, is what grants execution. */
+  readonly readyIsGrant?: boolean;
   /** Checks grants that must exist before a durable intent is written. Rejects with RuntimeAdmissionRejected. */
   preflight?(issueNumber: number): Promise<void>;
   start(admission: Admission): Promise<RuntimeObservation>;

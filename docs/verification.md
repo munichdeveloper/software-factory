@@ -41,3 +41,25 @@ No paid OpenAI call was performed: the planning provider was moved without API
 changes, and no key is configured. The original v0.1 verification had no coding/review worker or automatic
 PR merge is claimed. This private SF distribution supports permitted private
 repositories owned by the same account; public targets need a public distribution.
+
+## Lifecycle scenarios
+
+`tests/scenarios.test.ts` runs the real Manager and RuntimeController against a simulated repository
+(`tests/scenario-world.ts`): issues, journal comments, the native label timeline with its actors, the broker
+store and Temporal. Only I/O is simulated. People grant, revise, close and reopen tasks; workers finish, fail
+or vanish; GitHub writes, the label timeline and Temporal fail at arbitrary points.
+
+After every sequence the surroundings are made healthy again and the Manager reconciles until nothing
+changes. Then these rules must hold:
+
+- Reconciliation comes to rest and a further run changes nothing.
+- Every intent is either running in Temporal or has a journaled result; none is duplicated.
+- No unknown outcome remains once the runtime answers.
+- A closed task runs nothing and holds no worker slot; a free slot is never denied.
+- Every task has exactly one lifecycle status.
+- In ready-label mode only a person applies `harness:ready`, no run is admitted on the Manager's own label,
+  and a standing grant by an authorized person is honoured.
+
+Named scenarios cover the known sequences; a seeded random search runs 150 sequences per mode in CI
+(no gate, ready label, human gate, two workers). `SF_SCENARIO_SEEDS=2500 npx vitest run tests/scenarios.test.ts`
+searches deeper; a failing seed replays exactly and prints its event log.

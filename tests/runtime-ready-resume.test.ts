@@ -95,19 +95,18 @@ async function blockedThenRevised(f: ReturnType<typeof fixture>) {
 const intents = (f: ReturnType<typeof fixture>) => f.events().filter(e => e.type === 'intent').length;
 
 describe('resuming a ready-label task after a blocked run (Backofficer#13)', () => {
-  it('does not treat the ready status set by the Manager itself as a grant, and leaves no dangling intent', async () => {
+  it('leaves the grant label to a person after a revision and creates no intent without it', async () => {
     const f = fixture(); await blockedThenRevised(f);
-    // Reconciliation moves awaiting-pr to ready on its own. That label event is authored by the trusted bot.
+    // Reconciliation once moved awaiting-pr to ready on its own; the runtime then refused that label as a grant.
     const resumed = await f.manager();
-    expect(f.github.ready.at(-1)).toMatchObject({ event: 'labeled', actor: bot });
-    expect(labels(f)).toEqual(['harness:ready']);
+    expect(f.github.ready.some(e => e.event === 'labeled' && e.actor === bot)).toBe(false);
+    expect(labels(f)).toEqual(['harness:backlog']);
     expect(intents(f)).toBe(1); expect(f.store.rows.size).toBe(1);
     expect(resumed.errors).toEqual([]);
-    expect(resumed.blockers).toContain('#1: runtime admission rejected (READY_ACTOR_NOT_AUTHORIZED); no execution was created');
+    expect(resumed.blockers.some(b => b.startsWith('#1: runtime admission rejected (READY_') && b.endsWith('no execution was created'))).toBe(true);
     expect(resumed.nextSteps.some(step => step.includes('authorized human must apply harness:ready'))).toBe(true);
-    // Previously the intent without a receipt turned into "dispatch outcome uncertain" after the grace period.
     f.advance(30); const later = await f.manager();
-    expect(labels(f)).toEqual(['harness:ready']);
+    expect(labels(f)).toEqual(['harness:backlog']);
     expect(later.blockers.some(b => b.includes('uncertain'))).toBe(false);
     expect(f.events().filter(e => e.type === 'block_intent' && e.cause === 'dispatch')).toEqual([]);
   });

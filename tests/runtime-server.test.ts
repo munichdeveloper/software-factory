@@ -59,6 +59,22 @@ describe('private runtime HTTP boundaries', () => {
     expect(f.store.locked).toHaveBeenCalled(); f.cfg.execution.engine = 'github-actions';
     expect((await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer' })).status).toBe(409);
   });
+  it('chooses the planner from the configuration that is current at each reconciliation', async () => {
+    const cfg = config(), github = new MemoryGitHub(); cfg.execution.engine = 'temporal';
+    const controller = { observations: vi.fn(async () => []) }, seen: string[] = [];
+    const store = { locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
+    const planner = (current: typeof cfg) => { seen.push(current.llm.provider); return new MockPlanner(); };
+    const server = runtimeServer({ managerToken: 'm'.repeat(32), workerToken: 'w'.repeat(32), store: store as unknown as RuntimeStore,
+      bindings: [{ repository: { repositoryId: 42, github, config: async () => cfg }, controller, planner } as unknown as RuntimeBinding] });
+    servers.push(server); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address(); if (!address || typeof address === 'string') throw new Error('No test listener');
+    const reconcile = () => fetch(`http://127.0.0.1:${address.port}/v1/repositories/42/reconcile`, { method: 'POST',
+      headers: { Authorization: `Bearer ${'m'.repeat(32)}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ actor: 'maintainer' }) });
+    cfg.llm.provider = 'openai'; expect((await reconcile()).status).toBe(200);
+    // The repository is migrated to the deterministic planner while the broker keeps running.
+    cfg.llm.provider = 'mock'; expect((await reconcile()).status).toBe(200);
+    expect(seen).toEqual(['openai', 'mock']);
+  });
   it('does not expose upstream exceptions or accept oversized request bodies', async () => {
     const f = await fixture(); f.controller.gate.mockRejectedValueOnce(new Error('private database password'));
     const denied = await f.call(`/v1/repositories/42/runs/${'a'.repeat(32)}/approve`, { actor: 'maintainer', binding: 'b'.repeat(64) });

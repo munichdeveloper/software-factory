@@ -6,7 +6,9 @@ import { currentAutomaticBlock } from './blocks.js';
 import { acceptanceCriteria, dependencies, issueStatus } from './lifecycle.js';
 import { taskVersion } from './identity.js';
 
-export interface Execution { input: WorkerInput; attempt: number; actionId: string; at: string; run?: WorkflowRun; runtime?: import('../runtime/contract.js').RuntimeObservation; result?: WorkerResult; active: boolean; ambiguous: boolean; timedOut: boolean }
+export interface Execution { input: WorkerInput; attempt: number; actionId: string; at: string; run?: WorkflowRun; runtime?: import('../runtime/contract.js').RuntimeObservation; result?: WorkerResult; active: boolean; ambiguous: boolean; timedOut: boolean;
+  /** A Temporal run whose task was closed or revised underneath it: its result can no longer be published. */
+  orphaned: boolean }
 export interface Task {
   issue: Issue; version: string; status: Status; desiredStatus: Status; events: HarnessEvent[];
   executions: Execution[]; latest?: Execution; blocked: boolean; blockReason?: string;
@@ -41,6 +43,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
       // A result cannot release a slot while the corresponding workflow is still running.
       const active = runtime ? runtime.status === 'running' : run ? run.status !== 'completed' : !result;
       executions.push({ input, attempt, actionId, at: event.at, run, runtime, result, active,
+        orphaned: active && !!runtime && (issue.state === 'closed' || input.taskVersion !== version),
         ambiguous: !runtime && !run && !result && elapsed > config.execution.dispatchGraceMinutes * 60000,
         timedOut: runtime?.phase !== 'awaiting-approval' && !!(run || runtime) && active && elapsed > input.limits.timeoutMinutes * 60000 });
     }
@@ -72,6 +75,9 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     else if (blockReason) desiredStatus = 'blocked';
     else if (latest?.result) desiredStatus = ({ success: 'awaiting-pr', failed: 'failed', cancelled: 'failed', blocked: 'blocked', needs_approval: 'awaiting-approval' } as const)[latest.result.status];
     else if (hasOpenPR) desiredStatus = 'awaiting-pr';
+    // A runnable task rests in ready. Where ready is a person's grant, the Manager leaves the label to that
+    // person: the task rests in backlog until the grant is there, and a grant that is present always wins.
+    else if (snapshot.readyIsGrant) { if (['backlog', 'ready', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = issue.labels.includes('harness:ready') ? 'ready' : 'backlog'; }
     else if (['backlog', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = 'ready';
     return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest,
       blocked: !!blockReason, blockReason, automaticBlockCause, hasOpenPR, hasClosingMerge, criteria };
