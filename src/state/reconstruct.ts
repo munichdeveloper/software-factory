@@ -6,7 +6,7 @@ import { currentAutomaticBlock } from './blocks.js';
 import { acceptanceCriteria, dependencies, issueStatus } from './lifecycle.js';
 import { taskVersion } from './identity.js';
 
-export interface Execution { input: WorkerInput; attempt: number; at: string; run?: WorkflowRun; runtime?: import('../runtime/contract.js').RuntimeObservation; result?: WorkerResult; active: boolean; ambiguous: boolean; timedOut: boolean }
+export interface Execution { input: WorkerInput; attempt: number; actionId: string; at: string; run?: WorkflowRun; runtime?: import('../runtime/contract.js').RuntimeObservation; result?: WorkerResult; active: boolean; ambiguous: boolean; timedOut: boolean }
 export interface Task {
   issue: Issue; version: string; status: Status; desiredStatus: Status; events: HarnessEvent[];
   executions: Execution[]; latest?: Execution; blocked: boolean; blockReason?: string;
@@ -23,7 +23,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     const executions: Execution[] = [];
     for (const event of events) {
       if (event.data.type !== 'intent' || executions.some(e => e.input.executionId === (event.data.type === 'intent' ? event.data.input.executionId : ''))) continue;
-      const { input, attempt } = event.data;
+      const { input, attempt, actionId } = event.data;
       if (input.issueNumber !== issue.number) continue;
       const matching = snapshot.runs.filter(r => [`Factory worker ${input.executionId}`, `Harness worker ${input.executionId}`].includes(r.title));
       const run = matching.find(r => r.status !== 'completed') ?? matching[0];
@@ -40,7 +40,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
       const elapsed = now.getTime() - new Date(runtime?.createdAt ?? run?.createdAt ?? event.at).getTime();
       // A result cannot release a slot while the corresponding workflow is still running.
       const active = runtime ? runtime.status === 'running' : run ? run.status !== 'completed' : !result;
-      executions.push({ input, attempt, at: event.at, run, runtime, result, active,
+      executions.push({ input, attempt, actionId, at: event.at, run, runtime, result, active,
         ambiguous: !runtime && !run && !result && elapsed > config.execution.dispatchGraceMinutes * 60000,
         timedOut: runtime?.phase !== 'awaiting-approval' && !!(run || runtime) && active && elapsed > input.limits.timeoutMinutes * 60000 });
     }

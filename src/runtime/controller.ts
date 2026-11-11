@@ -8,7 +8,7 @@ import { authorizeDelegation } from '../workers/execute-delegation.js';
 import { decodeEvent } from '../state/events.js';
 import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
 import { RuntimeStore, type StoredRun } from './store.js';
-import { admissionSchema, snapshotSchema, workflowId, type Admission, type RunSnapshot, type RuntimeObservation, type RuntimeRelease, type RuntimeState, type WorkerRuntimePort } from './contract.js';
+import { admissionCode, admissionSchema, RuntimeAdmissionRejected, snapshotSchema, workflowId, type Admission, type RunSnapshot, type RuntimeObservation, type RuntimeRelease, type RuntimeState, type WorkerRuntimePort } from './contract.js';
 import type { CodingExecutionPort } from './coding-executor.js';
 import type { CodingArtifact } from '../workers/coding.js';
 import type { ReadyApproval } from './contract.js';
@@ -53,6 +53,12 @@ export class RuntimeController implements WorkerRuntimePort {
     if (auth.cancelled || hash(auth.input) !== hash(snapshot.admission.input)) throw new Error('DELEGATION_REVOKED');
     return config;
   }
+  async preflight(issueNumber: number): Promise<void> {
+    try {
+      this.scope(issueNumber);
+      if (this.repo.readyApproval) await this.repo.readyApproval(issueNumber);
+    } catch (error) { const code = admissionCode(error); throw code ? new RuntimeAdmissionRejected(code) : error; }
+  }
   async start(value: Admission): Promise<RuntimeObservation> {
     const admission = admissionSchema.parse(value), id = admission.input.executionId;
     this.scope(admission.input.issueNumber);
@@ -61,7 +67,7 @@ export class RuntimeController implements WorkerRuntimePort {
       let stored = await this.store.get(this.repo.repositoryId, id);
       if (stored) {
         if (hash(stored.snapshot.admission) !== hash(admission)) throw new Error('ADMISSION_CONFLICT');
-      } else {
+      } else try {
         const config = await this.repo.config();
         if (policyVersion(config) !== admission.policyHash || config.execution.engine !== 'temporal') throw new Error('POLICY_MISMATCH');
         const comments = await this.repo.github.comments(admission.input.issueNumber);
@@ -81,6 +87,9 @@ export class RuntimeController implements WorkerRuntimePort {
           throw new Error('UNKNOWN_WORKER_DEPLOYMENT_VERSION');
         }
         stored = await this.store.insert(snapshot, hash(snapshot), workflowId(this.repo.repositoryId, id));
+      } catch (error) {
+        // Nothing is persisted or started before the insert: a policy code here is a definite rejection.
+        const code = admissionCode(error); throw code ? new RuntimeAdmissionRejected(code) : error;
       }
       if (!stored.runId) {
         if (stored.cancelled) throw new Error('ADMISSION_CANCELLED');
