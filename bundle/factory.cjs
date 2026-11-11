@@ -41088,7 +41088,8 @@ fi
 previous=""
 if [ -L "$root/current" ]; then previous=$(readlink "$root/current"); fi
 echo "SF_DEPLOY_PREVIOUS=$(basename "\${previous:-none}")"
-compose() { local dir=$1; shift; docker compose --project-name "$project" --project-directory "$dir" --file "$dir/$compose_file" "$@"; }
+# The compose file may use SF_RELEASE_SHA, e.g. as a build argument or image label of the release.
+compose() { local dir=$1; shift; SF_RELEASE_SHA=$(basename "$dir") docker compose --project-name "$project" --project-directory "$dir" --file "$dir/$compose_file" "$@"; }
 healthy() {
   [ -z "$health_url" ] && return 0
   local deadline=$((SECONDS + health_timeout))
