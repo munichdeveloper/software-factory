@@ -3,7 +3,7 @@
 # built from the release that is being deployed; SF_RELEASE_SHA is set by the deployment.
 #
 # Host state that never passes through GitHub lives in SFM_CONFIG_DIR (default: the deploy path):
-#   .env            FACTORY_SHA (pinned worker release), MANAGER_SHA
+#   .env            FACTORY_SHA (pinned worker release), MANAGER_SHA, SFM_HOST (public host name of the Manager)
 #   *.env           service credentials
 #   registry.json   runtime registry
 # FACTORY_SHA pins the PINNED worker package and its image. It changes only with a deliberate
@@ -106,7 +106,7 @@ services:
     labels:
       traefik.enable: 'true'
       traefik.docker.network: sfm_front
-      traefik.http.routers.sfm.rule: Host(`sfm.srv2127002.hstgr.cloud`)
+      traefik.http.routers.sfm.rule: Host(`${SFM_HOST:?}`)
       traefik.http.routers.sfm.entrypoints: websecure
       traefik.http.routers.sfm.tls: 'true'
       traefik.http.routers.sfm.tls.certresolver: letsencrypt
@@ -134,7 +134,7 @@ services:
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
     environment:
-      APP_URL: https://sfm.srv2127002.hstgr.cloud
+      APP_URL: https://${SFM_HOST:?}
       FACTORY_RUNTIME_URL: http://127.0.0.1:8095
       NODE_ENV: production
     tmpfs: [/tmp]
@@ -161,7 +161,7 @@ services:
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
     environment:
-      APP_URL: https://sfm.srv2127002.hstgr.cloud
+      APP_URL: https://${SFM_HOST:?}
       FACTORY_RUNTIME_URL: http://127.0.0.1:8095
       NODE_ENV: production
     command: [sh, -c, 'node dist/migrate.mjs && exec node dist/main.mjs']
