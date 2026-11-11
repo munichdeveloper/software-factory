@@ -51,6 +51,10 @@ active, preferring duplicate prevention over automatic liveness.
 3. To abandon work, disable the harness, cancel applicable runs and administratively
    resolve the task. Do not silently mark an uncertain execution failed and retry.
 
+With `execution.engine: temporal` the steps above are automatic: the Manager re-presents an intent without a
+runtime record using the original execution ID, and the runtime either starts that one run or returns a definite
+rejection that closes the intent. Manual resolution is only needed while the runtime itself is unavailable.
+
 ## Practical limits
 
 - Install one canonical wrapper. It serializes manager/bootstrap runs. Local

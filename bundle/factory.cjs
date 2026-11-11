@@ -39217,7 +39217,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     const executions = [];
     for (const event of events) {
       if (event.data.type !== "intent" || executions.some((e) => e.input.executionId === (event.data.type === "intent" ? event.data.input.executionId : ""))) continue;
-      const { input: input2, attempt } = event.data;
+      const { input: input2, attempt, actionId: actionId2 } = event.data;
       if (input2.issueNumber !== issue2.number) continue;
       const matching = snapshot.runs.filter((r) => [`Factory worker ${input2.executionId}`, `Harness worker ${input2.executionId}`].includes(r.title));
       const run = matching.find((r) => r.status !== "completed") ?? matching[0];
@@ -39251,6 +39251,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       executions.push({
         input: input2,
         attempt,
+        actionId: actionId2,
         at: event.at,
         run,
         runtime,
@@ -39704,6 +39705,60 @@ var Manager = class {
     if (comments.some((c) => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) return;
     await this.github.writeEvent(issue2, { version: 1, key, at: this.now().toISOString(), correlationId: this.options.correlationId, data });
   }
+  /**
+   * Presents a durable intent to the runtime. The call is idempotent per execution ID: an existing run is
+   * returned, never duplicated. A definite rejection closes the intent with a cancelled result so it is
+   * not later mistaken for a dispatch whose outcome is unknown. Any other failure propagates.
+   */
+  async admit(input2, intentActionId) {
+    const id = input2.executionId;
+    let receipt;
+    try {
+      receipt = await this.options.workerRuntime.start({ input: input2, actionId: intentActionId, policyHash: policyVersion(this.config) });
+    } catch (error62) {
+      if (!(error62 instanceof RuntimeAdmissionRejected)) throw error62;
+      await this.event(input2.issueNumber, `result:${id}`, { type: "result", result: {
+        contractVersion: "1.0",
+        executionId: id,
+        issueNumber: input2.issueNumber,
+        status: "cancelled",
+        summary: `Runtime admission rejected before start: ${error62.code}`,
+        artifacts: [],
+        error: error62.code,
+        proposedActions: []
+      } });
+      this.rejections.push({ issueNumber: input2.issueNumber, code: error62.code, recorded: true });
+      return null;
+    }
+    await this.event(input2.issueNumber, `temporal-receipt:${id}`, {
+      type: "temporal_receipt",
+      executionId: id,
+      workflowId: receipt.workflowId,
+      runId: receipt.runId,
+      binding: receipt.binding
+    });
+    return receipt;
+  }
+  /**
+   * An intent the runtime has no record of (the start was refused, failed or never reached it) is presented
+   * again with its original execution ID. It either starts, or is closed with the runtime's definite reason.
+   */
+  async recover(tasks, report) {
+    if (this.config.execution.engine !== "temporal" || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return false;
+    let changed = false;
+    for (const task of tasks.filter((t) => t.issue.state === "open")) {
+      for (const execution of task.executions.filter((e) => !e.runtime && !e.run && !e.result)) {
+        try {
+          await this.admit(execution.input, execution.actionId);
+          changed = true;
+        } catch (error62) {
+          const code = admissionCode(error62);
+          report.errors.push(`Recovery of execution ${execution.input.executionId} on #${task.issue.number} failed${code ? ` (${code})` : ""}; the intent remains unresolved`);
+        }
+      }
+    }
+    return changed;
+  }
   async audit(action, outcome, reason) {
     if (!this.config.reporting.persistDecisions || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return;
     const id = actionId(action, policyVersion(this.config));
@@ -39809,31 +39864,8 @@ ${marker2}`;
         await this.event(live.number, `intent:${id}`, { type: "intent", input: input2, actionId: actionId(action, policyVersion(this.config)), attempt });
         if (this.config.execution.engine === "temporal") {
           if (!this.options.workerRuntime) throw new Error("Temporal runtime is required; legacy dispatch is forbidden");
-          let receipt;
-          try {
-            receipt = await this.options.workerRuntime.start({ input: input2, actionId: actionId(action, policyVersion(this.config)), policyHash: policyVersion(this.config) });
-          } catch (error62) {
-            if (!(error62 instanceof RuntimeAdmissionRejected)) throw error62;
-            await this.event(live.number, `result:${id}`, { type: "result", result: {
-              contractVersion: "1.0",
-              executionId: id,
-              issueNumber: live.number,
-              status: "cancelled",
-              summary: `Runtime admission rejected before start: ${error62.code}`,
-              artifacts: [],
-              error: error62.code,
-              proposedActions: []
-            } });
-            this.rejections.push({ issueNumber: live.number, code: error62.code, recorded: true });
-            return false;
-          }
-          await this.event(live.number, `temporal-receipt:${id}`, {
-            type: "temporal_receipt",
-            executionId: id,
-            workflowId: receipt.workflowId,
-            runId: receipt.runId,
-            binding: receipt.binding
-          });
+          const receipt = await this.admit(input2, actionId(action, policyVersion(this.config)));
+          if (!receipt) return false;
           const fresh2 = await this.github.getIssue(live.number);
           if (taskVersion(fresh2) === action.taskVersion && fresh2.state === "open" && !fresh2.labels.includes("harness:blocked")) {
             await this.github.updateIssue(live.number, { labels: withStatus(fresh2, receipt.phase === "awaiting-approval" ? "awaiting-approval" : "running") });
@@ -39883,6 +39915,10 @@ ${marker2}`;
     }
     let snapshot = await this.snapshot();
     let tasks = reconstruct(snapshot, this.config, this.now());
+    if (await this.recover(tasks, report)) {
+      snapshot = await this.snapshot();
+      tasks = reconstruct(snapshot, this.config, this.now());
+    }
     report.tasks = tasks.length;
     for (const t of tasks) {
       if (t.blockReason) {

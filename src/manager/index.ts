@@ -8,7 +8,7 @@ import { reconstruct, type Task } from '../state/reconstruct.js';
 import { lastBlockLabelEventId } from '../state/blocks.js';
 import { managedLabel, priorityLabels, withStatus } from '../state/lifecycle.js';
 import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
-import { workerInputSchema } from '../workers/contract.js';
+import { workerInputSchema, type WorkerInput } from '../workers/contract.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
 import { deliverNotifications, type NotificationSink } from '../notifications/slack.js';
@@ -46,6 +46,43 @@ export class Manager {
     const comments = await this.github.comments(issue);
     if (comments.some(c => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) return;
     await this.github.writeEvent(issue, { version: 1, key, at: this.now().toISOString(), correlationId: this.options.correlationId, data });
+  }
+  /**
+   * Presents a durable intent to the runtime. The call is idempotent per execution ID: an existing run is
+   * returned, never duplicated. A definite rejection closes the intent with a cancelled result so it is
+   * not later mistaken for a dispatch whose outcome is unknown. Any other failure propagates.
+   */
+  private async admit(input: WorkerInput, intentActionId: string) {
+    const id = input.executionId;
+    let receipt;
+    try { receipt = await this.options.workerRuntime!.start({ input, actionId: intentActionId, policyHash: policyVersion(this.config) }); }
+    catch (error) {
+      if (!(error instanceof RuntimeAdmissionRejected)) throw error;
+      await this.event(input.issueNumber, `result:${id}`, { type: 'result', result: { contractVersion: '1.0', executionId: id, issueNumber: input.issueNumber,
+        status: 'cancelled', summary: `Runtime admission rejected before start: ${error.code}`, artifacts: [], error: error.code, proposedActions: [] } });
+      this.rejections.push({ issueNumber: input.issueNumber, code: error.code, recorded: true }); return null;
+    }
+    await this.event(input.issueNumber, `temporal-receipt:${id}`, { type: 'temporal_receipt', executionId: id,
+      workflowId: receipt.workflowId, runId: receipt.runId, binding: receipt.binding });
+    return receipt;
+  }
+  /**
+   * An intent the runtime has no record of (the start was refused, failed or never reached it) is presented
+   * again with its original execution ID. It either starts, or is closed with the runtime's definite reason.
+   */
+  private async recover(tasks: Task[], report: RunReport): Promise<boolean> {
+    if (this.config.execution.engine !== 'temporal' || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return false;
+    let changed = false;
+    for (const task of tasks.filter(t => t.issue.state === 'open')) {
+      for (const execution of task.executions.filter(e => !e.runtime && !e.run && !e.result)) {
+        try { await this.admit(execution.input, execution.actionId); changed = true; }
+        catch (error) {
+          const code = admissionCode(error);
+          report.errors.push(`Recovery of execution ${execution.input.executionId} on #${task.issue.number} failed${code ? ` (${code})` : ''}; the intent remains unresolved`);
+        }
+      }
+    }
+    return changed;
   }
   private async audit(action: Action, outcome: 'allow' | 'deny' | 'approval' | 'executed', reason: string): Promise<void> {
     if (!this.config.reporting.persistDecisions || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return;
@@ -122,18 +159,8 @@ export class Manager {
         await this.event(live.number, `intent:${id}`, { type: 'intent', input, actionId: actionId(action, policyVersion(this.config)), attempt });
         if (this.config.execution.engine === 'temporal') {
           if (!this.options.workerRuntime) throw new Error('Temporal runtime is required; legacy dispatch is forbidden');
-          let receipt;
-          try { receipt = await this.options.workerRuntime.start({ input, actionId: actionId(action, policyVersion(this.config)), policyHash: policyVersion(this.config) }); }
-          catch (error) {
-            if (!(error instanceof RuntimeAdmissionRejected)) throw error;
-            // The runtime refused before persisting or starting a run. Close the intent with that definite
-            // outcome so it is not later mistaken for a dispatch whose result is unknown.
-            await this.event(live.number, `result:${id}`, { type: 'result', result: { contractVersion: '1.0', executionId: id, issueNumber: live.number,
-              status: 'cancelled', summary: `Runtime admission rejected before start: ${error.code}`, artifacts: [], error: error.code, proposedActions: [] } });
-            this.rejections.push({ issueNumber: live.number, code: error.code, recorded: true }); return false;
-          }
-          await this.event(live.number, `temporal-receipt:${id}`, { type: 'temporal_receipt', executionId: id,
-            workflowId: receipt.workflowId, runId: receipt.runId, binding: receipt.binding });
+          const receipt = await this.admit(input, actionId(action, policyVersion(this.config)));
+          if (!receipt) return false;
           const fresh = await this.github.getIssue(live.number);
           if (taskVersion(fresh) === action.taskVersion && fresh.state === 'open' && !fresh.labels.includes('harness:blocked')) {
             await this.github.updateIssue(live.number, { labels: withStatus(fresh, receipt.phase === 'awaiting-approval' ? 'awaiting-approval' : 'running') });
@@ -171,6 +198,7 @@ export class Manager {
     if (!this.config.factory.enabled) { report.outcome = 'disabled'; return report; }
     let snapshot = await this.snapshot();
     let tasks = reconstruct(snapshot, this.config, this.now());
+    if (await this.recover(tasks, report)) { snapshot = await this.snapshot(); tasks = reconstruct(snapshot, this.config, this.now()); }
     report.tasks = tasks.length;
     for (const t of tasks) {
       if (t.blockReason) {

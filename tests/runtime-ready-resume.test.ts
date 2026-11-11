@@ -149,3 +149,53 @@ describe('resuming a ready-label task after a blocked run (Backofficer#13)', () 
     expect(report.errors).toEqual(['Action start_worker on #1 failed (HTTP unknown); durable intents preserved for recovery']);
   });
 });
+
+describe('recovering an intent the runtime has no record of', () => {
+  /** The grant lookup fails with a transport error once: the intent is written, nothing is persisted or started. */
+  async function dangling(f: ReturnType<typeof fixture>) {
+    f.github.human(1, ['harness:managed', 'harness:ready']);
+    const original = f.repo.readyApproval!; let calls = 0;
+    f.repo.readyApproval = async (number, expected) => { if (++calls === 2) throw new Error('GitHub 502 for https://api.github.com'); return original(number, expected); };
+    const report = await f.manager();
+    expect(report.errors).toEqual(['Action start_worker on #1 failed (HTTP unknown); durable intents preserved for recovery']);
+    expect(intents(f)).toBe(1); expect(f.store.rows.size).toBe(0); expect(f.events().some(e => e.type === 'temporal_receipt')).toBe(false);
+  }
+  it('starts the original execution on the next run while the human grant still holds', async () => {
+    const f = fixture(); await dangling(f);
+    f.advance(1); const report = await f.manager();
+    expect(report.errors).toEqual([]); expect(report.blockers).toEqual([]);
+    expect(intents(f)).toBe(1); expect(f.store.rows.size).toBe(1);
+    expect(f.events().filter(e => e.type === 'temporal_receipt')).toHaveLength(1);
+    expect(labels(f)).toEqual(['harness:running']);
+    f.advance(30); await f.manager();
+    expect(intents(f)).toBe(1); expect(f.store.rows.size).toBe(1); expect(labels(f)).toEqual(['harness:running']);
+  });
+  it('closes the intent with the runtime reason once the grant is gone, even after it was blocked as uncertain', async () => {
+    const f = fixture(); await dangling(f);
+    // State as left behind on Backofficer#13: no grant any more and the task already blocked as an uncertain dispatch.
+    f.github.human(1, ['harness:managed']);
+    f.github.state.issues[0]!.labels = ['harness:managed', 'harness:running'];
+    const recover = Manager.prototype as unknown as { recover: () => Promise<boolean> }, real = recover.recover;
+    recover.recover = async () => false;
+    try { f.advance(30); const stuck = await f.manager(); expect(stuck.blockers.some(b => b.includes('uncertain'))).toBe(true); expect(labels(f)).toEqual(['harness:blocked']); }
+    finally { recover.recover = real; }
+    f.advance(1); const report = await f.manager();
+    expect(report.blockers.some(b => b.includes('uncertain'))).toBe(false);
+    expect(report.blockers).toContain('#1: runtime admission rejected (READY_APPROVAL_REVOKED); the execution was closed as cancelled');
+    expect(f.events().find(e => e.type === 'result')).toMatchObject({ result: { status: 'cancelled', error: 'READY_APPROVAL_REVOKED' } });
+    expect(f.store.rows.size).toBe(0);
+    f.advance(30); const later = await f.manager();
+    expect(later.blockers.some(b => b.includes('uncertain'))).toBe(false); expect(intents(f)).toBe(1);
+  });
+  it('keeps the intent unresolved while the runtime cannot answer, and never recovers closed or dry-run tasks', async () => {
+    const f = fixture(); await dangling(f);
+    f.repo.readyApproval = async () => { throw new Error('GitHub 502 for https://api.github.com'); };
+    f.advance(1); const failing = await f.manager();
+    expect(failing.errors.some(e => /^Recovery of execution [a-f0-9]{32} on #1 failed; the intent remains unresolved$/.test(e))).toBe(true);
+    expect(f.events().some(e => e.type === 'result')).toBe(false);
+    const g = fixture(); await dangling(g); g.cfg.execution.dryRun = true;
+    g.advance(1); await g.manager(); expect(g.store.rows.size).toBe(0);
+    const h = fixture(); await dangling(h); h.github.state.issues[0]!.state = 'closed';
+    h.advance(1); await h.manager(); expect(h.store.rows.size).toBe(0); expect(h.events().some(e => e.type === 'result')).toBe(false);
+  });
+});
