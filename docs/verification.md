@@ -46,8 +46,8 @@ repositories owned by the same account; public targets need a public distributio
 
 `tests/scenarios.test.ts` runs the real Manager and RuntimeController against a simulated repository
 (`tests/scenario-world.ts`): issues, journal comments, the native label timeline with its actors, the broker
-store and Temporal. Only I/O is simulated. People grant, revise, close and reopen tasks; workers finish, fail
-or vanish; GitHub writes, the label timeline and Temporal fail at arbitrary points.
+store and Temporal. Only I/O is simulated. People grant, revise, close and reopen tasks and merge or close pull
+requests; workers finish, fail or vanish; GitHub writes, the label timeline and Temporal fail at arbitrary points.
 
 After every sequence the surroundings are made healthy again and the Manager reconciles until nothing
 changes. Then these rules must hold:
@@ -62,5 +62,6 @@ changes. Then these rules must hold:
   and a standing grant by an authorized person is honoured.
 
 Named scenarios cover the known sequences; a seeded random search runs 150 sequences per mode in CI
-(no gate, ready label, human gate, two workers). `SF_SCENARIO_SEEDS=2500 npx vitest run tests/scenarios.test.ts`
+(no gate, ready label, human gate, two workers, and two modes in which successful results open pull requests
+that people merge or close). `SF_SCENARIO_SEEDS=2500 npx vitest run tests/scenarios.test.ts`
 searches deeper; a failing seed replays exactly and prints its event log.

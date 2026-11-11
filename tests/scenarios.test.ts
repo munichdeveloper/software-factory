@@ -103,6 +103,17 @@ describe('lifecycle scenarios', () => {
     expect(w.statusComments(1)[0]).not.toContain('Worker blocked'); // the worker's own summary is never repeated
     await healthy(w);
   });
+  it('takes a task from the grant through its pull request to done', async () => {
+    const w = new World({ readyLabel: true, pullRequests: 'closing' }); w.open(1); w.grant(1);
+    await w.tick();
+    await w.finish(execution(w, 1)); await w.tick();
+    expect(w.status(1)).toEqual(['awaiting-pr']);
+    expect(w.statusComments(1)[0]).toContain('Review the pull request.');
+    w.resolvePr(w.github.state.prs[0]!.number, true); await w.tick(); await w.tick();
+    expect(w.issue(1).state).toBe('closed');
+    expect(w.status(1)).toEqual(['done']);
+    await healthy(w);
+  });
   it('holds a task at the human gate until it is approved', async () => {
     const w = new World({ humanGate: true }); w.open(1);
     await w.tick(); await w.tick();
@@ -172,6 +183,7 @@ export async function explore(options: WorldOptions, seed: number, steps: number
     else if (roll < 0.78) { const n = pick(numbers); if (world.issue(n).state === 'closed') world.reopen(n); }
     else if (roll < 0.83) { const n = pick(numbers); if (world.issue(n).labels.includes('harness:blocked')) world.unblock(n); }
     else if (roll < 0.88 && running.length && options.humanGate) await world.approve(pick(running).snapshot.admission.input.executionId);
+    else if (roll < 0.90 && world.github.state.prs.some(p => p.state === 'open')) world.resolvePr(pick(world.github.state.prs.filter(p => p.state === 'open')).number, next() < 0.7);
     else if (roll < 0.92) world.temporalDown = !world.temporalDown;
     else if (roll < 0.95) world.timelineDown = !world.timelineDown;
     else world.github.failWrites = pick([1, 1, 2]);
@@ -184,6 +196,7 @@ const seeds = Number(process.env.SF_SCENARIO_SEEDS ?? 150);
 describe('lifecycle rules hold for arbitrary sequences of events', () => {
   const modes: [string, WorldOptions][] = [
     ['no gate', {}], ['ready label', { readyLabel: true }], ['human gate', { humanGate: true }], ['two workers, ready label', { readyLabel: true, maxParallelWorkers: 2 }],
+    ['ready label, pull requests that close the task', { readyLabel: true, pullRequests: 'closing' }], ['no gate, pull requests that reference the task', { pullRequests: 'referencing' }],
   ];
   for (const [name, options] of modes) it(name, async () => {
     const failures: string[] = [];
