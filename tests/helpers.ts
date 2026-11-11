@@ -33,6 +33,11 @@ export class MemoryGitHub implements GitHubPort {
     rows.push({ id: rows.length + 1, author: 'github-actions[bot]', body: encodeEvent(event), createdAt: clock.toISOString() });
     this.state.comments.set(number, rows);
   }
+  async writeComment(number: number, body: string, id?: number): Promise<void> {
+    const rows = this.state.comments.get(number) ?? [], existing = rows.find(r => r.id === id);
+    if (existing) existing.body = body; else rows.push({ id: rows.length + 1, author: 'github-actions[bot]', body, createdAt: clock.toISOString() });
+    this.state.comments.set(number, rows);
+  }
   async updateIssue(number: number, update: { labels?: string[]; state?: 'open' | 'closed' }): Promise<void> {
     this.mutations.push(`update:${number}`);
     const task = this.state.issues.find(i => i.number === number)!;

@@ -39154,6 +39154,10 @@ var GitHubClient = class {
   async writeEvent(issue2, event) {
     await this.api.issues.createComment({ ...this.target, issue_number: issue2, body: encodeEvent(event) });
   }
+  async writeComment(issue2, body, id) {
+    if (id === void 0) await this.api.issues.createComment({ ...this.target, issue_number: issue2, body });
+    else await this.api.issues.updateComment({ ...this.target, comment_id: id, body });
+  }
   async updateIssue(issue2, update) {
     await this.api.issues.update({ ...this.target, issue_number: issue2, ...update });
   }
@@ -39668,6 +39672,60 @@ Decision: ${intent.actionId}
   return errors;
 }
 
+// src/manager/status.ts
+var statusMarker = "<!-- software-factory:status -->";
+function statusComment(task, config2, context) {
+  const running = task.executions.find((e) => e.active && e.runtime?.status === "running" && e.runtime.phase !== "awaiting-approval") ?? task.executions.find((e) => e.active && e.run);
+  const waiting = task.executions.some((e) => e.active && e.runtime?.phase === "awaiting-approval");
+  const result = task.latest?.result;
+  const links = (result?.artifacts ?? []).filter((a) => /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/.test(a));
+  let state, needs = "Nothing.";
+  if (task.issue.state === "closed") state = "The task is closed.";
+  else if (task.executions.some((e) => e.ambiguous)) state = "A start was sent and its outcome is not known yet. The Factory keeps resolving it and starts nothing else for this task meanwhile.";
+  else if (waiting) {
+    state = "A run is waiting at the approval gate.";
+    needs = "Approve or cancel the run in the SF Manager.";
+  } else if (running) state = "A worker is running.";
+  else if (task.blockReason) {
+    state = `Blocked: ${task.blockReason}.`;
+    needs = "Resolve this block; the Factory continues on its next run.";
+  } else if (context.rejection) {
+    const grant = context.rejection.startsWith("READY_");
+    state = grant ? "Ready to run, waiting for the grant." : `The runtime refused to start this task (\`${context.rejection}\`).`;
+    needs = grant ? "An authorized person applies the label `harness:ready`." : "Check the runtime registry and the repository configuration.";
+  } else if (result?.status === "success") {
+    state = "Implemented.";
+    needs = "Review the pull request.";
+  } else if (result?.status === "blocked") {
+    state = "The last run ended blocked.";
+    needs = "Review the result and its draft pull request, then revise the task or remove `harness:blocked`.";
+  } else if (result?.status === "needs_approval") {
+    state = "The last run asks for an approval.";
+    needs = "Review the result.";
+  } else if (result) {
+    const left = task.latest.attempt < config2.execution.maxRetries;
+    state = `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"} (attempt ${task.latest.attempt + 1} of ${config2.execution.maxRetries + 1}).`;
+    needs = left ? "Nothing; the Factory retries." : "Revise the task; the retry limit is reached.";
+  } else if (task.hasOpenPR) {
+    state = "A pull request for this task is open.";
+    needs = "Review the pull request.";
+  } else if (context.readyIsGrant && !task.issue.labels.includes("harness:ready")) {
+    state = "Ready to run, waiting for the grant.";
+    needs = "An authorized person applies the label `harness:ready`.";
+  } else state = context.queued ? "Queued: all worker slots are in use." : "Queued; starts on the next run.";
+  return [
+    statusMarker,
+    `**Software Factory** \xB7 \`${task.desiredStatus}\``,
+    "",
+    state,
+    "",
+    `**Needs from a person:** ${needs}`,
+    ...links.length ? ["", `**Pull request:** ${links.join(", ")}`] : [],
+    "",
+    "_Kept up to date by the Factory. Editing or deleting this comment changes nothing._"
+  ].join("\n");
+}
+
 // src/manager/index.ts
 var Manager = class {
   constructor(github, config2, planner, options) {
@@ -39763,6 +39821,30 @@ var Manager = class {
       }
     }
     return changed;
+  }
+  /** Keeps the one readable status comment of each managed task current. Never fails a reconciliation. */
+  async publishStatus(report) {
+    if (!this.github.writeComment || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return;
+    let snapshot;
+    try {
+      snapshot = await this.snapshot();
+    } catch {
+      return;
+    }
+    try {
+      for (const task of reconstruct(snapshot, this.config, this.now())) {
+        const existing = (snapshot.comments.get(task.issue.number) ?? []).filter((c) => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
+        if (task.issue.state === "closed" && !existing.length) continue;
+        const body = statusComment(task, this.config, {
+          readyIsGrant: !!snapshot.readyIsGrant,
+          rejection: this.rejections.find((r) => r.issueNumber === task.issue.number)?.code,
+          queued: report.decisions.some((d) => d.action.issueNumber === task.issue.number && d.decision.reason === "Maximum parallel workers reached")
+        });
+        if (existing[0]?.body !== body) await this.github.writeComment(task.issue.number, body, existing[0]?.id);
+      }
+    } catch {
+      report.errors.push("Status comments could not be updated; the lifecycle itself is unaffected");
+    }
   }
   async audit(action, outcome, reason) {
     if (!this.config.reporting.persistDecisions || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return;
@@ -39994,6 +40076,7 @@ ${marker2}`;
         break;
       }
     }
+    await this.publishStatus(report);
     for (const r of this.rejections) {
       report.blockers.push(`#${r.issueNumber}: runtime admission rejected (${r.code}); ${r.recorded ? "the execution was closed as cancelled" : "no execution was created"}`);
       report.nextSteps.push(r.code.startsWith("READY_") ? `#${r.issueNumber}: an authorized human must apply harness:ready, then run the manager again` : `#${r.issueNumber}: resolve ${r.code} in the runtime registry or task, then run the manager again`);

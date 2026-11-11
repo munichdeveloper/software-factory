@@ -125,6 +125,10 @@ export class GitHubClient implements GitHubPort {
   async writeEvent(issue: number, event: HarnessEvent): Promise<void> {
     await this.api.issues.createComment({ ...this.target, issue_number: issue, body: encodeEvent(event) });
   }
+  async writeComment(issue: number, body: string, id?: number): Promise<void> {
+    if (id === undefined) await this.api.issues.createComment({ ...this.target, issue_number: issue, body });
+    else await this.api.issues.updateComment({ ...this.target, comment_id: id, body });
+  }
   async updateIssue(issue: number, update: { labels?: string[]; state?: 'open' | 'closed' }): Promise<void> {
     await this.api.issues.update({ ...this.target, issue_number: issue, ...update });
   }

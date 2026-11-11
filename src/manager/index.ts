@@ -12,6 +12,7 @@ import { workerInputSchema, type WorkerInput } from '../workers/contract.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
 import { deliverNotifications, type NotificationSink } from '../notifications/slack.js';
+import { statusComment, statusMarker } from './status.js';
 import { admissionCode, RuntimeAdmissionRejected, type WorkerRuntimePort } from '../runtime/contract.js';
 
 export interface ManagerOptions { correlationId: string; now?: () => Date; notifications?: NotificationSink; workerRuntime?: WorkerRuntimePort }
@@ -86,6 +87,24 @@ export class Manager {
       }
     }
     return changed;
+  }
+  /** Keeps the one readable status comment of each managed task current. Never fails a reconciliation. */
+  private async publishStatus(report: RunReport): Promise<void> {
+    if (!this.github.writeComment || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return;
+    let snapshot: Snapshot;
+    // Without a current view (GitHub or the runtime unavailable) there is nothing reliable to say; the run already reports that.
+    try { snapshot = await this.snapshot(); } catch { return; }
+    try {
+      for (const task of reconstruct(snapshot, this.config, this.now())) {
+        const existing = (snapshot.comments.get(task.issue.number) ?? []).filter(c => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
+        // A closed task that never had a status comment does not get one after the fact.
+        if (task.issue.state === 'closed' && !existing.length) continue;
+        const body = statusComment(task, this.config, { readyIsGrant: !!snapshot.readyIsGrant,
+          rejection: this.rejections.find(r => r.issueNumber === task.issue.number)?.code,
+          queued: report.decisions.some(d => d.action.issueNumber === task.issue.number && d.decision.reason === 'Maximum parallel workers reached') });
+        if (existing[0]?.body !== body) await this.github.writeComment(task.issue.number, body, existing[0]?.id);
+      }
+    } catch { report.errors.push('Status comments could not be updated; the lifecycle itself is unaffected'); }
   }
   private async audit(action: Action, outcome: 'allow' | 'deny' | 'approval' | 'executed', reason: string): Promise<void> {
     if (!this.config.reporting.persistDecisions || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return;
@@ -264,6 +283,7 @@ export class Manager {
         break;
       }
     }
+    await this.publishStatus(report);
     for (const r of this.rejections) {
       report.blockers.push(`#${r.issueNumber}: runtime admission rejected (${r.code}); ${r.recorded ? 'the execution was closed as cancelled' : 'no execution was created'}`);
       report.nextSteps.push(r.code.startsWith('READY_')

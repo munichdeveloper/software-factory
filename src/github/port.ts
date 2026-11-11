@@ -10,6 +10,8 @@ export interface GitHubPort {
   canApprove(login: string): Promise<boolean>;
   writeEvent(issue: number, event: HarnessEvent): Promise<void>;
   updateIssue(issue: number, update: { labels?: string[]; state?: 'open' | 'closed' }): Promise<void>;
+  /** Creates the comment, or replaces the body of comment `id`. Used for the single readable status comment only. */
+  writeComment?(issue: number, body: string, id?: number): Promise<void>;
   createIssue(title: string, body: string, labels: string[]): Promise<Issue>;
   bootstrap(): Promise<string[]>;
   dispatch(workflow: string, ref: string, executionId: string, issue: number): Promise<void>;
