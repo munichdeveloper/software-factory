@@ -39746,7 +39746,7 @@ var Manager = class {
   async recover(tasks, report) {
     if (this.config.execution.engine !== "temporal" || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return false;
     let changed = false;
-    for (const task of tasks.filter((t) => t.issue.state === "open")) {
+    for (const task of tasks) {
       for (const execution of task.executions.filter((e) => !e.runtime && !e.run && !e.result)) {
         try {
           await this.admit(execution.input, execution.actionId);
