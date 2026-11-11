@@ -1,0 +1,96 @@
+version: 1
+factory:
+  enabled: true
+  scope: "Deploy the Factory runtime stack from the default branch; no planning manager is installed here."
+manager:
+  workflow: factory-manager.yml
+  maxActions: 10
+  timeoutMinutes: 15
+  maxContextTasks: 20
+  maxContextChars: 20000
+  trustedActors: ["github-actions[bot]"]
+autonomy:
+  profile: supervised
+  overrides: {}
+execution:
+  dryRun: false
+  maxParallelWorkers: 1
+  maxRetries: 2
+  maxNewIssues: 3
+  workerTimeoutMinutes: 30
+  dispatchGraceMinutes: 10
+llm:
+  provider: mock
+  model: gpt-4.1-mini
+  reasoningEffort: null
+  maxOutputTokens: 4000
+  timeoutSeconds: 60
+  maxCalls: 1
+workers:
+  test:
+    enabled: true
+    operation: sha256
+  coding: false
+  review: false
+reporting:
+  persistDecisions: true
+
+# Optional Slack bot connection is supplied through the SLACK_BOT_TOKEN Actions secret.
+notifications:
+  slack:
+    enabled: false
+    channel: null
+    maxPerRun: 20
+    since: null
+    events:
+      issue_created:
+        enabled: false
+        channel: null
+      pr_merged:
+        enabled: false
+        channel: null
+        actors: [] # Always Bot accounts only; optional narrower login allow-list.
+
+# Optional independent AI merge reviewer; green CI alone never authorizes merging.
+merge:
+  enabled: false
+  includeFactoryPRs: true
+  adoptLabel: sf:automerge
+  method: squash
+  updateBranch: true
+  requiredChecks: [test-backend, test-frontend, test-docker]
+  validationWorkflow: test.yml
+  maxReviewsPerRun: 2
+  maxActionsPerRun: 1
+  review:
+    model: gpt-6.1-sol
+    reasoningEffort: high
+    timeoutSeconds: 120
+    maxOutputTokens: 12000
+    maxFiles: 60
+    maxContextBytes: 250000
+  postMergeWorkflows: []
+
+# Optional deployment of the default branch (docker-ssh: Docker Compose on a host via SSH).
+# Secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS and, unless set below, DEPLOY_HOST/DEPLOY_USER.
+# Requires the .github/workflows/factory-deploy.yml wrapper (install with --deploy).
+deploy:
+  enabled: true
+  provider: docker-ssh
+  trigger: checks # checks: after the listed CI workflows succeeded; push: right after the push
+  workflows: ["CI"]
+  environment: production
+  host: null
+  port: null
+  user: null
+  path: /home/deploy/sfm-runtime
+  composeFile: operations/temporal-runtime/compose.production.yaml
+  project: sfm # Docker Compose project; defaults to the last path segment. Keep stable: named volumes belong to it.
+  envFile: .env # Relative to path (or absolute) on the host, linked into each release; null to disable.
+  healthcheck:
+    url: null # e.g. http://127.0.0.1:3000/ checked on the host after docker compose up --wait
+    timeoutSeconds: 300
+  rollback: true
+  keepReleases: 5
+  timeoutMinutes: 30
+  githubDeployment: false # The wrapper's GitHub environment already records each deployment.

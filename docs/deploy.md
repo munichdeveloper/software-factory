@@ -131,3 +131,25 @@ deployments like every other mutation.
 | New release unhealthy | Previous release restarted (`rolled-back`), job fails |
 | Rollback also fails | `rollback-failed`; inspect `docker compose ps/logs` on the host |
 | Manual rollback | `ln -sfn /opt/app/releases/<sha> /opt/app/current` and run `docker compose --project-name <project> up -d --build` in it, or re-run an older workflow run via dispatch after reverting the commit |
+
+## The Factory's own runtime
+
+This repository deploys its own runtime stack (broker, worker, SF Manager and their databases) the same way:
+`.github/software-factory.yml` enables `deploy` after the `CI` workflow succeeded on `main`, and
+`operations/temporal-runtime/compose.production.yaml` is the compose file of the release.
+
+- The **broker** is built on the host from the deployed release (`SF_RELEASE_SHA`). A merge to `main`
+  therefore replaces the broker and restarts the services sharing its network namespace (worker, Manager).
+  Running Temporal workflows keep their Run-ID across this restart.
+- The **PINNED worker package**, its image and the Manager images stay pinned by `FACTORY_SHA` and
+  `MANAGER_SHA` in the host's `.env`. A deployment never changes them. Rolling out a new worker release
+  (new package, registry entry and executor wrapper) remains a deliberate, separate step.
+- Credentials (`*.env`) and `registry.json` stay on the host in the deploy path and never pass through GitHub.
+
+One-time setup: add `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST` and `DEPLOY_USER` to the
+`production` environment of this repository. Until they exist every deployment is skipped with a warning.
+The SSH user needs write access to the deploy path and membership in the `docker` group.
+
+The first deployment takes over the already running Compose project `sfm`. It has no previous release to
+roll back to: if it fails after containers changed, start the previous stack from the host's original
+compose file in the deploy path.
