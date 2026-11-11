@@ -1,0 +1,188 @@
+# Production stack of the Software Factory runtime and SF Manager on the Docker host.
+# Deployed by the Factory's own docker-ssh deployment (.github/software-factory.yml): the broker is
+# built from the release that is being deployed; SF_RELEASE_SHA is set by the deployment.
+#
+# Host state that never passes through GitHub lives in SFM_CONFIG_DIR (default: the deploy path):
+#   .env            FACTORY_SHA (pinned worker release), MANAGER_SHA
+#   *.env           service credentials
+#   registry.json   runtime registry
+# FACTORY_SHA pins the PINNED worker package and its image. It changes only with a deliberate
+# release rollout (new worker package, registry entry and executor wrapper), not with a deployment.
+name: sfm
+x-service: &service
+  restart: unless-stopped
+  init: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: '3' }
+services:
+  manager-db:
+    <<: *service
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    image: postgres:17.11-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
+    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager-db.env
+    volumes: [manager-data:/var/lib/postgresql/data]
+    networks: [private]
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U sf -d sf_manager]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  runtime-db:
+    <<: *service
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    image: postgres:17.11-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
+    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/runtime-db.env
+    volumes: [runtime-data:/var/lib/postgresql/data]
+    networks: [private]
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U factory -d factory_runtime]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  # One-shot packaging of a pinned worker release; run explicitly with
+  # `docker compose --profile pack run --rm factory-pack`, never by a deployment.
+  factory-pack:
+    profiles: [pack]
+    image: sf-factory:${FACTORY_SHA:?}
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes: [factory-package:/run/factory-package]
+    tmpfs: [/tmp]
+    command:
+      [
+        pack,
+        --output,
+        /run/factory-package,
+        --factory-sha,
+        '${FACTORY_SHA}',
+        --harness-sha,
+        f70d11556075e9764d69ac03e029720d12ccef65,
+        --harness,
+        /app/.runtime/harness/dist/cli.js,
+        --deployment,
+        sf-backofficer,
+        --build,
+        '${FACTORY_SHA}',
+        --queue,
+        sf-backofficer-v1,
+      ]
+    restart: 'no'
+  runtime-broker:
+    <<: *service
+    build:
+      context: .
+      dockerfile: operations/temporal-runtime/Dockerfile
+      args:
+        FACTORY_SHA: ${SF_RELEASE_SHA:?}
+    read_only: true
+    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/broker.env
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    volumes: ['${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/registry.json:/run/factory/registry.json:ro']
+    tmpfs: [/tmp]
+    networks: [private, front, temporal]
+    mem_limit: 1g
+    depends_on:
+      runtime-db: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8095/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: sfm_front
+      traefik.http.routers.sfm.rule: Host(`sfm.srv2127002.hstgr.cloud`)
+      traefik.http.routers.sfm.entrypoints: websecure
+      traefik.http.routers.sfm.tls: 'true'
+      traefik.http.routers.sfm.tls.certresolver: letsencrypt
+      traefik.http.services.sfm.loadbalancer.server.port: '3000'
+  runtime-worker:
+    <<: *service
+    image: sf-factory:${FACTORY_SHA:?}
+    network_mode: service:runtime-broker
+    read_only: true
+    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/worker.env
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: software-factory-backofficer
+      FACTORY_BROKER_URL: http://127.0.0.1:8095
+    command: [worker, --file, /run/factory-package/worker-package.json]
+    volumes: [factory-package:/run/factory-package:ro]
+    tmpfs: [/tmp]
+    mem_limit: 1g
+    depends_on:
+      runtime-broker: { condition: service_healthy }
+  web:
+    <<: *service
+    image: sf-manager:${MANAGER_SHA:?}
+    network_mode: service:runtime-broker
+    read_only: true
+    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
+    environment:
+      APP_URL: https://sfm.srv2127002.hstgr.cloud
+      FACTORY_RUNTIME_URL: http://127.0.0.1:8095
+      NODE_ENV: production
+    tmpfs: [/tmp]
+    mem_limit: 1g
+    depends_on:
+      manager-db: { condition: service_healthy }
+      runtime-broker: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+  manager-worker:
+    <<: *service
+    image: sf-manager:${MANAGER_SHA:?}
+    network_mode: service:runtime-broker
+    read_only: true
+    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
+    environment:
+      APP_URL: https://sfm.srv2127002.hstgr.cloud
+      FACTORY_RUNTIME_URL: http://127.0.0.1:8095
+      NODE_ENV: production
+    command: [sh, -c, 'node dist/migrate.mjs && exec node dist/main.mjs']
+    tmpfs: [/tmp]
+    mem_limit: 768m
+    depends_on:
+      manager-db: { condition: service_healthy }
+      runtime-broker: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, dist/worker-health.mjs]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 40s
+networks:
+  private: { internal: true }
+  front: {}
+  temporal: { external: true, name: sf-temporal_access }
+volumes:
+  manager-data: {}
+  runtime-data: {}
+  factory-package:
+    name: sfm-factory-package-${FACTORY_SHA:?}

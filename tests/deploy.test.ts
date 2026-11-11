@@ -147,7 +147,7 @@ log="$FAKE_DOCKER_LOG"
 dir=""; prev=""
 for arg in "$@"; do [ "$prev" = "--project-directory" ] && dir="$arg"; prev="$arg"; done
 case " $* " in
-  *" up "*) echo "up $(basename "$dir") project=$3 env=$(cat "$dir/.env" 2>/dev/null)" >> "$log"; [ -f "$dir/FAIL" ] && exit 1; exit 0 ;;
+  *" up "*) echo "up $(basename "$dir") project=$3 env=$(cat "$dir/.env" 2>/dev/null) release=$SF_RELEASE_SHA" >> "$log"; [ -f "$dir/FAIL" ] && exit 1; exit 0 ;;
   *" logs "*) echo "service log output"; exit 0 ;;
 esac
 exit 0
@@ -184,7 +184,7 @@ describe('docker-ssh deployment', () => {
     const app = join(root, 'srv', 'app');
     expect(await readlink(join(app, 'current'))).toBe(join(app, 'releases', sha));
     expect(await readFile(join(app, 'releases', sha, 'app.txt'), 'utf8')).toBe('v1');
-    expect(await readFile(log, 'utf8')).toContain(`up ${sha} project=app env=SECRET=1`);
+    expect(await readFile(log, 'utf8')).toContain(`up ${sha} project=app env=SECRET=1 release=${sha}`);
     expect(port.created).toEqual([{ sha, environment: 'production' }]);
     expect(port.statuses.map(s => s.state)).toEqual(['in_progress', 'success']);
   });
@@ -210,6 +210,7 @@ describe('docker-ssh deployment', () => {
     expect(report.detail).toContain('restored');
     expect(await readlink(join(root, 'srv', 'app', 'current'))).toContain(good);
     expect((await readFile(log, 'utf8')).trim().split('\n').at(-1)).toContain(`up ${good}`);
+    expect((await readFile(log, 'utf8')).trim().split('\n').at(-1)).toContain(`release=${good}`);
     expect(port.statuses.at(-1)?.state).toBe('failure');
   });
 

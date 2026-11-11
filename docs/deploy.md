@@ -15,7 +15,8 @@ workers, merging and notifications: none of them changes behaviour.
    `.env` or build output) is streamed over SSH to `<path>/releases/<sha>`.
 4. On the host: the env file `<path>/.env` is linked into the release, then
    `docker compose --project-name <project> up --detach --build --remove-orphans --wait`
-   starts it. Healthchecks defined in the compose file must pass; optionally an
+   starts it with `SF_RELEASE_SHA` set to the release commit, so the compose file can pass it on as a
+   build argument or image label. Healthchecks defined in the compose file must pass; optionally an
    additional HTTP check (`healthcheck.url`) runs on the host.
 5. Success switches the `<path>/current` link, keeps `keepReleases` releases and
    prunes dangling images of the project. Failure prints recent container logs and,

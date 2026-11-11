@@ -28,6 +28,7 @@ echo "SF_DEPLOY_UPLOADED=$sha"
  * Starts a release with Docker Compose under a stable project name (so named
  * volumes persist), verifies it, switches the "current" link and prunes old
  * releases. On failure the previous release is started again when enabled.
+ * Compose runs with SF_RELEASE_SHA set to the commit of the release it starts.
  * Arguments: root, sha, project, composeFile, envFile, keep, healthUrl, healthTimeout, rollback.
  * Exit codes: 0 deployed, 2 failed, 3 rolled back, 4 precondition failed.
  */
@@ -51,7 +52,8 @@ fi
 previous=""
 if [ -L "$root/current" ]; then previous=$(readlink "$root/current"); fi
 echo "SF_DEPLOY_PREVIOUS=$(basename "\${previous:-none}")"
-compose() { local dir=$1; shift; docker compose --project-name "$project" --project-directory "$dir" --file "$dir/$compose_file" "$@"; }
+# The compose file may use SF_RELEASE_SHA, e.g. as a build argument or image label of the release.
+compose() { local dir=$1; shift; SF_RELEASE_SHA=$(basename "$dir") docker compose --project-name "$project" --project-directory "$dir" --file "$dir/$compose_file" "$@"; }
 healthy() {
   [ -z "$health_url" ] && return 0
   local deadline=$((SECONDS + health_timeout))
