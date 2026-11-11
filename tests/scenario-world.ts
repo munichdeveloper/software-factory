@@ -78,7 +78,9 @@ export class MapStore extends RuntimeStore {
 }
 
 const release: RuntimeRelease = { factorySha: 'a'.repeat(40), harnessSha: 'b'.repeat(40), workflowHash: 'c'.repeat(64), deploymentName: 'factory-runtime', buildId: 'v1', taskQueue: 'factory-runtime', schemaVersion: 1 };
-export type WorldOptions = { readyLabel?: boolean; humanGate?: boolean; maxParallelWorkers?: number; maxRetries?: number };
+export type WorldOptions = { readyLabel?: boolean; humanGate?: boolean; maxParallelWorkers?: number; maxRetries?: number;
+  /** Successful results open a pull request that only references the task, or one that closes it when merged. */
+  pullRequests?: 'referencing' | 'closing' };
 export type Tick = { report?: RunReport; thrown?: string };
 
 /** One repository under Factory management with the real Manager and RuntimeController; only I/O is simulated. */
@@ -150,6 +152,12 @@ export class World {
     try { await this.controller.gate(executionId, row.binding, actor, true); return true; } catch { return false; }
   }
 
+  /** A person merges or closes an open pull request. */
+  resolvePr(number: number, merge: boolean) {
+    const pr = this.github.state.prs.find(p => p.number === number)!;
+    Object.assign(pr, { state: 'closed', merged: merge, ...(merge ? { mergedAt: this.now.toISOString() } : {}) }); this.log.push(`${merge ? 'merge' : 'close'} PR ${number}`);
+  }
+
   // The worker.
   /** Executions Temporal is running right now. */
   running() { return [...this.store.rows.values()].filter(r => r.runId && !r.terminal && this.workflows.get(r.workflowId) === 'RUNNING'); }
@@ -161,7 +169,13 @@ export class World {
     const row = this.store.rows.get(executionId)!, input = row.snapshot.admission.input;
     const result: WorkerResult = { contractVersion: '1.0', executionId, issueNumber: input.issueNumber, status, summary: `Worker ${status}`, artifacts: [], error: null, proposedActions: [] };
     this.log.push(`finish ${executionId} #${input.issueNumber} ${status}`);
-    try { await this.controller.publish(row.snapshot, row.binding, result); this.workflows.set(row.workflowId, 'COMPLETED'); return true; }
+    try {
+      await this.controller.publish(row.snapshot, row.binding, result); this.workflows.set(row.workflowId, 'COMPLETED');
+      // A successful coding result is published as a pull request for the task.
+      if (status === 'success' && this.options.pullRequests) this.github.state.prs.push({ number: 1000 + this.github.state.prs.length, state: 'open', merged: false,
+        closingIssues: this.options.pullRequests === 'closing' ? [input.issueNumber] : [], referencedIssues: [input.issueNumber] });
+      return true;
+    }
     catch (error) { this.workflows.set(row.workflowId, 'FAILED'); this.log.push(`publish refused: ${error instanceof Error ? error.message : String(error)}`); return false; }
   }
   /** The workflow dies without publishing (worker lost, timeout on the Temporal side). */
