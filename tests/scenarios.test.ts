@@ -9,14 +9,16 @@ async function settle(world: World): Promise<string[]> {
   world.temporalDown = false; world.timelineDown = false; world.github.failWrites = 0;
   // Reconcile until nothing changes any more. Chains such as cancel, fail, retry, start take one run per link;
   // the total exceeds the dispatch grace period, so everything that can resolve itself has resolved.
-  let fixpoint: Tick = {}, quiet = 0;
+  let fixpoint: Tick = {}, quiet = 0, statusWrites = 0;
   for (let i = 0; i < 40 && quiet < 2; i++) {
+    statusWrites = world.github.statusWrites;
     world.advance(1); fixpoint = await world.tick();
     if (fixpoint.thrown) return [`reconciliation rejects in a healthy environment: ${fixpoint.thrown}`];
     quiet = i >= 11 && !fixpoint.report!.decisions.some(d => d.executed) ? quiet + 1 : 0;
   }
   const violations: string[] = [];
   if (quiet < 2) violations.push('reconciliation does not come to rest within 40 runs');
+  if (world.github.statusWrites !== statusWrites) violations.push('a status comment was rewritten although nothing changed');
   const report = fixpoint.report!;
   const running = world.running();
   const max = world.cfg.execution.maxParallelWorkers;
@@ -35,6 +37,10 @@ async function settle(world: World): Promise<string[]> {
     }
     // A closed task holds no worker and is never started again.
     if (issue.state === 'closed' && running.some(r => r.snapshot.admission.input.issueNumber === issue.number)) violations.push(`#${issue.number}: closed task still runs`);
+    // One readable status comment at most, and it names the lifecycle status the task has.
+    const comments = world.statusComments(issue.number);
+    if (comments.length > 1) violations.push(`#${issue.number}: ${comments.length} status comments`);
+    if (comments.length && !comments[0]!.includes(`\`${world.status(issue.number)[0]}\``)) violations.push(`#${issue.number}: status comment does not match ${world.status(issue.number)[0]}`);
     // Exactly one lifecycle status.
     if (world.status(issue.number).length !== 1) violations.push(`#${issue.number}: ${world.status(issue.number).length} lifecycle labels`);
     // In ready-label mode only a person grants execution, and only a person ever applies the label.
@@ -81,6 +87,20 @@ describe('lifecycle scenarios', () => {
     await healthy(w);
     w.grant(1); await w.tick();
     expect(w.status(1)).toEqual(['running']);
+    await healthy(w);
+  });
+  it('tells a person on the issue what the task is waiting for', async () => {
+    const w = new World({ readyLabel: true }); w.open(1);
+    await w.tick();
+    expect(w.statusComments(1)).toHaveLength(1);
+    expect(w.statusComments(1)[0]).toContain('waiting for the grant');
+    expect(w.statusComments(1)[0]).toContain('applies the label `harness:ready`');
+    w.grant(1); await w.tick();
+    expect(w.statusComments(1)).toHaveLength(1);
+    expect(w.statusComments(1)[0]).toContain('A worker is running.');
+    await w.finish(execution(w, 1), 'blocked'); await w.tick(); await w.tick();
+    expect(w.statusComments(1)[0]).toContain('The last run ended blocked.');
+    expect(w.statusComments(1)[0]).not.toContain('Worker blocked'); // the worker's own summary is never repeated
     await healthy(w);
   });
   it('holds a task at the human gate until it is approved', async () => {

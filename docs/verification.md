@@ -56,7 +56,8 @@ changes. Then these rules must hold:
 - Every intent is either running in Temporal or has a journaled result; none is duplicated.
 - No unknown outcome remains once the runtime answers.
 - A closed task runs nothing and holds no worker slot; a free slot is never denied.
-- Every task has exactly one lifecycle status.
+- Every task has exactly one lifecycle status and at most one status comment, which names that status and is
+  not rewritten when nothing changed.
 - In ready-label mode only a person applies `harness:ready`, no run is admitted on the Manager's own label,
   and a standing grant by an authorized person is honoured.
 

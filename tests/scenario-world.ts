@@ -32,6 +32,9 @@ export class TimelineGitHub extends MemoryGitHub {
     if (before !== after) this.readyFor(number).push({ id: this.nextReady++, event: after ? 'labeled' : 'unlabeled', actor, createdAt: this.now.toISOString() });
   }
   private write() { if (this.failWrites > 0) { this.failWrites--; throw transport('GitHub'); } }
+  /** How often the readable status comment of any task was created or edited. */
+  statusWrites = 0;
+  override async writeComment(number: number, body: string, id?: number) { this.write(); this.statusWrites++; await super.writeComment(number, body, id); }
   override async writeEvent(number: number, event: HarnessEvent) { this.write(); await super.writeEvent(number, event); }
   override async updateIssue(number: number, update: { labels?: string[]; state?: 'open' | 'closed' }) {
     this.write();
@@ -116,6 +119,8 @@ export class World {
   advance(minutes: number) { this.github.now = new Date(this.github.now.getTime() + minutes * 60000); }
   issue(number: number): Issue { return this.github.state.issues.find(i => i.number === number)!; }
   status(number: number) { return this.issue(number).labels.filter(l => lifecycleLabels.includes(l)).map(l => l.slice('harness:'.length)); }
+  /** The readable status comments of a task (there must never be more than one). */
+  statusComments(number: number) { return (this.github.state.comments.get(number) ?? []).filter(c => c.body.startsWith('<!-- software-factory:status -->')).map(c => c.body); }
   events(number: number) {
     return (this.github.state.comments.get(number) ?? []).flatMap(c => { const e = decodeEvent(c, this.cfg.manager.trustedActors); return e ? [e.data] : []; });
   }
