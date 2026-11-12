@@ -64,6 +64,37 @@ jobs:
           ref: ${{ needs.validate.outputs.base-sha }}
           path: target
           persist-credentials: false
+      # Read-only context named by the broker: commits of this repository only, fetched before the network is closed.
+      # The request was validated above; each value is matched again here and never interpreted by a shell.
+      - name: Fetch task context before network-isolated coding
+        working-directory: target
+        timeout-minutes: 5
+        env:
+          SF_CODING_REQUEST: ${{ needs.validate.outputs.request }}
+          SF_BASE_SHA: ${{ needs.validate.outputs.base-sha }}
+          SF_FETCH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$SF_FETCH_TOKEN" | base64 -w0)"
+          fetch() { timeout 120 git -c "http.https://github.com/.extraheader=$auth" fetch --quiet --no-tags --depth=50 origin "$1"; }
+          jq -r '.task.contextReferences[]' <<<"$SF_CODING_REQUEST" | grep -E '^sf-context (ref|rework) [a-f0-9]{40}( |$)' | head -n 7 > "$RUNNER_TEMP/sf-context.txt" || true
+          [[ -s "$RUNNER_TEMP/sf-context.txt" ]] || exit 0
+          fetch "$SF_BASE_SHA" || true
+          while read -r _ kind commit _; do
+            if ! fetch "$commit"; then echo "Context commit $commit is unavailable"; continue; fi
+            git update-ref "refs/sf-context/$commit" "$commit"
+            echo "Fetched context commit $commit ($kind)"
+            [[ "$kind" == rework ]] || continue
+            # Continue from the previous attempt: its changes on the current base, uncommitted. On any conflict the
+            # workspace stays at the base and the commit remains available as context.
+            if git -c user.name=sf -c user.email=sf@invalid merge --squash --no-commit "$commit" >/dev/null 2>&1; then
+              git reset --quiet
+              echo "Applied the previous attempt to the workspace"
+            else
+              git reset --quiet --hard "$SF_BASE_SHA"; git clean --quiet -fd
+              echo "The previous attempt does not apply to the current base; it is available as a commit only"
+            fi
+          done < "$RUNNER_TEMP/sf-context.txt"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: munichdeveloper/dev-agent-harness

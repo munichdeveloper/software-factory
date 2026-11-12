@@ -28,10 +28,21 @@ describe('status comment of a blocked task', () => {
     expect(text).toContain('Validation run: https://github.com/owner/target/actions/runs/4711');
     expect(text).toContain(`download the artifact \`coding-validation-logs-${task.latest!.input.executionId}\` in the "Artifacts" section`);
     expect(text).toContain('The worker itself reported success; it could not run these checks in its isolated environment.');
-    expect(text).toContain('**Needed from you:** The Factory does not repair a failed validation on its own yet. Either fix the failing checks in the draft pull request and merge it yourself, or revise the task text and remove `harness:blocked`, then apply `harness:ready` to start a new run.');
+    expect(text).toContain('**Needed from you:** The Factory does not repair a failed validation on its own in this installation. Either fix the failing checks in the draft pull request and merge it yourself, or revise the task text and remove `harness:blocked`, then apply `harness:ready` to start a new run.');
     expect(text).toContain('> Camera action implemented; 31 tests passed.');
     expect(text).toContain('**Pull request:** https://github.com/owner/target/pull/22');
     expect(text).not.toContain('Review the result');
+  });
+  it('asks for nobody while a rework is still allowed, and says so when the attempts are used up', async () => {
+    const { task, cfg } = await blockedTask(`Done.${brokerLine('success', 'failed')}`, [`urn:sf-validation:${'b'.repeat(64)}`],
+      { status: 'failed', reason: 'CHECK_FAILED', runId: 4711, failed: [{ name: 'browser', exitCode: 1 }] });
+    cfg.execution.rework = true;
+    const pending = statusComment({ ...task, reworkable: true, desiredStatus: 'failed' }, cfg, context);
+    expect(pending).toContain('Failed checks: `browser` (exit code 1).');
+    expect(pending).toContain('Attempt 1 of 3. A further attempt starts on its own; it continues these changes and receives the failed checks and their output.');
+    expect(pending).toContain('**Needed from you:** Nothing; the Factory reworks the failed checks on its own.');
+    const exhausted = statusComment({ ...task, latest: { ...task.latest!, attempt: 2 } }, cfg, context);
+    expect(exhausted).toContain('**Needed from you:** The automatic rework attempts are used up (3 of 3 attempts). Either fix the failing checks');
   });
   it('says that the worker itself stopped when the validation passed, and repeats its reason', async () => {
     const { task, cfg } = await blockedTask(`Blocked pending human review of the generated text.${brokerLine('blocked', 'passed')}`,

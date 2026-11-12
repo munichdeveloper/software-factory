@@ -57,7 +57,7 @@ export interface WorkerRuntimePort {
   /** True when harness:ready, applied by an authorized person, is what grants execution. */
   readonly readyIsGrant?: boolean;
   /** Checks grants that must exist before a durable intent is written. Rejects with RuntimeAdmissionRejected. */
-  preflight?(issueNumber: number): Promise<void>;
+  preflight?(issueNumber: number, reworkOfExecutionId?: string): Promise<void>;
   start(admission: Admission): Promise<RuntimeObservation>;
   observations(executionIds: string[]): Promise<RuntimeObservation[]>;
   cancel(executionId: string): Promise<void>;

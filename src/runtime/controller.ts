@@ -13,11 +13,12 @@ import type { CodingExecutionPort } from './coding-executor.js';
 import type { CodingArtifact } from '../workers/coding.js';
 import type { ReadyApproval } from './contract.js';
 import { bindValidation, type ValidationPlan, type ValidationReport } from './validation-contract.js';
+import { reworkOf } from './coding-context.js';
 
 export interface RuntimeRepository {
   repositoryId: number; repository: string; release: RuntimeRelease; retainedReleases?: RuntimeRelease[]; requireHumanGate: boolean;
   baseRef?: string; executorWorkflow?: string; issueNumbers?: number[]; allowedPaths?: string[];
-  readyApproval?(issueNumber: number, expected?: ReadyApproval): Promise<ReadyApproval>;
+  readyApproval?(issueNumber: number, expected?: ReadyApproval, rework?: ReadyApproval): Promise<ReadyApproval>;
   validationPlan?(): Promise<ValidationPlan>;
   github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
   coding?: { executor: CodingExecutionPort; publish(snapshot: RunSnapshot, binding: string, artifact: CodingArtifact, createdAt: string, validation?: ValidationReport): Promise<{ url: string }> };
@@ -38,13 +39,24 @@ export class RuntimeController implements WorkerRuntimePort {
       approvalMode: this.repo.readyApproval ? 'ready-label' : 'manual', requireHumanGate: this.repo.requireHumanGate,
       validationEnabled: !!this.repo.validationPlan, workerReady: true as const, checkedAt: new Date().toISOString() };
   }
+  /**
+   * The attempt a rework continues, from the broker's own records: same task and version, ended blocked by a failed
+   * validation. Its ready grant, where one admitted it, carries over to the rework.
+   */
+  private async reworked(input: { issueNumber: number; taskVersion: string; contextReferences: string[] }, previousId = reworkOf(input)): Promise<StoredRun | null> {
+    if (!previousId) return null;
+    const previous = await this.store.get(this.repo.repositoryId, previousId);
+    if (!previous || previous.snapshot.admission.input.issueNumber !== input.issueNumber || previous.snapshot.admission.input.taskVersion !== input.taskVersion ||
+      previous.result?.status !== 'blocked' || (await this.store.validation(this.repo.repositoryId, previousId))?.status !== 'failed') throw new Error('REWORK_SOURCE_INVALID');
+    return previous;
+  }
   private scope(number: number) { if (this.repo.issueNumbers && !this.repo.issueNumbers.includes(number)) throw new Error('ISSUE_OUTSIDE_RUNTIME_SCOPE'); }
   private async current(snapshot: RunSnapshot) {
     const config = await this.repo.config();
     if (snapshot.validationPlan && !this.repo.validationPlan) throw new Error('VALIDATION_MODE_CHANGED');
     if (Boolean(this.repo.readyApproval) !== Boolean(snapshot.readyApproval)) throw new Error('APPROVAL_MODE_CHANGED');
     if (snapshot.readyApproval) {
-      if (snapshot.requireHumanGate || !this.repo.readyApproval || hash(await this.repo.readyApproval(snapshot.admission.input.issueNumber, snapshot.readyApproval)) !== hash(snapshot.readyApproval)) throw new Error('READY_APPROVAL_CHANGED');
+      if (snapshot.requireHumanGate || !this.repo.readyApproval || hash(await this.repo.readyApproval(snapshot.admission.input.issueNumber, snapshot.readyApproval, (await this.reworked(snapshot.admission.input))?.snapshot.readyApproval)) !== hash(snapshot.readyApproval)) throw new Error('READY_APPROVAL_CHANGED');
     }
     if (this.repo.repositoryId !== snapshot.repositoryId || this.repo.repository !== snapshot.repository || this.repo.baseRef !== snapshot.baseRef || this.repo.executorWorkflow !== snapshot.executorWorkflow || hash(this.repo.allowedPaths ?? null) !== hash(snapshot.allowedPaths ?? null) ||
       ![this.repo.release, ...(this.repo.retainedReleases ?? [])].some(r => hash(r) === hash(snapshot.release)) || config.execution.engine !== 'temporal' ||
@@ -54,10 +66,13 @@ export class RuntimeController implements WorkerRuntimePort {
     return config;
   }
   get readyIsGrant() { return !!this.repo.readyApproval; }
-  async preflight(issueNumber: number): Promise<void> {
+  async preflight(issueNumber: number, reworkOfExecutionId?: string): Promise<void> {
     try {
       this.scope(issueNumber);
-      if (this.repo.readyApproval) await this.repo.readyApproval(issueNumber);
+      if (this.repo.readyApproval) {
+        const previous = reworkOfExecutionId ? await this.store.get(this.repo.repositoryId, reworkOfExecutionId) : null;
+        await this.repo.readyApproval(issueNumber, undefined, previous?.snapshot.admission.input.issueNumber === issueNumber ? previous.snapshot.readyApproval : undefined);
+      }
     } catch (error) { const code = admissionCode(error); throw code ? new RuntimeAdmissionRejected(code) : error; }
   }
   async start(value: Admission): Promise<RuntimeObservation> {
@@ -74,11 +89,12 @@ export class RuntimeController implements WorkerRuntimePort {
         const comments = await this.repo.github.comments(admission.input.issueNumber);
         const intent = comments.map(c => decodeEvent(c, config.manager.trustedActors)).find(e => e?.data.type === 'intent' && e.data.input.executionId === id);
         if (intent?.data.type !== 'intent' || intent.data.actionId !== admission.actionId) throw new Error('NO_MATCHING_INTENT');
+        await this.reworked(admission.input);
         const snapshot = snapshotSchema.parse({ version: 1, repositoryId: this.repo.repositoryId, repository: this.repo.repository,
           release: this.repo.release, admission, baseSha: await this.repo.baseSha(), specHash: admission.input.taskVersion,
           ...(this.repo.baseRef ? { baseRef: this.repo.baseRef } : {}), ...(this.repo.executorWorkflow ? { executorWorkflow: this.repo.executorWorkflow } : {}),
           ...(this.repo.allowedPaths ? { allowedPaths: this.repo.allowedPaths } : {}),
-          ...(this.repo.readyApproval ? { readyApproval: await this.repo.readyApproval(admission.input.issueNumber) } : {}),
+          ...(this.repo.readyApproval ? { readyApproval: await this.repo.readyApproval(admission.input.issueNumber, undefined, (await this.reworked(admission.input))?.snapshot.readyApproval) } : {}),
           ...(admission.input.worker === 'codex' && this.repo.validationPlan ? { validationPlan: await this.repo.validationPlan() } : {}),
           configHash: hash(config), requireHumanGate: this.repo.requireHumanGate });
         await this.current(snapshot);

@@ -58,7 +58,7 @@ export class GitHubClient implements GitHubPort {
       return ['admin', 'maintain', 'write'].includes(data.permission);
     } catch { return false; }
   }
-  async readyApproval(number: number, trustedActors: string[], expected?: ReadyApproval): Promise<ReadyApproval> {
+  async readyApproval(number: number, trustedActors: string[], expected?: ReadyApproval, rework?: ReadyApproval): Promise<ReadyApproval> {
     const issue = await this.getIssue(number);
     const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number, per_page: 100 });
     const events: BlockLabelEvent[] = timeline.flatMap(e => {
@@ -66,7 +66,7 @@ export class GitHubClient implements GitHubPort {
         !('id' in e) || typeof e.id !== 'number' || !('created_at' in e) || typeof e.created_at !== 'string') return [];
       return [{ id: e.id, event: e.event as 'labeled' | 'unlabeled', actor: 'actor' in e ? e.actor?.login ?? '' : '', createdAt: e.created_at }];
     });
-    return authorizeReadyLabel(issue, events, actor => this.canApprove(actor), trustedActors, expected);
+    return authorizeReadyLabel(issue, events, actor => this.canApprove(actor), trustedActors, expected, rework);
   }
   async runs(workflow: string): Promise<WorkflowRun[]> {
     const rows = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...this.target, workflow_id: workflow, event: 'workflow_dispatch', per_page: 100 });
