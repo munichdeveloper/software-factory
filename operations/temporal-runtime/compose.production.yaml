@@ -15,7 +15,7 @@ name: sfm
 # repository, so it cannot be built from here). Its two services below name the commit to run; that image must
 # exist on the host before this file is deployed, otherwise the deployment fails and the previous release stays.
 x-worker-release: &worker-release
-  WORKER_FACTORY_SHA: 63d5c0236d127875a96ad062713fc3676d179e19
+  WORKER_FACTORY_SHA: 80a645723cc52453bf822abb770ceb4a320f7bf8
   WORKER_DEPLOYMENT: sf-backofficer
   WORKER_QUEUE: sf-backofficer-v1
 x-service: &service
