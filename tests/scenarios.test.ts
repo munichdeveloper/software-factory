@@ -115,6 +115,22 @@ describe('lifecycle scenarios', () => {
     expect(w.status(1)).toEqual(['done']);
     await healthy(w);
   });
+  it('retries a failed run on a fresh grant instead of consuming that grant', async () => {
+    for (const end of ['crash', 'failed'] as const) {
+      const w = new World({ readyLabel: true }); w.open(1); w.grant(1); await w.tick();
+      const first = execution(w, 1);
+      if (end === 'crash') w.crash(first); else await w.finish(first, 'failed');
+      await w.tick(); await w.tick();
+      expect(w.status(1), end).toEqual(['failed']);
+      expect(w.running(), end).toEqual([]);
+      w.grant(1); await w.tick(); await w.tick();
+      expect(w.status(1), end).toEqual(['running']);
+      expect(execution(w, 1), end).not.toBe(first);
+      // The Manager took the label only when it moved the task to running, never before the retry started.
+      expect(w.github.readyFor(1).filter(e => e.event === 'unlabeled')).toHaveLength(2);
+      await healthy(w);
+    }
+  });
   it('holds a task at the human gate until it is approved', async () => {
     const w = new World({ humanGate: true }); w.open(1);
     await w.tick(); await w.tick();
