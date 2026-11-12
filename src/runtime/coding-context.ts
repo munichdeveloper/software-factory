@@ -26,6 +26,8 @@ export const reworkEntry = (commit: string, previousExecutionId: string) => {
   if (!sha.test(commit) || !execution.test(previousExecutionId)) throw new Error('INVALID_CONTEXT_REF');
   return `sf-context rework ${commit} ${previousExecutionId}`;
 };
+/** The repository opted in to a private loopback for the worker's commands; read by the executor workflow. */
+export const loopbackEntry = 'sf-context sandbox loopback';
 export const failedChecksEntry = (report: ValidationReport) =>
   `sf-context validation-failed ${report.checks.filter(c => c.status === 'failed').map(c => `${c.name}:${c.exitCode ?? 'none'}`).join(', ')}`;
 

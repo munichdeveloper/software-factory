@@ -129,7 +129,7 @@ export class World {
     };
     if (options.coding || options.rework) {
       this.cfg.execution.rework = !!options.rework;
-      this.cfg.workers.coding = { enabled: true, agent: 'codex', model: 'test-model', reasoningEffort: 'high', validationWorkflow: null };
+      this.cfg.workers.coding = { enabled: true, agent: 'codex', model: 'test-model', reasoningEffort: 'high', validationWorkflow: null, loopback: false };
       this.repo.validationPlan = async () => defaultValidationPlan();
       this.repo.coding = { executor: { poll: async snapshot => this.outcomes.get(snapshot.admission.input.executionId) ?? null, cancel: async () => {} },
         // The broker's publisher: one draft pull request per attempt; a rework replaces the one it continues.

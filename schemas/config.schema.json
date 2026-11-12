@@ -291,6 +291,10 @@
                       "type": "null"
                     }
                   ]
+                },
+                "loopback": {
+                  "default": false,
+                  "type": "boolean"
                 }
               },
               "required": [

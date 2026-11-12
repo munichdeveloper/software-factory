@@ -67,3 +67,15 @@ still a change set against the frozen base under the same path, size and validat
 Both mechanisms need the executor workflow of this release. An older pinned executor passes the entries to the worker
 as plain text and neither fetches nor applies anything, so enable `execution.rework` only after the release rollout.
 
+## Local servers and browser tests for the worker
+
+With `workers.coding.loopback: true` the broker adds `sf-context sandbox loopback` to the request and the executor
+runs the Harness action in its loopback mode: each command of the worker stays in a private network namespace that has
+only `lo`, so it can start the project's server and run browser tests against `127.0.0.1`. Outbound traffic, DNS and
+the host's loopback, including the model API proxy, stay unreachable for commands; the Harness verifies that with a
+probe before the model starts and aborts otherwise. If the locked dependencies contain Playwright, the executor installs
+its Chromium before the isolated step and the Harness shares it read-only with the worker account.
+
+In this mode the checkout is marked untrusted for Codex, so a repository `.codex/config.toml` is not applied. The mode
+relies on an experimental Codex feature and is therefore opt-in per repository.
+

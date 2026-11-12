@@ -34625,7 +34625,9 @@ var configSchema = external_exports.strictObject({
       agent: external_exports.literal("codex"),
       model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/).default("gpt-6.1-sol"),
       reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh"]).default("high"),
-      validationWorkflow: external_exports.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null)
+      validationWorkflow: external_exports.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null),
+      /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
+      loopback: external_exports.boolean().default(false)
     })]).default(false),
     review: external_exports.literal(false).default(false)
   }).prefault({}),
