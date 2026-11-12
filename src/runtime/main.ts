@@ -39,6 +39,11 @@ const registrySchema = z.strictObject({
     .refine(item => Number(!!item.githubTokenEnv) + Number(!!item.githubInstallationId) === 1, 'Select exactly one scoped credential source')
     .refine(item => item.approvalMode !== 'ready-label' || !item.requireHumanGate, 'Ready label replaces the manual gate')).min(1).max(100),
 });
+/** Replaces every repository's release with the one of a worker package (the file `pack` writes). */
+export function supersedeRelease(repositories: { release: unknown; retainedReleases?: unknown }[], workerPackage: unknown) {
+  const release = releaseSchema.parse(z.object({ release: z.unknown() }).parse(workerPackage).release);
+  for (const item of repositories) Object.assign(item, { release, retainedReleases: [] });
+}
 export async function main(args = process.argv.slice(2)) {
   const { positionals, values } = parseArgs({ args, allowPositionals: true, options: {
     file: { type: 'string' }, output: { type: 'string' }, 'factory-sha': { type: 'string' }, 'harness-sha': { type: 'string' },
@@ -64,6 +69,10 @@ export async function main(args = process.argv.slice(2)) {
   }
   if (positionals[0] !== 'serve') throw new Error('Use serve, worker or pack');
   const registry = registrySchema.parse(JSON.parse(await readFile(resolve(z.string().min(1).parse(values.file)), 'utf8')));
+  // A stack that builds its PINNED worker itself names that worker's release here; it then replaces the registry's
+  // release entries, so a release rollout needs no edit on the host. Runs of another release are not retained:
+  // the start guard below refuses to orphan them.
+  if (process.env.FACTORY_RELEASE_FILE) supersedeRelease(registry.repositories, JSON.parse(await readFile(resolve(process.env.FACTORY_RELEASE_FILE), 'utf8')));
   const store = new RuntimeStore(new Pool({ connectionString: process.env.FACTORY_RUNTIME_DATABASE_URL, max: 8, connectionTimeoutMillis: 5000 }));
   const connection = await Connection.connect({ address: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233', connectTimeout: '5 seconds' });
   const temporal = new Client({ connection, namespace: registry.namespace });

@@ -141,9 +141,14 @@ This repository deploys its own runtime stack (broker, worker, SF Manager and th
 - The **broker** is built on the host from the deployed release (`SF_RELEASE_SHA`). A merge to `main`
   therefore replaces the broker and restarts the services sharing its network namespace (worker, Manager).
   Running Temporal workflows keep their Run-ID across this restart.
-- The **PINNED worker package**, its image and the Manager images stay pinned by `FACTORY_SHA` and
-  `MANAGER_SHA` in the host's `.env`. A deployment never changes them. Rolling out a new worker release
-  (new package, registry entry and executor wrapper) remains a deliberate, separate step.
+- The **PINNED worker release** is named in the compose file itself (`x-worker-release`, a published Factory
+  commit). Every deployment builds the worker image from that commit, with its package baked in, and the broker
+  serves its repositories with exactly that release; the `release` entries of `registry.json` are superseded.
+  Rolling out a worker release is therefore a pull request that changes this one commit, not a step on the host.
+  The broker refuses to start while a run of another release is still active; the deployment then fails and the
+  previous release keeps running. Installed repositories additionally need their executor wrapper rolled to the
+  same commit through the SF Manager.
+- The **Manager images** stay pinned by `MANAGER_SHA` in the host's `.env`.
 - Credentials (`*.env`) and `registry.json` stay on the host in the deploy path and never pass through GitHub.
 - The public host name of the Manager is read from `SFM_HOST` in the host's `.env`. Without it the compose file
   does not resolve and the deployment fails before any container changes.

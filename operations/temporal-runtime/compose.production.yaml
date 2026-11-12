@@ -3,12 +3,18 @@
 # built from the release that is being deployed; SF_RELEASE_SHA is set by the deployment.
 #
 # Host state that never passes through GitHub lives in SFM_CONFIG_DIR (default: the deploy path):
-#   .env            FACTORY_SHA (pinned worker release), MANAGER_SHA, SFM_HOST (public host name of the Manager)
+#   .env            MANAGER_SHA, SFM_HOST (public host name of the Manager)
 #   *.env           service credentials
-#   registry.json   runtime registry
-# FACTORY_SHA pins the PINNED worker package and its image. It changes only with a deliberate
-# release rollout (new worker package, registry entry and executor wrapper), not with a deployment.
+#   registry.json   runtime registry (repositories, modes; its release entry is superseded, see below)
 name: sfm
+# The PINNED worker release. Changing it is the release rollout on this host: the deployment builds the worker
+# image and its package from this published Factory commit, and the broker serves its repositories with exactly
+# that release. Nothing on the host has to be edited. Installed repositories still need their executor wrapper
+# rolled to the same commit (SF Manager), and a deployment fails closed while a run of another release is active.
+x-worker-release: &worker-release
+  WORKER_FACTORY_SHA: 63d5c0236d127875a96ad062713fc3676d179e19
+  WORKER_DEPLOYMENT: sf-backofficer
+  WORKER_QUEUE: sf-backofficer-v1
 x-service: &service
   restart: unless-stopped
   init: true
@@ -44,42 +50,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-  # One-shot packaging of a pinned worker release; run explicitly with
-  # `docker compose --profile pack run --rm factory-pack`, never by a deployment.
-  factory-pack:
-    profiles: [pack]
-    image: sf-factory:${FACTORY_SHA:?}
-    network_mode: none
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    volumes: [factory-package:/run/factory-package]
-    tmpfs: [/tmp]
-    command:
-      [
-        pack,
-        --output,
-        /run/factory-package,
-        --factory-sha,
-        '${FACTORY_SHA}',
-        --harness-sha,
-        9fa9621cb14d8730e82b096c8a0469ecb5749b9f,
-        --harness,
-        /app/.runtime/harness/dist/cli.js,
-        --deployment,
-        sf-backofficer,
-        --build,
-        '${FACTORY_SHA}',
-        --queue,
-        sf-backofficer-v1,
-      ]
-    restart: 'no'
   runtime-broker:
     <<: *service
     build:
       context: .
       dockerfile: operations/temporal-runtime/Dockerfile
+      target: broker
       args:
+        <<: *worker-release
         FACTORY_SHA: ${SF_RELEASE_SHA:?}
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/broker.env
@@ -113,7 +91,11 @@ services:
       traefik.http.services.sfm.loadbalancer.server.port: '3000'
   runtime-worker:
     <<: *service
-    image: sf-factory:${FACTORY_SHA:?}
+    build:
+      context: .
+      dockerfile: operations/temporal-runtime/Dockerfile
+      target: worker
+      args: *worker-release
     network_mode: service:runtime-broker
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/worker.env
@@ -121,8 +103,6 @@ services:
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_NAMESPACE: software-factory-backofficer
       FACTORY_BROKER_URL: http://127.0.0.1:8095
-    command: [worker, --file, /run/factory-package/worker-package.json]
-    volumes: [factory-package:/run/factory-package:ro]
     tmpfs: [/tmp]
     mem_limit: 1g
     depends_on:
@@ -184,5 +164,3 @@ networks:
 volumes:
   manager-data: {}
   runtime-data: {}
-  factory-package:
-    name: sfm-factory-package-${FACTORY_SHA:?}
