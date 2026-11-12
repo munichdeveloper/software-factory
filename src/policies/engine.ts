@@ -44,10 +44,12 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
     if (!config.workers.test.enabled && !(config.workers.coding && config.workers.coding.enabled)) return deny('All workers disabled');
     if (task.blocked || task.issue.body.length > 20000) return deny('Task is blocked or exceeds worker input limit');
     if (task.executions.some(e => e.active)) return deny('Task already has an active or uncertain execution');
-    if (task.hasClosingMerge || task.hasOpenPR) return deny('Task already has implementation PRs');
+    // A rework continues the task's own published attempt; that pull request is replaced, not a competing implementation.
+    const rework = action.kind === 'retry_worker' && task.reworkable;
+    if (task.hasClosingMerge || task.hasOpenPR && !rework) return deny('Task already has implementation PRs');
     if (budget.activeWorkers >= config.execution.maxParallelWorkers) return deny('Maximum parallel workers reached');
     if (action.kind === 'retry_worker') {
-      if (!task.latest?.result || !['failed', 'cancelled'].includes(task.latest.result.status)) return deny('No failed execution to retry');
+      if (!task.latest?.result || !rework && !['failed', 'cancelled'].includes(task.latest.result.status)) return deny('No failed execution to retry');
       if (task.latest.attempt >= config.execution.maxRetries) return deny('Maximum retries reached');
       if (action.attempt !== task.latest.attempt + 1) return deny('Retry proposal is not bound to the next concrete attempt');
     } else {

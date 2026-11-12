@@ -8,7 +8,7 @@ import { snapshotSchema } from '../src/runtime/contract.js';
 import { hash } from '../src/state/identity.js';
 import { config } from './helpers.js';
 import type { CodingArtifact } from '../src/workers/coding.js';
-import { defaultValidationPlan } from '../src/runtime/validation-contract.js';
+import { defaultValidationPlan, type ValidationReport } from '../src/runtime/validation-contract.js';
 import { reportFor } from './validation-fixtures.js';
 
 const snapshot = snapshotSchema.parse({ version: 1, repositoryId: 42, repository: 'owner/target',
@@ -32,7 +32,8 @@ class Effects implements EffectPort {
     const receipt = evidence ?? await r.apply(); claim.receipt = receipt; return r.validate(receipt);
   }
 }
-function fixture(requestSnapshot = snapshot) {
+function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>) {
+  const requests: { task: { contextReferences: string[] } }[] = [], calls: string[] = [];
   const cfg = config(); cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
   let ref = false, dispatches = 0, lost = false, before = false, complete = false, wrongHead = false, duplicate = false, badWrapper = false;
   let missingValidation=false,forgedValidation=false;
@@ -40,13 +41,16 @@ function fixture(requestSnapshot = snapshot) {
   const fetcher: typeof fetch = async (input, init) => {
     const path = decodeURIComponent(new URL(String(input)).pathname).replace('/repos/owner/target', ''), method = init?.method ?? 'GET';
     if(path.includes('/actions/workflows/'))workflowPaths.push(path);
-    let data: unknown, status = 200;
-    if (path === '') data = { id: 42 };
+    let data: unknown, status = 200; calls.push(path);
+    const custom = extra?.(path);
+    if (custom instanceof Response) return custom;
+    if (custom !== undefined) { if (custom === null) status = 404; data = custom ?? {}; }
+    else if (path === '') data = { id: 42, default_branch: 'main' };
     else if (path.startsWith('/contents/')) data = { encoding: 'base64', content: Buffer.from(badWrapper ? 'unapproved' : executorWrapper(snapshot.release.factorySha, snapshot.release.harnessSha,!!requestSnapshot.validationPlan)).toString('base64') };
     else if (path.startsWith('/git/ref/heads/')) { data = { object: { sha: snapshot.baseSha } }; if (!ref) status = 404; }
     else if (path === '/git/refs') { ref = true; data = { object: { sha: snapshot.baseSha } }; }
     else if (path.endsWith('/dispatches')) {
-      dispatches++; const body = JSON.parse(String(init?.body)); expect(body.inputs.binding).toBe(hash(requestSnapshot)); codingExecutionSchema.parse(JSON.parse(body.inputs.request));
+      dispatches++; const body = JSON.parse(String(init?.body)); expect(body.inputs.binding).toBe(hash(requestSnapshot)); requests.push(codingExecutionSchema.parse(JSON.parse(body.inputs.request)));
       if (before) { before = false; throw new Error('Uncertain send'); }
       if (lost) { lost = false; complete = true; throw new Error('Lost response'); }
       data = {}; status = 204;
@@ -61,8 +65,8 @@ function fixture(requestSnapshot = snapshot) {
     const response = status === 204 ? new Response(null, { status }) : Response.json(data, { status }); Object.defineProperty(response, 'url', { value: String(input) }); return response;
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
-  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]']);
-  return { poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
+  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation);
+  return { requests, calls, poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
     lose: () => { lost = true; }, before: () => { before = true; }, wrong: () => { wrongHead = true; }, duplicate: () => { duplicate = true; },
     badWrapper: () => { badWrapper = true; }, unrelated: () => { source = { ...source, baseSha: '9'.repeat(40) }; },missingValidation:()=>{missingValidation=true;},forgeValidation:()=>{forgedValidation=true;},blocked:()=>{source.result.status='blocked';} };
 }
@@ -100,4 +104,49 @@ it('rejects archive paths, extra entries, unsafe file changes and declared decom
   const bomb = zipSync({ 'artifact.json': strToU8('{}') }); const view = new DataView(bomb.buffer, bomb.byteOffset, bomb.byteLength);
   for (let i = 0; i < bomb.length - 28; i++) if (view.getUint32(i, true) === 0x02014b50) { view.setUint32(i + 24, 8000001, true); break; }
   expect(() => decodeCodingArchive(bomb)).toThrow('UNEXPECTED_ARTIFACT_ENTRY');
+});
+
+it('hands a rework the previous attempt, its failed checks and their output, and the refs the task names', async () => {
+  const previous = '7'.repeat(32), named = '8'.repeat(40), plan = defaultValidationPlan();
+  const selected = snapshotSchema.parse({ ...snapshot, validationPlan: plan, admission: { ...snapshot.admission, input: { ...snapshot.admission.input,
+    description: `Bring PR #14 and commit ${named} to main, see \`feature/camera\` and \`src/app/page.tsx\`. Related: #99, pull/15, \`main\`, ${'9'.repeat(40)}.`,
+    contextReferences: ['https://github.com/owner/target/issues/2', `urn:sf-rework:${previous}`] } } });
+  const report = { ...reportFor({ ...artifact(), result: { ...artifact().result, executionId: previous } }, plan, 'failed', 77) };
+  const log = `\u001b[31mError:\u001b[0m response.json: Test timeout\r\n${'x'.repeat(3000)}\nat tests/browser/camera-upload.spec.ts:80\u0007`;
+  const f = fixture(selected, path => path === `/git/ref/heads/sf/issue-2/${previous}` ? { object: { sha: '5'.repeat(40) } }
+    : path === `/git/commits/${named}` ? { sha: named } : path === `/git/commits/${'9'.repeat(40)}` ? null
+    : path === '/pulls/14' ? { head: { sha: '6'.repeat(40), repo: { id: 42 } } } : path === '/pulls/15' ? { head: { sha: '4'.repeat(40), repo: { id: 43 } } } : path === '/pulls/99' ? null
+    : path === '/branches' ? [{ name: 'main', commit: { sha: snapshot.baseSha } }, { name: 'feature/camera', commit: { sha: '3'.repeat(40) } }]
+    : path === '/actions/runs/77/artifacts' ? { total_count: 1, artifacts: [{ id: 30, name: `coding-validation-logs-${previous}`, size_in_bytes: 900, expired: false }] }
+    : path === '/actions/artifacts/30/zip' ? new Response(zipSync({ 'test.log': strToU8(log), 'build.log': strToU8('unrelated') }) as BodyInit) : undefined,
+  async id => id === previous ? report : null);
+  await f.poll(); await f.poll();
+  const references = f.requests[0]!.task.contextReferences;
+  expect(references.slice(0, 4)).toEqual(['https://github.com/owner/target/issues/2', `urn:sf-rework:${previous}`, `sf-context rework ${'5'.repeat(40)} ${previous}`, 'sf-context validation-failed test:1']);
+  const output = references.filter(r => r.startsWith('sf-context validation-output test '));
+  expect(output).toHaveLength(3);
+  expect(output.at(-1)).toMatch(/^sf-context validation-output test 3\/3: x+\nat tests\/browser\/camera-upload\.spec\.ts:80$/);
+  for (const forbidden of [String.fromCharCode(27), String.fromCharCode(7), 'unrelated']) expect(output.join('')).not.toContain(forbidden);
+  expect(references.slice(4 + output.length)).toEqual([`sf-context ref ${named} commit ${named.slice(0, 12)}`, `sf-context ref ${'6'.repeat(40)} pull #14`, `sf-context ref ${'3'.repeat(40)} branch feature/camera`,
+    `sf-context unavailable commit ${'9'.repeat(12)}`, 'sf-context unavailable pull #15']);
+  // Resolved once: the second poll rebuilt the same request from the stored receipt.
+  expect(f.calls.filter(c => c === '/branches')).toHaveLength(1); expect(f.dispatches()).toBe(1);
+});
+it('adds nothing for a task that names no refs, and survives a missing previous branch or log', async () => {
+  const plain = fixture(); await plain.poll(); expect(plain.requests[0]!.task.contextReferences).toEqual([]);
+  const previous = '7'.repeat(32), plan = defaultValidationPlan();
+  const selected = snapshotSchema.parse({ ...snapshot, validationPlan: plan, admission: { ...snapshot.admission, input: { ...snapshot.admission.input, contextReferences: [`urn:sf-rework:${previous}`] } } });
+  const f = fixture(selected, path => path === `/git/ref/heads/sf/issue-2/${previous}` ? null : path === '/actions/runs/77/artifacts' ? { total_count: 0, artifacts: [] } : undefined,
+    async () => reportFor({ ...artifact(), result: { ...artifact().result, executionId: previous } }, plan, 'failed', 77));
+  await f.poll();
+  expect(f.requests[0]!.task.contextReferences).toEqual([`urn:sf-rework:${previous}`, `sf-context unavailable branch sf/issue-2/${previous}`, 'sf-context validation-failed test:1']);
+});
+
+it('leaves the request of an execution dispatched before context existed exactly as it was sent', async () => {
+  const selected = snapshotSchema.parse({ ...snapshot, admission: { ...snapshot.admission, input: { ...snapshot.admission.input, description: 'Reuse `feature/camera` and PR #14.' } } });
+  // Its executor ref is already there, as an earlier broker release created it before dispatching.
+  const f = fixture(selected, path => path === `/git/ref/heads/sf-temporal-executor/${snapshot.admission.input.executionId}` ? { object: { sha: snapshot.baseSha } } : undefined);
+  await f.poll();
+  expect(f.requests[0]!.task.contextReferences).toEqual([]);
+  expect(f.calls.some(c => c === '/branches' || c === '/pulls/14')).toBe(false);
 });

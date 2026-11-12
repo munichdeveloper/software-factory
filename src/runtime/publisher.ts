@@ -6,6 +6,7 @@ import type { RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
 import { bindValidation, type ValidationReport } from './validation-contract.js';
+import { reworkOf } from './coding-context.js';
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const objectReceipt = z.strictObject({ sha });
@@ -98,6 +99,19 @@ export class RuntimeCodingPublisher {
         const value = (await this.api.pulls.create({ ...target, base: baseBranch, head: branch, title, body, draft: true })).data;
         if (value.head.sha !== commit.sha || !value.draft) throw new Error('EXECUTION_PR_CONFLICT');
         return { number: value.number, url: value.html_url, head: value.head.sha };
+      } });
+    // A rework replaces the pull request of the attempt it continues, so the task keeps exactly one open draft.
+    const previousId = reworkOf(input);
+    if (previousId) await this.effects.perform({ key: 'supersede-pr', payload: { previous: previousId, by: pr.number }, authorize, contentAddressed: true,
+      validate: z.strictObject({ closed: z.number().int().positive().array().max(10) }).parse, reconcile: async () => null,
+      apply: async () => {
+        const open = (await this.api.paginate(this.api.pulls.list, { ...target, state: 'open', head: `${owner}:sf/issue-${input.issueNumber}/${previousId}`, per_page: 100 }))
+          .filter(p => p.number !== pr.number && this.trustedActors.includes(p.user?.login ?? '')).slice(0, 10);
+        for (const old of open) {
+          await this.api.issues.createComment({ ...target, issue_number: old.number, body: `Superseded by #${pr.number}: a further attempt that continues these changes after the failed validation.` });
+          await this.api.pulls.update({ ...target, pull_number: old.number, state: 'closed' });
+        }
+        return { closed: open.map(p => p.number) };
       } });
     const journal = `Draft PR: ${pr.url}\nHead: ${pr.head}\n${marker}`;
     await this.effects.perform({ key: 'publication-comment', payload: { issue: input.issueNumber, body: journal }, authorize,

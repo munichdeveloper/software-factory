@@ -33,3 +33,37 @@ Reports bind execution ID, task ID/version, frozen base SHA, canonical original 
 Artifacts are named `coding-result-EXECUTION_ID`, `coding-validation-EXECUTION_ID` and `coding-validation-logs-EXECUTION_ID` with seven-day retention. The bounded report is `validation.json`; logs are separate, capped per check, and not forwarded as GitHub command-channel output. Publication continues through durable claims, receipts and reconciliation. Restart between artifact and report persistence reuses the same compute run. Review Draft publication preserves normal scope/path/approval checks and does not authorize merge or deployment.
 
 Focused tests cover original blocked status with passing/failing validation, missing/forged report rejection, hostile paths/symlinks, source mutation, Docker cleanup, reserved environment names and publication response-loss reconciliation. The real GitHub/Temporal acceptance evidence is recorded separately; a unit fixture is not a real model or browser/Docker run.
+
+## Rework after a failed validation
+
+With `execution.rework: true` a result that ended `blocked` only because its bound validation report is `failed`
+(`CHECK_FAILED`) starts a further attempt while `execution.maxRetries` allows it. Without the switch, and after the last
+allowed attempt, the task ends `blocked` with the original statuses, as before.
+
+- The Manager proposes `retry_worker` for the next attempt number and writes the attempt it continues into the intent
+  (`urn:sf-rework:<execution>`). The broker accepts it only if its own records show that attempt for the same task
+  version, ended `blocked`, with a failed validation (`REWORK_SOURCE_INVALID` otherwise).
+- In ready-label mode the grant that admitted the first attempt covers its rework: same timeline event, consumed only
+  by the Manager, task still in a status the Manager set. A new grant, a removed label, a person's `harness:blocked` or
+  a revised task text ends that coverage. No attempt beyond `maxRetries` is ever started.
+- The worker receives, as `contextReferences` of the unchanged request contract: the head of the previous attempt's
+  branch, the failed checks with exit codes, and the tail of each failed check's output (three checks, 2,700 characters
+  each at most, control sequences removed, labelled as untrusted output).
+- The executor applies the previous attempt to the workspace on the current base before the network is closed. If it
+  does not apply cleanly the workspace stays at the base and the commit remains available for inspection.
+- The new attempt is published as its own draft pull request; the broker then closes the draft of the attempt it
+  continues, so a task has one open Factory draft. A pull request by anyone else for the task stops the rework.
+
+## Task context
+
+Before the first dispatch of an execution the broker resolves, once, the refs of the target repository that the task
+text names: full commit SHAs, pull request numbers (`#14`, `PR 14`, `pull/14`; heads in the same repository only) and
+branch names quoted as code that exist in the repository. At most six commits are passed on; a named commit or a fork's
+pull request that cannot be provided is reported to the worker as unavailable. Task text only names candidates: nothing
+is fetched from a URL or from another repository, and a failed lookup never fails the run. The executor fetches these
+commits (depth 50) into `refs/sf-context/*` before the isolated step; they are read-only context, and the result is
+still a change set against the frozen base under the same path, size and validation rules.
+
+Both mechanisms need the executor workflow of this release. An older pinned executor passes the entries to the worker
+as plain text and neither fetches nor applies anything, so enable `execution.rework` only after the release rollout.
+

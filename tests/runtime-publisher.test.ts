@@ -40,18 +40,20 @@ const artifact = (): CodingArtifact => ({ contractVersion: '3.0', baseSha: snaps
   result: { contractVersion: '2.0', executionId: snapshot.admission.input.executionId, taskId: 'github:owner/target#2', taskVersion: snapshot.specHash,
     status: 'success', summary: 'Implemented and tested; @nobody <untrusted>', artifacts: [], error: null },
   changes: [{ path: 'result.txt', content: Buffer.from('verified').toString('base64'), mode: '100644' }] });
+const previousAttempt = '7'.repeat(32);
 function fixture(selectedSnapshot = snapshot) {
   const store = new Store(), writes: { kind: string; body: Record<string, unknown> }[] = [];
   const blobs = new Map<string, string>();
   let branch: string | null = null, pr: Record<string, unknown> | null = null, comment: Record<string, unknown> | null = null;
   let lost: string | null = null, before: string | null = null, collision = false, duplicate = false, moved = false;
+  const closed: number[] = [];
   const object = (body: unknown) => createHash('sha1').update(JSON.stringify(body)).digest('hex');
   const fetcher: typeof fetch = async (input, init) => {
     const path = decodeURIComponent(new URL(String(input)).pathname).replace('/repos/owner/target', ''), method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) : {}; let data: unknown, status = 200;
     let kind = '';
     if (method === 'POST') {
-      kind = path === '/git/blobs' ? 'blob' : path === '/git/trees' ? 'tree' : path === '/git/commits' ? 'commit' : path === '/git/refs' ? 'branch' : path === '/pulls' ? 'draft-pr' : 'publication-comment';
+      kind = path === '/git/blobs' ? 'blob' : path === '/git/trees' ? 'tree' : path === '/git/commits' ? 'commit' : path === '/git/refs' ? 'branch' : path === '/pulls' ? 'draft-pr' : path === '/issues/2/comments' ? 'publication-comment' : 'superseded-comment';
       if (before === kind) { before = null; throw new Error('Request outcome unknown'); }
       writes.push({ kind, body });
     }
@@ -65,7 +67,11 @@ function fixture(selectedSnapshot = snapshot) {
     else if (path.startsWith('/git/ref/heads/sf/')) { data = { object: { sha: collision ? '8'.repeat(40) : branch } }; if (!branch && !collision) status = 404; }
     else if (path === '/git/refs') { branch = body.sha; data = { object: { sha: branch } }; }
     else if (path === '/pulls' && method === 'POST') { pr = { ...body, number: 9, html_url: 'https://github.com/owner/target/pull/9', head: { sha: branch }, user: { login: 'factory[bot]' }, state: 'open', merged_at: null }; data = pr; }
+    else if (path === '/pulls' && new URL(String(input)).searchParams.get('head') === `owner:sf/issue-2/${previousAttempt}`) data = new URL(String(input)).searchParams.get('state') === 'open'
+      ? [{ number: 5, user: { login: 'factory[bot]' } }, { number: 6, user: { login: 'stranger' } }].filter(p => !closed.includes(p.number)) : [];
     else if (path === '/pulls') data = pr ? duplicate ? [pr, pr] : [pr] : [];
+    else if (/^\/issues\/[56]\/comments$/.test(path) && method === 'POST') data = { id: 2 };
+    else if (/^\/pulls\/[56]$/.test(path) && method === 'PATCH') { closed.push(Number(path.split('/').at(-1))); writes.push({ kind: 'close-pr', body: { ...body, number: Number(path.split('/').at(-1)) } }); data = {}; }
     else if (path === '/issues/2/comments' && method === 'POST') { comment = { id: 1, body: body.body, user: { login: 'factory[bot]' } }; data = comment; }
     else if (path === '/issues/2/comments') data = comment ? [comment] : [];
     else throw new Error(`Unexpected simulated API ${method} ${path}`);
@@ -96,6 +102,15 @@ it('requires exact independent evidence and marks failed checks as review-requir
   const report=reportFor(source,plan,'failed');await f.publish(source,report);const pr=f.writes.find(w=>w.kind==='draft-pr')!;
   expect(pr.body.title).toContain('Review');expect(pr.body.body).toContain('validation: **failed**');expect(source.result.status).toBe('success');
   const forged=fixture(selected);await expect(forged.publish(source,{...report,artifactHash:'f'.repeat(64)})).rejects.toThrow('UNRELATED_VALIDATION_REPORT');expect(forged.writes).toEqual([]);
+});
+it('replaces the draft of the attempt a rework continues, and no pull request of anybody else', async () => {
+  const rework = snapshotSchema.parse({ ...snapshot, admission: { ...snapshot.admission, input: { ...snapshot.admission.input, contextReferences: [`urn:sf-rework:${previousAttempt}`] } } });
+  const f = fixture(rework); await f.publish(); await f.publish();
+  expect(f.writes.filter(w => w.kind === 'draft-pr')).toHaveLength(1);
+  expect(f.writes.filter(w => w.kind === 'close-pr').map(w => w.body)).toEqual([{ state: 'closed', number: 5 }]);
+  expect(f.writes.filter(w => w.kind === 'superseded-comment').map(w => w.body.body)).toEqual(['Superseded by #9: a further attempt that continues these changes after the failed validation.']);
+  const plain = fixture(); await plain.publish();
+  expect(plain.writes.some(w => w.kind === 'close-pr')).toBe(false);
 });
 it('publishes canary changes only against the frozen integration branch', async () => {
   const f = fixture(snapshotSchema.parse({...snapshot,baseRef:'test/temporal-rc'})); await f.publish();

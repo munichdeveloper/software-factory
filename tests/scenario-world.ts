@@ -12,6 +12,10 @@ import { lifecycleLabels } from '../src/state/lifecycle.js';
 import type { BlockLabelEvent, Issue } from '../src/types.js';
 import type { WorkerResult } from '../src/workers/contract.js';
 import { config, issue, MemoryGitHub } from './helpers.js';
+import type { CodingArtifact } from '../src/workers/coding.js';
+import { defaultValidationPlan, type ValidationReport } from '../src/runtime/validation-contract.js';
+import { reworkOf } from '../src/runtime/coding-context.js';
+import { hash } from '../src/state/identity.js';
 
 export const bot = 'github-actions[bot]';
 const transport = (what: string) => Object.assign(new Error(`${what} unavailable: connect ECONNREFUSED`), { status: 502 });
@@ -59,8 +63,11 @@ export class MapStore extends RuntimeStore {
   override async complete(_repo: number, id: string, result: WorkerResult) { Object.assign(this.rows.get(id)!, { result, terminal: true }); }
   override async terminal(_repo: number, id: string) { this.rows.get(id)!.terminal = true; }
   override async cancel(_repo: number, id: string) { Object.assign(this.rows.get(id)!, { cancelled: true, approved: false }); }
-  override async artifact() { return null; }
-  override async validation() { return null; }
+  artifacts = new Map<string, CodingArtifact>(); validations = new Map<string, ValidationReport>();
+  override async artifact(_repo: number, id: string) { return this.artifacts.get(id) ?? null; }
+  override async validation(_repo: number, id: string) { return this.validations.get(id) ?? null; }
+  override async saveArtifact(_repo: number, id: string, value: CodingArtifact) { this.artifacts.set(id, value); }
+  override async saveValidation(_repo: number, id: string, value: ValidationReport) { this.validations.set(id, value); }
   override async gate(_repo: number, id: string, binding: string, _actor: string, approved: boolean) {
     const row = this.rows.get(id);
     if (!row || row.binding !== binding || row.terminal || row.cancelled) throw new Error('STALE_APPROVAL');
@@ -80,7 +87,11 @@ export class MapStore extends RuntimeStore {
 const release: RuntimeRelease = { factorySha: 'a'.repeat(40), harnessSha: 'b'.repeat(40), workflowHash: 'c'.repeat(64), deploymentName: 'factory-runtime', buildId: 'v1', taskQueue: 'factory-runtime', schemaVersion: 1 };
 export type WorldOptions = { readyLabel?: boolean; humanGate?: boolean; maxParallelWorkers?: number; maxRetries?: number;
   /** Successful results open a pull request that only references the task, or one that closes it when merged. */
-  pullRequests?: 'referencing' | 'closing' };
+  pullRequests?: 'referencing' | 'closing';
+  /** The coding worker with independent validation: results are artifacts with a bound validation report and a draft pull request. */
+  coding?: boolean;
+  /** A failed validation starts a further attempt (implies coding). */
+  rework?: boolean };
 export type Tick = { report?: RunReport; thrown?: string };
 
 /** One repository under Factory management with the real Manager and RuntimeController; only I/O is simulated. */
@@ -92,6 +103,7 @@ export class World {
   /** The native label timeline cannot be read. */
   timelineDown = false;
   private workflows = new Map<string, string>(); private runs = 0;
+  private outcomes = new Map<string, { artifact: CodingArtifact; validation: ValidationReport }>();
   readonly log: string[] = [];
   constructor(readonly options: WorldOptions = {}) {
     this.cfg.execution.engine = 'temporal';
@@ -111,10 +123,23 @@ export class World {
         getHandle: handle } } as unknown as Client;
     this.repo = { repositoryId: 42, repository: this.github.repository, release, github: this.github, requireHumanGate: !!options.humanGate,
       config: async () => this.cfg, baseSha: async () => 'd'.repeat(40) };
-    if (options.readyLabel) this.repo.readyApproval = async (number, expected) => {
+    if (options.readyLabel) this.repo.readyApproval = async (number, expected, rework) => {
       if (this.timelineDown) throw transport('GitHub timeline');
-      return authorizeReadyLabel(await this.github.getIssue(number), this.github.readyFor(number), actor => this.github.canApprove(actor), this.cfg.manager.trustedActors, expected);
+      return authorizeReadyLabel(await this.github.getIssue(number), this.github.readyFor(number), actor => this.github.canApprove(actor), this.cfg.manager.trustedActors, expected, rework);
     };
+    if (options.coding || options.rework) {
+      this.cfg.execution.rework = !!options.rework;
+      this.cfg.workers.coding = { enabled: true, agent: 'codex', model: 'test-model', reasoningEffort: 'high', validationWorkflow: null };
+      this.repo.validationPlan = async () => defaultValidationPlan();
+      this.repo.coding = { executor: { poll: async snapshot => this.outcomes.get(snapshot.admission.input.executionId) ?? null, cancel: async () => {} },
+        // The broker's publisher: one draft pull request per attempt; a rework replaces the one it continues.
+        publish: async snapshot => {
+          const input = snapshot.admission.input, number = 1000 + this.github.state.prs.length, previous = reworkOf(input);
+          for (const pr of this.github.state.prs) if (previous && pr.state === 'open' && pr.headRefName === `sf/issue-${input.issueNumber}/${previous}`) pr.state = 'closed';
+          this.github.state.prs.push({ number, state: 'open', merged: false, closingIssues: [input.issueNumber], referencedIssues: [input.issueNumber], headRefName: `sf/issue-${input.issueNumber}/${input.executionId}` });
+          return { url: `https://github.com/${this.github.repository}/pull/${number}` };
+        } };
+    }
     this.controller = new RuntimeController(this.repo, this.store, client);
   }
   get now() { return this.github.now; }
@@ -177,6 +202,24 @@ export class World {
       return true;
     }
     catch (error) { this.workflows.set(row.workflowId, 'FAILED'); this.log.push(`publish refused: ${error instanceof Error ? error.message : String(error)}`); return false; }
+  }
+  /**
+   * The coding worker hands in its changes and the independent validation reports on them; the broker binds both,
+   * publishes the draft pull request and journals the result. Runs through the real controller.
+   */
+  async finishCoding(executionId: string, verdict: 'passed' | 'failed', model: 'success' | 'blocked' = 'success') {
+    const row = this.store.rows.get(executionId)!, snapshot = row.snapshot, input = snapshot.admission.input, taskId = `github:${snapshot.repository}#${input.issueNumber}`;
+    const artifact: CodingArtifact = { contractVersion: '3.0', baseSha: snapshot.baseSha, changes: [{ path: 'src/change.txt', content: Buffer.from(executionId).toString('base64'), mode: '100644' }],
+      result: { contractVersion: '2.0', executionId, taskId, taskVersion: input.taskVersion, status: model, summary: `Worker ${model}`, artifacts: [], error: null } };
+    const run = 5000 + this.outcomes.size, check = (name: ValidationReport['checks'][number]['name'], ok = true) => ({ name, status: ok ? 'passed' as const : 'failed' as const, exitCode: ok ? 0 : 1 });
+    const validation: ValidationReport = { version: 1, executionId, taskId, taskVersion: input.taskVersion, baseSha: snapshot.baseSha, artifactHash: hash(artifact), planHash: hash(snapshot.validationPlan),
+      workflowRunId: run, sourceRunId: run, runAttempt: 1, status: verdict, reason: verdict === 'passed' ? 'CHECKS_COMPLETED' : 'CHECK_FAILED', modelSecretPresent: false, workspaceUnchanged: true,
+      checks: [check('install'), check('test', verdict === 'passed'), check('build'), check('source-integrity')] };
+    this.outcomes.set(executionId, { artifact, validation }); this.log.push(`finish ${executionId} #${input.issueNumber} model ${model}, validation ${verdict}`);
+    try {
+      const result = await this.controller.executeCoding(snapshot, row.binding);
+      await this.controller.publish(snapshot, row.binding, result!); this.workflows.set(row.workflowId, 'COMPLETED'); return true;
+    } catch (error) { this.workflows.set(row.workflowId, 'FAILED'); this.log.push(`publish refused: ${error instanceof Error ? error.message : String(error)}`); return false; }
   }
   /** The workflow dies without publishing (worker lost, timeout on the Temporal side). */
   crash(executionId: string) { const row = this.store.rows.get(executionId)!; this.workflows.set(row.workflowId, 'FAILED'); this.log.push(`crash ${executionId}`); }

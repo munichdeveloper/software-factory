@@ -34606,7 +34606,9 @@ var configSchema = external_exports.strictObject({
     maxRetries: bounded(0, 5, 2),
     maxNewIssues: bounded(0, 20, 3),
     workerTimeoutMinutes: bounded(1, 30, 30),
-    dispatchGraceMinutes: bounded(1, 60, 10)
+    dispatchGraceMinutes: bounded(1, 60, 10),
+    /** A failed independent validation starts a further attempt, within maxRetries, instead of waiting for a person. */
+    rework: external_exports.boolean().default(false)
   }).prefault({}),
   llm: external_exports.strictObject({
     provider: external_exports.enum(["mock", "openai"]).default("mock"),
@@ -38908,7 +38910,7 @@ var RuntimeAdmissionRejected = class extends Error {
 var admissionCode = (error62) => error62 instanceof Error && /^[A-Z][A-Z_]+$/.test(error62.message) ? error62.message : null;
 
 // src/runtime/ready-approval.ts
-async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected) {
+async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected, rework) {
   if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("READY_APPROVAL_REQUIRED");
   const ordered = [...events].sort((a, b) => a.id - b.id);
   const grant = ordered.filter((e) => e.event === "labeled").at(-1);
@@ -38918,8 +38920,10 @@ async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, ex
   const proof = parsed.data;
   if (expected && hash2(proof) !== hash2(expected)) throw new Error("READY_APPROVAL_CHANGED");
   const later = ordered.filter((e) => e.id > grant.id);
-  const consumed = expected && later.length === 1 && later[0].event === "unlabeled" && trustedActors.includes(later[0].actor) && issue2.labels.includes("harness:running");
-  if (later.length && !consumed || !issue2.labels.includes("harness:ready") && !consumed) throw new Error("READY_APPROVAL_REVOKED");
+  const taken = later.length === 1 && later[0].event === "unlabeled" && trustedActors.includes(later[0].actor);
+  const consumed = expected && taken && issue2.labels.includes("harness:running");
+  const carried = rework && hash2(proof) === hash2(rework) && taken && ["harness:running", "harness:failed", "harness:blocked"].some((l) => issue2.labels.includes(l));
+  if (later.length && !consumed && !carried || !issue2.labels.includes("harness:ready") && !consumed && !carried) throw new Error("READY_APPROVAL_REVOKED");
   return proof;
 }
 
@@ -39079,14 +39083,14 @@ var GitHubClient = class {
       return false;
     }
   }
-  async readyApproval(number4, trustedActors, expected) {
+  async readyApproval(number4, trustedActors, expected, rework) {
     const issue2 = await this.getIssue(number4);
     const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number4, per_page: 100 });
     const events = timeline.flatMap((e) => {
       if (e.event !== "labeled" && e.event !== "unlabeled" || !("label" in e) || e.label?.name !== "harness:ready" || !("id" in e) || typeof e.id !== "number" || !("created_at" in e) || typeof e.created_at !== "string") return [];
       return [{ id: e.id, event: e.event, actor: "actor" in e ? e.actor?.login ?? "" : "", createdAt: e.created_at }];
     });
-    return authorizeReadyLabel(issue2, events, (actor) => this.canApprove(actor), trustedActors, expected);
+    return authorizeReadyLabel(issue2, events, (actor) => this.canApprove(actor), trustedActors, expected, rework);
   }
   async runs(workflow) {
     const rows = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...this.target, workflow_id: workflow, event: "workflow_dispatch", per_page: 100 });
@@ -39286,6 +39290,9 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     const linked = snapshot.prs.filter((p) => p.closingIssues.includes(issue2.number) || p.referencedIssues.includes(issue2.number));
     const hasOpenPR = linked.some((p) => p.state === "open");
     const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
+    const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
+    const failedValidation = latest?.runtime?.validation;
+    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" && latest.attempt < config2.execution.maxRetries;
     let desiredStatus = issueStatus(issue2) ?? "backlog";
     if (issue2.state === "closed") desiredStatus = "done";
     else if (explicitBlock) desiredStatus = "blocked";
@@ -39293,6 +39300,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : executions.some((e) => e.runtime?.phase === "awaiting-approval") ? "awaiting-approval" : "running";
     else if (hasClosingMerge) desiredStatus = "done";
     else if (blockReason) desiredStatus = "blocked";
+    else if (reworkable) desiredStatus = "failed";
     else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
     else if (hasOpenPR) desiredStatus = "awaiting-pr";
     else if (snapshot.readyIsGrant) {
@@ -39308,10 +39316,11 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       latest,
       blocked: !!blockReason,
       blockReason,
-      automaticBlockCause,
+      automaticBlockCause: reworkable && automaticBlockCause === "worker" ? void 0 : automaticBlockCause,
       hasOpenPR,
       hasClosingMerge,
-      criteria
+      criteria,
+      reworkable
     };
   });
 }
@@ -39356,10 +39365,11 @@ function evaluate(action, ctx) {
     if (!config2.workers.test.enabled && !(config2.workers.coding && config2.workers.coding.enabled)) return deny("All workers disabled");
     if (task.blocked || task.issue.body.length > 2e4) return deny("Task is blocked or exceeds worker input limit");
     if (task.executions.some((e) => e.active)) return deny("Task already has an active or uncertain execution");
-    if (task.hasClosingMerge || task.hasOpenPR) return deny("Task already has implementation PRs");
+    const rework = action.kind === "retry_worker" && task.reworkable;
+    if (task.hasClosingMerge || task.hasOpenPR && !rework) return deny("Task already has implementation PRs");
     if (budget.activeWorkers >= config2.execution.maxParallelWorkers) return deny("Maximum parallel workers reached");
     if (action.kind === "retry_worker") {
-      if (!task.latest?.result || !["failed", "cancelled"].includes(task.latest.result.status)) return deny("No failed execution to retry");
+      if (!task.latest?.result || !rework && !["failed", "cancelled"].includes(task.latest.result.status)) return deny("No failed execution to retry");
       if (task.latest.attempt >= config2.execution.maxRetries) return deny("Maximum retries reached");
       if (action.attempt !== task.latest.attempt + 1) return deny("Retry proposal is not bound to the next concrete attempt");
     } else {
@@ -39384,6 +39394,9 @@ function evaluate(action, ctx) {
   if (rule === "approval" && !ctx.approved) return decide("approval", "Maintainer approval required for this exact action and task version");
   return decide("allow", ctx.approved ? "Concrete action approved by a repository maintainer" : "Permitted by configured autonomy policy");
 }
+
+// src/runtime/coding-context.ts
+var reworkMarker = (previousExecutionId) => `urn:sf-rework:${previousExecutionId}`;
 
 // src/llm/provider.ts
 var proposal = (task, kind, reason, values = {}) => ({
@@ -39495,7 +39508,8 @@ function reconciliationPlan(tasks, config2) {
     } else if (!t.issue.labels.includes(`harness:${t.desiredStatus}`) || t.issue.labels.filter((l) => lifecycleLabels.includes(l)).length !== 1 || t.executions.some((e) => e.result && !t.events.some((event) => event.data.type === "result" && event.data.result.executionId === e.input.executionId))) {
       actions.push(proposal(t, "transition", "Reconcile lifecycle with GitHub facts", { status: t.desiredStatus }));
     }
-    if (t.issue.state === "open" && !t.blocked && !t.hasClosingMerge && !t.hasOpenPR && t.latest?.result && ["failed", "cancelled"].includes(t.latest.result.status) && !t.executions.some((e) => e.active) && t.latest.attempt < config2.execution.maxRetries) {
+    if (t.reworkable) actions.push(proposal(t, "retry_worker", "Rework after a failed independent validation, within the configured limit"));
+    else if (t.issue.state === "open" && !t.blocked && !t.hasClosingMerge && !t.hasOpenPR && t.latest?.result && ["failed", "cancelled"].includes(t.latest.result.status) && !t.executions.some((e) => e.active) && t.latest.attempt < config2.execution.maxRetries) {
       actions.push(proposal(t, "retry_worker", "Retry failed execution within configured limit"));
     }
     return actions;
@@ -39693,7 +39707,7 @@ var validationReasons = {
   SOURCE_CHANGED: "the checks modified the source files",
   CHECKS_COMPLETED: "all checks completed"
 };
-function blocked(task, repository, readyIsGrant) {
+function blocked(task, repository, readyIsGrant, config2) {
   const result = task.latest.result, validation = task.latest.runtime?.validation;
   const brokerLine = result.artifacts.some((a) => a.startsWith("urn:sf-validation:")) ? result.summary.match(/\nOriginal model status: ([a-z_]+)\. Independent automated validation: ([a-z]+)\. Manual acceptance is not implied\.$/) : null;
   const model = brokerLine?.[1], verdict = validation?.status ?? brokerLine?.[2];
@@ -39711,7 +39725,7 @@ function blocked(task, repository, readyIsGrant) {
       `Output of the checks: download the artifact \`coding-validation-logs-${task.latest.input.executionId}\` in the "Artifacts" section at the bottom of that run page (one log file per check, kept for 7 days).`
     );
     state.push(model === "success" ? "The worker itself reported success; it could not run these checks in its isolated environment." : `The worker itself reported \`${model ?? "blocked"}\`.`);
-    needs = `The Factory does not repair a failed validation on its own yet. Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
+    needs = `${task.reworkable ? "" : config2.execution.rework && task.latest.attempt > 0 ? `The automatic rework attempts are used up (${task.latest.attempt + 1} of ${config2.execution.maxRetries + 1} attempts). ` : "The Factory does not repair a failed validation on its own in this installation. "}Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
   } else {
     state.push(`**Blocked because the worker itself stopped**${verdict === "passed" ? ", although the independent validation passed" : ""}. It did not consider the task complete.`);
     needs = `Read the worker's explanation below. If its changes are acceptable, continue in the draft pull request yourself; if the task has to change, ${again}.`;
@@ -39742,8 +39756,13 @@ function statusComment(task, config2, context) {
   } else if (result?.status === "success") {
     state = ["Implemented and independently validated."];
     needs = "Review and merge the pull request. The Factory does not merge on its own in this installation.";
-  } else if (result?.status === "blocked") ({ state, needs } = blocked(task, context.repository, context.readyIsGrant));
-  else if (result?.status === "needs_approval") {
+  } else if (result?.status === "blocked") {
+    ({ state, needs } = blocked(task, context.repository, context.readyIsGrant, config2));
+    if (task.reworkable) {
+      state.push("", `Attempt ${task.latest.attempt + 1} of ${config2.execution.maxRetries + 1}. A further attempt starts on its own; it continues these changes and receives the failed checks and their output.`);
+      needs = "Nothing; the Factory reworks the failed checks on its own.";
+    }
+  } else if (result?.status === "needs_approval") {
     state = ["The last run asks for an approval before it continues."];
     needs = `Read the worker's request: ${quoted(result.summary)}`;
   } else if (result) {
@@ -39971,9 +39990,10 @@ ${marker2}`;
       case "retry_worker": {
         const attempt = action.attempt;
         const id = executionId(this.github.repository, live, attempt);
+        const rework = action.kind === "retry_worker" && task.reworkable && this.config.execution.engine === "temporal";
         if (this.config.execution.engine === "temporal" && this.options.workerRuntime?.preflight) {
           try {
-            await this.options.workerRuntime.preflight(live.number);
+            await this.options.workerRuntime.preflight(live.number, rework ? task.latest.input.executionId : void 0);
           } catch (error62) {
             if (!(error62 instanceof RuntimeAdmissionRejected)) throw error62;
             this.rejections.push({ issueNumber: live.number, code: error62.code, recorded: false });
@@ -39987,7 +40007,7 @@ ${marker2}`;
           taskVersion: action.taskVersion,
           description: live.body,
           acceptanceCriteria: task.criteria,
-          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`],
+          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...rework ? [reworkMarker(task.latest.input.executionId)] : []],
           executionId: id,
           allowedActions: ["publish_result"],
           limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16e3 },

@@ -13,6 +13,8 @@ export interface Task {
   issue: Issue; version: string; status: Status; desiredStatus: Status; events: HarnessEvent[];
   executions: Execution[]; latest?: Execution; blocked: boolean; blockReason?: string;
   hasOpenPR: boolean; hasClosingMerge: boolean; criteria: string[];
+  /** The latest attempt failed only its independent validation and a further attempt is allowed to repair it. */
+  reworkable: boolean;
   automaticBlockCause?: BlockCause;
 }
 export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()): Task[] {
@@ -66,6 +68,11 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     const hasOpenPR = linked.some(p => p.state === 'open');
     const hasClosingMerge = linked.some(p => p.merged && p.closingIssues.includes(issue.number) &&
       (!issue.reopenedAt || (!!p.mergedAt && p.mergedAt > issue.reopenedAt)));
+    // The only open pull requests are the ones the Factory published for this task's own attempts: a rework replaces them.
+    const ownPRsOnly = linked.filter(p => p.state === 'open').every(p => executions.some(e => p.headRefName === `sf/issue-${issue.number}/${e.input.executionId}`));
+    const failedValidation = latest?.runtime?.validation;
+    const reworkable = config.execution.rework && issue.state === 'open' && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some(e => e.active) &&
+      latest?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' && latest.attempt < config.execution.maxRetries;
     let desiredStatus: Status = issueStatus(issue) ?? 'backlog';
     if (issue.state === 'closed') desiredStatus = 'done';
     else if (explicitBlock) desiredStatus = 'blocked';
@@ -73,6 +80,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     else if (executions.some(e => e.active)) desiredStatus = executions.some(e => e.ambiguous) ? 'blocked' : executions.some(e => e.runtime?.phase === 'awaiting-approval') ? 'awaiting-approval' : 'running';
     else if (hasClosingMerge) desiredStatus = 'done';
     else if (blockReason) desiredStatus = 'blocked';
+    else if (reworkable) desiredStatus = 'failed';
     else if (latest?.result) desiredStatus = ({ success: 'awaiting-pr', failed: 'failed', cancelled: 'failed', blocked: 'blocked', needs_approval: 'awaiting-approval' } as const)[latest.result.status];
     else if (hasOpenPR) desiredStatus = 'awaiting-pr';
     // A runnable task rests in ready. Where ready is a person's grant, the Manager leaves the label to that
@@ -80,6 +88,6 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     else if (snapshot.readyIsGrant) { if (['backlog', 'ready', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = issue.labels.includes('harness:ready') ? 'ready' : 'backlog'; }
     else if (['backlog', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = 'ready';
     return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest,
-      blocked: !!blockReason, blockReason, automaticBlockCause, hasOpenPR, hasClosingMerge, criteria };
+      blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable };
   });
 }

@@ -82,7 +82,7 @@ export async function main(args = process.argv.slice(2)) {
       const repository: RuntimeRepository = { ...item, github, config: async () => loadConfig(await source.readConfig(item.configPath, item.baseRef)),
         baseSha: async () => item.baseRef ? (await api.git.getRef({ ...{ owner, repo }, ref: `heads/${item.baseRef}` })).data.object.sha : (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
       const controller = new RuntimeController(repository, store, temporal);
-      if (item.approvalMode === 'ready-label') repository.readyApproval = async (number, expected) => source.readyApproval(number, (await repository.config()).manager.trustedActors, expected);
+      if (item.approvalMode === 'ready-label') repository.readyApproval = async (number, expected, rework) => source.readyApproval(number, (await repository.config()).manager.trustedActors, expected, rework);
       if (item.validateCoding) repository.validationPlan = async () => {
         try {
           const data = (await api.repos.getContent({ owner, repo, path: '.github/software-factory.validation.json', ref: await repository.baseSha() })).data;
@@ -94,7 +94,8 @@ export async function main(args = process.argv.slice(2)) {
         }
       };
       const effects = (snapshot: Parameters<ActionsCodingExecutor['poll']>[0], binding: string) => new RuntimeEffects(store, repository.repositoryId, snapshot.admission.input.executionId, binding);
-      repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), async () => (await repository.config()).manager.trustedActors),
+      repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), async () => (await repository.config()).manager.trustedActors,
+        id => store.validation(repository.repositoryId, id)),
         publish: async (snapshot, binding, artifact, createdAt, validation) => new RuntimeCodingPublisher(api, effects(snapshot, binding),
           () => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors).publish(snapshot, artifact, createdAt, validation) };
       // Refuse a registry rollout which would orphan any running version, including long human gates.

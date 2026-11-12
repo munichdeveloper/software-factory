@@ -24,7 +24,9 @@ export const configSchema = z.strictObject({
     engine: z.enum(['github-actions', 'temporal']).default('github-actions'),
     dryRun: z.boolean().default(false), maxParallelWorkers: bounded(1, 20, 1),
     maxRetries: bounded(0, 5, 2), maxNewIssues: bounded(0, 20, 3),
-    workerTimeoutMinutes: bounded(1, 30, 30), dispatchGraceMinutes: bounded(1, 60, 10)
+    workerTimeoutMinutes: bounded(1, 30, 30), dispatchGraceMinutes: bounded(1, 60, 10),
+    /** A failed independent validation starts a further attempt, within maxRetries, instead of waiting for a person. */
+    rework: z.boolean().default(false)
   }).prefault({}),
   llm: z.strictObject({
     provider: z.enum(['mock', 'openai']).default('mock'), model: z.string().min(1).default('gpt-4.1-mini'),

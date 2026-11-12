@@ -162,6 +162,83 @@ describe('lifecycle scenarios', () => {
   });
 });
 
+describe('rework after a failed independent validation', () => {
+  const attempts = (w: World, number: number) => w.events(number).flatMap(e => e.type === 'intent' ? [e] : []);
+  const openPRs = (w: World) => w.github.state.prs.filter(p => p.state === 'open');
+  it('starts a further attempt that names the one it continues, and ends with one pull request', async () => {
+    const w = new World({ rework: true }); w.open(1); await w.tick();
+    const first = execution(w, 1);
+    await w.finishCoding(first, 'failed'); await w.tick(); await w.tick();
+    const second = execution(w, 1);
+    expect(second).not.toBe(first);
+    expect(attempts(w, 1).map(e => e.attempt)).toEqual([0, 1]);
+    expect(attempts(w, 1)[1]!.input.contextReferences).toContain(`urn:sf-rework:${first}`);
+    expect(w.status(1)).toEqual(['running']);
+    await w.finishCoding(second, 'passed'); await w.tick(); await w.tick();
+    expect(w.status(1)).toEqual(['awaiting-pr']);
+    expect(openPRs(w).map(p => p.headRefName)).toEqual([`sf/issue-1/${second}`]);
+    await healthy(w);
+  });
+  it('stops at the retry limit and then asks a person, with the original statuses kept', async () => {
+    const w = new World({ rework: true, maxRetries: 1 }); w.open(1); await w.tick();
+    await w.finishCoding(execution(w, 1), 'failed'); await w.tick(); await w.tick(); await w.tick();
+    await w.finishCoding(execution(w, 1), 'failed');
+    await healthy(w);
+    expect(attempts(w, 1)).toHaveLength(2);
+    expect(w.status(1)).toEqual(['blocked']);
+    expect(w.statusComments(1)[0]).toContain('The automatic rework attempts are used up (2 of 2 attempts).');
+    expect(w.events(1).flatMap(e => e.type === 'result' ? [e.result.status] : [])).toEqual(['blocked', 'blocked']);
+    expect(openPRs(w)).toHaveLength(1);
+  });
+  it('does not rework when it is not enabled, when the worker itself stopped, or when the validation passed', async () => {
+    for (const [options, verdict, model] of [[{ coding: true }, 'failed', 'success'], [{ rework: true }, 'passed', 'blocked']] as const) {
+      const w = new World(options); w.open(1); await w.tick();
+      await w.finishCoding(execution(w, 1), verdict, model);
+      await healthy(w);
+      expect(attempts(w, 1)).toHaveLength(1);
+      expect(w.status(1)).toEqual(['blocked']);
+    }
+  });
+  it('covers the rework with the grant that admitted the first attempt, and with nothing else', async () => {
+    const w = new World({ rework: true, readyLabel: true }); w.open(1); w.grant(1); await w.tick();
+    const first = execution(w, 1);
+    await w.finishCoding(first, 'failed'); await w.tick(); await w.tick(); await w.tick();
+    const second = execution(w, 1);
+    expect(w.store.rows.get(second)!.snapshot.readyApproval).toEqual(w.store.rows.get(first)!.snapshot.readyApproval);
+    expect(w.github.readyFor(1).filter(e => e.event === 'labeled')).toHaveLength(1);
+    await w.finishCoding(second, 'passed');
+    await healthy(w);
+    expect(w.status(1)).toEqual(['awaiting-pr']);
+  });
+  it('does not rework a task that a person blocked or revised after the failed validation', async () => {
+    for (const change of ['block', 'revise'] as const) {
+      const w = new World({ rework: true, readyLabel: true }); w.open(1); w.grant(1); await w.tick();
+      await w.finishCoding(execution(w, 1), 'failed');
+      if (change === 'revise') w.revise(1); else w.github.human(1, [...w.issue(1).labels.filter(l => !l.startsWith('harness:') || l === 'harness:managed'), 'harness:blocked']);
+      await healthy(w);
+      expect(attempts(w, 1), change).toHaveLength(1);
+      expect(w.running(), change).toEqual([]);
+    }
+  });
+  it('refuses a rework whose named attempt did not fail its validation', async () => {
+    const w = new World({ rework: true }); w.open(1); await w.tick();
+    const first = execution(w, 1), source = w.store.rows.get(first)!.snapshot.admission;
+    await w.finishCoding(first, 'passed', 'blocked'); await w.tick();
+    const input = { ...source.input, executionId: 'e'.repeat(32), contextReferences: [...source.input.contextReferences, `urn:sf-rework:${first}`] };
+    await w.github.writeEvent(1, { version: 1, key: `intent:${input.executionId}`, at: w.now.toISOString(), correlationId: 'test', data: { type: 'intent', input, actionId: 'a'.repeat(64), attempt: 1 } });
+    await expect(w.controller.start({ input, actionId: 'a'.repeat(64), policyHash: source.policyHash })).rejects.toMatchObject({ code: 'REWORK_SOURCE_INVALID' });
+    expect(w.store.rows.has(input.executionId)).toBe(false);
+  });
+  it('leaves a pull request of somebody else alone and does not rework next to it', async () => {
+    const w = new World({ rework: true }); w.open(1); await w.tick();
+    await w.finishCoding(execution(w, 1), 'failed');
+    w.github.state.prs.push({ number: 77, state: 'open', merged: false, closingIssues: [1], referencedIssues: [1], headRefName: 'someone/fix' });
+    await healthy(w);
+    expect(attempts(w, 1)).toHaveLength(1);
+    expect(openPRs(w)).toHaveLength(2);
+  });
+});
+
 /** Deterministic pseudo-random numbers so that every failing sequence can be replayed from its seed. */
 function random(seed: number) {
   let a = seed >>> 0;
@@ -177,6 +254,10 @@ export async function explore(options: WorldOptions, seed: number, steps: number
     else if (roll < 0.38 && issues < 4) world.open(++issues);
     else if (!numbers.length) continue;
     else if (roll < 0.50) world.grant(pick(numbers), next() < 0.9 ? 'maintainer' : 'stranger');
+    else if (roll < 0.60 && running.length && (options.coding || options.rework)) {
+      const id = pick(running).snapshot.admission.input.executionId, outcome = pick(['passed', 'failed', 'failed', 'stopped', 'crashed'] as const);
+      if (outcome === 'crashed') await world.finish(id, 'failed'); else await world.finishCoding(id, outcome === 'stopped' ? 'passed' : outcome, outcome === 'stopped' ? 'blocked' : 'success');
+    }
     else if (roll < 0.60 && running.length) await world.finish(pick(running).snapshot.admission.input.executionId, pick(['success', 'blocked', 'failed'] as const));
     else if (roll < 0.64 && running.length) world.crash(pick(running).snapshot.admission.input.executionId);
     else if (roll < 0.70) world.revise(pick(numbers));
@@ -198,6 +279,7 @@ describe('lifecycle rules hold for arbitrary sequences of events', () => {
   const modes: [string, WorldOptions][] = [
     ['no gate', {}], ['ready label', { readyLabel: true }], ['human gate', { humanGate: true }], ['two workers, ready label', { readyLabel: true, maxParallelWorkers: 2 }],
     ['ready label, pull requests that close the task', { readyLabel: true, pullRequests: 'closing' }], ['no gate, pull requests that reference the task', { pullRequests: 'referencing' }],
+    ['rework, no gate', { rework: true }], ['rework, ready label', { rework: true, readyLabel: true }], ['rework, ready label, two workers', { rework: true, readyLabel: true, maxParallelWorkers: 2 }],
   ];
   for (const [name, options] of modes) it(name, async () => {
     const failures: string[] = [];

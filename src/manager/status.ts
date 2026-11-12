@@ -18,7 +18,7 @@ const validationReasons: Record<string, string> = {
  * Facts come from the broker (its bound validation report and the status line it appends to the summary).
  * The worker's own explanation is repeated as inert, clearly marked text, never as fact.
  */
-function blocked(task: Task, repository: string, readyIsGrant: boolean): { state: string[]; needs: string } {
+function blocked(task: Task, repository: string, readyIsGrant: boolean, config: Config): { state: string[]; needs: string } {
   const result = task.latest!.result!, validation = task.latest!.runtime?.validation;
   // The broker appends this line only together with a validation reference it created itself.
   const brokerLine = result.artifacts.some(a => a.startsWith('urn:sf-validation:'))
@@ -36,7 +36,7 @@ function blocked(task: Task, repository: string, readyIsGrant: boolean): { state
       // The job log only carries the verdict; the output of each check is uploaded as a separate artifact of that run.
       `Output of the checks: download the artifact \`coding-validation-logs-${task.latest!.input.executionId}\` in the "Artifacts" section at the bottom of that run page (one log file per check, kept for 7 days).`);
     state.push(model === 'success' ? 'The worker itself reported success; it could not run these checks in its isolated environment.' : `The worker itself reported \`${model ?? 'blocked'}\`.`);
-    needs = `The Factory does not repair a failed validation on its own yet. Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
+    needs = `${task.reworkable ? '' : config.execution.rework && task.latest!.attempt > 0 ? `The automatic rework attempts are used up (${task.latest!.attempt + 1} of ${config.execution.maxRetries + 1} attempts). ` : 'The Factory does not repair a failed validation on its own in this installation. '}Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
   } else {
     state.push(`**Blocked because the worker itself stopped**${verdict === 'passed' ? ', although the independent validation passed' : ''}. It did not consider the task complete.`);
     needs = `Read the worker's explanation below. If its changes are acceptable, continue in the draft pull request yourself; if the task has to change, ${again}.`;
@@ -71,7 +71,14 @@ export function statusComment(task: Task, config: Config, context: { repository:
     state = ready ? ['Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${context.rejection}\`).**`];
     needs = ready ? grant : 'Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.';
   } else if (result?.status === 'success') { state = ['Implemented and independently validated.']; needs = 'Review and merge the pull request. The Factory does not merge on its own in this installation.'; }
-  else if (result?.status === 'blocked') ({ state, needs } = blocked(task, context.repository, context.readyIsGrant));
+  else if (result?.status === 'blocked') {
+    ({ state, needs } = blocked(task, context.repository, context.readyIsGrant, config));
+    // Same facts, different consequence: the Factory repairs this itself and needs nobody yet.
+    if (task.reworkable) {
+      state.push('', `Attempt ${task.latest!.attempt + 1} of ${config.execution.maxRetries + 1}. A further attempt starts on its own; it continues these changes and receives the failed checks and their output.`);
+      needs = 'Nothing; the Factory reworks the failed checks on its own.';
+    }
+  }
   else if (result?.status === 'needs_approval') { state = ['The last run asks for an approval before it continues.']; needs = `Read the worker's request: ${quoted(result.summary)}`; }
   else if (result) {
     const left = task.latest!.attempt < config.execution.maxRetries, code = result.error && /^[A-Z_]{1,60}$/.test(result.error) ? ` (\`${result.error}\`)` : '';
