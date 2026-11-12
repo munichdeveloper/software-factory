@@ -22,8 +22,8 @@ jobs:
         env:
           FACTORY_SHA: ${{ github.sha }}
         run: |
-          docker run --rm --network none --entrypoint node sf-temporal-package:ci -e 'const a=require("node:assert/strict"),p=require("./package.json"),m=require("./temporal-runtime.json");a.equal(p.version,m.factoryVersion);a.equal(m.harness.ref,"f70d11556075e9764d69ac03e029720d12ccef65");a.equal(m.experimental,true)'
-          docker run --rm --network none sf-temporal-package:ci pack --output /tmp/worker-package --factory-sha "$FACTORY_SHA" --harness-sha f70d11556075e9764d69ac03e029720d12ccef65 --harness /app/.runtime/harness/dist/cli.js --deployment sf-rc-package --build "$FACTORY_SHA" --queue sf-rc-package
+          docker run --rm --network none --entrypoint node sf-temporal-package:ci -e 'const a=require("node:assert/strict"),p=require("./package.json"),m=require("./temporal-runtime.json");a.equal(p.version,m.factoryVersion);a.equal(m.harness.ref,"9fa9621cb14d8730e82b096c8a0469ecb5749b9f");a.equal(m.experimental,true)'
+          docker run --rm --network none sf-temporal-package:ci pack --output /tmp/worker-package --factory-sha "$FACTORY_SHA" --harness-sha 9fa9621cb14d8730e82b096c8a0469ecb5749b9f --harness /app/.runtime/harness/dist/cli.js --deployment sf-rc-package --build "$FACTORY_SHA" --queue sf-rc-package
   temporal-runtime:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -92,7 +92,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: munichdeveloper/dev-agent-harness
-          ref: f70d11556075e9764d69ac03e029720d12ccef65
+          ref: 9fa9621cb14d8730e82b096c8a0469ecb5749b9f
           path: .runtime/harness
           persist-credentials: false
       - name: Validate Actions syntax with pinned actionlint

@@ -6,7 +6,7 @@ RUN npm ci --ignore-scripts
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev --ignore-scripts
-RUN git init /harness && cd /harness && git remote add origin https://github.com/munichdeveloper/dev-agent-harness.git && git fetch --depth=1 origin f70d11556075e9764d69ac03e029720d12ccef65 && git checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = f70d11556075e9764d69ac03e029720d12ccef65 && npm ci --ignore-scripts && npm run build && npm prune --omit=dev --ignore-scripts
+RUN git init /harness && cd /harness && git remote add origin https://github.com/munichdeveloper/dev-agent-harness.git && git fetch --depth=1 origin 9fa9621cb14d8730e82b096c8a0469ecb5749b9f && git checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = 9fa9621cb14d8730e82b096c8a0469ecb5749b9f && npm ci --ignore-scripts && npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
 WORKDIR /app
