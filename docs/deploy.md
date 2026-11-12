@@ -148,7 +148,9 @@ This repository deploys its own runtime stack (broker, worker, SF Manager and th
   The broker refuses to start while a run of another release is still active; the deployment then fails and the
   previous release keeps running. Installed repositories additionally need their executor wrapper rolled to the
   same commit through the SF Manager.
-- The **Manager images** stay pinned by `MANAGER_SHA` in the host's `.env`.
+- The **Manager image** is named by commit in the compose file. The Factory installed deploy-only in
+  `munichdeveloper/sf-manager` builds `sf-manager:<commit>` on the host after each merge there; a pull request
+  here then switches the stack to that commit.
 - Credentials (`*.env`) and `registry.json` stay on the host in the deploy path and never pass through GitHub.
 - The public host name of the Manager is read from `SFM_HOST` in the host's `.env`. Without it the compose file
   does not resolve and the deployment fails before any container changes.

@@ -3,7 +3,7 @@
 # built from the release that is being deployed; SF_RELEASE_SHA is set by the deployment.
 #
 # Host state that never passes through GitHub lives in SFM_CONFIG_DIR (default: the deploy path):
-#   .env            MANAGER_SHA, SFM_HOST (public host name of the Manager)
+#   .env            SFM_HOST (public host name of the Manager)
 #   *.env           service credentials
 #   registry.json   runtime registry (repositories, modes; its release entry is superseded, see below)
 name: sfm
@@ -11,6 +11,9 @@ name: sfm
 # image and its package from this published Factory commit, and the broker serves its repositories with exactly
 # that release. Nothing on the host has to be edited. Installed repositories still need their executor wrapper
 # rolled to the same commit (SF Manager), and a deployment fails closed while a run of another release is active.
+# The Manager image is built on this host by the Factory deployment of munichdeveloper/sf-manager (a private
+# repository, so it cannot be built from here). Its two services below name the commit to run; that image must
+# exist on the host before this file is deployed, otherwise the deployment fails and the previous release stays.
 x-worker-release: &worker-release
   WORKER_FACTORY_SHA: 63d5c0236d127875a96ad062713fc3676d179e19
   WORKER_DEPLOYMENT: sf-backofficer
@@ -109,7 +112,7 @@ services:
       runtime-broker: { condition: service_healthy }
   web:
     <<: *service
-    image: sf-manager:${MANAGER_SHA:?}
+    image: sf-manager:76fa026d6dd0b4a6954ad5166b724e64868299c2 # keep both Manager services on the same commit
     network_mode: service:runtime-broker
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
@@ -136,7 +139,7 @@ services:
       start_period: 30s
   manager-worker:
     <<: *service
-    image: sf-manager:${MANAGER_SHA:?}
+    image: sf-manager:76fa026d6dd0b4a6954ad5166b724e64868299c2 # keep both Manager services on the same commit
     network_mode: service:runtime-broker
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
