@@ -32,7 +32,9 @@ function blocked(task: Task, repository: string, readyIsGrant: boolean): { state
     const failed = validation?.failed.map(c => `\`${c.name}\`${c.exitCode === null ? '' : ` (exit code ${c.exitCode})`}`) ?? [];
     state.push(`**Blocked because the independent validation ${verdict === 'failed' ? 'failed' : `ended as \`${verdict}\``}**${validation ? `: ${validationReasons[validation.reason] ?? validation.reason}` : ''}.`);
     if (failed.length) state.push(`Failed checks: ${failed.join(', ')}.`);
-    if (validation) state.push(`Validation run: https://github.com/${repository}/actions/runs/${validation.runId}`);
+    if (validation) state.push(`Validation run: https://github.com/${repository}/actions/runs/${validation.runId}`,
+      // The job log only carries the verdict; the output of each check is uploaded as a separate artifact of that run.
+      `Output of the checks: download the artifact \`coding-validation-logs-${task.latest!.input.executionId}\` in the "Artifacts" section at the bottom of that run page (one log file per check, kept for 7 days).`);
     state.push(model === 'success' ? 'The worker itself reported success; it could not run these checks in its isolated environment.' : `The worker itself reported \`${model ?? 'blocked'}\`.`);
     needs = `The Factory does not repair a failed validation on its own yet. Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
   } else {
