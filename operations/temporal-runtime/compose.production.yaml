@@ -14,8 +14,11 @@ name: sfm
 # The Manager image is built on this host by the Factory deployment of munichdeveloper/sf-manager (a private
 # repository, so it cannot be built from here). Its two services below name the commit to run; that image must
 # exist on the host before this file is deployed, otherwise the deployment fails and the previous release stays.
+# Only a published release may be named here, and only together with the rollout of that same release to the
+# installed repositories: the broker refuses every run whose executor wrapper pins a different commit
+# (EXECUTOR_WRAPPER_RELEASE_MISMATCH). The SF Manager rolls out published releases only.
 x-worker-release: &worker-release
-  WORKER_FACTORY_SHA: 80a645723cc52453bf822abb770ceb4a320f7bf8
+  WORKER_FACTORY_SHA: 63d5c0236d127875a96ad062713fc3676d179e19
   WORKER_DEPLOYMENT: sf-backofficer
   WORKER_QUEUE: sf-backofficer-v1
 x-service: &service
