@@ -54,6 +54,24 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     }));
     expect((await gh.snapshot(null)).runs).toEqual([]);
   });
+  it('reads the journal of open and recently touched tasks only', async () => {
+    const requested: string[] = [], recent = new Date(Date.now() - 3600000).toISOString();
+    const row = (number: number, state: string, updated_at: string) => ({ number, title: 'task', body: '', state, labels: [{ name: 'harness:managed' }], updated_at });
+    const gh = new GitHubClient('owner/target', 'token', 1000, transport(url => {
+      requested.push(url.pathname);
+      if (url.pathname === '/graphql') return json({ data: { repository: { pullRequests: { nodes: [], pageInfo: { hasNextPage: false } } } } });
+      if (url.pathname.endsWith('/issues')) return json([row(1, 'open', '2020-01-01T00:00:00Z'), row(2, 'closed', recent), row(3, 'closed', '2020-01-01T00:00:00Z')]);
+      if (/\/issues\/[12]\/(comments|timeline)$/.test(url.pathname)) return json([]);
+      if (url.pathname === '/repos/owner/target') return json({ default_branch: 'main', has_issues: true });
+      throw new Error(`Unexpected request ${url.pathname}`);
+    }));
+    const state = await gh.snapshot(null);
+    expect(state.issues.map(i => i.number)).toEqual([1, 2, 3]);
+    expect([...state.comments.keys()]).toEqual([1, 2, 3]);
+    expect(requested.filter(p => p.includes('/issues/3/'))).toEqual([]);
+    expect(requested.filter(p => p.endsWith('/timeline'))).toEqual(['/repos/owner/target/issues/1/timeline']);
+    expect(requested.filter(p => p.endsWith('/comments')).sort()).toEqual(['/repos/owner/target/issues/1/comments', '/repos/owner/target/issues/2/comments']);
+  });
   it('bootstrap preserves existing labels and is repeatable', async () => {
     const labels = [{ name: allLabels[0], color: 'custom' }]; let posts = 0;
     const gh = new GitHubClient('owner/target', 'token', 1000, transport((_url, method, body) => {

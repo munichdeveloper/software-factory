@@ -14,6 +14,7 @@ type PRNode = { number: number; state: string; merged: boolean; mergedAt: string
   headRefName?: string; headRefOid?: string; mergedBy?: { login: string; __typename: string } | null;
   closingIssuesReferences: { nodes: { number: number; repository: { nameWithOwner: string } }[]; pageInfo: { hasNextPage: boolean } } };
 
+const settledAfterMs = 48 * 60 * 60 * 1000;
 export class GitHubClient implements GitHubPort {
   private api: Octokit;
   private target: { owner: string; repo: string };
@@ -112,9 +113,14 @@ export class GitHubClient implements GitHubPort {
     // GITHUB_TOKEN intentionally has push=false; concrete APIs enforce their own scopes.
     const issues = rows.filter(i => !i.pull_request).map(normalizeIssue);
     // Native label events identify the current block; comments alone cannot prove its origin.
-    for (const issue of issues) await this.withTimeline(issue);
-    const comments = new Map<number, Comment[]>();
-    for (const issue of issues) comments.set(issue.number, await this.comments(issue.number));
+    // A task closed and untouched for two days is settled: its journal cannot change what the Manager does, and
+    // reading the timeline and comments of every task ever closed on each reconciliation is what exhausts the
+    // installation's rate limit as a repository ages. Any write to such an issue makes it current again.
+    const current = issues.filter(i => i.state === 'open' || Date.now() - Date.parse(i.updatedAt) < settledAfterMs);
+    // The timeline answers reopening and blocking questions, which only an open task raises.
+    for (const issue of current) if (issue.state === 'open') await this.withTimeline(issue);
+    const comments = new Map<number, Comment[]>(issues.map(i => [i.number, []]));
+    for (const issue of current) comments.set(issue.number, await this.comments(issue.number));
     const dependencyStates = new Map<number, boolean>();
     for (const n of new Set(issues.flatMap(i => dependencies(i.body)))) {
       try { dependencyStates.set(n, (await this.getIssue(n)).state === 'closed'); }
