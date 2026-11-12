@@ -39,6 +39,10 @@ export const observationSchema = z.strictObject({
   status: z.enum(['running', 'completed', 'failed', 'cancelled', 'timed_out']),
   phase: z.enum(['starting', 'awaiting-approval', 'authorizing', 'running', 'publishing', 'completed', 'cancelled']),
   binding: digest, createdAt: z.iso.datetime(), result: workerResultSchema.nullable(),
+  /** For a blocked result: what the independent validation found, from the broker's own bound report. */
+  validation: z.strictObject({ status: z.enum(['passed', 'failed', 'unsupported', 'invalid']), reason: z.string().regex(/^[A-Z_]{1,40}$/),
+    failed: z.strictObject({ name: z.string().regex(/^[a-z-]{1,30}$/), exitCode: z.number().int().nullable() }).array().max(10),
+    runId: z.number().int().positive().safe() }).optional(),
 });
 export type RuntimeObservation = z.infer<typeof observationSchema>;
 /**
