@@ -93,14 +93,15 @@ describe('lifecycle scenarios', () => {
     const w = new World({ readyLabel: true }); w.open(1);
     await w.tick();
     expect(w.statusComments(1)).toHaveLength(1);
-    expect(w.statusComments(1)[0]).toContain('waiting for the grant');
+    expect(w.statusComments(1)[0]).toContain('Waiting only for the grant');
     expect(w.statusComments(1)[0]).toContain('applies the label `harness:ready`');
     w.grant(1); await w.tick();
     expect(w.statusComments(1)).toHaveLength(1);
     expect(w.statusComments(1)[0]).toContain('A worker is running.');
     await w.finish(execution(w, 1), 'blocked'); await w.tick(); await w.tick();
-    expect(w.statusComments(1)[0]).toContain('The last run ended blocked.');
-    expect(w.statusComments(1)[0]).not.toContain('Worker blocked'); // the worker's own summary is never repeated
+    expect(w.statusComments(1)[0]).toContain('**Blocked because the worker itself stopped**');
+    expect(w.statusComments(1)[0]).toContain('> Worker blocked'); // the worker's reason, as a marked quotation
+    expect(w.statusComments(1)[0]).toContain('remove `harness:blocked`, then apply `harness:ready`');
     await healthy(w);
   });
   it('takes a task from the grant through its pull request to done', async () => {
@@ -108,7 +109,7 @@ describe('lifecycle scenarios', () => {
     await w.tick();
     await w.finish(execution(w, 1)); await w.tick();
     expect(w.status(1)).toEqual(['awaiting-pr']);
-    expect(w.statusComments(1)[0]).toContain('Review the pull request.');
+    expect(w.statusComments(1)[0]).toContain('Review and merge the pull request.');
     w.resolvePr(w.github.state.prs[0]!.number, true); await w.tick(); await w.tick();
     expect(w.issue(1).state).toBe('closed');
     expect(w.status(1)).toEqual(['done']);

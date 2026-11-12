@@ -128,7 +128,11 @@ export class RuntimeController implements WorkerRuntimePort {
       if (status === 'running') state = await handle.query<RuntimeState>('factoryState');
       if (state.binding !== row.binding) throw new Error('WORKFLOW_BINDING_CONFLICT');
       if (status !== 'running') await this.store.terminal(this.repo.repositoryId, id);
-      result.push({ issueNumber: row.snapshot.admission.input.issueNumber, executionId: id, workflowId: row.workflowId, runId: row.runId, status, phase: state.phase, binding: row.binding, createdAt: row.createdAt, result: row.result });
+      // Only a blocked result needs explaining; its small validation report says which checks failed.
+      const report = row.result?.status === 'blocked' && row.snapshot.validationPlan ? await this.store.validation(this.repo.repositoryId, id) : null;
+      result.push({ issueNumber: row.snapshot.admission.input.issueNumber, executionId: id, workflowId: row.workflowId, runId: row.runId, status, phase: state.phase, binding: row.binding, createdAt: row.createdAt, result: row.result,
+        ...(report ? { validation: { status: report.status, reason: report.reason, runId: report.workflowRunId,
+          failed: report.checks.filter(c => c.status === 'failed').map(c => ({ name: c.name, exitCode: c.exitCode })) } } : {}) });
     }
     return result;
   }

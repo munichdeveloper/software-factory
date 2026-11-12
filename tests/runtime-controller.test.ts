@@ -172,6 +172,18 @@ describe('durable result outbox', () => {
     f.repo.coding={executor:{poll:async()=>({artifact}),cancel:async()=>{}},publish:vi.fn()};
     await expect(f.controller.executeCoding(row.snapshot,row.binding)).rejects.toThrow('VALIDATION_REPORT_REQUIRED');expect(f.store.codingArtifact).toBeNull();expect(f.repo.coding.publish).not.toHaveBeenCalled();
   });
+  it('reports which validation checks failed with a blocked result, and nothing extra otherwise', async () => {
+    const f = await fixture(false, true), plan = defaultValidationPlan(); f.repo.validationPlan = async () => plan;
+    await f.controller.start(f.admission); const row = f.store.row!, id = f.admission.input.executionId;
+    const artifact: CodingArtifact = { contractVersion: '3.0', baseSha: row.snapshot.baseSha, result: { contractVersion: '2.0', executionId: id, taskId: `github:${f.github.repository}#1`,
+      taskVersion: f.admission.input.taskVersion, status: 'success', summary: 'Code', artifacts: [], error: null }, changes: [{ path: 'result.txt', content: 'eA==', mode: '100644' }] };
+    f.store.validationState = reportFor(artifact, plan, 'failed', 4711);
+    expect((await f.controller.observations([id]))[0]).not.toHaveProperty('validation');
+    row.result = { ...f.result, status: 'blocked' }; row.terminal = true; f.status('COMPLETED');
+    expect((await f.controller.observations([id]))[0]!.validation).toEqual({ status: 'failed', reason: 'CHECK_FAILED', runId: 4711, failed: [{ name: 'test', exitCode: 1 }] });
+    row.result = { ...f.result, status: 'success' };
+    expect((await f.controller.observations([id]))[0]).not.toHaveProperty('validation');
+  });
   it('persists a correlated coding artifact, publishes a draft result and reuses it after restart', async () => {
     const f = await fixture(true, true); await f.controller.start(f.admission); const row = f.store.row!;
     const artifact: CodingArtifact = { contractVersion: '3.0', baseSha: row.snapshot.baseSha,

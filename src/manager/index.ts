@@ -99,7 +99,7 @@ export class Manager {
         const existing = (snapshot.comments.get(task.issue.number) ?? []).filter(c => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
         // A closed task that never had a status comment does not get one after the fact.
         if (task.issue.state === 'closed' && !existing.length) continue;
-        const body = statusComment(task, this.config, { readyIsGrant: !!snapshot.readyIsGrant,
+        const body = statusComment(task, this.config, { repository: this.github.repository, readyIsGrant: !!snapshot.readyIsGrant,
           rejection: this.rejections.find(r => r.issueNumber === task.issue.number)?.code,
           queued: report.decisions.some(d => d.action.issueNumber === task.issue.number && d.decision.reason === 'Maximum parallel workers reached') });
         if (existing[0]?.body !== body) await this.github.writeComment(task.issue.number, body, existing[0]?.id);
