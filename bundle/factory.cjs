@@ -39034,6 +39034,7 @@ var normalizeIssue = (i) => ({
   createdAt: i.created_at,
   authorType: i.user?.type
 });
+var settledAfterMs = 48 * 60 * 60 * 1e3;
 var GitHubClient = class {
   constructor(repository, token, timeoutMs = 3e4, fetcher = fetch, api) {
     this.repository = repository;
@@ -39151,9 +39152,10 @@ var GitHubClient = class {
     ]);
     if (!repo.has_issues) throw new Error("GitHub Issues must be enabled");
     const issues = rows.filter((i) => !i.pull_request).map(normalizeIssue);
-    for (const issue2 of issues) await this.withTimeline(issue2);
-    const comments = /* @__PURE__ */ new Map();
-    for (const issue2 of issues) comments.set(issue2.number, await this.comments(issue2.number));
+    const current = issues.filter((i) => i.state === "open" || Date.now() - Date.parse(i.updatedAt) < settledAfterMs);
+    for (const issue2 of current) if (issue2.state === "open") await this.withTimeline(issue2);
+    const comments = new Map(issues.map((i) => [i.number, []]));
+    for (const issue2 of current) comments.set(issue2.number, await this.comments(issue2.number));
     const dependencyStates = /* @__PURE__ */ new Map();
     for (const n of new Set(issues.flatMap((i) => dependencies(i.body)))) {
       try {
@@ -39808,6 +39810,8 @@ var Manager = class {
   now;
   /** Definite runtime admission rejections of the current run; reported as blockers, never as uncertain dispatches. */
   rejections = [];
+  /** What this run saw before it acted. */
+  observed;
   async snapshot() {
     const snapshot = await this.github.snapshot(this.config.execution.engine === "temporal" ? null : this.config.manager.workflow);
     if (this.config.execution.engine === "temporal") {
@@ -39892,8 +39896,9 @@ var Manager = class {
   async publishStatus(report) {
     if (!this.github.writeComment || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return;
     let snapshot;
+    const unchanged = this.observed && !report.decisions.some((d) => d.executed) && !this.rejections.length;
     try {
-      snapshot = await this.snapshot();
+      snapshot = unchanged ? this.observed : await this.snapshot();
     } catch {
       return;
     }
@@ -40075,6 +40080,7 @@ ${marker2}`;
       snapshot = await this.snapshot();
       tasks = reconstruct(snapshot, this.config, this.now());
     }
+    this.observed = snapshot;
     report.tasks = tasks.length;
     for (const t of tasks) {
       if (t.blockReason) {
@@ -40085,8 +40091,8 @@ ${marker2}`;
         report.blockers.push(`#${t.issue.number}: dispatch outcome uncertain; inspect workflow runs and resolve explicitly`);
         report.nextSteps.push(`#${t.issue.number}: inspect actual Actions runs before manually resolving the original execution`);
       }
-      if (t.latest?.result && ["blocked", "needs_approval"].includes(t.latest.result.status)) report.blockers.push(`#${t.issue.number}: worker reports ${t.latest.result.status}; revise task or provide missing input`);
-      if (t.latest?.result && ["failed", "cancelled"].includes(t.latest.result.status) && t.latest.attempt >= this.config.execution.maxRetries) report.blockers.push(`#${t.issue.number}: retry budget exhausted`);
+      if (t.issue.state === "open" && t.latest?.result && ["blocked", "needs_approval"].includes(t.latest.result.status)) report.blockers.push(`#${t.issue.number}: worker reports ${t.latest.result.status}; revise task or provide missing input`);
+      if (t.issue.state === "open" && t.latest?.result && ["failed", "cancelled"].includes(t.latest.result.status) && t.latest.attempt >= this.config.execution.maxRetries) report.blockers.push(`#${t.issue.number}: retry budget exhausted`);
     }
     const entries = reconciliationPlan(tasks, this.config).map((action) => ({ action, source: "reconcile" }));
     const eligible = tasks.filter((t) => t.issue.state === "open" && !t.blocked && !t.hasClosingMerge && !t.executions.some((e) => e.active));
