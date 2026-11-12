@@ -34,7 +34,7 @@ class Effects implements EffectPort {
 }
 function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>) {
   const requests: { task: { contextReferences: string[] } }[] = [], calls: string[] = [];
-  const cfg = config(); cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
+  const cfg = config(); cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false };
   let ref = false, dispatches = 0, lost = false, before = false, complete = false, wrongHead = false, duplicate = false, badWrapper = false;
   let missingValidation=false,forgedValidation=false;
   let source = artifact(); const effects = new Effects(), authorize = vi.fn(async () => {}), workflowPaths:string[]=[];
@@ -66,7 +66,7 @@ function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, 
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
   const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation);
-  return { requests, calls, poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
+  return { cfg, requests, calls, poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
     lose: () => { lost = true; }, before: () => { before = true; }, wrong: () => { wrongHead = true; }, duplicate: () => { duplicate = true; },
     badWrapper: () => { badWrapper = true; }, unrelated: () => { source = { ...source, baseSha: '9'.repeat(40) }; },missingValidation:()=>{missingValidation=true;},forgeValidation:()=>{forgedValidation=true;},blocked:()=>{source.result.status='blocked';} };
 }
@@ -149,4 +149,9 @@ it('leaves the request of an execution dispatched before context existed exactly
   await f.poll();
   expect(f.requests[0]!.task.contextReferences).toEqual([]);
   expect(f.calls.some(c => c === '/branches' || c === '/pulls/14')).toBe(false);
+});
+
+it('passes the repository\'s loopback opt-in to the executor and nothing by default', async () => {
+  const f = fixture(); f.cfg.workers.coding = { ...(f.cfg.workers.coding as object), loopback: true } as typeof f.cfg.workers.coding;
+  await f.poll(); expect(f.requests[0]!.task.contextReferences).toEqual(['sf-context sandbox loopback']);
 });

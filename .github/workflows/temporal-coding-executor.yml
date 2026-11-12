@@ -109,9 +109,29 @@ jobs:
         working-directory: target
         timeout-minutes: 5
         run: npm ci --ignore-scripts --no-audit --no-fund
+      # Opt-in per repository (workers.coding.loopback), passed on by the broker: local servers and browser tests for the worker.
+      - id: sandbox
+        env:
+          SF_CODING_REQUEST: ${{ needs.validate.outputs.request }}
+        run: |
+          loopback=false
+          if jq -e '.task.contextReferences | index("sf-context sandbox loopback")' <<<"$SF_CODING_REQUEST" >/dev/null; then loopback=true; fi
+          echo "loopback=$loopback" >> "$GITHUB_OUTPUT"
+      - id: browsers
+        name: Prepare the locked Playwright browser before network-isolated coding
+        if: ${{ steps.sandbox.outputs.loopback == 'true' && hashFiles('target/node_modules/playwright/cli.js') != '' }}
+        working-directory: target
+        timeout-minutes: 5
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/sf-browsers
+        run: |
+          node node_modules/playwright/cli.js install chromium
+          echo "path=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_OUTPUT"
       - id: codex
         uses: ./.runtime/harness
         with:
+          loopback: ${{ steps.sandbox.outputs.loopback }}
+          browser-cache: ${{ steps.browsers.outputs.path }}
           request: ${{ needs.validate.outputs.request }}
           execution-id: ${{ needs.validate.outputs.execution-id }}
           workspace: ${{ github.workspace }}/target

@@ -40,7 +40,9 @@ export const configSchema = z.strictObject({
     coding: z.union([z.literal(false), z.strictObject({ enabled: z.boolean(), agent: z.literal('codex'),
       model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/).default('gpt-6.1-sol'),
       reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).default('high'),
-      validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null) })]).default(false),
+      validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null),
+      /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
+      loopback: z.boolean().default(false) })]).default(false),
     review: z.literal(false).default(false)
   }).prefault({}),
   reporting: z.strictObject({ persistDecisions: z.boolean().default(true) }).prefault({}),

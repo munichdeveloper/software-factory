@@ -8,7 +8,7 @@ import type { RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
 import { bindValidation, validationReportSchema, type ValidationReport } from './validation-contract.js';
-import { failedChecksEntry, maxContextRefs, namedRefs, outputEntries, refEntry, reworkEntry, reworkOf, unavailableEntry } from './coding-context.js';
+import { failedChecksEntry, loopbackEntry, maxContextRefs, namedRefs, outputEntries, refEntry, reworkEntry, reworkOf, unavailableEntry } from './coding-context.js';
 
 export const codingWorkflow = 'factory-temporal-executor.yml';
 export function executorWrapper(factorySha: string, harnessSha: string, validated = false) {
@@ -62,8 +62,8 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
    * outcome of its validation, and the refs of this repository that the task names. Task text only names candidates;
    * every commit comes from this repository's own refs, and nothing here can fail the run.
    */
-  private async context(snapshot: RunSnapshot, target: { owner: string; repo: string }, baseBranch: string): Promise<string[]> {
-    const input = snapshot.admission.input, entries: string[] = [], seen = new Set([snapshot.baseSha]);
+  private async context(snapshot: RunSnapshot, target: { owner: string; repo: string }, baseBranch: string, loopback: boolean): Promise<string[]> {
+    const input = snapshot.admission.input, entries: string[] = loopback ? [loopbackEntry] : [], seen = new Set([snapshot.baseSha]);
     const missing = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && [404, 422].includes(error.status as number);
     const previousId = reworkOf(input), report = previousId ? await this.previousValidation(previousId) : null;
     if (previousId && report) {
@@ -139,7 +139,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
         // An execution whose executor ref exists was dispatched before its context was resolved; its request stays as sent.
         try { await this.api.git.getRef({ ...target, ref: `heads/sf-temporal-executor/${input.executionId}` }); return { entries: [] }; }
         catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
-        return { entries: await this.context(snapshot, target, snapshot.baseRef ?? metadata.default_branch) };
+        return { entries: await this.context(snapshot, target, snapshot.baseRef ?? metadata.default_branch, coding.loopback) };
       } });
     const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: 'codex',
       task: { id: `github:${snapshot.repository}#${input.issueNumber}`, version: input.taskVersion, description,

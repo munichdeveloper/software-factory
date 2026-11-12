@@ -5,7 +5,7 @@
   "snapshotSchemaVersion": 1,
   "harness": {
     "repository": "munichdeveloper/dev-agent-harness",
-    "ref": "f70d11556075e9764d69ac03e029720d12ccef65",
+    "ref": "9fa9621cb14d8730e82b096c8a0469ecb5749b9f",
     "codingContractVersion": "3.0"
   },
   "dockerfile": "operations/temporal-runtime/Dockerfile",
