@@ -26,6 +26,7 @@ describe('status comment of a blocked task', () => {
     expect(text).toContain('**Blocked because the independent validation failed**: at least one check failed.');
     expect(text).toContain('Failed checks: `test` (exit code 1), `browser` (exit code 2).');
     expect(text).toContain('Validation run: https://github.com/owner/target/actions/runs/4711');
+    expect(text).toContain(`download the artifact \`coding-validation-logs-${task.latest!.input.executionId}\` in the "Artifacts" section`);
     expect(text).toContain('The worker itself reported success; it could not run these checks in its isolated environment.');
     expect(text).toContain('**Needed from you:** The Factory does not repair a failed validation on its own yet. Either fix the failing checks in the draft pull request and merge it yourself, or revise the task text and remove `harness:blocked`, then apply `harness:ready` to start a new run.');
     expect(text).toContain('> Camera action implemented; 31 tests passed.');
