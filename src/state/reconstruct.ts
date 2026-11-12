@@ -81,6 +81,11 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     else if (hasClosingMerge) desiredStatus = 'done';
     else if (blockReason) desiredStatus = 'blocked';
     else if (reworkable) desiredStatus = 'failed';
+    // Where ready is a person's grant, a fresh grant on a task whose last attempt failed is what admits the retry.
+    // The Manager must leave that label alone until the retry has started; replacing it with `failed` would
+    // consume the grant it is waiting for.
+    else if (snapshot.readyIsGrant && issue.labels.includes('harness:ready') && !hasOpenPR && latest?.result &&
+      ['failed', 'cancelled'].includes(latest.result.status) && latest.attempt < config.execution.maxRetries) desiredStatus = 'ready';
     else if (latest?.result) desiredStatus = ({ success: 'awaiting-pr', failed: 'failed', cancelled: 'failed', blocked: 'blocked', needs_approval: 'awaiting-approval' } as const)[latest.result.status];
     else if (hasOpenPR) desiredStatus = 'awaiting-pr';
     // A runnable task rests in ready. Where ready is a person's grant, the Manager leaves the label to that

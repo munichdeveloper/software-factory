@@ -39303,6 +39303,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     else if (hasClosingMerge) desiredStatus = "done";
     else if (blockReason) desiredStatus = "blocked";
     else if (reworkable) desiredStatus = "failed";
+    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && latest.attempt < config2.execution.maxRetries) desiredStatus = "ready";
     else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
     else if (hasOpenPR) desiredStatus = "awaiting-pr";
     else if (snapshot.readyIsGrant) {
