@@ -24,6 +24,21 @@ jobs:
         run: |
           docker run --rm --network none --entrypoint node sf-temporal-package:ci -e 'const a=require("node:assert/strict"),p=require("./package.json"),m=require("./temporal-runtime.json");a.equal(p.version,m.factoryVersion);a.equal(m.harness.ref,"9fa9621cb14d8730e82b096c8a0469ecb5749b9f");a.equal(m.experimental,true)'
           docker run --rm --network none sf-temporal-package:ci pack --output /tmp/worker-package --factory-sha "$FACTORY_SHA" --harness-sha 9fa9621cb14d8730e82b096c8a0469ecb5749b9f --harness /app/.runtime/harness/dist/cli.js --deployment sf-rc-package --build "$FACTORY_SHA" --queue sf-rc-package
+      # The production stack builds these two targets on the host: the pinned worker with its package baked in,
+      # and the broker that takes its release from that package.
+      - name: Build the pinned worker and the broker bound to it
+        env:
+          FACTORY_SHA: ${{ github.sha }}
+        run: |
+          pinned=$(sed -n 's/^  WORKER_FACTORY_SHA: \([a-f0-9]\{40\}\)$/\1/p' operations/temporal-runtime/compose.production.yaml)
+          [[ "$pinned" =~ ^[a-f0-9]{40}$ ]]
+          args=(--build-arg "FACTORY_SHA=$FACTORY_SHA" --build-arg "WORKER_FACTORY_SHA=$pinned" --build-arg WORKER_DEPLOYMENT=sf-ci --build-arg WORKER_QUEUE=sf-ci-v1 -f operations/temporal-runtime/Dockerfile)
+          docker build "${args[@]}" --target worker -t sf-temporal-worker:ci .
+          docker build "${args[@]}" --target broker -t sf-temporal-broker:ci .
+          docker run --rm --network none --entrypoint node -e "PINNED=$pinned" sf-temporal-worker:ci -e 'const a=require("node:assert/strict"),c=require("node:crypto"),f=require("node:fs"),p=require("/app/package/worker-package.json");a.equal(p.release.factorySha,process.env.PINNED);a.equal(p.release.buildId,process.env.PINNED);a.equal(c.createHash("sha256").update(f.readFileSync(p.bundlePath)).digest("hex"),p.release.workflowHash);a.equal(c.createHash("sha256").update(f.readFileSync(p.harnessEntrypoint)).digest("hex"),p.harnessEntrypointHash)'
+          docker run --rm --network none --entrypoint sh sf-temporal-worker:ci -c 'cat /app/package/worker-package.json' > "$RUNNER_TEMP/worker.json"
+          docker run --rm --network none --entrypoint sh sf-temporal-broker:ci -c 'cat "$FACTORY_RELEASE_FILE"' > "$RUNNER_TEMP/broker.json"
+          cmp "$RUNNER_TEMP/worker.json" "$RUNNER_TEMP/broker.json"
   temporal-runtime:
     runs-on: ubuntu-latest
     timeout-minutes: 15
