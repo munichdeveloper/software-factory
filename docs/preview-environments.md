@@ -93,9 +93,9 @@ nicht. Die Autorität ist der Broker-Record, nicht ein GitHub-Status, denn die I
 `statuses`/`checks`-Schreibrechte (`src/runtime/github-app.ts`). Ein Commit-Status `sf/preview` zur Anzeige in GitHub
 ist optional und bräuchte diese zusätzliche App-Berechtigung.
 
-**Reihenfolge zum KI-Review.** Vorschlag: KI-Review und Preview laufen unabhängig, gemergt wird erst, wenn beide grün
-sind. So verlängert die Preview die Durchlaufzeit nur, wenn sie langsamer ist als das Review. Alternative mit weniger
-KI-Kosten: Review erst nach grüner Preview.
+**Reihenfolge zum KI-Review (entschieden: parallel).** KI-Review und Preview laufen unabhängig, gemergt wird erst,
+wenn beide grün sind. So verlängert die Preview die Durchlaufzeit nur, wenn sie langsamer ist als das Review. Die
+Alternative „Review erst nach grüner Preview“ spart KI-Kosten und bleibt eine spätere Option.
 
 **Rework (Phase 3).** Mit `execution.rework: true` könnte ein roter Preview-Test wie eine fehlgeschlagene Validierung
 einen weiteren Versuch starten, mit den fehlgeschlagenen Tests und dem gekürzten Log als `contextReferences`. Das
@@ -255,7 +255,9 @@ einer Preview in Coolify 4.7.5, und dass ein Deployment den gebauten Commit zur�
 
 ## 12. Offene Entscheidungen
 
-- Preview parallel zum KI-Review (schneller) oder erst danach (günstiger)? Vorschlag: parallel.
+Entschieden: Preview und KI-Review laufen parallel (Abschnitt 3).
+
+
 - Eigenes Coolify-Team für die Factory, damit das Token keine Produktivressourcen erreicht?
 - Bleiben Previews auf demselben Server wie `staging`, oder gleich ein separater Preview-Server?
 - Soll die Factory `statuses: write` bekommen, damit das Ergebnis auch als Check in GitHub sichtbar ist?
