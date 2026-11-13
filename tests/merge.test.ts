@@ -222,3 +222,8 @@ it('dispatches no validation workflow after a branch update where the pull reque
   x.f.checks = x.cfg.merge.requiredChecks.map(name => ({ name, state: 'success' })); x.review.decision = 'merge';
   await x.run(); expect(x.api.dispatch).not.toHaveBeenCalled(); expect(x.api.merge).toHaveBeenCalledWith(52, 'c'.repeat(40), 'squash');
 });
+it('names a missing review key on the pull request instead of an unexplained failure', async () => {
+  const x = fixture(); x.reviewer.review.mockRejectedValue(new Error('A real OpenAI merge reviewer is required'));
+  await x.run(); expect(x.api.merge).not.toHaveBeenCalled();
+  expect(x.f.comments.at(-1)!.body).toContain('OPENAI_API_KEY');
+});

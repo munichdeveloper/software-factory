@@ -211,7 +211,10 @@ export class MergeManager {
           'Review context exceeds limit; no truncated approval': 'Der vollständige Review-Kontext überschreitet das konfigurierte Größenlimit; eine gekürzte Prüfung genügt nicht.',
           'Diff is incomplete or contains binary changes': 'Der Diff ist unvollständig oder enthält nicht prüfbare Binäränderungen.',
           'File cannot be reviewed completely': 'Mindestens eine Datei kann nicht vollständig geprüft werden.',
-          'Merge review incomplete or refused': 'Die KI-Prüfung wurde nicht vollständig abgeschlossen oder abgelehnt.'
+          'Merge review incomplete or refused': 'Die KI-Prüfung wurde nicht vollständig abgeschlossen oder abgelehnt.',
+          'A real OpenAI merge reviewer is required': 'Für den KI-Review ist kein Modellschlüssel konfiguriert (beim Temporal-Broker: OPENAI_API_KEY in seiner Umgebung) oder die Konfiguration verlangt keinen echten Reviewer.',
+          'fetch failed': 'Der Review-Anbieter ist nicht erreichbar.',
+          'Merge review provider unavailable': 'Der Review-Anbieter hat die Anfrage abgelehnt oder ist nicht verfügbar.'
         };
         const detail = error instanceof Error ? reasons[error.message] ?? '' : '';
         if (f) await this.explain(f, `${phase} konnte nicht bestätigt werden (${status}). ${detail} Kein ungeprüfter Stand wird freigegeben; vorhandene Intents bleiben zur Wiederaufnahme erhalten.`).catch(() => {});
