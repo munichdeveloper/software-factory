@@ -41268,7 +41268,10 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
           "Review context exceeds limit; no truncated approval": "Der vollst\xE4ndige Review-Kontext \xFCberschreitet das konfigurierte Gr\xF6\xDFenlimit; eine gek\xFCrzte Pr\xFCfung gen\xFCgt nicht.",
           "Diff is incomplete or contains binary changes": "Der Diff ist unvollst\xE4ndig oder enth\xE4lt nicht pr\xFCfbare Bin\xE4r\xE4nderungen.",
           "File cannot be reviewed completely": "Mindestens eine Datei kann nicht vollst\xE4ndig gepr\xFCft werden.",
-          "Merge review incomplete or refused": "Die KI-Pr\xFCfung wurde nicht vollst\xE4ndig abgeschlossen oder abgelehnt."
+          "Merge review incomplete or refused": "Die KI-Pr\xFCfung wurde nicht vollst\xE4ndig abgeschlossen oder abgelehnt.",
+          "A real OpenAI merge reviewer is required": "F\xFCr den KI-Review ist kein Modellschl\xFCssel konfiguriert (beim Temporal-Broker: OPENAI_API_KEY in seiner Umgebung) oder die Konfiguration verlangt keinen echten Reviewer.",
+          "fetch failed": "Der Review-Anbieter ist nicht erreichbar.",
+          "Merge review provider unavailable": "Der Review-Anbieter hat die Anfrage abgelehnt oder ist nicht verf\xFCgbar."
         };
         const detail = error62 instanceof Error ? reasons[error62.message] ?? "" : "";
         if (f) await this.explain(f, `${phase} konnte nicht best\xE4tigt werden (${status}). ${detail} Kein ungepr\xFCfter Stand wird freigegeben; vorhandene Intents bleiben zur Wiederaufnahme erhalten.`).catch(() => {
