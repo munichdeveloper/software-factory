@@ -1,6 +1,7 @@
 import type { BlockLabelEvent, Issue } from '../types.js';
 import { readyApprovalSchema, type ReadyApproval } from './contract.js';
 import { hash } from '../state/identity.js';
+import { untrustedEdit } from '../state/content-trust.js';
 
 /** Native GitHub timeline evidence; neither a comment nor the reconcile caller grants execution. */
 export async function authorizeReadyLabel(issue: Issue, events: BlockLabelEvent[], canApprove: (actor: string) => Promise<boolean>,
@@ -13,6 +14,8 @@ export async function authorizeReadyLabel(issue: Issue, events: BlockLabelEvent[
   const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
   if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error('READY_ACTOR_NOT_AUTHORIZED');
   const proof = parsed.data;
+  // The grant covers the text as it was when the label was applied, and no later change by someone without write access.
+  if (untrustedEdit(issue) || untrustedEdit(issue, proof.createdAt)) throw new Error('READY_CONTENT_CHANGED');
   if (expected && hash(proof) !== hash(expected)) throw new Error('READY_APPROVAL_CHANGED');
   const later = ordered.filter(e => e.id > grant.id);
   // The Manager consumes the ready status when moving the same execution to running.

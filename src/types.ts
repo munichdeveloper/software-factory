@@ -20,7 +20,13 @@ export const planSchema = z.strictObject({ version: z.literal(1), actions: z.arr
 export type Action = z.infer<typeof actionSchema>;
 export type Plan = z.infer<typeof planSchema>;
 export interface BlockLabelEvent { id: number; event: 'labeled' | 'unlabeled'; actor: string; createdAt: string }
-export interface Issue { number: number; title: string; body: string; state: 'open' | 'closed'; labels: string[]; updatedAt: string; createdAt?: string; authorType?: string; reopenedAt?: string; blockedLabelEvents?: BlockLabelEvent[] }
+/** A change of an issue's title or body after its creation; `trusted` when the editor has write access. */
+export interface ContentEdit { actor: string; at: string; trusted: boolean }
+export interface Issue { number: number; title: string; body: string; state: 'open' | 'closed'; labels: string[]; updatedAt: string; createdAt?: string; authorType?: string; reopenedAt?: string; blockedLabelEvents?: BlockLabelEvent[];
+  /** When `harness:managed` was last applied, from the native timeline. */
+  managedAt?: string;
+  /** Title and body changes, read for managed issues; absent only where nothing was read. */
+  contentEdits?: ContentEdit[] }
 export interface Comment { id: number; body: string; author: string; createdAt: string }
 export interface PullRequest { number: number; state: 'open' | 'closed'; merged: boolean; mergedAt?: string; closingIssues: number[]; referencedIssues: number[];
   title?: string; headRefName?: string; headSha?: string; mergedBy?: { login: string; type: string } }

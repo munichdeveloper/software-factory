@@ -1,6 +1,7 @@
 import type { Config } from '../config/index.js';
 import type { Snapshot } from '../types.js';
 import { decodeEvent, encodeEvent, type HarnessEvent } from '../state/events.js';
+import { untrustedEdit } from '../state/content-trust.js';
 import { hash, taskVersion } from '../state/identity.js';
 import type { GitHubPort } from '../github/port.js';
 import { permission, policyVersion } from '../policies/engine.js';
@@ -166,7 +167,7 @@ export class MergeManager {
         if (owner) {
           const liveOwner = this.tasks ? await this.tasks.getIssue(owner.number) : owner;
           if (liveOwner.state !== 'open' || liveOwner.labels.includes('harness:blocked') || !liveOwner.labels.includes('harness:managed') ||
-            taskVersion(liveOwner) !== taskVersion(owner)) {
+            taskVersion(liveOwner) !== taskVersion(owner) || untrustedEdit(liveOwner)) {
             await this.explain(live, 'Die zugehörige Aufgabe wurde während des Reviews geschlossen, blockiert, abgemeldet oder fachlich verändert.'); continue;
           }
         }

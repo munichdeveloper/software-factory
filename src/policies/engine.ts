@@ -3,6 +3,7 @@ import type { Action, Decision } from '../types.js';
 import type { Task } from '../state/reconstruct.js';
 import { actionId, hash } from '../state/identity.js';
 import { canTransition } from '../state/lifecycle.js';
+import { untrustedEdit, untrustedEditReason } from '../state/content-trust.js';
 
 type Permission = 'allow' | 'deny' | 'approval';
 const defaults: Record<Config['autonomy']['profile'], Record<Action['kind'], Permission>> = {
@@ -30,6 +31,8 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
   if (action.kind === 'merge_pr') return deny('Merge requires the dedicated PR workflow with a commit-bound AI review');
   if (action.kind === 'expand_scope') return deny('Standalone scope changes are unsupported; permission applies to follow-ups');
   if (!task.issue.labels.includes('harness:managed')) return deny('Issue is not explicitly managed');
+  const edit = action.kind === 'cancel_worker' ? undefined : untrustedEdit(task.issue);
+  if (edit) return deny(untrustedEditReason(edit));
   if (action.taskVersion !== task.version) return deny('Task changed since proposal or approval');
   if (budget.actions >= config.manager.maxActions) return deny('Maximum actions per run reached');
   if (task.issue.state === 'closed' && !(action.kind === 'transition' && action.status === 'done') && action.kind !== 'cancel_worker') return deny('Issue is already closed');

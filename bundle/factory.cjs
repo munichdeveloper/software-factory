@@ -38919,6 +38919,13 @@ var RuntimeAdmissionRejected = class extends Error {
 };
 var admissionCode = (error62) => error62 instanceof Error && /^[A-Z][A-Z_]+$/.test(error62.message) ? error62.message : null;
 
+// src/state/content-trust.ts
+function untrustedEdit(issue2, since = issue2.managedAt ?? issue2.createdAt) {
+  const floor = since ? Date.parse(since) : Number.NEGATIVE_INFINITY;
+  return issue2.contentEdits?.find((e) => !e.trusted && !(Date.parse(e.at) <= floor));
+}
+var untrustedEditReason = (edit) => `Task text was changed after its approval by ${edit.actor ? `@${edit.actor}` : "an unknown account"}, who has no write access`;
+
 // src/runtime/ready-approval.ts
 async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected, rework) {
   if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("READY_APPROVAL_REQUIRED");
@@ -38928,6 +38935,7 @@ async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, ex
   const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
   if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error("READY_ACTOR_NOT_AUTHORIZED");
   const proof = parsed.data;
+  if (untrustedEdit(issue2) || untrustedEdit(issue2, proof.createdAt)) throw new Error("READY_CONTENT_CHANGED");
   if (expected && hash2(proof) !== hash2(expected)) throw new Error("READY_APPROVAL_CHANGED");
   const later = ordered.filter((e) => e.id > grant.id);
   const taken = later.length === 1 && later[0].event === "unlabeled" && trustedActors.includes(later[0].actor);
@@ -39080,7 +39088,33 @@ var GitHubClient = class {
       if (e.event !== "labeled" && e.event !== "unlabeled" || !("label" in e) || e.label?.name !== "harness:blocked" || !("id" in e) || typeof e.id !== "number" || !("created_at" in e) || typeof e.created_at !== "string") return [];
       return [{ id: e.id, event: e.event, actor: "actor" in e ? e.actor?.login ?? "" : "", createdAt: e.created_at }];
     });
+    issue2.managedAt = timeline.flatMap((e) => e.event === "labeled" && "label" in e && e.label?.name === managedLabel && "created_at" in e && typeof e.created_at === "string" ? [e.created_at] : []).sort().at(-1);
+    const renames = timeline.flatMap((e) => e.event === "renamed" && "created_at" in e && typeof e.created_at === "string" ? [{ actor: "actor" in e ? e.actor?.login ?? "" : "", at: e.created_at }] : []);
+    const edits = [...renames, ...await this.bodyEdits(issue2.number)];
+    const trust = /* @__PURE__ */ new Map();
+    const trusted = (actor) => {
+      if (!trust.has(actor)) trust.set(actor, actor ? this.canApprove(actor) : Promise.resolve(false));
+      return trust.get(actor);
+    };
+    issue2.contentEdits = await Promise.all(edits.map(async (e) => ({ ...e, trusted: await trusted(e.actor) })));
     return issue2;
+  }
+  /** Every body revision with its editor. Fails rather than reporting an incomplete history. */
+  async bodyEdits(number4) {
+    const result = [];
+    let cursor = null;
+    do {
+      const page = await this.api.graphql(
+        `query($owner:String!,$repo:String!,$number:Int!,$cursor:String) { repository(owner:$owner,name:$repo) {
+        issue(number:$number) { userContentEdits(first:100, after:$cursor) { nodes { editedAt editor { login } } pageInfo { hasNextPage endCursor } } } } }`,
+        { ...this.target, number: number4, cursor }
+      );
+      const connection = page.repository.issue?.userContentEdits;
+      if (!connection) throw new Error(`Content history of #${number4} is unavailable`);
+      for (const node2 of connection.nodes) if (node2) result.push({ actor: node2.editor?.login ?? "", at: node2.editedAt });
+      cursor = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+    } while (cursor);
+    return result;
   }
   async comments(number4) {
     const rows = await this.api.paginate(this.api.issues.listComments, { ...this.target, issue_number: number4, per_page: 100 });
@@ -39364,6 +39398,8 @@ function evaluate(action, ctx) {
   if (action.kind === "merge_pr") return deny("Merge requires the dedicated PR workflow with a commit-bound AI review");
   if (action.kind === "expand_scope") return deny("Standalone scope changes are unsupported; permission applies to follow-ups");
   if (!task.issue.labels.includes("harness:managed")) return deny("Issue is not explicitly managed");
+  const edit = action.kind === "cancel_worker" ? void 0 : untrustedEdit(task.issue);
+  if (edit) return deny(untrustedEditReason(edit));
   if (action.taskVersion !== task.version) return deny("Task changed since proposal or approval");
   if (budget.actions >= config2.manager.maxActions) return deny("Maximum actions per run reached");
   if (task.issue.state === "closed" && !(action.kind === "transition" && action.status === "done") && action.kind !== "cancel_worker") return deny("Issue is already closed");
@@ -39905,6 +39941,26 @@ var Manager = class {
     }
     return changed;
   }
+  /**
+   * A task whose text someone without write access changed after its approval is no longer approved work. The Manager
+   * removes `harness:managed` (and a `harness:ready` grant) so the issue leaves the Factory until a maintainer has read
+   * the new text and applies the label again. The policy denies such a task regardless, also where nothing is removed.
+   */
+  async withdrawEdited(tasks, report) {
+    let changed = false;
+    for (const task of tasks.filter((t) => t.issue.state === "open")) {
+      const edit = untrustedEdit(task.issue);
+      if (!edit) continue;
+      const reason = untrustedEditReason(edit);
+      report.blockers.push(`#${task.issue.number}: ${reason}`);
+      report.nextSteps.push(`#${task.issue.number}: review the changed text, then apply ${managedLabel} again to approve it`);
+      if (this.config.execution.dryRun || this.config.autonomy.profile === "advisory") continue;
+      await this.github.updateIssue(task.issue.number, { labels: task.issue.labels.filter((l) => l !== managedLabel && l !== "harness:ready") });
+      await this.github.writeComment?.(task.issue.number, `**Software Factory: approval withdrawn.** ${reason} (${edit.at}). The Factory no longer works on this issue. A maintainer reviews the current title and description and applies \`${managedLabel}\` again to approve them.`);
+      changed = true;
+    }
+    return changed;
+  }
   /** Keeps the one readable status comment of each managed task current. Never fails a reconciliation. */
   async publishStatus(report) {
     if (!this.github.writeComment || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return;
@@ -40090,6 +40146,10 @@ ${marker2}`;
     let snapshot = await this.snapshot();
     let tasks = reconstruct(snapshot, this.config, this.now());
     if (await this.recover(tasks, report)) {
+      snapshot = await this.snapshot();
+      tasks = reconstruct(snapshot, this.config, this.now());
+    }
+    if (await this.withdrawEdited(tasks, report)) {
       snapshot = await this.snapshot();
       tasks = reconstruct(snapshot, this.config, this.now());
     }
@@ -41201,7 +41261,7 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         }
         if (owner) {
           const liveOwner = this.tasks ? await this.tasks.getIssue(owner.number) : owner;
-          if (liveOwner.state !== "open" || liveOwner.labels.includes("harness:blocked") || !liveOwner.labels.includes("harness:managed") || taskVersion(liveOwner) !== taskVersion(owner)) {
+          if (liveOwner.state !== "open" || liveOwner.labels.includes("harness:blocked") || !liveOwner.labels.includes("harness:managed") || taskVersion(liveOwner) !== taskVersion(owner) || untrustedEdit(liveOwner)) {
             await this.explain(live, "Die zugeh\xF6rige Aufgabe wurde w\xE4hrend des Reviews geschlossen, blockiert, abgemeldet oder fachlich ver\xE4ndert.");
             continue;
           }
