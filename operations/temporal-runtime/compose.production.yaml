@@ -6,6 +6,7 @@
 #   .env            SFM_HOST (public host name of the Manager)
 #   *.env           service credentials
 #   registry.json   runtime registry (repositories, modes; its release entry is superseded, see below)
+# Secrets kept in GitHub reach the stack through the deployment's .sf-deploy.env (see runtime-broker).
 name: sfm
 # The PINNED worker release. Changing it is the release rollout on this host: the deployment builds the worker
 # image and its package from this published Factory commit, and the broker serves its repositories with exactly
@@ -66,7 +67,11 @@ services:
         <<: *worker-release
         FACTORY_SHA: ${SF_RELEASE_SHA:?}
     read_only: true
-    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/broker.env
+    # .sf-deploy.env is written by the deployment from the wrapper's deploy-env (GitHub secrets, e.g. the merge
+    # review key OPENAI_API_KEY); it overrides the host's broker.env and is empty when no secret is passed.
+    env_file:
+      - ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/broker.env
+      - .sf-deploy.env
     environment:
       TEMPORAL_ADDRESS: temporal:7233
     volumes: ['${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/registry.json:/run/factory/registry.json:ro']
