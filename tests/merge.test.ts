@@ -216,3 +216,9 @@ it('an issue-scoped broker adopts no pull request by label', async () => {
   const x = temporal(); x.snapshot.comments.set(7, []); x.f.labels = ['sf:automerge']; x.f.draft = false;
   await x.owned(); expect(x.api.facts).toHaveBeenCalled(); expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
 });
+it('dispatches no validation workflow after a branch update where the pull request checks run on every push', async () => {
+  const x = fixture('update_branch'); x.f.mergeState = 'BEHIND'; x.cfg.merge.validationWorkflow = null;
+  expect((await x.run()).updated).toBe(1); expect(x.api.dispatch).not.toHaveBeenCalled();
+  x.f.checks = x.cfg.merge.requiredChecks.map(name => ({ name, state: 'success' })); x.review.decision = 'merge';
+  await x.run(); expect(x.api.dispatch).not.toHaveBeenCalled(); expect(x.api.merge).toHaveBeenCalledWith(52, 'c'.repeat(40), 'squash');
+});

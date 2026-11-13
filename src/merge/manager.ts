@@ -72,7 +72,8 @@ export class MergeManager {
     const owned = this.config.merge.includeFactoryPRs && !!this.ownership(f, snapshot);
     return this.options.ownedOnly ? owned : f.labels.includes(this.config.merge.adoptLabel) || owned;
   }
-  private async dispatch(f: MergeFacts, workflow: string, ref: string, sha: string) {
+  private async dispatch(f: MergeFacts, workflow: string | null, ref: string, sha: string) {
+    if (!workflow) return;
     const key = `merge-ci:${hash({ workflow, ref, sha })}`;
     if (this.events(f).some(e => e.key === key)) return;
     await this.api.dispatch(workflow, ref);

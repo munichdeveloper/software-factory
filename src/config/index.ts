@@ -55,7 +55,8 @@ export const configSchema = z.strictObject({
     // current base. People with write access can still merge directly; only the Factory's own merges are gated.
     protection: z.enum(['github', 'factory']).default('github'),
     requiredChecks: z.array(z.string().min(1).max(200)).min(1).max(30).default(['test-backend', 'test-frontend', 'test-docker']),
-    validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).default('test.yml'),
+    // Dispatched for the new head after a branch update; null where the pull request's own checks run on every push.
+    validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default('test.yml'),
     maxReviewsPerRun: bounded(1, 5, 2), maxActionsPerRun: bounded(1, 3, 1),
     review: z.strictObject({
       // 'llm' follows llm.provider, so a mock configuration never approves a merge. 'openai' always reviews with OpenAI,

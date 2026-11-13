@@ -380,8 +380,15 @@
         },
         "validationWorkflow": {
           "default": "test.yml",
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9_-]+\\.ya?ml$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]+\\.ya?ml$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "maxReviewsPerRun": {
           "default": 2,
