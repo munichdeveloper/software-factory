@@ -58,28 +58,44 @@ export async function runCodingValidation(options: { target: string; artifact: C
   let paths: string[] = [], before = '', docker = false;
   try {
     if (plan.profile === 'npm-docker' && !options.hosted) return { ...report, status: 'unsupported', reason: 'UNSUPPORTED_PROJECT' };
-    const packageFile = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
-    await lstat(join(root, 'package-lock.json'));
-    if (!packageFile.scripts?.test || !packageFile.scripts?.build) return { ...report, status: 'unsupported', reason: 'UNSUPPORTED_PROJECT' };
-    const listed = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 1000000 });
-    paths = [...listed.split('\0').filter(Boolean), ...artifact.changes.map(c => c.path)]; before = await fingerprint(root, paths);
-    report.status = 'failed'; report.reason = 'CHECK_FAILED';
-    const installed = await check('install', ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund']);
-    if (installed) {
-      await check('test', ['npm', 'test']);
-      const built = await check('build', ['npm', 'run', 'build']);
-      if (packageFile.scripts['test:e2e']) {
-        if (built) {
-          try { await lstat(join(root, 'node_modules/playwright/cli.js')); await check('browser-install', ['node', 'node_modules/playwright/cli.js', 'install', 'chromium'], 180); } catch { /* Other browser runners prepare through their project script. */ }
-          await check('browser', ['npm', 'run', 'test:e2e']);
-        }
-        else report.checks.push({ name: 'browser', status: 'skipped', exitCode: null });
-      } else report.checks.push({ name: 'browser', status: 'skipped', exitCode: null });
-      if (plan.profile === 'npm-docker') {
-        const compose = ['docker', 'compose', '--file', 'compose.yaml', '--project-name', environment.COMPOSE_PROJECT_NAME];
-        if (await check('compose-config', [...compose, 'config', '--quiet'], 60)) {
-          docker = true;
-          if (await check('docker-start', [...compose, 'up', '--build', '-d', '--wait', '--wait-timeout', '180'], 600)) await check('docker-smoke', ['node', 'tests/docker-smoke.mjs'], 300);
+    if (plan.profile === 'maven') {
+      if (!(await lstat(join(root, 'pom.xml'))).isFile()) return { ...report, status: 'unsupported', reason: 'UNSUPPORTED_PROJECT' };
+      // The project's own wrapper pins its Maven version; without one the runner's Maven is used.
+      const wrapper = await lstat(join(root, 'mvnw')).then(s => s.isFile() && (s.mode & 0o100) !== 0, () => false);
+      const mvn = [wrapper ? './mvnw' : 'mvn', '--batch-mode', '--no-transfer-progress'];
+      const listed = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 1000000 });
+      paths = [...listed.split('\0').filter(Boolean), ...artifact.changes.map(c => c.path)]; before = await fingerprint(root, paths);
+      report.status = 'failed'; report.reason = 'CHECK_FAILED';
+      // validate resolves the project model; package builds every module without tests; verify runs unit and
+      // integration tests (Testcontainers reach the disposable runner's Docker).
+      if (await check('install', [...mvn, 'validate'], 600)) {
+        await check('build', [...mvn, '-DskipTests', 'package'], 1200);
+        await check('test', [...mvn, 'verify'], 1500);
+      }
+    } else {
+      const packageFile = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
+      await lstat(join(root, 'package-lock.json'));
+      if (!packageFile.scripts?.test || !packageFile.scripts?.build) return { ...report, status: 'unsupported', reason: 'UNSUPPORTED_PROJECT' };
+      const listed = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 1000000 });
+      paths = [...listed.split('\0').filter(Boolean), ...artifact.changes.map(c => c.path)]; before = await fingerprint(root, paths);
+      report.status = 'failed'; report.reason = 'CHECK_FAILED';
+      const installed = await check('install', ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund']);
+      if (installed) {
+        await check('test', ['npm', 'test']);
+        const built = await check('build', ['npm', 'run', 'build']);
+        if (packageFile.scripts['test:e2e']) {
+          if (built) {
+            try { await lstat(join(root, 'node_modules/playwright/cli.js')); await check('browser-install', ['node', 'node_modules/playwright/cli.js', 'install', 'chromium'], 180); } catch { /* Other browser runners prepare through their project script. */ }
+            await check('browser', ['npm', 'run', 'test:e2e']);
+          }
+          else report.checks.push({ name: 'browser', status: 'skipped', exitCode: null });
+        } else report.checks.push({ name: 'browser', status: 'skipped', exitCode: null });
+        if (plan.profile === 'npm-docker') {
+          const compose = ['docker', 'compose', '--file', 'compose.yaml', '--project-name', environment.COMPOSE_PROJECT_NAME];
+          if (await check('compose-config', [...compose, 'config', '--quiet'], 60)) {
+            docker = true;
+            if (await check('docker-start', [...compose, 'up', '--build', '-d', '--wait', '--wait-timeout', '180'], 600)) await check('docker-smoke', ['node', 'tests/docker-smoke.mjs'], 300);
+          }
         }
       }
     }
@@ -101,9 +117,12 @@ export async function runCodingValidation(options: { target: string; artifact: C
 export function hostedValidationCommand(target: string, logs: string): ValidationCommand {
   return async (name, args, seconds, values) => {
     await mkdir(logs, { recursive: true });
-    const path = `${dirname(process.execPath)}:/usr/local/bin:/usr/bin:/bin`;
+    // The JDK and Maven the validator job prepared (maven profile); absolute paths only, never from the plan.
+    const tool = (value: string | undefined) => value && /^\/[\w./-]+$/.test(value) && !value.includes('..') ? value : undefined;
+    const java = tool(process.env.JAVA_HOME), maven = tool(process.env.SF_MAVEN_HOME);
+    const path = [java && `${java}/bin`, maven && `${maven}/bin`, dirname(process.execPath), '/usr/local/bin', '/usr/bin', '/bin'].filter(Boolean).join(':');
     return new Promise<number>(resolveExit => {
-      const child = spawn('sudo', ['-n', '-u', 'sf-validator', '--', 'env', '-i', 'HOME=/home/sf-validator', `PATH=${path}`,
+      const child = spawn('sudo', ['-n', '-u', 'sf-validator', '--', 'env', '-i', 'HOME=/home/sf-validator', `PATH=${path}`, ...(java ? [`JAVA_HOME=${java}`] : []),
         ...Object.entries(values).map(([key, value]) => `${key}=${value}`), 'timeout', '--kill-after=5s', `${seconds}s`, ...args],
       { cwd: target, env: { PATH: process.env.PATH, LANG: 'C.UTF-8' }, stdio: ['ignore', 'pipe', 'pipe'] });
       let text = '', size = 0;

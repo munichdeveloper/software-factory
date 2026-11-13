@@ -5,12 +5,15 @@ import type { CodingArtifact } from '../workers/coding.js';
 const digest = z.string().regex(/^[a-f0-9]{64}$/), sha = z.string().regex(/^[a-f0-9]{40}$/);
 const reserved = /^(?:PATH|HOME|USER|SHELL|CI|NODE_OPTIONS|NODE_PATH|DATABASE_URL|COMPOSE_PROJECT_NAME|COMPOSE_FILE|DOCKER_HOST|DOCKER_CONTEXT|LD_.+|GITHUB_.+|GH_.+|ACTIONS_.+|RUNNER_.+|OPENAI_.+|ANTHROPIC_.+|AI_API_KEY|FACTORY_.+|AWS_.+|NPM_CONFIG_.+)$/i;
 export const validationPlanSchema = z.strictObject({
-  version: z.literal(1).default(1), profile: z.enum(['npm', 'npm-docker']).default('npm'),
+  version: z.literal(1).default(1), profile: z.enum(['npm', 'npm-docker', 'maven']).default('npm'),
+  /** Maven only: the JDK the validator installs. Absent means the runner's default JDK. */
+  javaVersion: z.enum(['17', '21', '25']).optional(),
   timeoutMinutes: z.number().int().min(1).max(30).default(20),
   composeProjectPrefix: z.string().regex(/^[a-z][a-z0-9-]{0,30}-(?:ci|test|validation)$/).default('sf-validation'),
   environment: z.record(z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine(k => !reserved.test(k), 'Reserved validation environment key'),
     z.string().max(1000).refine(v => !v.includes('${{'), 'Only literal test values are allowed')).default({}),
-}).refine(p => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6000, 'Validation plan limit');
+}).refine(p => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6000, 'Validation plan limit')
+  .refine(p => p.profile === 'maven' || p.javaVersion === undefined, 'javaVersion applies to the maven profile only');
 export type ValidationPlan = z.infer<typeof validationPlanSchema>;
 export const defaultValidationPlan = () => validationPlanSchema.parse({});
 export const validationCheckSchema = z.strictObject({ name: z.enum(['install', 'test', 'build', 'browser-install', 'browser', 'compose-config', 'docker-start', 'docker-smoke', 'docker-stop', 'source-integrity']),

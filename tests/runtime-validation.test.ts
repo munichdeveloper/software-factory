@@ -60,3 +60,32 @@ it('rejects credential/control environment injection, production-like Compose na
   expect(() => bindValidation({ ...report, checks: report.checks.filter(c => c.name !== 'build') }, f.artifact, plan)).toThrow('INCONSISTENT');
   expect(() => bindValidation({ ...report, modelSecretPresent: true } as unknown as typeof report, f.artifact, plan)).toThrow();
 });
+it('validates a Maven project with validate, package and verify, preferring its executable wrapper', async () => {
+  const f = await fixture(), plan = validationPlanSchema.parse({ profile: 'maven', javaVersion: '17', timeoutMinutes: 30 });
+  await writeFile(join(f.root, 'pom.xml'), '<project/>'); f.git('add', '.'); f.git('commit', '-qm', 'maven');
+  f.artifact.baseSha = f.request.baseSha = f.git('rev-parse', 'HEAD'); await materializeCodingArtifact(f.root, f.artifact, f.request);
+  const calls: string[][] = [];
+  const report = await runCodingValidation({ target: f.root, artifact: f.artifact, plan, workflowRunId: 21, hosted: true,
+    command: async (name, args) => { calls.push([name, ...args]); return 0; } });
+  expect(calls.map(c => c[0])).toEqual(['install', 'build', 'test']);
+  expect(calls.map(c => c.slice(1).join(' '))).toEqual(['mvn --batch-mode --no-transfer-progress validate',
+    'mvn --batch-mode --no-transfer-progress -DskipTests package', 'mvn --batch-mode --no-transfer-progress verify']);
+  expect(report.status).toBe('passed'); expect(bindValidation(report, f.artifact, plan, 21)).toEqual(report);
+
+  await writeFile(join(f.root, 'mvnw'), '#!/bin/sh\n'); execFileSync('chmod', ['+x', join(f.root, 'mvnw')]); f.git('add', '.'); f.git('commit', '-qm', 'wrapper');
+  f.artifact.baseSha = f.request.baseSha = f.git('rev-parse', 'HEAD'); calls.length = 0;
+  await runCodingValidation({ target: f.root, artifact: f.artifact, plan, workflowRunId: 22, hosted: true, command: async (name, args) => { calls.push([name, ...args]); return 0; } });
+  expect(calls.every(c => c[1] === './mvnw')).toBe(true);
+});
+it('does not pass a Maven project whose tests fail or that has no POM, and keeps javaVersion to Maven', async () => {
+  const f = await fixture(), plan = validationPlanSchema.parse({ profile: 'maven' }); await materializeCodingArtifact(f.root, f.artifact, f.request);
+  expect((await runCodingValidation({ target: f.root, artifact: f.artifact, plan, workflowRunId: 23, hosted: true, command: async () => 0 })).status).toBe('unsupported');
+  await writeFile(join(f.root, 'pom.xml'), '<project/>');
+  const failed = await runCodingValidation({ target: f.root, artifact: f.artifact, plan, workflowRunId: 24, hosted: true, command: async name => name === 'test' ? 1 : 0 });
+  expect(failed.status).toBe('failed'); expect(failed.reason).toBe('CHECK_FAILED');
+  // A report that claims a pass without verify is not accepted.
+  const forged = { ...failed, status: 'passed' as const, reason: 'CHECKS_COMPLETED' as const, checks: failed.checks.filter(c => c.name !== 'test') };
+  expect(() => bindValidation(forged, f.artifact, plan, 24)).toThrow('INCONSISTENT_VALIDATION_REPORT');
+  expect(() => validationPlanSchema.parse({ profile: 'npm', javaVersion: '21' })).toThrow();
+  expect(() => validationPlanSchema.parse({ profile: 'maven', javaVersion: '11' })).toThrow();
+});

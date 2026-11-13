@@ -38827,14 +38827,16 @@ var sha = external_exports.string().regex(/^[a-f0-9]{40}$/);
 var reserved = /^(?:PATH|HOME|USER|SHELL|CI|NODE_OPTIONS|NODE_PATH|DATABASE_URL|COMPOSE_PROJECT_NAME|COMPOSE_FILE|DOCKER_HOST|DOCKER_CONTEXT|LD_.+|GITHUB_.+|GH_.+|ACTIONS_.+|RUNNER_.+|OPENAI_.+|ANTHROPIC_.+|AI_API_KEY|FACTORY_.+|AWS_.+|NPM_CONFIG_.+)$/i;
 var validationPlanSchema = external_exports.strictObject({
   version: external_exports.literal(1).default(1),
-  profile: external_exports.enum(["npm", "npm-docker"]).default("npm"),
+  profile: external_exports.enum(["npm", "npm-docker", "maven"]).default("npm"),
+  /** Maven only: the JDK the validator installs. Absent means the runner's default JDK. */
+  javaVersion: external_exports.enum(["17", "21", "25"]).optional(),
   timeoutMinutes: external_exports.number().int().min(1).max(30).default(20),
   composeProjectPrefix: external_exports.string().regex(/^[a-z][a-z0-9-]{0,30}-(?:ci|test|validation)$/).default("sf-validation"),
   environment: external_exports.record(
     external_exports.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine((k) => !reserved.test(k), "Reserved validation environment key"),
     external_exports.string().max(1e3).refine((v) => !v.includes("${{"), "Only literal test values are allowed")
   ).default({})
-}).refine((p) => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6e3, "Validation plan limit");
+}).refine((p) => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6e3, "Validation plan limit").refine((p) => p.profile === "maven" || p.javaVersion === void 0, "javaVersion applies to the maven profile only");
 var validationCheckSchema = external_exports.strictObject({
   name: external_exports.enum(["install", "test", "build", "browser-install", "browser", "compose-config", "docker-start", "docker-smoke", "docker-stop", "source-integrity"]),
   status: external_exports.enum(["passed", "failed", "skipped"]),
@@ -41945,33 +41947,48 @@ async function runCodingValidation(options) {
   let paths = [], before = "", docker = false;
   try {
     if (plan.profile === "npm-docker" && !options.hosted) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
-    const packageFile = JSON.parse(await (0, import_promises3.readFile)((0, import_node_path3.join)(root, "package.json"), "utf8"));
-    await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "package-lock.json"));
-    if (!packageFile.scripts?.test || !packageFile.scripts?.build) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
-    const listed = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1e6 });
-    paths = [...listed.split("\0").filter(Boolean), ...artifact.changes.map((c) => c.path)];
-    before = await fingerprint(root, paths);
-    report.status = "failed";
-    report.reason = "CHECK_FAILED";
-    const installed = await check2("install", ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]);
-    if (installed) {
-      await check2("test", ["npm", "test"]);
-      const built = await check2("build", ["npm", "run", "build"]);
-      if (packageFile.scripts["test:e2e"]) {
-        if (built) {
-          try {
-            await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "node_modules/playwright/cli.js"));
-            await check2("browser-install", ["node", "node_modules/playwright/cli.js", "install", "chromium"], 180);
-          } catch {
-          }
-          await check2("browser", ["npm", "run", "test:e2e"]);
+    if (plan.profile === "maven") {
+      if (!(await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "pom.xml"))).isFile()) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
+      const wrapper = await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "mvnw")).then((s) => s.isFile() && (s.mode & 64) !== 0, () => false);
+      const mvn = [wrapper ? "./mvnw" : "mvn", "--batch-mode", "--no-transfer-progress"];
+      const listed = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1e6 });
+      paths = [...listed.split("\0").filter(Boolean), ...artifact.changes.map((c) => c.path)];
+      before = await fingerprint(root, paths);
+      report.status = "failed";
+      report.reason = "CHECK_FAILED";
+      if (await check2("install", [...mvn, "validate"], 600)) {
+        await check2("build", [...mvn, "-DskipTests", "package"], 1200);
+        await check2("test", [...mvn, "verify"], 1500);
+      }
+    } else {
+      const packageFile = JSON.parse(await (0, import_promises3.readFile)((0, import_node_path3.join)(root, "package.json"), "utf8"));
+      await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "package-lock.json"));
+      if (!packageFile.scripts?.test || !packageFile.scripts?.build) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
+      const listed = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1e6 });
+      paths = [...listed.split("\0").filter(Boolean), ...artifact.changes.map((c) => c.path)];
+      before = await fingerprint(root, paths);
+      report.status = "failed";
+      report.reason = "CHECK_FAILED";
+      const installed = await check2("install", ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]);
+      if (installed) {
+        await check2("test", ["npm", "test"]);
+        const built = await check2("build", ["npm", "run", "build"]);
+        if (packageFile.scripts["test:e2e"]) {
+          if (built) {
+            try {
+              await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "node_modules/playwright/cli.js"));
+              await check2("browser-install", ["node", "node_modules/playwright/cli.js", "install", "chromium"], 180);
+            } catch {
+            }
+            await check2("browser", ["npm", "run", "test:e2e"]);
+          } else report.checks.push({ name: "browser", status: "skipped", exitCode: null });
         } else report.checks.push({ name: "browser", status: "skipped", exitCode: null });
-      } else report.checks.push({ name: "browser", status: "skipped", exitCode: null });
-      if (plan.profile === "npm-docker") {
-        const compose = ["docker", "compose", "--file", "compose.yaml", "--project-name", environment.COMPOSE_PROJECT_NAME];
-        if (await check2("compose-config", [...compose, "config", "--quiet"], 60)) {
-          docker = true;
-          if (await check2("docker-start", [...compose, "up", "--build", "-d", "--wait", "--wait-timeout", "180"], 600)) await check2("docker-smoke", ["node", "tests/docker-smoke.mjs"], 300);
+        if (plan.profile === "npm-docker") {
+          const compose = ["docker", "compose", "--file", "compose.yaml", "--project-name", environment.COMPOSE_PROJECT_NAME];
+          if (await check2("compose-config", [...compose, "config", "--quiet"], 60)) {
+            docker = true;
+            if (await check2("docker-start", [...compose, "up", "--build", "-d", "--wait", "--wait-timeout", "180"], 600)) await check2("docker-smoke", ["node", "tests/docker-smoke.mjs"], 300);
+          }
         }
       }
     }
@@ -42005,7 +42022,9 @@ async function runCodingValidation(options) {
 function hostedValidationCommand(target, logs) {
   return async (name, args, seconds, values) => {
     await (0, import_promises3.mkdir)(logs, { recursive: true });
-    const path = `${(0, import_node_path3.dirname)(process.execPath)}:/usr/local/bin:/usr/bin:/bin`;
+    const tool = (value) => value && /^\/[\w./-]+$/.test(value) && !value.includes("..") ? value : void 0;
+    const java = tool(process.env.JAVA_HOME), maven = tool(process.env.SF_MAVEN_HOME);
+    const path = [java && `${java}/bin`, maven && `${maven}/bin`, (0, import_node_path3.dirname)(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].filter(Boolean).join(":");
     return new Promise((resolveExit) => {
       const child = (0, import_node_child_process4.spawn)(
         "sudo",
@@ -42018,6 +42037,7 @@ function hostedValidationCommand(target, logs) {
           "-i",
           "HOME=/home/sf-validator",
           `PATH=${path}`,
+          ...java ? [`JAVA_HOME=${java}`] : [],
           ...Object.entries(values).map(([key, value]) => `${key}=${value}`),
           "timeout",
           "--kill-after=5s",

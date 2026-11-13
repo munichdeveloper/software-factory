@@ -61,8 +61,19 @@ jobs:
         run: |
           sudo adduser --system --home /home/sf-validator --shell /bin/bash --group sf-validator
           sudo install -d -o sf-validator -g sf-validator /home/sf-validator
-          if [[ "$VALIDATION_PROFILE" == npm-docker ]]; then sudo usermod -aG docker sf-validator; fi
+          # Docker on this disposable VM: Compose smoke tests (npm-docker) and Testcontainers (maven).
+          if [[ "$VALIDATION_PROFILE" == npm-docker || "$VALIDATION_PROFILE" == maven ]]; then sudo usermod -aG docker sf-validator; fi
           sudo chmod o+x /home/runner /home/runner/work "$GITHUB_WORKSPACE"
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        if: fromJSON(steps.request.outputs.validation).profile == 'maven' && fromJSON(steps.request.outputs.validation).javaVersion
+        with:
+          distribution: temurin
+          java-version: ${{ fromJSON(steps.request.outputs.validation).javaVersion }}
+      - name: Locate the runner's Maven for the validation account
+        if: fromJSON(steps.request.outputs.validation).profile == 'maven'
+        run: |
+          maven=$(command -v mvn || true)
+          if [[ -n "$maven" ]]; then echo "SF_MAVEN_HOME=$(dirname "$(dirname "$(readlink -f "$maven")")")" >> "$GITHUB_ENV"; fi
       - name: Apply bounded artifact and run checks without model or broker credentials
         env:
           SF_CODING_REQUEST: ${{ steps.request.outputs.request }}
