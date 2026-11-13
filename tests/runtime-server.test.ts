@@ -7,7 +7,7 @@ import { MockPlanner } from '../src/llm/provider.js';
 
 const servers: Server[] = [];
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve())))); });
-async function fixture(merge?: { start: ReturnType<typeof vi.fn> }) {
+async function fixture(merge?: { start: ReturnType<typeof vi.fn>; errors?: string[] }) {
   const cfg = config(), github = new MemoryGitHub(); cfg.execution.engine = 'temporal';
   const controller = { observations: vi.fn(async () => []), gateApproved: vi.fn(async () => false), authorize: vi.fn(async () => ({})),
     publish: vi.fn(), gate: vi.fn(async () => {}), cancel: vi.fn(async () => {}), start: vi.fn(), deployment: vi.fn(async () => ({ workerReady: true })) };
@@ -94,4 +94,10 @@ it('starts the merge pass after a reconciliation with the state it reconciled, w
   expect(start).toHaveBeenCalledTimes(1);
   const [cfg, snapshot] = start.mock.calls[0]! as unknown as [unknown, { issues: unknown[] }];
   expect(cfg).toBe(f.cfg); expect(Array.isArray(snapshot.issues)).toBe(true);
+});
+it('reports what the last merge pass could not do with the next reconciliation', async () => {
+  const f = await fixture({ start: vi.fn(() => null), errors: ['Merge: PR #42: review/update/merge not confirmed (403); no unreviewed merge performed'] });
+  f.cfg.merge.enabled = true;
+  const report = await (await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer' })).json() as { errors: string[] };
+  expect(report.errors).toContain('Merge: PR #42: review/update/merge not confirmed (403); no unreviewed merge performed');
 });
