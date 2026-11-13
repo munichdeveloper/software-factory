@@ -25,6 +25,23 @@ echo "SF_DEPLOY_UPLOADED=$sha"
 `;
 
 /**
+ * Writes the deployment environment received on stdin to
+ * `<root>/releases/<sha>/.sf-deploy.env` (mode 600), in the Compose project directory.
+ * It is always written, empty when the wrapper passes none, so a compose file
+ * can reference it unconditionally. The values travel only through stdin,
+ * never through arguments. Arguments: root, sha.
+ */
+export const environmentScript = `set -euo pipefail
+root=$1 sha=$2
+release="$root/releases/$sha"
+[ -d "$release" ] || { echo "SF_DEPLOY_ERROR=release-missing"; exit 4; }
+umask 077
+cat > "$release/.sf-deploy.env.tmp"
+mv -f -- "$release/.sf-deploy.env.tmp" "$release/.sf-deploy.env"
+echo "SF_DEPLOY_ENVIRONMENT=$sha"
+`;
+
+/**
  * Starts a release with Docker Compose under a stable project name (so named
  * volumes persist), verifies it, switches the "current" link and prunes old
  * releases. On failure the previous release is started again when enabled.

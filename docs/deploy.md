@@ -120,7 +120,33 @@ deployments like every other mutation.
 - Configuration values passed to the host are validated (paths, names, user, host)
   and shell-quoted. Only tracked files of the exact verified commit are uploaded.
 - The application's secrets stay on the host in the env file and never pass
-  through GitHub.
+  through GitHub, unless the wrapper passes them explicitly with `deploy-env`
+  (see below).
+
+## Secrets from GitHub (`deploy-env`)
+
+Secrets that should not be maintained by hand on the host can come from GitHub.
+The wrapper names them in the action's `deploy-env` input, one `NAME=value` per line:
+
+```yaml
+      - uses: munichdeveloper/software-factory@FACTORY_COMMIT_SHA
+        with:
+          mode: deploy
+          deploy-env: |
+            OPENAI_API_KEY=${{ secrets.BROKER_OPENAI_API_KEY }}
+```
+
+Every deployment writes these values to `.sf-deploy.env` (mode 600) in the release
+directory on the host, i.e. the Compose project directory, before it starts the
+release. The file is always written, empty when nothing is passed, so a service can
+list it unconditionally, e.g. `env_file: [/opt/app/app.env, .sf-deploy.env]`; a later
+file wins. The values travel over SSH stdin only, never as arguments, are written
+single-quoted (literal, no Compose interpolation; a single quote is rejected) and
+never logged; the log names the variables only. A name whose secret is unset arrives
+empty, is left out and is reported as a warning. Rotating a secret is a redeploy
+(`workflow_dispatch`). A rollback restarts the previous release with the values it was
+deployed with. Only the deploy job receives these secrets, and only the services that
+list the file see them.
 
 ## Recovery
 
@@ -152,6 +178,9 @@ This repository deploys its own runtime stack (broker, worker, SF Manager and th
   `munichdeveloper/sf-manager` builds `sf-manager:<commit>` on the host after each merge there; a pull request
   here then switches the stack to that commit.
 - Credentials (`*.env`) and `registry.json` stay on the host in the deploy path and never pass through GitHub.
+  The exception is the broker's merge review key: the wrapper passes the repository secret
+  `BROKER_OPENAI_API_KEY` as `OPENAI_API_KEY` through `deploy-env`, and the broker lists `.sf-deploy.env`
+  after `broker.env` (see `docs/temporal-runtime.md`).
 - The public host name of the Manager is read from `SFM_HOST` in the host's `.env`. Without it the compose file
   does not resolve and the deployment fails before any container changes.
 

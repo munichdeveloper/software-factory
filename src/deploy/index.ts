@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { PassThrough } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import type { Config } from '../config/index.js';
 import type { DeployPort, DeploymentState } from './github.js';
-import { activateScript, remoteValue, uploadScript } from './remote.js';
+import { activateScript, environmentScript, remoteValue, uploadScript } from './remote.js';
 import { runProcess, type Transport } from './transport.js';
 
 export type DeployEvent = { name: string; ref: string; payload: Record<string, unknown> };
@@ -63,6 +63,38 @@ export async function planDeploy(config: Config, event: DeployEvent, port: Deplo
   return { deploy: true, sha, source };
 }
 
+export type DeployEnvironment = { values: [string, string][]; empty: string[] };
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+/**
+ * Parses the wrapper's `deploy-env` input: one `NAME=value` per line, typically
+ * `NAME=${{ secrets.X }}`. Blank lines and `#` comments are ignored. A name
+ * whose value is empty (an unset secret) is left out and reported by name.
+ * Values are written single-quoted (literal for Docker Compose), so they cannot
+ * contain a single quote. Errors never include a value.
+ */
+export function parseDeployEnvironment(text: string): DeployEnvironment {
+  const values: [string, string][] = [], empty: string[] = [], seen = new Set<string>();
+  text.replace(/\r\n?/g, '\n').split('\n').forEach((raw, index) => {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) return;
+    const at = line.indexOf('=');
+    const name = at > 0 ? line.slice(0, at).trim() : '';
+    if (!ENV_NAME.test(name)) throw new Error(`deploy-env line ${index + 1} is not NAME=value`);
+    if (seen.has(name)) throw new Error(`deploy-env names ${name} twice`);
+    seen.add(name);
+    const value = line.slice(at + 1).trim();
+    if (value.includes("'")) throw new Error(`deploy-env value of ${name} contains a single quote`);
+    if (value) values.push([name, value]); else empty.push(name);
+  });
+  return { values, empty };
+}
+
+/** Env file content for Docker Compose; single-quoted values are taken literally. */
+export function renderDeployEnvironment(environment: DeployEnvironment): string {
+  return environment.values.map(([name, value]) => `${name}='${value}'\n`).join('');
+}
+
 /** Starts `git archive` for the checked-out commit and returns its tar stream. */
 export function archive(sourceDir: string) {
   const child = spawn('git', ['-C', sourceDir, 'archive', '--format=tar', 'HEAD'], { stdio: ['ignore', 'pipe', 'ignore'] });
@@ -74,7 +106,9 @@ export function archive(sourceDir: string) {
   return { stream, done };
 }
 
-export type DeployContext = { config: Config; sha: string; sourceDir: string; transport: Transport; port: DeployPort; logUrl?: string; log?: (line: string) => void };
+export type DeployContext = { config: Config; sha: string; sourceDir: string; transport: Transport; port: DeployPort; logUrl?: string; log?: (line: string) => void;
+  /** Values from the wrapper's `deploy-env` input, written to the release's `.sf-deploy.env`. */
+  environment?: DeployEnvironment };
 
 /** Uploads the exact commit and activates it on the target, recording a GitHub deployment. */
 export async function executeDeploy(context: DeployContext): Promise<DeployReport> {
@@ -100,6 +134,14 @@ export async function executeDeploy(context: DeployContext): Promise<DeployRepor
       throw new Error(`Deployment upload failed (exit ${upload.code})`);
     }
     log(`Uploaded ${sha} to ${deploy.path}/releases/${sha}`);
+    const environment = context.environment ?? { values: [], empty: [] };
+    const written = await transport.run(environmentScript, [deploy.path, sha], Readable.from([renderDeployEnvironment(environment)]), timeoutMs);
+    if (written.code !== 0 || remoteValue(written.stdout, 'SF_DEPLOY_ENVIRONMENT') !== sha) {
+      log(written.stderr.trim());
+      throw new Error(`Deployment environment could not be written (exit ${written.code})`);
+    }
+    if (environment.values.length) log(`Deployment environment: ${environment.values.map(([name]) => name).join(', ')}`);
+    if (environment.empty.length) log(`Deployment environment left out (empty): ${environment.empty.join(', ')}`);
     const project = deploy.project ?? deploy.path.split('/').at(-1)!.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
     const result = await transport.run(activateScript, [deploy.path, sha, project, deploy.composeFile, deploy.envFile ?? '',
       String(deploy.keepReleases), deploy.healthcheck.url ?? '', String(deploy.healthcheck.timeoutSeconds), deploy.rollback ? '1' : '0'], undefined, timeoutMs);

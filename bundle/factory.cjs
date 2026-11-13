@@ -41355,6 +41355,15 @@ rm -rf -- "$release"
 mv -- "$release.upload" "$release"
 echo "SF_DEPLOY_UPLOADED=$sha"
 `;
+var environmentScript = `set -euo pipefail
+root=$1 sha=$2
+release="$root/releases/$sha"
+[ -d "$release" ] || { echo "SF_DEPLOY_ERROR=release-missing"; exit 4; }
+umask 077
+cat > "$release/.sf-deploy.env.tmp"
+mv -f -- "$release/.sf-deploy.env.tmp" "$release/.sf-deploy.env"
+echo "SF_DEPLOY_ENVIRONMENT=$sha"
+`;
 var activateScript = `set -euo pipefail
 root=$1 sha=$2 project=$3 compose_file=$4 env_file=$5 keep=$6 health_url=$7 health_timeout=$8 rollback=$9
 release="$root/releases/$sha"
@@ -41558,6 +41567,28 @@ async function planDeploy(config2, event, port) {
   }
   return { deploy: true, sha: sha4, source };
 }
+var ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+function parseDeployEnvironment(text) {
+  const values = [], empty = [], seen = /* @__PURE__ */ new Set();
+  text.replace(/\r\n?/g, "\n").split("\n").forEach((raw, index) => {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) return;
+    const at = line.indexOf("=");
+    const name = at > 0 ? line.slice(0, at).trim() : "";
+    if (!ENV_NAME.test(name)) throw new Error(`deploy-env line ${index + 1} is not NAME=value`);
+    if (seen.has(name)) throw new Error(`deploy-env names ${name} twice`);
+    seen.add(name);
+    const value = line.slice(at + 1).trim();
+    if (value.includes("'")) throw new Error(`deploy-env value of ${name} contains a single quote`);
+    if (value) values.push([name, value]);
+    else empty.push(name);
+  });
+  return { values, empty };
+}
+function renderDeployEnvironment(environment) {
+  return environment.values.map(([name, value]) => `${name}='${value}'
+`).join("");
+}
 function archive(sourceDir) {
   const child = (0, import_node_child_process3.spawn)("git", ["-C", sourceDir, "archive", "--format=tar", "HEAD"], { stdio: ["ignore", "pipe", "ignore"] });
   const stream = new import_node_stream.PassThrough({ highWaterMark: 1 << 20 });
@@ -41595,6 +41626,14 @@ async function executeDeploy(context) {
       throw new Error(`Deployment upload failed (exit ${upload.code})`);
     }
     log(`Uploaded ${sha4} to ${deploy.path}/releases/${sha4}`);
+    const environment = context.environment ?? { values: [], empty: [] };
+    const written = await transport.run(environmentScript, [deploy.path, sha4], import_node_stream.Readable.from([renderDeployEnvironment(environment)]), timeoutMs);
+    if (written.code !== 0 || remoteValue(written.stdout, "SF_DEPLOY_ENVIRONMENT") !== sha4) {
+      log(written.stderr.trim());
+      throw new Error(`Deployment environment could not be written (exit ${written.code})`);
+    }
+    if (environment.values.length) log(`Deployment environment: ${environment.values.map(([name]) => name).join(", ")}`);
+    if (environment.empty.length) log(`Deployment environment left out (empty): ${environment.empty.join(", ")}`);
     const project = deploy.project ?? deploy.path.split("/").at(-1).toLowerCase().replace(/[^a-z0-9_-]/g, "-");
     const result = await transport.run(activateScript, [
       deploy.path,
@@ -42060,6 +42099,8 @@ sha=${decision.deploy ? decision.sha : ""}
         console.log(JSON.stringify({ correlationId, outcome: "skipped", reason: decision.deploy ? "stale-or-unconfigured" : decision.reason }));
         return;
       }
+      const environment = parseDeployEnvironment(process.env.DEPLOY_ENV ?? "");
+      if (environment.empty.length) console.log(`::warning title=Software Factory deploy::deploy-env without value (secret not set?): ${environment.empty.join(", ")}`);
       const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}` : void 0;
       const report2 = await executeDeploy({
         config: config2,
@@ -42068,6 +42109,7 @@ sha=${decision.deploy ? decision.sha : ""}
         transport: new SshTransport(target),
         port,
         logUrl: runUrl,
+        environment,
         log: (line) => console.log(line)
       });
       await writeSummary(deploySummary(report2, decision, config2.deploy.environment));

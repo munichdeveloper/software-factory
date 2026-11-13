@@ -16,7 +16,7 @@ import { GitHubMergePort } from './merge/github.js';
 import { OpenAIMergeReviewer } from './merge/reviewer.js';
 import { MergeManager } from './merge/manager.js';
 import { GitHubDeployPort } from './deploy/github.js';
-import { deploySummary, executeDeploy, planDeploy, readEvent } from './deploy/index.js';
+import { deploySummary, executeDeploy, parseDeployEnvironment, planDeploy, readEvent } from './deploy/index.js';
 import { resolveTarget } from './deploy/target.js';
 import { SshTransport } from './deploy/transport.js';
 import { RuntimeHttpClient } from './runtime/client.js';
@@ -102,10 +102,12 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       if (!decision.deploy || decision.sha !== values.sha || mutationFree || !target || 'missing' in target) {
         console.log(JSON.stringify({ correlationId, outcome: 'skipped', reason: decision.deploy ? 'stale-or-unconfigured' : decision.reason })); return;
       }
+      const environment = parseDeployEnvironment(process.env.DEPLOY_ENV ?? '');
+      if (environment.empty.length) console.log(`::warning title=Software Factory deploy::deploy-env without value (secret not set?): ${environment.empty.join(', ')}`);
       const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID
         ? `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined;
       const report = await executeDeploy({ config, sha: decision.sha, sourceDir: values.source ?? '.', transport: new SshTransport(target),
-        port, logUrl: runUrl, log: line => console.log(line) });
+        port, logUrl: runUrl, environment, log: line => console.log(line) });
       await writeSummary(deploySummary(report, decision, config.deploy.environment));
       console.log(JSON.stringify({ correlationId, ...report }));
       if (report.outcome !== 'deployed') process.exitCode = 1;

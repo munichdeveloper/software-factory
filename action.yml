@@ -43,6 +43,11 @@ inputs:
   deploy-port:
     description: Deploy mode only. SSH port when deploy.port is not configured
     default: ''
+  deploy-env:
+    description: >-
+      Deploy mode only. NAME=value lines (usually from secrets) written to .sf-deploy.env (mode 600) in the
+      release directory on the host, for the compose file's env_file; empty values are left out
+    default: ''
 runs:
   using: composite
   steps:
@@ -134,4 +139,5 @@ runs:
         DEPLOY_HOST: ${{ inputs.deploy-host }}
         DEPLOY_USER: ${{ inputs.deploy-user }}
         DEPLOY_PORT: ${{ inputs.deploy-port }}
+        DEPLOY_ENV: ${{ inputs.deploy-env }}
       run: node "$GITHUB_ACTION_PATH/bundle/factory.cjs" deploy --config-path "$CONFIG" --sha "$SHA" --source "$GITHUB_WORKSPACE/.runtime/deploy-source"

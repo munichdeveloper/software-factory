@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, readdir, readlink, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, readlink, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { configSchema, loadConfig, type Config } from '../src/config/index.js';
-import { executeDeploy, planDeploy, readEvent, deploySummary, type DeployEvent } from '../src/deploy/index.js';
+import { executeDeploy, parseDeployEnvironment, planDeploy, readEvent, renderDeployEnvironment, deploySummary, type DeployEvent } from '../src/deploy/index.js';
 import type { CheckRun, DeployPort, DeploymentState } from '../src/deploy/github.js';
 import { bashCommand, remoteValue, shellQuote } from '../src/deploy/remote.js';
 import { runProcess, SshTransport, type Transport } from '../src/deploy/transport.js';
@@ -120,6 +120,25 @@ describe('connection settings', () => {
   });
 });
 
+describe('deployment environment', () => {
+  it('parses NAME=value lines, leaves out empty values and renders literal values', () => {
+    const parsed = parseDeployEnvironment('# merge review\r\nOPENAI_API_KEY=sk-a$b=c\n\n  EMPTY=  \nOTHER = x y \n');
+    expect(parsed).toEqual({ values: [['OPENAI_API_KEY', 'sk-a$b=c'], ['OTHER', 'x y']], empty: ['EMPTY'] });
+    expect(renderDeployEnvironment(parsed)).toBe("OPENAI_API_KEY='sk-a$b=c'\nOTHER='x y'\n");
+    expect(parseDeployEnvironment('')).toEqual({ values: [], empty: [] });
+  });
+  it.each([
+    ['no-equals-sign', 'line 1 is not NAME=value'],
+    ['=value', 'line 1 is not NAME=value'],
+    ['1A=x', 'line 1 is not NAME=value'],
+    ['A=x\nA=y', 'names A twice'],
+    ["A=it's", 'value of A contains a single quote']
+  ])('rejects %j without echoing the value', (text, message) => {
+    expect(() => parseDeployEnvironment(text)).toThrow(message);
+    try { parseDeployEnvironment(text); } catch (error) { expect(String(error)).not.toContain('value=x'); }
+  });
+});
+
 describe('shell quoting', () => {
   it('passes arbitrary values unchanged through a remote shell', () => {
     const values = ["it's", '$(id)', '`x`', 'a b', ''];
@@ -161,9 +180,9 @@ describe('docker-ssh deployment', () => {
     git('add', '-A'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'c', '--allow-empty');
     return git('rev-parse', 'HEAD');
   };
-  const deploy = (sha: string, deployConfig: Record<string, unknown> = {}, port = new FakePort()) =>
+  const deploy = (sha: string, deployConfig: Record<string, unknown> = {}, port = new FakePort(), environment?: string) =>
     executeDeploy({ config: config({ path: join(root, 'srv', 'app'), project: 'app', healthcheck: { timeoutSeconds: 10 }, ...deployConfig }),
-      sha, sourceDir: repo, transport: new LocalTransport(env), port });
+      sha, sourceDir: repo, transport: new LocalTransport(env), port, environment: environment === undefined ? undefined : parseDeployEnvironment(environment) });
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'sf-deploy-test-'));
     repo = join(root, 'repo'); bin = join(root, 'bin'); log = join(root, 'docker.log');
@@ -187,6 +206,24 @@ describe('docker-ssh deployment', () => {
     expect(await readFile(log, 'utf8')).toContain(`up ${sha} project=app env=SECRET=1 release=${sha}`);
     expect(port.created).toEqual([{ sha, environment: 'production' }]);
     expect(port.statuses.map(s => s.state)).toEqual(['in_progress', 'success']);
+  });
+
+  it('writes the deployment environment privately into the release before starting it', async () => {
+    const sha = await commit({ 'compose.yaml': 'services: {}\n' });
+    const lines: string[] = [];
+    const report = await executeDeploy({ config: config({ path: join(root, 'srv', 'app'), project: 'app', healthcheck: { timeoutSeconds: 10 } }),
+      sha, sourceDir: repo, transport: new LocalTransport(env), port: new FakePort(), log: line => lines.push(line),
+      environment: parseDeployEnvironment('OPENAI_API_KEY=sk-test\nMISSING=') });
+    expect(report.outcome).toBe('deployed');
+    const file = join(root, 'srv', 'app', 'releases', sha, '.sf-deploy.env');
+    expect(await readFile(file, 'utf8')).toBe("OPENAI_API_KEY='sk-test'\n");
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    expect(lines).toContain('Deployment environment: OPENAI_API_KEY');
+    expect(lines).toContain('Deployment environment left out (empty): MISSING');
+    expect(lines.join('\n')).not.toContain('sk-test');
+    const next = await commit({ 'app.txt': 'v2' });
+    expect((await deploy(next)).outcome).toBe('deployed');
+    expect(await readFile(join(root, 'srv', 'app', 'releases', next, '.sf-deploy.env'), 'utf8')).toBe('');
   });
 
   it('keeps only the configured number of releases', async () => {
