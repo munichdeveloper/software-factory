@@ -25,6 +25,7 @@ import { RuntimeCodingPublisher } from './publisher.js';
 import { IssueScopedGitHub } from './issue-scope.js';
 import { defaultValidationPlan, validationPlanSchema } from './validation-contract.js';
 import { RuntimeMerge } from './merge.js';
+import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
 import { OpenAIMergeReviewer } from '../merge/reviewer.js';
@@ -145,7 +146,8 @@ export async function main(args = process.argv.slice(2)) {
       await store.register(registration);
       return binding;
     };
-    const server = runtimeServer({ managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register });
+    const server = runtimeServer({ managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
+      ...(process.env.SLACK_BOT_TOKEN ? { notifications: new SlackSink(process.env.SLACK_BOT_TOKEN) } : {}) });
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
     console.log(JSON.stringify({ service: 'factory-runtime', port, repositories: bindings.map(b => b.repository.repositoryId) }));

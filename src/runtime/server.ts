@@ -9,6 +9,7 @@ import { workerResultSchema } from '../workers/contract.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import type { Registration, RuntimeStore } from './store.js';
 import type { RuntimeMerge } from './merge.js';
+import type { NotificationSink } from '../notifications/slack.js';
 
 export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController;
   /** A planner, or a choice made from the repository configuration that is current at each reconciliation. */
@@ -17,7 +18,9 @@ export interface RuntimeBinding { repository: RuntimeRepository; controller: Run
   merge?: RuntimeMerge }
 export interface ServerOptions { managerToken: string; workerToken: string; bindings: RuntimeBinding[]; store: RuntimeStore;
   /** Binds and persists a repository the SF Manager rolls out to Temporal; absent where the runtime takes no registrations. */
-  register?: (registration: Registration) => Promise<RuntimeBinding> }
+  register?: (registration: Registration) => Promise<RuntimeBinding>;
+  /** Slack delivery for repositories whose configuration enables notifications (the broker's own bot token). */
+  notifications?: NotificationSink }
 const registrationSchema = z.strictObject({ repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/), githubInstallationId: z.number().int().positive().safe() });
 const secureEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 const actorSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}(?:\[bot\])?$/);
@@ -89,7 +92,8 @@ export function runtimeServer(options: ServerOptions) {
         const config = await binding.repository.config();
         if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
         const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
-        const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller });
+        const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller,
+          ...(options.notifications ? { notifications: options.notifications } : {}) });
         const report = await options.store.locked(binding.repository.repositoryId, 'manager', () => manager.run());
         if (manager.lastSnapshot) void binding.merge?.start(config, manager.lastSnapshot);
         // The merge pass runs after the response; what its last pass could not do is reported here.

@@ -43,3 +43,4 @@ jobs:
           # Written to the release's .sf-deploy.env, which the runtime broker reads after broker.env.
           deploy-env: |
             OPENAI_API_KEY=${{ secrets.BROKER_OPENAI_API_KEY }}
+            SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
