@@ -117,8 +117,9 @@ export class GitHubClient implements GitHubPort {
     // reading the timeline and comments of every task ever closed on each reconciliation is what exhausts the
     // installation's rate limit as a repository ages. Any write to such an issue makes it current again.
     const current = issues.filter(i => i.state === 'open' || Date.now() - Date.parse(i.updatedAt) < settledAfterMs);
-    // The timeline answers reopening and blocking questions, which only an open task raises.
-    for (const issue of current) if (issue.state === 'open') await this.withTimeline(issue);
+    // Same set as the comments: the Manager compares a task's block history with the live issue before it acts,
+    // also on a closed task it still moves to done; a task without that history would never pass the check.
+    for (const issue of current) await this.withTimeline(issue);
     const comments = new Map<number, Comment[]>(issues.map(i => [i.number, []]));
     for (const issue of current) comments.set(issue.number, await this.comments(issue.number));
     const dependencyStates = new Map<number, boolean>();

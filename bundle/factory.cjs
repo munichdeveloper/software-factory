@@ -39153,7 +39153,7 @@ var GitHubClient = class {
     if (!repo.has_issues) throw new Error("GitHub Issues must be enabled");
     const issues = rows.filter((i) => !i.pull_request).map(normalizeIssue);
     const current = issues.filter((i) => i.state === "open" || Date.now() - Date.parse(i.updatedAt) < settledAfterMs);
-    for (const issue2 of current) if (issue2.state === "open") await this.withTimeline(issue2);
+    for (const issue2 of current) await this.withTimeline(issue2);
     const comments = new Map(issues.map((i) => [i.number, []]));
     for (const issue2 of current) comments.set(issue2.number, await this.comments(issue2.number));
     const dependencyStates = /* @__PURE__ */ new Map();
