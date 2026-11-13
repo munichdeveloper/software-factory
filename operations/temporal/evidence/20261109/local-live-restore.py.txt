@@ -1,0 +1,78 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import json,subprocess as sp,time,secrets,hashlib
+
+root=Path(__file__).resolve().parent.parent
+private=root/'work/restore-20261109-validated.private'
+package=root/'outputs/temporal-operations'
+name='sf-wf06b-local-20261109';pg=name+'-db';server=name+'-server';worker=name+'-worker'
+label='sf.wf06b=20261109'
+pg_image='postgres@sha256:5264710be20f409750ac6dc4e5706dcef929c87e241605463f0f9aefa932a8d9'
+server_image='temporalio/server@sha256:7bf69188a6232fea14869b9cef3d94aa82a1601d99517f7e86c71f22da4e0670'
+worker_image='sf-wf06b-worker:20261109'
+manifest=json.loads((package/'validated-live-backup-manifest.json').read_text())
+gate=json.loads((private/'runtime/ops/gate-before-backup.json').read_text())
+created=[];network_created=False;started=time.monotonic()
+def run(args,**kw):return sp.run(args,check=True,capture_output=True,timeout=120,**kw).stdout
+def inspect(target):return json.loads(run(['docker','inspect',target]))[0]
+def mount(path,target):return ['--mount','type=bind,source='+str(path)+',target='+target+',readonly']
+for target in (pg,server,worker):
+ assert sp.run(['docker','inspect',target],stdout=sp.DEVNULL,stderr=sp.DEVNULL).returncode!=0,'Existing container'
+assert sp.run(['docker','network','inspect',name],stdout=sp.DEVNULL,stderr=sp.DEVNULL).returncode!=0,'Existing network'
+password=secrets.token_urlsafe(32)
+pg_env=private/'postgres.env';pg_env.write_text('POSTGRES_USER=temporal_admin\nPOSTGRES_PASSWORD='+password+'\n')
+server_env=private/'server.env';server_env.write_text('DB=postgres12\nPOSTGRES_USER=temporal_admin\nPOSTGRES_PWD='+password+'\nPOSTGRES_SEEDS='+pg+'\nDB_PORT=5432\nNUM_HISTORY_SHARDS=32\nBIND_ON_IP=0.0.0.0\nDYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/sf-poc.yaml\n')
+receipt={'snapshotId':manifest['snapshotId'],'cipherSha256':manifest['sha256'],'startedAt':datetime.now(timezone.utc).isoformat(),'isolatedOnUserComputer':True,'noPublishedPorts':True,'noSourceVpcConnection':True,'sourceGateRunId':gate['runId']}
+try:
+ run(['docker','network','create','--internal','--label',label,name]);network_created=True
+ assert inspect(name)['Internal'] is True
+ run(['docker','run','-d','--name',pg,'--label',label,'--network',name,'--memory','768m','--cpus','0.5','--tmpfs','/var/lib/postgresql/data:rw,size=768m','--env-file',str(pg_env),pg_image]);created.append(pg)
+ for _ in range(60):
+  if sp.run(['docker','exec',pg,'pg_isready','-U','temporal_admin'],stdout=sp.DEVNULL,stderr=sp.DEVNULL).returncode==0:break
+  time.sleep(1)
+ for db in ('temporal','temporal_visibility'):
+  assert hashlib.sha256((private/(db+'.dump')).read_bytes()).hexdigest()==manifest['databaseHashes'][db+'.dump']
+  run(['docker','exec',pg,'createdb','-U','temporal_admin',db])
+  with (private/(db+'.dump')).open('rb') as stream:run(['docker','exec','-i',pg,'pg_restore','--exit-on-error','--no-owner','--no-privileges','-U','temporal_admin','-d',db],stdin=stream)
+ run(['docker','run','-d','--name',server,'--label',label,'--network',name,'--network-alias','temporal','--memory','1g','--cpus','0.75','--cap-drop','ALL','--security-opt','no-new-privileges',*mount(private/'runtime/dynamicconfig','/etc/temporal/config/dynamicconfig'),'--env-file',str(server_env),server_image]);created.append(server)
+ run(['docker','run','-d','--name',worker,'--label',label,'--network',name,'--memory','512m','--cpus','0.5','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--tmpfs','/tmp:rw,size=64m','-e','TEMPORAL_ADDRESS='+server+':7233','-e','TEMPORAL_NAMESPACE=software-factory-poc','-e','TEMPORAL_TASK_QUEUE='+gate['taskQueue'],worker_image]);created.append(worker)
+ verify=['docker','run','--rm','--label',label,'--network',name,'--memory','256m','--cpus','0.5','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',*mount(private/'verify.cjs','/app/verify.cjs'),*mount(private/'runtime/ops/gate-before-backup.json','/app/gate.json'),'-e','TEMPORAL_ADDRESS='+server+':7233','--entrypoint','node',worker_image,'/app/verify.cjs']
+ for attempt in range(20):
+  result=sp.run(verify,capture_output=True,timeout=45)
+  if result.returncode==0:break
+  if b'AssertionError' in result.stderr:raise RuntimeError('RESTORE_ASSERTION_FAILED')
+  time.sleep(2)
+ assert result.returncode==0,'RESTORE_VERIFICATION_FAILED'
+ receipt.update(json.loads(result.stdout))
+ receipt['images']={s:inspect(s)['Image'] for s in created}
+ assert all(not inspect(s)['HostConfig']['PortBindings'] for s in created)
+ receipt['recoveryElapsedSeconds']=round(time.monotonic()-started,3)
+ receipt['backupToRecoveredGateSeconds']=round((datetime.now(timezone.utc)-datetime.fromisoformat(manifest['createdAt'])).total_seconds(),3)
+ receipt['withinFourHourTarget']=receipt['backupToRecoveredGateSeconds']<14400
+ run(['docker','stop','--time','10',server])
+ probe=['docker','run','--rm','--label',label,'--network',name,'--memory','256m','--cpus','0.3','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',*mount(package/'health.mjs','/app/ops-health.mjs'),'--entrypoint','node',worker_image,'/app/ops-health.mjs']
+ at=time.monotonic();outage=sp.run(probe,capture_output=True,timeout=25)
+ observed=json.loads(outage.stdout);assert observed['ok'] is False and outage.returncode!=0
+ receipt['isolatedTemporalOutage']={'detected':True,'elapsedSeconds':round(time.monotonic()-at,3),'code':observed['code'],'sourceStopped':False}
+ receipt['passed']=True
+except Exception as error:
+ receipt['passed']=False;receipt['errorType']=type(error).__name__
+ # Logs remain in the protected test directory for diagnosis; never publish their raw contents.
+ for container in created:
+  logs=sp.run(['docker','logs',container],capture_output=True)
+  (private/(container+'.log')).write_bytes(logs.stdout+logs.stderr)
+ raise
+finally:
+ cleanup=[]
+ for container in reversed(created):
+  current=inspect(container)
+  assert current['Config']['Labels'].get('sf.wf06b')=='20261109'
+  run(['docker','rm','--force',container]);cleanup.append(container)
+ if network_created:
+  assert inspect(name)['Labels'].get('sf.wf06b')=='20261109'
+  run(['docker','network','rm',name])
+ for path in (pg_env,server_env):
+  if path.exists():path.unlink()
+ receipt['removedOnlyLabeledTestContainers']=cleanup;receipt['testNetworkRemoved']=network_created
+ (package/'local-live-restore-receipt.json').write_text(json.dumps(receipt,indent=2))
+print(json.dumps(receipt))

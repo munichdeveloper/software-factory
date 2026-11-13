@@ -1,0 +1,21 @@
+{
+  "fault": "separate test config with strict SSH host-key rejection; no source outage",
+  "incident": {
+    "status": "sent",
+    "code": "TEMPORAL_UNAVAILABLE",
+    "kind": "incident",
+    "openedAt": "2026-11-09T09:09:58.062360+00:00",
+    "permalink": "https://digitalsmallbusiness.slack.com/archives/C0A5XUJFZPF/p1794215416691039"
+  },
+  "recovery": {
+    "status": "sent",
+    "code": "TEMPORAL_UNAVAILABLE",
+    "kind": "recovery",
+    "openedAt": "2026-11-09T09:10:38.184864+00:00",
+    "permalink": "https://digitalsmallbusiness.slack.com/archives/C0A5XUJFZPF/p1794215455259159"
+  },
+  "preSendUnknownPersisted": true,
+  "reconciledBeforeAck": true,
+  "repeatedIncidentDidNotResend": true,
+  "repeatedHealthyCheckDidNotResend": true
+}
