@@ -31,7 +31,7 @@ jobs:
       deployments: write
       actions: read
     steps:
-      - uses: munichdeveloper/software-factory@291e9f4b3ac6c85cea636b7b2384a14191c79f22
+      - uses: munichdeveloper/software-factory@cc544838ecc917bf40ac7485e666a04d28b0a8d5
         with:
           mode: deploy
           dry-run: ${{ inputs.dry_run || false }}
@@ -40,3 +40,6 @@ jobs:
           deploy-host: ${{ secrets.DEPLOY_HOST || vars.DEPLOY_HOST }}
           deploy-user: ${{ secrets.DEPLOY_USER || vars.DEPLOY_USER }}
           deploy-port: ${{ vars.DEPLOY_PORT }}
+          # Written to the release's .sf-deploy.env, which the runtime broker reads after broker.env.
+          deploy-env: |
+            OPENAI_API_KEY=${{ secrets.BROKER_OPENAI_API_KEY }}
