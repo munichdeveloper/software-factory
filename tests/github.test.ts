@@ -69,7 +69,7 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     expect(state.issues.map(i => i.number)).toEqual([1, 2, 3]);
     expect([...state.comments.keys()]).toEqual([1, 2, 3]);
     expect(requested.filter(p => p.includes('/issues/3/'))).toEqual([]);
-    expect(requested.filter(p => p.endsWith('/timeline'))).toEqual(['/repos/owner/target/issues/1/timeline']);
+    expect(requested.filter(p => p.endsWith('/timeline')).sort()).toEqual(['/repos/owner/target/issues/1/timeline', '/repos/owner/target/issues/2/timeline']);
     expect(requested.filter(p => p.endsWith('/comments')).sort()).toEqual(['/repos/owner/target/issues/1/comments', '/repos/owner/target/issues/2/comments']);
   });
   it('bootstrap preserves existing labels and is repeatable', async () => {
