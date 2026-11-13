@@ -12,7 +12,8 @@ async function fixture(merge?: { start: ReturnType<typeof vi.fn>; errors?: strin
   const controller = { observations: vi.fn(async () => []), gateApproved: vi.fn(async () => false), authorize: vi.fn(async () => ({})),
     publish: vi.fn(), gate: vi.fn(async () => {}), cancel: vi.fn(async () => {}), start: vi.fn(), deployment: vi.fn(async () => ({ workerReady: true })) };
   const repository = { repositoryId: 42, github, config: async () => cfg };
-  const store = { list: vi.fn(async () => []), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
+  const store = { list: vi.fn(async () => []), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()),
+    tryLocked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
   const managerToken = 'm'.repeat(32), workerToken = 'w'.repeat(32);
   const server = runtimeServer({ managerToken, workerToken, bindings: [{ repository, controller, planner: new MockPlanner(), merge } as unknown as RuntimeBinding], store: store as unknown as RuntimeStore });
   servers.push(server); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -56,13 +57,14 @@ describe('private runtime HTTP boundaries', () => {
   });
   it('serializes manager reconciliation and refuses a repository using another engine', async () => {
     const f = await fixture(); expect((await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer' })).status).toBe(200);
-    expect(f.store.locked).toHaveBeenCalled(); f.cfg.execution.engine = 'github-actions';
+    expect(f.store.tryLocked).toHaveBeenCalledWith(42, 'manager', expect.any(Function)); f.cfg.execution.engine = 'github-actions';
     expect((await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer' })).status).toBe(409);
   });
   it('chooses the planner from the configuration that is current at each reconciliation', async () => {
     const cfg = config(), github = new MemoryGitHub(); cfg.execution.engine = 'temporal';
     const controller = { observations: vi.fn(async () => []) }, seen: string[] = [];
-    const store = { locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
+    const store = { locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()),
+    tryLocked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
     const planner = (current: typeof cfg) => { seen.push(current.llm.provider); return new MockPlanner(); };
     const server = runtimeServer({ managerToken: 'm'.repeat(32), workerToken: 'w'.repeat(32), store: store as unknown as RuntimeStore,
       bindings: [{ repository: { repositoryId: 42, github, config: async () => cfg }, controller, planner } as unknown as RuntimeBinding] });
@@ -100,4 +102,12 @@ it('reports what the last merge pass could not do with the next reconciliation',
   f.cfg.merge.enabled = true;
   const report = await (await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer' })).json() as { errors: string[] };
   expect(report.errors).toContain('Merge: PR #42: review/update/merge not confirmed (403); no unreviewed merge performed');
+});
+
+it('answers a reconciliation that overlaps a running one at once instead of queueing it', async () => {
+  const f = await fixture();
+  f.store.tryLocked.mockImplementationOnce(async () => { throw new Error('BUSY'); });
+  const busy = await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer' });
+  expect(busy.status).toBe(409); expect(await busy.json()).toEqual({ code: 'RUNTIME_OPERATION_BLOCKED' });
+  expect(f.store.locked).not.toHaveBeenCalledWith(42, 'manager', expect.any(Function));
 });

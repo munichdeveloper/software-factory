@@ -94,7 +94,9 @@ export function runtimeServer(options: ServerOptions) {
         const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
         const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller,
           ...(options.notifications ? { notifications: options.notifications } : {}) });
-        const report = await options.store.locked(binding.repository.repositoryId, 'manager', () => manager.run());
+        // A reconciliation still running answers the next request with BUSY instead of queueing it: callers retry on a
+        // schedule and give up after their own timeout, so waiting requests would pile up and exhaust the database pool.
+        const report = await options.store.tryLocked(binding.repository.repositoryId, 'manager', () => manager.run());
         if (manager.lastSnapshot) void binding.merge?.start(config, manager.lastSnapshot);
         // The merge pass runs after the response; what its last pass could not do is reported here.
         if (config.merge.enabled && binding.merge?.errors.length) report.errors.push(...binding.merge.errors);
