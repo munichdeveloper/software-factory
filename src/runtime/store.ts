@@ -56,6 +56,19 @@ export class RuntimeStore {
       [item.repositoryId, item.repository, item.githubInstallationId]);
     if (rows[0]?.repository !== item.repository || Number(rows[0]?.installation_id) !== item.githubInstallationId) throw new Error('REGISTRATION_CONFLICT');
   }
+  /**
+   * Like locked(), but never waits: when another holder has the lock it fails with BUSY at once. A caller that may
+   * repeat while a long holder runs (scheduled reconciliations) must not park one pool connection per waiting request.
+   */
+  async tryLocked<T>(repositoryId: number, executionId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect(), key = `${repositoryId}:${executionId}`;
+    try {
+      const { rows } = await client.query<{ acquired: boolean }>('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS acquired', [key]);
+      if (!rows[0]?.acquired) throw new Error('BUSY');
+      try { return await this.context.run(client, () => work(client)); }
+      finally { await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [key]); }
+    } finally { client.release(); }
+  }
   async locked<T>(repositoryId: number, executionId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
     const inherited = this.context.getStore(), client = inherited ?? await this.pool.connect(), key = `${repositoryId}:${executionId}`;
     try {
