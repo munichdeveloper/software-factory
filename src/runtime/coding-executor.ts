@@ -42,6 +42,14 @@ export interface CodingExecutionPort {
   cancel(snapshot: RunSnapshot, binding: string): Promise<void>;
 }
 /** Actions supplies disposable compute only. Temporal/broker retain dispatch, gate and publication authority. */
+/** Sent to executions dispatched before `validationGuidance`; kept verbatim so their requests stay identical. */
+export const legacyValidationGuidance = '\n\nFactory execution context: a separate hosted validation job runs project tests, build, browser and configured Docker checks after coding. Implement the change and run checks available here. Report unavailable and manual checks accurately; never claim an unperformed check. A blocked implementation remains reviewable.';
+/**
+ * The coding sandbox has no network, so installing dependencies or running the project's build and tests there only
+ * fails and costs time. Those checks run in the independent validation job, whose result decides (controla#63).
+ */
+export const validationGuidance = '\n\nFactory execution context: your environment has no network access. After coding, a separate hosted validation job installs the dependencies and runs the project\'s build, tests, browser and configured Docker checks on your change; its result decides whether the change is accepted. Do not install dependencies or try to run the project\'s build, test, lint or browser commands here; acceptance criteria that name such checks are covered by that job. Offline checks such as reading code or `git diff --check` are fine. Report `success` when the implementation is complete, and say which checks you left to the validation job. Report `blocked` only when the implementation itself is incomplete or cannot be done as specified. Never claim a check you did not perform.';
+
 export class ActionsCodingExecutor implements CodingExecutionPort {
   constructor(private api: Octokit, private effects: (snapshot: RunSnapshot, binding: string) => EffectPort,
     private authorize: (snapshot: RunSnapshot, binding: string) => Promise<unknown>,
@@ -129,9 +137,17 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     if (metadata.id !== snapshot.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
     const wrapper = (await this.api.repos.getContent({ ...target, path: `.github/workflows/${workflow}`, ref: snapshot.baseSha })).data;
     if (!('content' in wrapper) || wrapper.encoding !== 'base64' || Buffer.from(wrapper.content, 'base64').toString('utf8') !== executorWrapper(snapshot.release.factorySha, snapshot.release.harnessSha, !!snapshot.validationPlan)) throw new Error('EXECUTOR_WRAPPER_RELEASE_MISMATCH');
-    const context = '\n\nFactory execution context: a separate hosted validation job runs project tests, build, browser and configured Docker checks after coding. Implement the change and run checks available here. Report unavailable and manual checks accurately; never claim an unperformed check. A blocked implementation remains reviewable.';
-    const description = snapshot.validationPlan && input.description.length + context.length <= 20000 ? input.description + context : input.description;
     const effects = this.effects(snapshot, binding), authorize = () => this.authorize(snapshot, binding);
+    // Resolved once and stored, like the coding context below: an execution dispatched before this guidance existed
+    // keeps the text it was sent, so its later polls rebuild the identical request.
+    const guidance = snapshot.validationPlan ? (await effects.perform({ key: 'coding-guidance', payload: { baseSha: snapshot.baseSha }, authorize, contentAddressed: true,
+      validate: z.strictObject({ text: z.string().max(2000) }).parse, reconcile: async () => null,
+      apply: async () => {
+        try { await this.api.git.getRef({ ...target, ref: `heads/sf-temporal-executor/${input.executionId}` }); return { text: legacyValidationGuidance }; }
+        catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
+        return { text: validationGuidance };
+      } })).text : '';
+    const description = guidance && input.description.length + guidance.length <= 20000 ? input.description + guidance : input.description;
     // Resolved once and stored: later polls rebuild the identical request even when a named branch has moved since.
     const extra = await effects.perform({ key: 'coding-context', payload: { baseSha: snapshot.baseSha, rework: reworkOf(input) }, authorize, contentAddressed: true,
       validate: z.strictObject({ entries: z.string().max(1000).array().max(30) }).parse, reconcile: async () => null,
