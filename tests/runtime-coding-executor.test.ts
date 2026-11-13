@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { zipSync, strToU8 } from 'fflate';
 import { expect, it, vi } from 'vitest';
-import { ActionsCodingExecutor, decodeCodingArchive, executorWrapper } from '../src/runtime/coding-executor.js';
+import { ActionsCodingExecutor, decodeCodingArchive, executorWrapper, legacyValidationGuidance, validationGuidance } from '../src/runtime/coding-executor.js';
 import { codingExecutionSchema } from '../src/runtime/coding-contract.js';
 import type { EffectPort, EffectRequest } from '../src/runtime/effects.js';
 import { snapshotSchema } from '../src/runtime/contract.js';
@@ -33,7 +33,7 @@ class Effects implements EffectPort {
   }
 }
 function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>) {
-  const requests: { task: { contextReferences: string[] } }[] = [], calls: string[] = [];
+  const requests: { task: { description: string; contextReferences: string[] } }[] = [], calls: string[] = [];
   const cfg = config(); cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false };
   let ref = false, dispatches = 0, lost = false, before = false, complete = false, wrongHead = false, duplicate = false, badWrapper = false;
   let missingValidation=false,forgedValidation=false;
@@ -151,6 +151,23 @@ it('leaves the request of an execution dispatched before context existed exactly
   expect(f.calls.some(c => c === '/branches' || c === '/pulls/14')).toBe(false);
 });
 
+it('tells a validated execution to leave dependency installs and project checks to the validation job', async () => {
+  const f = fixture(snapshotSchema.parse({ ...snapshot, validationPlan: defaultValidationPlan() }));
+  await f.poll(); await f.poll();
+  expect(f.requests).toHaveLength(1);
+  expect(f.requests[0]!.task.description).toBe(snapshot.admission.input.description + validationGuidance);
+  expect(validationGuidance).toContain('Do not install dependencies');
+});
+it('keeps the earlier guidance for an execution dispatched before it changed', async () => {
+  const selected = snapshotSchema.parse({ ...snapshot, validationPlan: defaultValidationPlan() });
+  const f = fixture(selected, path => path === `/git/ref/heads/sf-temporal-executor/${snapshot.admission.input.executionId}` ? { object: { sha: snapshot.baseSha } } : undefined);
+  await f.poll();
+  expect(f.requests[0]!.task.description).toBe(snapshot.admission.input.description + legacyValidationGuidance);
+});
+it('adds no guidance without a validation plan', async () => {
+  const f = fixture(); await f.poll();
+  expect(f.requests[0]!.task.description).toBe(snapshot.admission.input.description);
+});
 it('passes the repository\'s loopback opt-in to the executor and nothing by default', async () => {
   const f = fixture(); f.cfg.workers.coding = { ...(f.cfg.workers.coding as object), loopback: true } as typeof f.cfg.workers.coding;
   await f.poll(); expect(f.requests[0]!.task.contextReferences).toEqual(['sf-context sandbox loopback']);

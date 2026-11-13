@@ -154,15 +154,16 @@ describe('Temporal admission, identity and approval', () => {
   });
 });
 describe('durable result outbox', () => {
-  it.each(['passed', 'failed'] as const)('publishes a review draft for original blocked code after %s independent validation without promoting its status', async status => {
+  it.each([['passed', 'success'], ['failed', 'blocked'], ['unsupported', 'blocked']] as const)('publishes original blocked code after %s independent validation as %s', async (status, expected) => {
     const f=await fixture(false,true),plan=defaultValidationPlan();f.repo.validationPlan=async()=>plan;
     await f.controller.start(f.admission);const row=f.store.row!;
     const artifact:CodingArtifact={contractVersion:'3.0',baseSha:row.snapshot.baseSha,result:{contractVersion:'2.0',executionId:f.admission.input.executionId,taskId:`github:${f.github.repository}#1`,taskVersion:f.admission.input.taskVersion,status:'blocked',summary:'Implementation exists; manual acceptance remains open',artifacts:[],error:null},changes:[{path:'result.txt',content:'eA==',mode:'100644'}]};
     const report=reportFor(artifact,plan,status),poll=vi.fn(async()=>({artifact,validation:report})),publish=vi.fn(async()=>({url:'https://github.com/owner/target/pull/3'}));
     f.repo.coding={executor:{poll,cancel:async()=>{}},publish};
-    const result=(await f.controller.executeCoding(row.snapshot,row.binding))!;expect(result.status).toBe('blocked');
+    const result=(await f.controller.executeCoding(row.snapshot,row.binding))!;expect(result.status).toBe(expected);
+    expect(result.summary).toContain(`Original model status: blocked. Independent automated validation: ${status}.`);
     expect(await f.controller.executeCoding(row.snapshot,row.binding)).toEqual(result);expect(poll).toHaveBeenCalledOnce();
-    const final=await f.controller.publish(row.snapshot,row.binding,result);expect(final.status).toBe('blocked');expect(final.artifacts[0]).toBe('https://github.com/owner/target/pull/3');
+    const final=await f.controller.publish(row.snapshot,row.binding,result);expect(final.status).toBe(expected);expect(final.artifacts[0]).toBe('https://github.com/owner/target/pull/3');
     expect(publish).toHaveBeenCalledWith(row.snapshot,row.binding,artifact,row.createdAt,report);expect(f.store.codingArtifact?.result.status).toBe('blocked');
     expect(await f.controller.publish(row.snapshot,row.binding,result)).toEqual(final);expect(publish).toHaveBeenCalledOnce();
   });

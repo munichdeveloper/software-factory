@@ -214,13 +214,22 @@ describe('rework after a failed independent validation', () => {
     expect(openPRs(w)).toHaveLength(1);
   });
   it('does not rework when it is not enabled, when the worker itself stopped, or when the validation passed', async () => {
-    for (const [options, verdict, model] of [[{ coding: true }, 'failed', 'success'], [{ rework: true }, 'passed', 'blocked']] as const) {
+    for (const [options, verdict, model, status] of [[{ coding: true }, 'failed', 'success', 'blocked'], [{ rework: true }, 'passed', 'blocked', 'awaiting-pr']] as const) {
       const w = new World(options); w.open(1); await w.tick();
       await w.finishCoding(execution(w, 1), verdict, model);
       await healthy(w);
       expect(attempts(w, 1)).toHaveLength(1);
-      expect(w.status(1)).toEqual(['blocked']);
+      expect(w.status(1)).toEqual([status]);
     }
+  });
+  it('lets a change the worker reported blocked go on to its pull request once the independent validation passed', async () => {
+    // The worker's sandbox is offline, so it often cannot run the project's checks itself (controla#63).
+    const w = new World({ coding: true }); w.open(1); await w.tick();
+    await w.finishCoding(execution(w, 1), 'passed', 'blocked'); await w.tick(); await w.tick();
+    expect(w.status(1)).toEqual(['awaiting-pr']);
+    expect(w.events(1).flatMap(e => e.type === 'result' ? [e.result.status] : [])).toEqual(['success']);
+    expect(openPRs(w)).toHaveLength(1);
+    await healthy(w);
   });
   it('covers the rework with the grant that admitted the first attempt, and with nothing else', async () => {
     const w = new World({ rework: true, readyLabel: true }); w.open(1); w.grant(1); await w.tick();
