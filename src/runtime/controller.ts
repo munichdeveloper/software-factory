@@ -193,9 +193,14 @@ export class RuntimeController implements WorkerRuntimePort {
       bindValidation(validation, artifact, snapshot.validationPlan);
     }
     const validationBlocked = validation && validation.status !== 'passed';
+    // The sandbox is offline, so a worker that could not run checks locally reports `blocked` although its change is
+    // complete. A passed independent validation of that exact change is the evidence it lacked: such a run counts as
+    // successful. The model's own status stays in the summary and in the pull request body.
+    const validated = !!validation && validation.status === 'passed' && artifact.changes.length > 0;
     const summary = validation ? `${artifact.result.summary.slice(0, 1650)}\nOriginal model status: ${artifact.result.status}. Independent automated validation: ${validation.status}. Manual acceptance is not implied.` : artifact.result.summary;
     return workerResultSchema.parse({ contractVersion: '1.0', executionId: input.executionId, issueNumber: input.issueNumber,
-      status: artifact.result.status === 'timed_out' ? 'failed' : artifact.result.status === 'success' && (!artifact.changes.length || validationBlocked) ? 'blocked' : artifact.result.status,
+      status: artifact.result.status === 'timed_out' ? 'failed' : artifact.result.status === 'blocked' && validated ? 'success'
+        : artifact.result.status === 'success' && (!artifact.changes.length || validationBlocked) ? 'blocked' : artifact.result.status,
       summary, error: artifact.result.error, artifacts: [`urn:sf-artifact:${hash(artifact)}`, ...(validation ? [`urn:sf-validation:${hash(validation)}`] : [])], proposedActions: [] });
   }
   async executeCoding(snapshot: RunSnapshot, binding: string): Promise<WorkerResult | null> {
