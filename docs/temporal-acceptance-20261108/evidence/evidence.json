@@ -1,0 +1,130 @@
+{
+  "v1": {
+    "workflowId": "sf-acceptance-20261108-2310-v1",
+    "runId": "01a1bd43-3441-7a9a-b025-2aa7b525c97a",
+    "snapshot": {
+      "repository": "munichdeveloper/software-factory",
+      "factoryRelease": "9635a860260dda36b9bfc0215dd58b222fa33fd7",
+      "workflowVersion": "1",
+      "workflowHash": "test-workflow-v1"
+    },
+    "paused": {
+      "snapshot": {
+        "repository": "munichdeveloper/software-factory",
+        "factoryRelease": "9635a860260dda36b9bfc0215dd58b222fa33fd7",
+        "workflowVersion": "1",
+        "workflowHash": "test-workflow-v1"
+      },
+      "codeVersion": "v1",
+      "probe": {
+        "build": "v1",
+        "attempt": 2,
+        "repository": "munichdeveloper/software-factory",
+        "credentialKeys": []
+      }
+    },
+    "result": {
+      "snapshot": {
+        "repository": "munichdeveloper/software-factory",
+        "factoryRelease": "9635a860260dda36b9bfc0215dd58b222fa33fd7",
+        "workflowVersion": "1",
+        "workflowHash": "test-workflow-v1"
+      },
+      "codeVersion": "v1",
+      "probe": {
+        "build": "v1",
+        "attempt": 2,
+        "repository": "munichdeveloper/software-factory",
+        "credentialKeys": []
+      },
+      "rejected": 3,
+      "approved": true
+    },
+    "versioningInfo": {
+      "behavior": "VERSIONING_BEHAVIOR_PINNED",
+      "versioningOverride": {
+        "behavior": "VERSIONING_BEHAVIOR_PINNED",
+        "pinned": {
+          "behavior": "PINNED_OVERRIDE_BEHAVIOR_PINNED",
+          "version": {
+            "buildId": "v1",
+            "deploymentName": "sf-acceptance-20261108-2310"
+          }
+        },
+        "pinnedVersion": "sf-acceptance-20261108-2310.v1"
+      },
+      "version": "sf-acceptance-20261108-2310.v1",
+      "deploymentVersion": {
+        "buildId": "v1",
+        "deploymentName": "sf-acceptance-20261108-2310"
+      }
+    },
+    "eventCount": 20
+  },
+  "v2": {
+    "workflowId": "sf-acceptance-20261108-2310-v2",
+    "runId": "01a1bd43-344b-757a-a897-f86c853a436d",
+    "snapshot": {
+      "repository": "munichdeveloper/sf-manager",
+      "factoryRelease": "53f35004559b9135f82f263e965cdac9cce18909",
+      "workflowVersion": "2",
+      "workflowHash": "test-workflow-v2"
+    },
+    "paused": {
+      "snapshot": {
+        "repository": "munichdeveloper/sf-manager",
+        "factoryRelease": "53f35004559b9135f82f263e965cdac9cce18909",
+        "workflowVersion": "2",
+        "workflowHash": "test-workflow-v2"
+      },
+      "codeVersion": "v2",
+      "probe": {
+        "build": "v2",
+        "attempt": 2,
+        "repository": "munichdeveloper/sf-manager",
+        "credentialKeys": []
+      }
+    },
+    "result": {
+      "snapshot": {
+        "repository": "munichdeveloper/sf-manager",
+        "factoryRelease": "53f35004559b9135f82f263e965cdac9cce18909",
+        "workflowVersion": "2",
+        "workflowHash": "test-workflow-v2"
+      },
+      "codeVersion": "v2",
+      "probe": {
+        "build": "v2",
+        "attempt": 2,
+        "repository": "munichdeveloper/sf-manager",
+        "credentialKeys": []
+      },
+      "rejected": 0,
+      "approved": true
+    },
+    "versioningInfo": {
+      "behavior": "VERSIONING_BEHAVIOR_PINNED",
+      "versioningOverride": {
+        "behavior": "VERSIONING_BEHAVIOR_PINNED",
+        "pinned": {
+          "behavior": "PINNED_OVERRIDE_BEHAVIOR_PINNED",
+          "version": {
+            "buildId": "v2",
+            "deploymentName": "sf-acceptance-20261108-2310"
+          }
+        },
+        "pinnedVersion": "sf-acceptance-20261108-2310.v2"
+      },
+      "version": "sf-acceptance-20261108-2310.v2",
+      "deploymentVersion": {
+        "buildId": "v2",
+        "deploymentName": "sf-acceptance-20261108-2310"
+      }
+    },
+    "eventCount": 15
+  },
+  "duplicateDispatch": "blocked",
+  "failClosed": "unknown release, incompatible workflow hash, cross-repository snapshot rejected before dispatch",
+  "oldWorkerRequired": true,
+  "recovery": "same Run ID, original PINNED build v1, 3 invalid signals rejected"
+}

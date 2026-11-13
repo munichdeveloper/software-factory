@@ -1,0 +1,160 @@
+{
+  "a": {
+    "repository": "munichdeveloper/sf-temporal-acceptance-a-20261108",
+    "repositoryId": "1450715381",
+    "baseSha": "a0d89366c443550d585fc7a54ef8179ff49626d9",
+    "factoryRelease": "9635a860260dda36b9bfc0215dd58b222fa33fd7",
+    "executionId": "sf-gh-acceptance-20261108-a",
+    "workflowVersion": "a",
+    "harnessRelease": "8f1732c05c351af32bd25a6306a92f3bb06c1bad",
+    "policyVersion": "acceptance-only-1",
+    "specHash": "82c83e43c46a382b902e031be599dc20c54663cf21fae9f00ec693cce6e41e0d",
+    "runId": "01a1bd4b-b414-73b9-95fa-dbb4d2e2183a",
+    "commitResult": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Action completed."
+        }
+      ],
+      "structuredContent": {
+        "commit_sha": "395c572caaea7569ce868756f195f79f9925c19a"
+      },
+      "isError": false
+    },
+    "prResult": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Action completed."
+        }
+      ],
+      "structuredContent": {
+        "url": "https://github.com/munichdeveloper/sf-temporal-acceptance-a-20261108/pull/1",
+        "number": 1,
+        "state": "open",
+        "merged": false,
+        "mergeable": false,
+        "draft": true,
+        "body": "Isolated SF-WF-05/06 publication test.\n\n<!-- sf-execution:sf-gh-acceptance-20261108-a -->\nSpec hash: 82c83e43c46a382b902e031be599dc20c54663cf21fae9f00ec693cce6e41e0d\nTemporal Run: 01a1bd4b-b414-73b9-95fa-dbb4d2e2183a\n\nDo not merge: this pull request exists to verify crash recovery, receipt reconciliation and duplicate prevention.",
+        "title": "Acceptance fixture sf-gh-acceptance-20261108-a",
+        "base": "main",
+        "base_sha": "a0d89366c443550d585fc7a54ef8179ff49626d9",
+        "head": "acceptance/stable-publication",
+        "head_sha": "395c572caaea7569ce868756f195f79f9925c19a",
+        "head_repo_id": 1450715381,
+        "head_repo_full_name": "munichdeveloper/sf-temporal-acceptance-a-20261108",
+        "merge_commit_sha": null,
+        "user": {
+          "login": "munichdeveloper",
+          "name": "munichdeveloper",
+          "email": null,
+          "avatar_url": "https://avatars.githubusercontent.com/u/731456?v=4",
+          "id": 731456
+        },
+        "requested_reviewers": null,
+        "requested_team_reviewers": null,
+        "diff": null,
+        "comments": null,
+        "created_at": "2026-11-08T22:34:43Z",
+        "updated_at": "2026-11-08T22:34:43Z",
+        "closed_at": null,
+        "merged_at": null,
+        "commits": 1,
+        "changed_files": 1,
+        "additions": 10,
+        "deletions": 0,
+        "display_url": "https://github.com/munichdeveloper/sf-temporal-acceptance-a-20261108/pull/1",
+        "display_title": "Acceptance fixture sf-gh-acceptance-20261108-a"
+      },
+      "isError": false
+    },
+    "reconciliation": {
+      "count": 1,
+      "number": 1,
+      "headSha": "395c572caaea7569ce868756f195f79f9925c19a",
+      "baseSha": "a0d89366c443550d585fc7a54ef8179ff49626d9",
+      "merged": false,
+      "receiptRecovered": true
+    }
+  },
+  "b": {
+    "repository": "munichdeveloper/sf-temporal-acceptance-b-20261108",
+    "repositoryId": "1450715704",
+    "baseSha": "d00255adc097bbe62c9e71382da2d7b2a0aefcc1",
+    "factoryRelease": "53f35004559b9135f82f263e965cdac9cce18909",
+    "executionId": "sf-gh-acceptance-20261108-b",
+    "workflowVersion": "b",
+    "harnessRelease": "8f1732c05c351af32bd25a6306a92f3bb06c1bad",
+    "policyVersion": "acceptance-only-1",
+    "specHash": "8afceb239660208944e9d29417135a6eedd6ecaebe3501c58209642dc857d385",
+    "runId": "01a1bd4b-b505-7129-853c-7f135bba0ddc",
+    "commitResult": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Action completed."
+        }
+      ],
+      "structuredContent": {
+        "commit_sha": "367dc4431d1a5723e9195d4ccb6f73fd234ca714"
+      },
+      "isError": false
+    },
+    "prResult": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Action completed."
+        }
+      ],
+      "structuredContent": {
+        "url": "https://github.com/munichdeveloper/sf-temporal-acceptance-b-20261108/pull/1",
+        "number": 1,
+        "state": "open",
+        "merged": false,
+        "mergeable": false,
+        "draft": true,
+        "body": "Isolated SF-WF-05/06 publication test.\n\n<!-- sf-execution:sf-gh-acceptance-20261108-b -->\nSpec hash: 8afceb239660208944e9d29417135a6eedd6ecaebe3501c58209642dc857d385\nTemporal Run: 01a1bd4b-b505-7129-853c-7f135bba0ddc\n\nDo not merge: this pull request exists to verify crash recovery, receipt reconciliation and duplicate prevention.",
+        "title": "Acceptance fixture sf-gh-acceptance-20261108-b",
+        "base": "main",
+        "base_sha": "d00255adc097bbe62c9e71382da2d7b2a0aefcc1",
+        "head": "acceptance/stable-publication",
+        "head_sha": "367dc4431d1a5723e9195d4ccb6f73fd234ca714",
+        "head_repo_id": 1450715704,
+        "head_repo_full_name": "munichdeveloper/sf-temporal-acceptance-b-20261108",
+        "merge_commit_sha": null,
+        "user": {
+          "login": "munichdeveloper",
+          "name": "munichdeveloper",
+          "email": null,
+          "avatar_url": "https://avatars.githubusercontent.com/u/731456?v=4",
+          "id": 731456
+        },
+        "requested_reviewers": null,
+        "requested_team_reviewers": null,
+        "diff": null,
+        "comments": null,
+        "created_at": "2026-11-08T22:34:47Z",
+        "updated_at": "2026-11-08T22:34:47Z",
+        "closed_at": null,
+        "merged_at": null,
+        "commits": 1,
+        "changed_files": 1,
+        "additions": 10,
+        "deletions": 0,
+        "display_url": "https://github.com/munichdeveloper/sf-temporal-acceptance-b-20261108/pull/1",
+        "display_title": "Acceptance fixture sf-gh-acceptance-20261108-b"
+      },
+      "isError": false
+    },
+    "reconciliation": {
+      "count": 1,
+      "number": 1,
+      "headSha": "367dc4431d1a5723e9195d4ccb6f73fd234ca714",
+      "baseSha": "d00255adc097bbe62c9e71382da2d7b2a0aefcc1",
+      "merged": false,
+      "receiptRecovered": true
+    }
+  }
+}

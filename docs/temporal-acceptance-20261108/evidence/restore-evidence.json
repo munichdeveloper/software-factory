@@ -1,0 +1,77 @@
+{
+  "restored": [
+    {
+      "workflowId": "sf-poc-smoke-20261108-1",
+      "runId": "01a1bb60-a3af-7c44-96f9-7de19cabd016",
+      "status": "COMPLETED",
+      "eventCount": 11,
+      "result": {
+        "runKey": "sf-poc-smoke-20261108-1",
+        "approved": false,
+        "result": {
+          "status": "success",
+          "summary": "Validated task and calculated SHA-256: 66d2b36cacc6d0f4ade037639c1fafbc8be20d755a0fbf82912269febb305900",
+          "artifacts": [
+            "urn:sha256:66d2b36cacc6d0f4ade037639c1fafbc8be20d755a0fbf82912269febb305900"
+          ],
+          "error": null,
+          "contractVersion": "2.0",
+          "executionId": "adcaf0f09b06c6f94661a171dcfe9da7",
+          "taskId": "sf-poc-smoke-20261108-1",
+          "taskVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    {
+      "workflowId": "sf-poc-recovery-20261108-2",
+      "runId": "01a1bb60-a741-7030-b26c-d056ddfbca35",
+      "status": "COMPLETED",
+      "eventCount": 15,
+      "result": {
+        "runKey": "sf-poc-recovery-20261108-2",
+        "approved": true,
+        "result": {
+          "status": "success",
+          "summary": "Validated task and calculated SHA-256: 66d2b36cacc6d0f4ade037639c1fafbc8be20d755a0fbf82912269febb305900",
+          "artifacts": [
+            "urn:sha256:66d2b36cacc6d0f4ade037639c1fafbc8be20d755a0fbf82912269febb305900"
+          ],
+          "error": null,
+          "contractVersion": "2.0",
+          "executionId": "7e70d3b57d219565d15914c000e67a74",
+          "taskId": "sf-poc-recovery-20261108-2",
+          "taskVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    }
+  ],
+  "pendingRunId": "01a1bd45-9c80-7940-a9b5-b4191a008cee",
+  "pausedBeforeOutage": true,
+  "outage": {
+    "blocked": true,
+    "error": "Error",
+    "elapsedMs": 2094
+  },
+  "afterOutage": {
+    "snapshot": {
+      "repository": "munichdeveloper/software-factory",
+      "factoryRelease": "53f35004559b9135f82f263e965cdac9cce18909",
+      "workflowVersion": "restore-test",
+      "workflowHash": "restore-test-v1"
+    },
+    "codeVersion": "v1",
+    "probe": {
+      "build": "v1",
+      "attempt": 2,
+      "repository": "munichdeveloper/software-factory",
+      "credentialKeys": []
+    },
+    "rejected": 0,
+    "approved": true
+  },
+  "timeoutRun": {
+    "runId": "01a1bd47-afff-7686-ab59-19c5fb3b2b6f",
+    "status": "TIMED_OUT",
+    "error": "WorkflowFailedError"
+  }
+}

@@ -1,0 +1,4 @@
+const {proxyActivities,defineSignal,defineQuery,setHandler,condition,workflowInfo}=require('@temporalio/workflow');
+const {probe}=proxyActivities({startToCloseTimeout:'10 seconds',retry:{maximumAttempts:3,initialInterval:'1 second'}});
+const approve=defineSignal('approve'),state=defineQuery('state');
+exports.acceptance=async function(snapshot){let approved=false,rejected=0;const s={snapshot,codeVersion:'v2',probe:null};setHandler(state,()=>s);setHandler(approve,a=>{if(a&&a.actor==='test-approver'&&a.repository===snapshot.repository&&a.workflowHash===snapshot.workflowHash&&a.runKey===workflowInfo().workflowId)approved=true;else rejected++;});s.probe=await probe(snapshot);await condition(()=>approved);return {...s,rejected,approved};};
