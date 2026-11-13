@@ -15,7 +15,10 @@ export function mergeGate(f: MergeFacts, config: Config): string | null {
   if (f.labels.includes('sf:blocked') || f.labels.includes('harness:blocked')) return 'PR wurde ausdrücklich blockiert.';
   if (f.unresolvedThreads.length) return 'Es gibt ungelöste Review-Diskussionen.';
   if (f.reviewDecision === 'CHANGES_REQUESTED' || f.reviewDecision === 'REVIEW_REQUIRED') return 'GitHub verlangt Änderungen oder zusätzliche Reviews.';
-  if (!f.strictChecks || !f.nativeRequiredChecks.length) return 'Serverseitige PR-Regeln mit strikt aktuellen Pflichtprüfungen sind erforderlich.';
+  if (config.merge.protection === 'factory') {
+    // No server-side rules: the head must contain the current base, so the required checks below ran on what is merged.
+    if (f.behindBy !== 0) return f.behindBy ? `Der Branch enthält ${f.behindBy} neuere Commit(s) der Basis nicht; Aktualisierung und neue Prüfungen sind erforderlich.` : 'Ob der Branch die aktuelle Basis enthält, ist unbekannt.';
+  } else if (!f.strictChecks || !f.nativeRequiredChecks.length) return 'Serverseitige PR-Regeln mit strikt aktuellen Pflichtprüfungen sind erforderlich.';
   if (f.checks.some(c => c.state === 'action_required')) return 'GitHub verlangt eine Workflow-Freigabe am PR: Approve workflows to run. Separat per workflow_dispatch gestartete Tests ersetzen diese Pflichtprüfungen nicht. SF umgeht oder erteilt diese Freigabe nicht.';
   if (f.mergeState !== 'CLEAN') return `GitHub meldet ${f.mergeState}; kein Merge bei veraltetem, blockiertem oder unklarem Stand.`;
   for (const name of new Set([...config.merge.requiredChecks, ...f.nativeRequiredChecks])) {
@@ -26,9 +29,18 @@ export function mergeGate(f: MergeFacts, config: Config): string | null {
   return null;
 }
 
+const failedCheck = (state: string) => ['failure', 'timed_out', 'cancelled', 'startup_failure', 'error'].includes(state);
+const behind = (f: MergeFacts, config: Config) => config.merge.protection === 'factory' ? !!f.behindBy : f.mergeState === 'BEHIND';
+export interface MergeOptions {
+  /** Only pull requests the Factory published for its own tasks; no adoption by label (an issue-scoped broker). */
+  ownedOnly?: boolean;
+}
+/** A pull request the Factory published for a task, with the outcome it was published with. */
+interface Ownership { task: Snapshot['issues'][number]; status: string; publishedHead: string | null }
+
 export class MergeManager {
   constructor(private api: MergePort, private config: Config, private reviewer: MergeReviewer, private correlationId: string,
-    private tasks?: Pick<GitHubPort, 'getIssue'>) {}
+    private tasks?: Pick<GitHubPort, 'getIssue'>, private options: MergeOptions = {}) {}
   private events(f: MergeFacts) { return f.comments.flatMap(c => { const e = decodeEvent(c, this.config.manager.trustedActors); return e ? [e] : []; }); }
   private async event(f: MergeFacts, key: string, data: HarnessEvent['data'], text = '') {
     if (this.events(f).some(e => e.key === key)) return;
@@ -41,16 +53,27 @@ export class MergeManager {
     await this.event(f, `merge-status:${hash({ head: f.head, base: f.base, reason })}`,
       { type: 'merge_status', head: f.head, base: f.base, reason }, `${f.mergeSha ? '**Merge bestätigt – Nacharbeit offen.**' : '**Noch kein Merge.**'} ${reason}\n\nGeprüfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
   }
-  private owned(f: MergeFacts, snapshot: Snapshot) {
-    return snapshot.issues.find(i => (snapshot.comments.get(i.number) ?? []).some(c => {
-      const e = decodeEvent(c, this.config.manager.trustedActors);
-      return e?.data.type === 'result' && f.headBranch === `sf/issue-${i.number}/${e.data.result.executionId}` &&
-        e.data.result.artifacts.includes(`https://github.com/${this.api.repository}/pull/${f.number}`);
-    }));
+  private ownership(f: MergeFacts, snapshot: Snapshot): Ownership | undefined {
+    const url = `https://github.com/${this.api.repository}/pull/${f.number}`;
+    for (const task of snapshot.issues) {
+      const comments = snapshot.comments.get(task.number) ?? [];
+      for (const c of comments) {
+        const e = decodeEvent(c, this.config.manager.trustedActors);
+        if (e?.data.type !== 'result' || f.headBranch !== `sf/issue-${task.number}/${e.data.result.executionId}` || !e.data.result.artifacts.includes(url)) continue;
+        // The publication record of the Temporal publisher names the commit it published.
+        const published = comments.find(p => this.config.manager.trustedActors.includes(p.author) && p.body.startsWith(`Draft PR: ${url}\n`))?.body.match(/^Head: ([a-f0-9]{40})$/m)?.[1];
+        return { task, status: e.data.result.status, publishedHead: published ?? null };
+      }
+    }
+    return undefined;
   }
-  private eligible(f: MergeFacts, snapshot: Snapshot) { return f.labels.includes(this.config.merge.adoptLabel) ||
-    (this.config.merge.includeFactoryPRs && !!this.owned(f, snapshot)); }
-  private async dispatch(f: MergeFacts, workflow: string, ref: string, sha: string) {
+  private owned(f: MergeFacts, snapshot: Snapshot) { return this.ownership(f, snapshot)?.task; }
+  private eligible(f: MergeFacts, snapshot: Snapshot) {
+    const owned = this.config.merge.includeFactoryPRs && !!this.ownership(f, snapshot);
+    return this.options.ownedOnly ? owned : f.labels.includes(this.config.merge.adoptLabel) || owned;
+  }
+  private async dispatch(f: MergeFacts, workflow: string | null, ref: string, sha: string) {
+    if (!workflow) return;
     const key = `merge-ci:${hash({ workflow, ref, sha })}`;
     if (this.events(f).some(e => e.key === key)) return;
     await this.api.dispatch(workflow, ref);
@@ -79,8 +102,39 @@ export class MergeManager {
           }
           continue;
         }
-        const owner = this.owned(f, snapshot);
+        const ownership = this.ownership(f, snapshot), owner = ownership?.task;
         if (owner && (owner.state === 'closed' || owner.labels.includes('harness:blocked'))) { await this.explain(f, 'Die zugehörige Aufgabe wurde geschlossen oder blockiert.'); continue; }
+        const adopted = !this.options.ownedOnly && f.labels.includes(this.config.merge.adoptLabel);
+        if (ownership && !adopted) {
+          // Only a successful run whose independent validation passed is a merge candidate; a draft kept for review is not.
+          if (ownership.status !== 'success') { await this.explain(f, `Der Lauf wurde mit Status ${ownership.status} veröffentlicht, nicht als erfolgreich validiert; die Factory mergt ihn nicht.`); continue; }
+          // The published, validated commit or a base update the Factory itself requested; nothing pushed by others.
+          if (ownership.publishedHead && f.head !== ownership.publishedHead && !this.events(f).some(e => e.data.type === 'branch_update')) {
+            await this.explain(f, 'Der Head entspricht nicht dem veröffentlichten, validierten Commit; die Factory mergt keine fremden Änderungen.'); continue;
+          }
+          if (f.draft && f.state === 'open' && this.api.ready && !f.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) {
+            phase = 'Entwurf freigeben';
+            await this.api.ready(number, f.head);
+            await this.explain(f, 'Der validierte Entwurf wurde zur Prüfung freigegeben; Review und Merge folgen im nächsten Durchlauf.'); continue;
+          }
+        }
+        if (f.state === 'open' && !f.draft) {
+          const required = [...new Set([...this.config.merge.requiredChecks, ...f.nativeRequiredChecks])];
+          const failed = f.checks.filter(c => required.includes(c.name) && failedCheck(c.state));
+          if (failed.length) {
+            phase = 'Fehlgeschlagene Pflichtprüfung wiederholen';
+            // At most once per workflow run (only first attempts are re-run): a failure of the re-run stands.
+            if (this.api.rerunFailed && await this.api.rerunFailed(number, f.head, required)) {
+              await this.explain(f, 'Eine Pflichtprüfung ist fehlgeschlagen und wird einmal wiederholt, falls die Ursache die Ausführungsumgebung war (z. B. Netzwerk bei der Installation).'); continue;
+            }
+            await this.explain(f, `Pflichtprüfung ${failed.map(c => c.name).join(', ')} ist fehlgeschlagen; kein Review und kein Merge für diesen Stand.`); continue;
+          }
+          // A review of a state whose required checks are still running would only defer, and be repeated for each check.
+          const pending = required.filter(name => !f!.checks.some(c => c.name === name) || f!.checks.some(c => c.name === name && !['success', 'neutral', 'skipped'].includes(c.state)));
+          if (pending.length && !f.checks.some(c => c.state === 'action_required')) {
+            await this.explain(f, `Pflichtprüfung ${pending.join(', ')} fehlt oder läuft noch; Review und Merge folgen danach.`); continue;
+          }
+        }
         if (f.state !== 'open' || f.draft || !f.sameRepository || f.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) {
           await this.explain(f, 'PR ist nicht offen/freigegeben, stammt aus einem Fork/falschen Zielbranch oder wurde ausdrücklich blockiert.'); continue;
         }
@@ -126,7 +180,7 @@ export class MergeManager {
           if (!approved) { await this.explain(live, `Menschliche Freigabe erforderlich: /harness approve ${approvalId}`); continue; }
         }
         if (review.decision === 'update_branch') {
-          if (!this.config.merge.updateBranch || live.mergeState !== 'BEHIND' || live.unresolvedThreads.length ||
+          if (!this.config.merge.updateBranch || !behind(live, this.config) || live.unresolvedThreads.length ||
             ['CHANGES_REQUESTED', 'REVIEW_REQUIRED'].includes(live.reviewDecision ?? '')) { await this.explain(live, 'Branch-Aktualisierung ist nicht erlaubt oder durch offene Reviews blockiert.'); continue; }
           const key = `branch-update:${hash({ head: f.head, base: f.base })}`;
           if (this.events(live).some(e => e.key === key)) { await this.explain(live, 'Branch-Aktualisierung wurde bereits angefordert; GitHub-Status prüfen.'); continue; }

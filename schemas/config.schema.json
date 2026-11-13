@@ -355,6 +355,14 @@
           "default": true,
           "type": "boolean"
         },
+        "protection": {
+          "default": "github",
+          "type": "string",
+          "enum": [
+            "github",
+            "factory"
+          ]
+        },
         "requiredChecks": {
           "default": [
             "test-backend",
@@ -372,8 +380,15 @@
         },
         "validationWorkflow": {
           "default": "test.yml",
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9_-]+\\.ya?ml$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]+\\.ya?ml$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "maxReviewsPerRun": {
           "default": 2,
@@ -391,6 +406,14 @@
           "default": {},
           "type": "object",
           "properties": {
+            "provider": {
+              "default": "llm",
+              "type": "string",
+              "enum": [
+                "llm",
+                "openai"
+              ]
+            },
             "model": {
               "default": "gpt-6.1-sol",
               "type": "string",

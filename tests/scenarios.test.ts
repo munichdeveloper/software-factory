@@ -49,6 +49,13 @@ async function settle(world: World): Promise<string[]> {
       if (row.snapshot.admission.input.issueNumber === issue.number && row.snapshot.readyApproval?.actor === bot) violations.push(`#${issue.number}: run admitted on the Manager's own label`);
     }
   }
+  // The Factory merges only a reviewed head of a pull request it published for a successfully validated run.
+  for (const merge of world.factoryMerges) {
+    const pr = world.github.state.prs.find(p => p.number === merge.pr)!, number = pr.closingIssues[0]!, execution = pr.headRefName!.split('/')[2];
+    const result = world.events(number).find(e => e.type === 'result' && e.result.executionId === execution);
+    if (result?.type !== 'result' || result.result.status !== 'success') violations.push(`PR ${merge.pr}: merged although its run was not a validated success`);
+    if (!merge.reviewed) violations.push(`PR ${merge.pr}: merged head ${merge.head} that no review covered`);
+  }
   // Nothing is ever left as an unknown outcome once the runtime answers.
   for (const blocker of report.blockers) if (blocker.includes('uncertain')) violations.push(`unresolved uncertainty: ${blocker}`);
   if (report.errors.length) violations.push(`errors in a healthy environment: ${report.errors.join(' | ')}`);
@@ -270,8 +277,8 @@ export async function explore(options: WorldOptions, seed: number, steps: number
     else if (roll < 0.38 && issues < 4) world.open(++issues);
     else if (!numbers.length) continue;
     else if (roll < 0.50) world.grant(pick(numbers), next() < 0.9 ? 'maintainer' : 'stranger');
-    else if (roll < 0.60 && running.length && (options.coding || options.rework)) {
-      const id = pick(running).snapshot.admission.input.executionId, outcome = pick(['passed', 'failed', 'failed', 'stopped', 'crashed'] as const);
+    else if (roll < 0.60 && running.length && (options.coding || options.rework || options.merging)) {
+      const id = pick(running).snapshot.admission.input.executionId, outcome = pick(options.merging ? ['passed', 'passed', 'passed', 'failed', 'stopped', 'crashed'] as const : ['passed', 'failed', 'failed', 'stopped', 'crashed'] as const);
       if (outcome === 'crashed') await world.finish(id, 'failed'); else await world.finishCoding(id, outcome === 'stopped' ? 'passed' : outcome, outcome === 'stopped' ? 'blocked' : 'success');
     }
     else if (roll < 0.60 && running.length) await world.finish(pick(running).snapshot.admission.input.executionId, pick(['success', 'blocked', 'failed'] as const));
@@ -280,6 +287,8 @@ export async function explore(options: WorldOptions, seed: number, steps: number
     else if (roll < 0.75) world.close(pick(numbers));
     else if (roll < 0.78) { const n = pick(numbers); if (world.issue(n).state === 'closed') world.reopen(n); }
     else if (roll < 0.83) { const n = pick(numbers); if (world.issue(n).labels.includes('harness:blocked')) world.unblock(n); }
+    else if (roll < 0.90 && options.merging) { const r = next(), open = world.github.state.prs.filter(p => p.state === 'open');
+      if (r < 0.7) await world.mergePass(); else if (r < 0.85) world.moveBase(); else if (open.length) world.completeChecks(pick(open).number, pick(['success', 'success', 'failure'])); }
     else if (roll < 0.88 && running.length && options.humanGate) await world.approve(pick(running).snapshot.admission.input.executionId);
     else if (roll < 0.90 && world.github.state.prs.some(p => p.state === 'open')) world.resolvePr(pick(world.github.state.prs.filter(p => p.state === 'open')).number, next() < 0.7);
     else if (roll < 0.92) world.temporalDown = !world.temporalDown;
@@ -291,16 +300,51 @@ export async function explore(options: WorldOptions, seed: number, steps: number
 
 /** Number of random sequences per mode; raise SF_SCENARIO_SEEDS for a deeper search. */
 const seeds = Number(process.env.SF_SCENARIO_SEEDS ?? 150);
+describe('the broker merges validated pull requests', () => {
+  const prs = (w: World) => w.github.state.prs;
+  it('marks the validated draft ready, reviews it, merges it, and the merge closes the task', async () => {
+    const w = new World({ merging: true }); w.open(1); await w.tick();
+    await w.finishCoding(execution(w, 1), 'passed'); await w.tick(); await w.tick();
+    expect(w.status(1)).toEqual(['awaiting-pr']);
+    await w.mergePass(); expect(w.pulls.get(prs(w)[0]!.number)!.draft).toBe(false); expect(w.factoryMerges).toEqual([]);
+    await w.mergePass(); expect(w.factoryMerges).toHaveLength(1);
+    expect(w.issue(1).state).toBe('closed');
+    await w.tick(); await w.tick(); expect(w.status(1)).toEqual(['done']);
+    await healthy(w);
+  });
+  it('updates a branch whose base moved and merges only the updated head after its checks and a new review', async () => {
+    const w = new World({ merging: true }); w.open(1); await w.tick();
+    await w.finishCoding(execution(w, 1), 'passed'); await w.tick();
+    const pr = prs(w)[0]!.number;
+    await w.mergePass(); w.moveBase();
+    await w.mergePass(); const updated = w.pulls.get(pr)!.head; expect(w.log).toContain(`PR ${pr} updated`); expect(w.factoryMerges).toEqual([]);
+    await w.mergePass(); expect(w.factoryMerges).toEqual([]); // checks of the updated head still run
+    w.completeChecks(pr); await w.mergePass();
+    expect(w.factoryMerges).toEqual([{ pr, head: updated, reviewed: true }]);
+    await w.tick(); await healthy(w);
+  });
+  it('never merges the draft of a failed validation, and a failed check of the updated head stops the merge', async () => {
+    const w = new World({ merging: true }); w.open(1); w.open(2); await w.tick();
+    await w.finishCoding(execution(w, 1), 'failed'); await w.tick(); await w.tick();
+    await w.mergePass(); await w.mergePass();
+    expect(w.pulls.get(prs(w)[0]!.number)!.draft).toBe(true); expect(w.factoryMerges).toEqual([]); expect(w.status(1)).toEqual(['blocked']);
+    await w.finishCoding(execution(w, 2), 'passed'); await w.tick();
+    const pr = prs(w)[1]!.number; await w.mergePass(); w.moveBase(); await w.mergePass(); w.completeChecks(pr, 'failure');
+    await w.mergePass(); await w.mergePass(); expect(w.factoryMerges).toEqual([]); expect(w.issue(2).state).toBe('open');
+    await healthy(w);
+  });
+});
+
 describe('lifecycle rules hold for arbitrary sequences of events', () => {
   const modes: [string, WorldOptions][] = [
     ['no gate', {}], ['ready label', { readyLabel: true }], ['human gate', { humanGate: true }], ['two workers, ready label', { readyLabel: true, maxParallelWorkers: 2 }],
     ['ready label, pull requests that close the task', { readyLabel: true, pullRequests: 'closing' }], ['no gate, pull requests that reference the task', { pullRequests: 'referencing' }],
-    ['rework, no gate', { rework: true }], ['rework, ready label', { rework: true, readyLabel: true }], ['rework, ready label, two workers', { rework: true, readyLabel: true, maxParallelWorkers: 2 }],
+    ['rework, no gate', { rework: true }], ['merging, ready label', { merging: true, readyLabel: true }], ['merging with rework', { merging: true, rework: true }], ['rework, ready label', { rework: true, readyLabel: true }], ['rework, ready label, two workers', { rework: true, readyLabel: true, maxParallelWorkers: 2 }],
   ];
   for (const [name, options] of modes) it(name, async () => {
     const failures: string[] = [];
     for (let seed = 1; seed <= seeds; seed++) {
-      const { world, violations } = await explore(options, seed, 40 + seed % 30);
+      const { world, violations } = await explore(options, seed, (options.merging ? 80 : 40) + seed % 30);
       if (violations.length) failures.push(`seed ${seed}: ${violations.join('; ')}\n${failures.length ? '' : world.log.join('\n')}`);
     }
     expect(failures.slice(0, 5), `${failures.length} of ${seeds} sequences violate a rule`).toEqual([]);

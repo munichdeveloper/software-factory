@@ -50,10 +50,19 @@ export const configSchema = z.strictObject({
     enabled: z.boolean().default(false), includeFactoryPRs: z.boolean().default(true),
     adoptLabel: z.string().min(1).max(100).default('sf:automerge'),
     method: z.enum(['squash', 'merge', 'rebase']).default('squash'), updateBranch: z.boolean().default(true),
+    // 'github': server-side branch rules with strict required checks are mandatory. 'factory': for repositories whose
+    // plan has no branch rules, the Factory itself requires requiredChecks on the exact head and a head containing the
+    // current base. People with write access can still merge directly; only the Factory's own merges are gated.
+    protection: z.enum(['github', 'factory']).default('github'),
     requiredChecks: z.array(z.string().min(1).max(200)).min(1).max(30).default(['test-backend', 'test-frontend', 'test-docker']),
-    validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).default('test.yml'),
+    // Dispatched for the new head after a branch update; null where the pull request's own checks run on every push.
+    validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default('test.yml'),
     maxReviewsPerRun: bounded(1, 5, 2), maxActionsPerRun: bounded(1, 3, 1),
-    review: z.strictObject({ model: z.string().min(1).max(100).default('gpt-6.1-sol'),
+    review: z.strictObject({
+      // 'llm' follows llm.provider, so a mock configuration never approves a merge. 'openai' always reviews with OpenAI,
+      // also when planning stays deterministic (llm.provider mock).
+      provider: z.enum(['llm', 'openai']).default('llm'),
+      model: z.string().min(1).max(100).default('gpt-6.1-sol'),
       reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).default('high'),
       timeoutSeconds: bounded(10, 120, 120), maxOutputTokens: bounded(1000, 12000, 6000),
       maxFiles: bounded(1, 100, 60), maxContextBytes: bounded(10000, 500000, 250000)

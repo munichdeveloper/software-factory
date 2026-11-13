@@ -12,6 +12,8 @@ export interface MergeFacts {
   unresolvedThreads: string[]; checks: { name: string; state: string }[];
   mergeSha: string | null; mergeActorType: string | null;
   strictChecks: boolean; nativeRequiredChecks: string[]; comments: Comment[];
+  /** Commits of the current base that the head does not contain; null when unknown. */
+  behindBy?: number | null;
 }
 export interface ReviewInput { facts: MergeFacts; trustedScope: string; trustedInstructions: string;
   sourceTask?: { number: number; title: string; body: string };
@@ -28,4 +30,11 @@ export interface MergePort {
   dispatch(workflow: string, ref: string): Promise<void>;
   workflowAvailable(workflow: string): Promise<boolean>;
   canApprove(login: string): Promise<boolean>;
+  /** Marks a draft pull request ready for review, only while its head is still `head`. */
+  ready?(number: number, head: string): Promise<void>;
+  /**
+   * Re-runs, once, the failed jobs of first-attempt pull-request workflow runs on `head` that contain one of `checks`.
+   * Returns how many runs were re-run.
+   */
+  rerunFailed?(number: number, head: string, checks: string[]): Promise<number>;
 }

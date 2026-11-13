@@ -8,10 +8,13 @@ import { admissionSchema, executionKey, snapshotSchema } from './contract.js';
 import { workerResultSchema } from '../workers/contract.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import type { RuntimeStore } from './store.js';
+import type { RuntimeMerge } from './merge.js';
 
 export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController;
   /** A planner, or a choice made from the repository configuration that is current at each reconciliation. */
-  planner: Planner | ((config: Config) => Planner) }
+  planner: Planner | ((config: Config) => Planner);
+  /** Reviews and merges the Factory's validated pull requests after a reconciliation, where configured. */
+  merge?: RuntimeMerge }
 export interface ServerOptions { managerToken: string; workerToken: string; bindings: RuntimeBinding[]; store: RuntimeStore }
 const secureEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 const actorSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}(?:\[bot\])?$/);
@@ -67,8 +70,9 @@ export function runtimeServer(options: ServerOptions) {
         const config = await binding.repository.config();
         if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
         const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
-        const report = await options.store.locked(binding.repository.repositoryId, 'manager', () => new Manager(binding.repository.github, config, planner,
-          { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller }).run());
+        const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller });
+        const report = await options.store.locked(binding.repository.repositoryId, 'manager', () => manager.run());
+        if (manager.lastSnapshot) void binding.merge?.start(config, manager.lastSnapshot);
         // One line per reconciliation that did or could not do something. Blockers and errors carry only
         // issue numbers and fixed codes, never repository content or external error text.
         const executed = report.decisions.filter(d => d.executed).map(d => `${d.action.kind}#${d.action.issueNumber}${d.action.status ? `:${d.action.status}` : ''}`);

@@ -79,3 +79,56 @@ it('reports only approval-required PR workflows on the exact head alongside gree
 it('fails closed for unavailable collaborator permission', async () => {
   expect(await fixture({ forbidden: true }).api.canApprove('maintainer')).toBe(false);
 });
+
+function routes(table: Record<string, (body: Record<string, unknown>, method: string) => unknown>) {
+  const calls: { path: string; method: string; body: Record<string, unknown> }[] = [];
+  const fetcher = (async (input, init) => {
+    const url = new URL(String(input)), path = decodeURIComponent(url.pathname), method = init?.method ?? 'GET';
+    const body = init?.body ? JSON.parse(String(init.body)) : {}; calls.push({ path, method, body });
+    const key = Object.keys(table).find(k => path.endsWith(k) || path.includes(k));
+    if (!key) throw new Error(`unexpected ${method} ${path}`);
+    const value = table[key]!(body, method);
+    if (value instanceof Response) return value;
+    const response = new Response(JSON.stringify(value ?? {}), { headers: { 'content-type': 'application/json' } });
+    Object.defineProperty(response, 'url', { value: url.href }); return response;
+  }) as typeof fetch;
+  return { calls, fetcher };
+}
+it('treats branch rules unavailable on the plan as absent and reads how far the head is behind the current base', async () => {
+  const x = routes({
+    '/graphql': () => ({ data: { repository: { pullRequest: { mergeStateStatus: 'CLEAN', reviewDecision: null, mergedBy: null, reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } } } } } }),
+    '/rules/branches/main': () => new Response('{"message":"Upgrade to GitHub Pro"}', { status: 403, headers: { 'content-type': 'application/json' } }),
+    '/pulls/52': () => ({ number: 52, title: 'F', body: '', state: 'open', draft: false, labels: [], merged: false, head: { sha: head, ref: 'sf/issue-7/x', repo: { full_name: 'owner/target' } }, base: { ref: 'main' } }),
+    '/comments': () => [], '/git/ref/heads/main': () => ({ object: { sha: base } }),
+    '/check-runs': () => ({ total_count: 0, check_runs: [] }), '/statuses': () => [], '/actions/runs': () => ({ total_count: 0, workflow_runs: [] }),
+    [`/compare/${base}...${head}`]: () => ({ behind_by: 3, files: [] }), '/repos/owner/target': () => ({ default_branch: 'main' }) });
+  const facts = await new GitHubMergePort('owner/target', 'token', 'Community', 'sf:automerge', x.fetcher).facts(52);
+  expect(facts.strictChecks).toBe(false); expect(facts.nativeRequiredChecks).toEqual([]); expect(facts.behindBy).toBe(3);
+});
+it('lists only open or recently updated pull requests for the broker', async () => {
+  const now = Date.parse('2026-11-13T12:00:00Z');
+  const x = routes({ '/pulls': () => [
+    { number: 3, state: 'open', updated_at: '2026-01-01T00:00:00Z', labels: [], head: { ref: 'sf/issue-1/a' } },
+    { number: 4, state: 'closed', updated_at: '2026-11-13T11:00:00Z', labels: [], head: { ref: 'sf/issue-2/b' } },
+    { number: 5, state: 'closed', updated_at: '2026-11-01T00:00:00Z', labels: [], head: { ref: 'sf/issue-3/c' } }] });
+  expect(await new GitHubMergePort('owner/target', 'token', 'C', 'sf:automerge', x.fetcher, 48 * 3600000, () => now).candidates()).toEqual([3, 4]);
+});
+it('marks a draft ready only while its head is unchanged', async () => {
+  let sha = head;
+  const x = routes({ '/pulls/52': () => ({ number: 52, state: 'open', draft: true, node_id: 'PR_node', head: { sha } }),
+    '/graphql': body => { expect(body.variables).toEqual({ id: 'PR_node' }); return { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } }; } });
+  const api = new GitHubMergePort('owner/target', 'token', 'C', 'sf:automerge', x.fetcher);
+  await api.ready(52, head); expect(x.calls.filter(c => c.path === '/graphql')).toHaveLength(1);
+  sha = 'f'.repeat(40); await expect(api.ready(52, head)).rejects.toThrow('changed'); expect(x.calls.filter(c => c.path === '/graphql')).toHaveLength(1);
+});
+it('re-runs only first attempts of failed pull-request runs on the exact head that contain a required check', async () => {
+  const run = (id: number, extra: Record<string, unknown>) => ({ id, head_sha: head, run_attempt: 1, status: 'completed', conclusion: 'failure', pull_requests: [{ number: 52 }], ...extra });
+  const x = routes({
+    '/actions/runs/1/jobs': () => ({ total_count: 1, jobs: [{ name: 'test-and-build (24)', conclusion: 'failure' }] }),
+    '/actions/runs/4/jobs': () => ({ total_count: 1, jobs: [{ name: 'lint', conclusion: 'failure' }] }),
+    '/rerun-failed-jobs': () => new Response(null, { status: 201 }),
+    '/actions/runs': () => ({ total_count: 5, workflow_runs: [run(1, {}), run(2, { run_attempt: 2 }), run(3, { head_sha: base }), run(4, {}), run(5, { conclusion: 'success' })] }) });
+  const api = new GitHubMergePort('owner/target', 'token', 'C', 'sf:automerge', x.fetcher);
+  expect(await api.rerunFailed(52, head, ['test-and-build (24)'])).toBe(1);
+  expect(x.calls.filter(c => c.path.endsWith('/rerun-failed-jobs')).map(c => c.path)).toEqual(['/repos/owner/target/actions/runs/1/rerun-failed-jobs']);
+});

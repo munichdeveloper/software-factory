@@ -24,6 +24,10 @@ import { RuntimeEffects } from './effects.js';
 import { RuntimeCodingPublisher } from './publisher.js';
 import { IssueScopedGitHub } from './issue-scope.js';
 import { defaultValidationPlan, validationPlanSchema } from './validation-contract.js';
+import { RuntimeMerge } from './merge.js';
+import { GitHubMergePort } from '../merge/github.js';
+import { MergeManager } from '../merge/manager.js';
+import { OpenAIMergeReviewer } from '../merge/reviewer.js';
 
 const registrySchema = z.strictObject({
   namespace: z.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
@@ -112,7 +116,12 @@ export async function main(args = process.argv.slice(2)) {
       await repository.config(); // An unreadable or invalid configuration fails the start, not the first reconciliation.
       // Chosen per reconciliation: a configuration change in the repository applies without restarting the broker.
       const mock = new MockPlanner(), openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
-      bindings.push({ repository, controller, planner: config => config.llm.provider === 'mock' ? mock : openai });
+      // Only pull requests the Factory published for its tasks in an issue-scoped registry entry; closed ones while a merge's follow-up may be open.
+      const merge = new RuntimeMerge(item.repositoryId, (config, snapshot) => new MergeManager(
+        new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
+        config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), `temporal-merge:${item.repositoryId}`, github,
+        { ownedOnly: !!item.issueNumbers }).run(snapshot));
+      bindings.push({ repository, controller, planner: config => config.llm.provider === 'mock' ? mock : openai, merge });
     }
     const server = runtimeServer({ managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store });
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');

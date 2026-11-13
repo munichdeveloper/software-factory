@@ -7,14 +7,14 @@ import { MockPlanner } from '../src/llm/provider.js';
 
 const servers: Server[] = [];
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve())))); });
-async function fixture() {
+async function fixture(merge?: { start: ReturnType<typeof vi.fn> }) {
   const cfg = config(), github = new MemoryGitHub(); cfg.execution.engine = 'temporal';
   const controller = { observations: vi.fn(async () => []), gateApproved: vi.fn(async () => false), authorize: vi.fn(async () => ({})),
     publish: vi.fn(), gate: vi.fn(async () => {}), cancel: vi.fn(async () => {}), start: vi.fn(), deployment: vi.fn(async () => ({ workerReady: true })) };
   const repository = { repositoryId: 42, github, config: async () => cfg };
   const store = { list: vi.fn(async () => []), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
   const managerToken = 'm'.repeat(32), workerToken = 'w'.repeat(32);
-  const server = runtimeServer({ managerToken, workerToken, bindings: [{ repository, controller, planner: new MockPlanner() } as unknown as RuntimeBinding], store: store as unknown as RuntimeStore });
+  const server = runtimeServer({ managerToken, workerToken, bindings: [{ repository, controller, planner: new MockPlanner(), merge } as unknown as RuntimeBinding], store: store as unknown as RuntimeStore });
   servers.push(server); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('No test listener');
   const call = (path: string, body?: unknown, token = managerToken, method?: string) => fetch(`http://127.0.0.1:${address.port}${path}`, {
@@ -86,4 +86,12 @@ describe('private runtime HTTP boundaries', () => {
     expect((await f.call(path, { actor: 'attacker' })).status).toBe(409); expect(f.controller.cancel).not.toHaveBeenCalled();
     expect((await f.call(path, { actor: 'maintainer' })).status).toBe(200); expect(f.controller.cancel).toHaveBeenCalledWith('a'.repeat(32));
   });
+});
+
+it('starts the merge pass after a reconciliation with the state it reconciled, without waiting for it', async () => {
+  const start = vi.fn(() => new Promise<void>(() => {})), f = await fixture({ start });
+  expect((await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer' })).status).toBe(200);
+  expect(start).toHaveBeenCalledTimes(1);
+  const [cfg, snapshot] = start.mock.calls[0]! as unknown as [unknown, { issues: unknown[] }];
+  expect(cfg).toBe(f.cfg); expect(Array.isArray(snapshot.issues)).toBe(true);
 });
