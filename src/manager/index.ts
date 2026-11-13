@@ -23,6 +23,8 @@ export class Manager {
   private rejections: { issueNumber: number; code: string; recorded: boolean }[] = [];
   /** What this run saw before it acted. */
   private observed?: Snapshot;
+  /** The repository state the last run reconciled, for work that follows it (the broker's merge pass). */
+  get lastSnapshot(): Snapshot | undefined { return this.observed; }
   private async snapshot(): Promise<Snapshot> {
     const snapshot = await this.github.snapshot(this.config.execution.engine === 'temporal' ? null : this.config.manager.workflow);
     if (this.config.execution.engine === 'temporal') {

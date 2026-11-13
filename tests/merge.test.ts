@@ -155,6 +155,9 @@ it('uses real structured Responses review with no tools, keeps untrusted code in
   });
   expect(await new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).toEqual(x.review);
   x.cfg.llm.provider = 'mock'; await expect(new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).rejects.toThrow('real OpenAI');
+  // An explicit OpenAI reviewer with deterministic planning; still never without a key.
+  x.cfg.merge.review.provider = 'openai'; expect(await new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).toEqual(x.review);
+  await expect(new OpenAIMergeReviewer('', x.cfg, fetcher).review(input)).rejects.toThrow('real OpenAI');
   x.cfg.llm.provider = 'openai'; fetcher.mockResolvedValue(new Response(JSON.stringify({ status: 'incomplete' })));
   await expect(new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).rejects.toThrow('incomplete');
 });
@@ -162,4 +165,54 @@ it('decodes durable journals with a readable explanation after the JSON fence', 
   const event = { version: 1 as const, key: 'review', at: clock.toISOString(), correlationId: 'test',
     data: { type: 'merge_status' as const, head: 'a'.repeat(40), base: 'b'.repeat(40), reason: 'Needs work' } };
   expect(decodeEvent({ id: 1, author: 'github-actions[bot]', createdAt: clock.toISOString(), body: encodeEvent(event) + '\n\nReadable explanation' }, ['github-actions[bot]'])).toEqual(event);
+});
+
+/** A pull request the Temporal broker published for task #7, as its journal and publication record show it. */
+function temporal(status: 'success' | 'blocked' = 'success') {
+  const x = fixture(); const exec = 'e'.repeat(32), url = 'https://github.com/owner/target/pull/52';
+  x.f.labels = []; x.f.draft = true; x.f.headBranch = `sf/issue-7/${exec}`;
+  x.cfg.merge.protection = 'factory'; x.f.strictChecks = false; x.f.nativeRequiredChecks = []; x.f.behindBy = 0;
+  x.snapshot.issues.push(issue(7));
+  x.snapshot.comments.set(7, [
+    { id: 1, author: 'github-actions[bot]', createdAt: clock.toISOString(), body: encodeEvent({ version: 1, key: `result:${exec}`, at: clock.toISOString(), correlationId: 'c',
+      data: { type: 'result', result: { contractVersion: '1.0', executionId: exec, issueNumber: 7, status, summary: 'Done', error: null, artifacts: [url], proposedActions: [] } } }) },
+    { id: 2, author: 'github-actions[bot]', createdAt: clock.toISOString(), body: `Draft PR: ${url}\nHead: ${x.f.head}\n<!-- sf-publication -->` }]);
+  const ready = vi.fn(async () => { x.f.draft = false; }), rerunFailed = vi.fn(async () => 0);
+  Object.assign(x.api, { ready, rerunFailed });
+  const owned = () => new MergeManager(x.api, x.cfg, x.reviewer, 'test', undefined, { ownedOnly: true }).run(structuredClone(x.snapshot));
+  return { ...x, ready, rerunFailed, owned };
+}
+it('marks a validated Temporal draft ready, then reviews and merges exactly the published head without branch rules', async () => {
+  const x = temporal();
+  expect((await x.owned()).merged).toBe(0); expect(x.ready).toHaveBeenCalledWith(52, 'a'.repeat(40)); expect(x.reviewer.review).not.toHaveBeenCalled();
+  expect((await x.owned()).merged).toBe(1); expect(x.api.merge).toHaveBeenCalledWith(52, 'a'.repeat(40), 'squash');
+});
+it('never marks ready or merges a draft that was published with a blocked status', async () => {
+  const x = temporal('blocked'); await x.owned(); x.f.draft = false; await x.owned();
+  expect(x.ready).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.reviewer.review).not.toHaveBeenCalled();
+  expect(x.f.comments.at(-1)!.body).toContain('Status blocked');
+});
+it('does not merge a Factory pull request whose head was changed by someone else', async () => {
+  const x = temporal(); x.f.draft = false; x.f.head = 'f'.repeat(40);
+  await x.owned(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.f.comments.at(-1)!.body).toContain('fremden Änderungen');
+});
+it('with Factory protection requires the head to contain the current base and updates a stale branch through a new review', async () => {
+  const x = temporal(); x.f.draft = false; x.f.behindBy = 2; x.review.decision = 'update_branch';
+  await x.owned(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.api.update).toHaveBeenCalledWith(52, 'a'.repeat(40));
+  // The updated head is accepted as the Factory's own base update; it needs green checks and a new review.
+  x.f.behindBy = 0; x.f.checks = x.cfg.merge.requiredChecks.map(name => ({ name, state: 'success' })); x.review.decision = 'merge';
+  expect((await x.owned()).merged).toBe(1); expect(x.api.merge).toHaveBeenCalledWith(52, 'c'.repeat(40), 'squash');
+  expect(mergeGate({ ...x.f, state: 'open', behindBy: null }, x.cfg)).toContain('unbekannt');
+  expect(mergeGate({ ...x.f, state: 'open', behindBy: 0 }, config())).toContain('Serverseitige PR-Regeln');
+});
+it('re-runs a failed required check once before review, and lets the failure stand after that', async () => {
+  const x = temporal(); x.f.draft = false; x.f.checks[0]!.state = 'failure';
+  x.rerunFailed.mockResolvedValueOnce(1);
+  await x.owned(); expect(x.rerunFailed).toHaveBeenCalledWith(52, 'a'.repeat(40), x.cfg.merge.requiredChecks);
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.f.comments.at(-1)!.body).toContain('einmal wiederholt');
+  await x.owned(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.f.comments.at(-1)!.body).toContain('test-backend');
+});
+it('an issue-scoped broker adopts no pull request by label', async () => {
+  const x = temporal(); x.snapshot.comments.set(7, []); x.f.labels = ['sf:automerge']; x.f.draft = false;
+  await x.owned(); expect(x.api.facts).toHaveBeenCalled(); expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
 });

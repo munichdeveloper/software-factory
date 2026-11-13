@@ -4,12 +4,19 @@ import type { MergeFacts, MergePort, ReviewInput } from './contract.js';
 export class GitHubMergePort implements MergePort {
   private api: Octokit;
   private target: { owner: string; repo: string };
-  constructor(readonly repository: string, token: string, private scope: string, private adoptLabel = 'sf:automerge', fetcher: typeof fetch = fetch) {
+  /**
+   * `token` is an Actions token or an already scoped client (the Temporal broker's installation client).
+   * `settledAfterMs`: closed pull requests last updated longer ago are no candidates; only needed while a merge's
+   * follow-up work may still be open. Without it every listed pull request is a candidate (the Actions merge job).
+   */
+  constructor(readonly repository: string, token: string | Octokit, private scope: string, private adoptLabel = 'sf:automerge', fetcher: typeof fetch = fetch,
+    private settledAfterMs?: number, private now: () => number = Date.now) {
     const [owner, repo] = repository.split('/') as [string, string]; this.target = { owner, repo };
-    this.api = new Octokit({ auth: token, request: { timeout: 30000, fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
+    this.api = typeof token === 'string' ? new Octokit({ auth: token, request: { timeout: 30000, fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } }) : token;
   }
   async candidates() {
-    const { data: prs } = await this.api.pulls.list({ ...this.target, state: 'all', sort: 'updated', direction: 'desc', per_page: 100 });
+    const { data: listed } = await this.api.pulls.list({ ...this.target, state: 'all', sort: 'updated', direction: 'desc', per_page: 100 });
+    const prs = this.settledAfterMs === undefined ? listed : listed.filter(p => p.state === 'open' || this.now() - Date.parse(p.updated_at) < this.settledAfterMs!);
     return prs.filter(p => p.labels.some(l => l.name === this.adoptLabel) || p.head.ref.startsWith('sf/issue-'))
       .sort((a, b) => Number(b.labels.some(l => l.name === this.adoptLabel)) - Number(a.labels.some(l => l.name === this.adoptLabel)) || a.number - b.number)
       .map(p => p.number);
@@ -19,9 +26,13 @@ export class GitHubMergePort implements MergePort {
       this.api.pulls.get({ ...this.target, pull_number: number }), this.api.repos.get(this.target),
       this.api.paginate(this.api.issues.listComments, { ...this.target, issue_number: number, per_page: 100 })
     ]);
+    const branchRules = () => this.api.paginate(this.api.repos.getBranchRules, { ...this.target, branch: repo.default_branch, per_page: 100 });
     const [ref, rules, checks, statuses, runs, graph] = await Promise.all([
       this.api.git.getRef({ ...this.target, ref: `heads/${repo.default_branch}` }),
-      this.api.paginate(this.api.repos.getBranchRules, { ...this.target, branch: repo.default_branch, per_page: 100 }),
+      // Branch rules are unavailable on some plans for private repositories (403); they then count as absent.
+      branchRules().catch((error: unknown) => {
+        if (error && typeof error === 'object' && 'status' in error && error.status === 403) return [] as Awaited<ReturnType<typeof branchRules>>; throw error;
+      }),
       this.api.paginate(this.api.checks.listForRef, { ...this.target, ref: pr.head.sha, filter: 'latest', per_page: 100 }),
       this.api.paginate(this.api.repos.listCommitStatusesForRef, { ...this.target, ref: pr.head.sha, per_page: 100 }),
       this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: pr.head.sha, event: 'pull_request', status: 'action_required', per_page: 100 }),
@@ -32,6 +43,8 @@ export class GitHubMergePort implements MergePort {
         } } }`, { ...this.target, number })
     ]);
     const native = graph.repository.pullRequest;
+    // Whether the head contains the current base, from immutable commit IDs (GitHub reports BEHIND only under strict rules).
+    const behindBy = pr.state === 'open' ? (await this.api.repos.compareCommitsWithBasehead({ ...this.target, basehead: `${ref.data.object.sha}...${pr.head.sha}`, per_page: 1 })).data.behind_by : null;
     if (native.reviewThreads.pageInfo.hasNextPage) throw new Error('Too many review threads to verify');
     const required = rules.filter(r => r.type === 'required_status_checks');
     const latestStatuses = new Map<string, string>();
@@ -48,7 +61,7 @@ export class GitHubMergePort implements MergePort {
         ...[...latestStatuses].map(([name, state]) => ({ name, state }))],
       strictChecks: required.some(r => r.parameters?.strict_required_status_checks_policy) && rules.some(r => r.type === 'pull_request'),
       nativeRequiredChecks: required.flatMap(r => r.parameters?.required_status_checks.map(c => c.context) ?? []),
-      comments: comments.map(c => ({ id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at })) };
+      comments: comments.map(c => ({ id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at })), behindBy };
   }
   async context(facts: MergeFacts, maxFiles: number, maxBytes: number): Promise<ReviewInput> {
     // Compare immutable commit IDs, not a mutable pull-request diff endpoint.
@@ -94,6 +107,25 @@ export class GitHubMergePort implements MergePort {
   async workflowAvailable(workflow: string) {
     try { await this.api.actions.getWorkflow({ ...this.target, workflow_id: workflow }); return true; }
     catch (error) { if (error instanceof Error && 'status' in error && error.status === 404) return false; throw error; }
+  }
+  async ready(number: number, head: string) {
+    const { data: pr } = await this.api.pulls.get({ ...this.target, pull_number: number });
+    if (pr.head.sha !== head || pr.state !== 'open') throw new Error('Pull request changed; next run will recheck');
+    if (!pr.draft) return;
+    await this.api.graphql('mutation($id:ID!) { markPullRequestReadyForReview(input:{pullRequestId:$id}) { pullRequest { isDraft } } }', { id: pr.node_id });
+  }
+  async rerunFailed(number: number, head: string, checks: string[]) {
+    const runs = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: head, event: 'pull_request', per_page: 100 });
+    let count = 0;
+    // A first attempt only: the re-run is the one retry, and its failure stands.
+    for (const run of runs.filter(r => r.head_sha === head && r.run_attempt === 1 && r.status === 'completed' &&
+      ['failure', 'timed_out', 'cancelled', 'startup_failure'].includes(r.conclusion ?? '') && r.pull_requests?.some(p => p.number === number))) {
+      const jobs = await this.api.paginate(this.api.actions.listJobsForWorkflowRun, { ...this.target, run_id: run.id, filter: 'latest', per_page: 100 });
+      if (!jobs.some(j => checks.includes(j.name) && j.conclusion !== 'success')) continue;
+      await this.api.actions.reRunWorkflowFailedJobs({ ...this.target, run_id: run.id });
+      count++;
+    }
+    return count;
   }
   async canApprove(login: string) {
     try { return ['admin', 'maintain', 'write'].includes((await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login })).data.permission); }

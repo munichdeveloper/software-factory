@@ -16,6 +16,8 @@ import type { CodingArtifact } from '../src/workers/coding.js';
 import { defaultValidationPlan, type ValidationReport } from '../src/runtime/validation-contract.js';
 import { reworkOf } from '../src/runtime/coding-context.js';
 import { hash } from '../src/state/identity.js';
+import { MergeManager } from '../src/merge/manager.js';
+import type { MergeFacts, MergePort } from '../src/merge/contract.js';
 
 export const bot = 'github-actions[bot]';
 const transport = (what: string) => Object.assign(new Error(`${what} unavailable: connect ECONNREFUSED`), { status: 502 });
@@ -91,7 +93,11 @@ export type WorldOptions = { readyLabel?: boolean; humanGate?: boolean; maxParal
   /** The coding worker with independent validation: results are artifacts with a bound validation report and a draft pull request. */
   coding?: boolean;
   /** A failed validation starts a further attempt (implies coding). */
-  rework?: boolean };
+  rework?: boolean;
+  /** The broker reviews and merges validated pull requests itself, without server-side branch rules (implies coding). */
+  merging?: boolean };
+/** What GitHub knows about a published pull request beyond the snapshot: draft, head, checks, base it contains, comments. */
+type PullFacts = { draft: boolean; head: string; base: string; checks: { name: string; state: string }[]; comments: MergeFacts['comments']; mergeSha: string | null };
 export type Tick = { report?: RunReport; thrown?: string };
 
 /** One repository under Factory management with the real Manager and RuntimeController; only I/O is simulated. */
@@ -104,6 +110,12 @@ export class World {
   timelineDown = false;
   private workflows = new Map<string, string>(); private runs = 0;
   private outcomes = new Map<string, { artifact: CodingArtifact; validation: ValidationReport }>();
+  /** The default branch's head commit; a person's merge elsewhere moves it. */
+  base = 'b'.repeat(40);
+  readonly pulls = new Map<number, PullFacts>();
+  /** Every merge the Factory performed: pull request, merged head and the head its review covered. */
+  readonly factoryMerges: { pr: number; head: string; reviewed: boolean }[] = [];
+  private reviewedHeads = new Set<string>();
   readonly log: string[] = [];
   constructor(readonly options: WorldOptions = {}) {
     this.cfg.execution.engine = 'temporal';
@@ -127,7 +139,8 @@ export class World {
       if (this.timelineDown) throw transport('GitHub timeline');
       return authorizeReadyLabel(await this.github.getIssue(number), this.github.readyFor(number), actor => this.github.canApprove(actor), this.cfg.manager.trustedActors, expected, rework);
     };
-    if (options.coding || options.rework) {
+    if (options.merging) { Object.assign(this.cfg.merge, { enabled: true, protection: 'factory', requiredChecks: ['test'], updateBranch: true }); this.cfg.autonomy.overrides.merge_pr = 'allow'; }
+    if (options.coding || options.rework || options.merging) {
       this.cfg.execution.rework = !!options.rework;
       this.cfg.workers.coding = { enabled: true, agent: 'codex', model: 'test-model', reasoningEffort: 'high', validationWorkflow: null, loopback: false };
       this.repo.validationPlan = async () => defaultValidationPlan();
@@ -137,7 +150,13 @@ export class World {
           const input = snapshot.admission.input, number = 1000 + this.github.state.prs.length, previous = reworkOf(input);
           for (const pr of this.github.state.prs) if (previous && pr.state === 'open' && pr.headRefName === `sf/issue-${input.issueNumber}/${previous}`) pr.state = 'closed';
           this.github.state.prs.push({ number, state: 'open', merged: false, closingIssues: [input.issueNumber], referencedIssues: [input.issueNumber], headRefName: `sf/issue-${input.issueNumber}/${input.executionId}` });
-          return { url: `https://github.com/${this.github.repository}/pull/${number}` };
+          const url = `https://github.com/${this.github.repository}/pull/${number}`, head = `${input.executionId}00000000`;
+          // The pull request's CI ran on the published commit; the publication record names it.
+          this.pulls.set(number, { draft: true, head, base: this.base, checks: [{ name: 'test', state: 'success' }], comments: [], mergeSha: null });
+          const rows = this.github.state.comments.get(input.issueNumber) ?? [];
+          rows.push({ id: rows.length + 1, author: bot, body: `Draft PR: ${url}\nHead: ${head}\n<!-- sf-publication -->`, createdAt: this.now.toISOString() });
+          this.github.state.comments.set(input.issueNumber, rows);
+          return { url };
         } };
     }
     this.controller = new RuntimeController(this.repo, this.store, client);
@@ -220,6 +239,47 @@ export class World {
       const result = await this.controller.executeCoding(snapshot, row.binding);
       await this.controller.publish(snapshot, row.binding, result!); this.workflows.set(row.workflowId, 'COMPLETED'); return true;
     } catch (error) { this.workflows.set(row.workflowId, 'FAILED'); this.log.push(`publish refused: ${error instanceof Error ? error.message : String(error)}`); return false; }
+  }
+  // The broker's merge pass, against GitHub as this world models it.
+  /** Someone merges elsewhere: the default branch moves, and open pull requests no longer contain it. */
+  moveBase() { this.base = hash({ base: this.base }).slice(0, 40); this.log.push('base moved'); }
+  /** The checks of an updated pull request finish. */
+  completeChecks(number: number, state = 'success') { const p = this.pulls.get(number); if (p) p.checks = [{ name: 'test', state }]; this.log.push(`checks of PR ${number}: ${state}`); }
+  async mergePass() {
+    const port: MergePort = { repository: this.github.repository,
+      candidates: async () => this.github.state.prs.filter(p => p.headRefName?.startsWith('sf/issue-') && this.pulls.has(p.number)).map(p => p.number),
+      facts: async number => {
+        const pr = this.github.state.prs.find(p => p.number === number)!, f = this.pulls.get(number)!;
+        return { number, title: 'Implement', body: `Closes #${pr.closingIssues[0]}`, head: f.head, base: this.base, headBranch: pr.headRefName!, baseBranch: 'main',
+          state: pr.state, draft: f.draft, sameRepository: true, labels: [], mergeState: 'CLEAN', reviewDecision: null, unresolvedThreads: [], checks: structuredClone(f.checks),
+          mergeSha: f.mergeSha, mergeActorType: f.mergeSha ? 'Bot' : null, strictChecks: false, nativeRequiredChecks: [], comments: structuredClone(f.comments),
+          behindBy: f.base === this.base ? 0 : 1 };
+      },
+      context: async facts => ({ facts, trustedScope: 'Test', trustedInstructions: '', changes: [{ path: 'src/change.txt', status: 'modified', patch: '+x', content: 'x' }] }),
+      comment: async (number, body) => { const f = this.pulls.get(number)!; f.comments.push({ id: f.comments.length + 1, author: bot, body, createdAt: this.now.toISOString() }); },
+      update: async (number, head) => {
+        const f = this.pulls.get(number)!; if (f.head !== head) throw new Error('head moved');
+        Object.assign(f, { head: hash({ head, base: this.base }).slice(0, 40), base: this.base, checks: [{ name: 'test', state: 'in_progress' }] }); this.log.push(`PR ${number} updated`); return f.head;
+      },
+      merge: async (number, head) => {
+        const pr = this.github.state.prs.find(p => p.number === number)!, f = this.pulls.get(number)!;
+        if (pr.state !== 'open' || f.head !== head) throw Object.assign(new Error('Head branch was modified'), { status: 409 });
+        f.mergeSha = hash({ merge: head }).slice(0, 40); Object.assign(pr, { state: 'closed', merged: true, mergedAt: this.now.toISOString(), mergedBy: { login: bot, type: 'Bot' } });
+        this.base = f.mergeSha; this.factoryMerges.push({ pr: number, head, reviewed: this.reviewedHeads.has(`${number}:${head}`) });
+        // GitHub closes the issues a merged pull request names with a closing keyword.
+        for (const n of pr.closingIssues) { const i = this.github.state.issues.find(x => x.number === n); if (i) i.state = 'closed'; }
+        this.log.push(`factory merged PR ${number}`); return f.mergeSha;
+      },
+      dispatch: async () => {}, workflowAvailable: async () => true, canApprove: async () => true,
+      ready: async (number, head) => { const f = this.pulls.get(number)!; if (f.head !== head) throw new Error('changed'); f.draft = false; this.log.push(`PR ${number} ready`); },
+      rerunFailed: async () => 0 };
+    // A reviewer that approves acceptable code and asks for an update when the branch is behind.
+    const reviewer = { review: async (input: { facts: MergeFacts }) => {
+      this.reviewedHeads.add(`${input.facts.number}:${input.facts.head}`);
+      return { decision: input.facts.behindBy ? 'update_branch' as const : 'merge' as const, reason: 'Geprüft.', findings: [] };
+    } };
+    try { await new MergeManager(port, this.cfg, reviewer, 'merge', this.github, { ownedOnly: true }).run(await this.github.snapshot()); }
+    catch (error) { this.log.push(`merge pass threw ${error instanceof Error ? error.message : String(error)}`); }
   }
   /** The workflow dies without publishing (worker lost, timeout on the Temporal side). */
   crash(executionId: string) { const row = this.store.rows.get(executionId)!; this.workflows.set(row.workflowId, 'FAILED'); this.log.push(`crash ${executionId}`); }

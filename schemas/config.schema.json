@@ -355,6 +355,14 @@
           "default": true,
           "type": "boolean"
         },
+        "protection": {
+          "default": "github",
+          "type": "string",
+          "enum": [
+            "github",
+            "factory"
+          ]
+        },
         "requiredChecks": {
           "default": [
             "test-backend",
@@ -391,6 +399,14 @@
           "default": {},
           "type": "object",
           "properties": {
+            "provider": {
+              "default": "llm",
+              "type": "string",
+              "enum": [
+                "llm",
+                "openai"
+              ]
+            },
             "model": {
               "default": "gpt-6.1-sol",
               "type": "string",
