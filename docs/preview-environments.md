@@ -89,9 +89,15 @@ Head und Konfiguration passt, wird verworfen (fail closed), analog zu `bindValid
 **Gate im Merge-Pass.** In `mergeGate` kommt eine Regel hinzu: Ist `preview.enabled` und `preview.requiredForMerge`,
 braucht der aktuelle Head einen bestandenen Report. Fehlt er, läuft er noch oder ist er rot, schreibt der Merge-Pass
 den Grund in den bestehenden `merge_status`-Kommentar („Preview läuft noch“, „E2E-Test X fehlgeschlagen“) und merged
-nicht. Die Autorität ist der Broker-Record, nicht ein GitHub-Status, denn die Installation hat heute keine
-`statuses`/`checks`-Schreibrechte (`src/runtime/github-app.ts`). Ein Commit-Status `sf/preview` zur Anzeige in GitHub
-ist optional und bräuchte diese zusätzliche App-Berechtigung.
+nicht. Die Autorität ist der Broker-Record, nicht ein GitHub-Status.
+
+**Commit-Status `sf/preview` (entschieden: ja).** Zusätzlich setzt der Broker auf jedem Head einen Commit-Status
+`sf/preview` (`pending` beim Start, `success`/`failure`/`error` mit dem Report-Status, Link auf die Preview-URL bzw. den
+Testlauf). Er dient der Sichtbarkeit in GitHub und wird vom Merge-Pass nicht als Freigabe gelesen; dort zählt weiter
+der Broker-Record. Dafür braucht die Installation zusätzlich `statuses: write` (heute nur contents, issues,
+pull_requests, actions in `src/runtime/github-app.ts`). Die Berechtigung muss in der GitHub-App ergänzt und von den
+Installationen akzeptiert werden. `sf/preview` darf nicht in `merge.requiredChecks` oder einem Ruleset als Pflicht-Check
+stehen, solange der Status nur Anzeige ist.
 
 **Reihenfolge zum KI-Review (entschieden: parallel).** KI-Review und Preview laufen unabhängig, gemergt wird erst,
 wenn beide grün sind. So verlängert die Preview die Durchlaufzeit nur, wenn sie langsamer ist als das Review. Die
@@ -246,18 +252,19 @@ einer Preview in Coolify 4.7.5, und dass ein Deployment den gebauten Commit zur�
    `BROKER_COOLIFY_API_TOKEN` hinterlegen. Alles über Coolify und Deploy, nichts per Hand auf dem VPS.
 2. **Factory.** Config-Schema `preview`, Coolify-Client, Temporal-Workflow `PreviewVerification`, Report-Schema und
    Bindung, Gate in `mergeGate`, Cleanup und TTL, Wrapper `factory-preview.yml` im Installationsvertrag, Tests nach
-   dem Muster der Validierung (gefälschter/fremder Report, falscher Commit, Timeout, Antwortverlust).
+   dem Muster der Validierung (gefälschter/fremder Report, falscher Commit, Timeout, Antwortverlust), Commit-Status
+   `sf/preview` samt `statuses: write` für die GitHub-App.
 3. **SF Manager.** Abschnitt „Preview & E2E“ im Rollout-Dialog und Config-Editor, Broker-Prüfung der Coolify-App,
    Zustellung der `sf-preview`-Secrets aus dem Vault. Rollout auf Controla ausschließlich über den Manager, zuerst mit
    `requiredForMerge: false` (nur beobachten), danach scharf.
-4. **Ausbau.** Rework bei roter Preview, Smoke-Test gegen `staging`, optional Commit-Status `sf/preview` in GitHub,
-   eigener Preview-Server bei Bedarf.
+4. **Ausbau.** Rework bei roter Preview, Smoke-Test gegen `staging`, eigener Preview-Server bei Bedarf.
 
-## 12. Offene Entscheidungen
+## 12. Entscheidungen
 
-Entschieden: Preview und KI-Review laufen parallel (Abschnitt 3).
-
-
-- Eigenes Coolify-Team für die Factory, damit das Token keine Produktivressourcen erreicht?
-- Bleiben Previews auf demselben Server wie `staging`, oder gleich ein separater Preview-Server?
-- Soll die Factory `statuses: write` bekommen, damit das Ergebnis auch als Check in GitHub sichtbar ist?
+- **Reihenfolge:** Preview und KI-Review laufen parallel (Abschnitt 3).
+- **Coolify-Team:** vorerst kein eigenes Team für die Factory. Neu zu bewerten, sobald im selben Team Produktiv-Apps
+  liegen, die das Factory-Token nicht erreichen soll.
+- **Server:** Previews laufen vorerst auf demselben Server wie `staging`, mit `maxConcurrent: 1` und festen
+  Ressourcenlimits. Ein eigener Preview-Server erst, wenn die Sentinel-Metriken es nötig machen.
+- **GitHub-Status:** Der Broker setzt `sf/preview` als Anzeige; dafür bekommt die GitHub-App `statuses: write`
+  (Abschnitt 3).
