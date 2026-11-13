@@ -68,7 +68,10 @@ export function statusComment(task: Task, config: Config, context: { repository:
       : 'Remove the label `harness:blocked` when the task may continue.';
   } else if (context.rejection) {
     const ready = context.rejection.startsWith('READY_');
-    state = ready ? ['Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${context.rejection}\`).**`];
+    // A retry after a failed attempt says so; "ready to run" alone hid that the previous run had failed.
+    const previous = result && ['failed', 'cancelled'].includes(result.status)
+      ? `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'} (attempt ${task.latest!.attempt + 1} of ${config.execution.maxRetries + 1}). ` : '';
+    state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : 'Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${context.rejection}\`).**`];
     needs = ready ? grant : 'Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.';
   } else if (result?.status === 'success') { state = ['Implemented and independently validated.']; needs = 'Review and merge the pull request. The Factory does not merge on its own in this installation.'; }
   else if (result?.status === 'blocked') {

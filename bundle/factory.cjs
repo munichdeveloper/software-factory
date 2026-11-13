@@ -39756,7 +39756,8 @@ function statusComment(task, config2, context) {
     needs = task.blockReason.startsWith("Unresolved dependencies") ? "Close the issues this task depends on, or remove them from its `Depends on:` line." : task.blockReason.startsWith("Missing Acceptance") ? "Add a section `## Acceptance criteria` with at least one list item to the task text." : "Remove the label `harness:blocked` when the task may continue.";
   } else if (context.rejection) {
     const ready = context.rejection.startsWith("READY_");
-    state = ready ? ["Ready to run. **Waiting only for the grant.**"] : [`**The runtime refused to start this task (\`${context.rejection}\`).**`];
+    const previous = result && ["failed", "cancelled"].includes(result.status) ? `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"} (attempt ${task.latest.attempt + 1} of ${config2.execution.maxRetries + 1}). ` : "";
+    state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : "Ready to run. **Waiting only for the grant.**"] : [`**The runtime refused to start this task (\`${context.rejection}\`).**`];
     needs = ready ? grant : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
   } else if (result?.status === "success") {
     state = ["Implemented and independently validated."];
