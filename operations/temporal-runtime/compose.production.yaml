@@ -33,6 +33,10 @@ x-service: &service
 services:
   manager-db:
     <<: *service
+    # web, manager-worker and runtime-worker share runtime-broker's network namespace. Every deploy recreates the
+    # broker, which removes that namespace under their open connections without closing them; TCP keepalives let
+    # Postgres drop such dead connections after about 90 seconds instead of two hours (max_connections ran out).
+    command: [postgres, -c, tcp_keepalives_idle=60, -c, tcp_keepalives_interval=10, -c, tcp_keepalives_count=3]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     image: postgres:17.11-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager-db.env
@@ -46,6 +50,10 @@ services:
       retries: 20
   runtime-db:
     <<: *service
+    # web, manager-worker and runtime-worker share runtime-broker's network namespace. Every deploy recreates the
+    # broker, which removes that namespace under their open connections without closing them; TCP keepalives let
+    # Postgres drop such dead connections after about 90 seconds instead of two hours (max_connections ran out).
+    command: [postgres, -c, tcp_keepalives_idle=60, -c, tcp_keepalives_interval=10, -c, tcp_keepalives_count=3]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     image: postgres:17.11-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/runtime-db.env
@@ -120,7 +128,7 @@ services:
       runtime-broker: { condition: service_healthy }
   web:
     <<: *service
-    image: sf-manager:46cd2480f0d3289291311ea0d105f82f8e619db1 # keep both Manager services on the same commit
+    image: sf-manager:f6f7c1d94e450e4f3e3cb66bd01fbccc06f94d9a # keep both Manager services on the same commit
     network_mode: service:runtime-broker
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
@@ -147,7 +155,7 @@ services:
       start_period: 30s
   manager-worker:
     <<: *service
-    image: sf-manager:46cd2480f0d3289291311ea0d105f82f8e619db1 # keep both Manager services on the same commit
+    image: sf-manager:f6f7c1d94e450e4f3e3cb66bd01fbccc06f94d9a # keep both Manager services on the same commit
     network_mode: service:runtime-broker
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
