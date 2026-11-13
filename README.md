@@ -52,6 +52,8 @@ runtime, runs the real cross-repository protocol test and rejects bundle/schema
 drift. Optional [AI-reviewed PR merging](docs/merging.md) is disabled by default.
 It requires a real code-review decision and native GitHub gates; green CI alone
 does not authorize a merge. Existing PRs can be explicitly enrolled by label.
+A [concept for per-PR preview environments](docs/preview-environments.md) on Coolify
+(not implemented) describes an additional E2E gate before merging.
 
 ## Deployment after pushes (v0.5.0)
 
