@@ -1,0 +1,39 @@
+name: Release
+run-name: Release check ${{ github.event.workflow_run.head_sha }}
+# Publishes the GitHub release vX.Y.Z for the version in package.json once CI has passed on the default branch
+# and no release of that version exists yet. The SF Manager offers only published, non-prerelease releases,
+# so a version bump that is merged is also one that installations can roll out. Nothing else is released.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+permissions: {}
+concurrency:
+  group: ${{ github.repository }}-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Publish the release of this version if it is missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a release version: $version"; exit 0; }
+          [[ "$(node -p "require('./temporal-runtime.json').factoryVersion")" == "$version" ]]
+          if gh release view "v$version" --repo "$REPOSITORY" >/dev/null 2>&1; then echo "v$version already exists"; exit 0; fi
+          gh release create "v$version" --repo "$REPOSITORY" --target "$SHA" --title "v$version" --generate-notes --latest

@@ -32,7 +32,7 @@ assert.match(factoryA,/^[a-f0-9]{40}$/);assert.match(factoryB,/^[a-f0-9]{40}$/);
 async function pack(root:string,factorySha:string,name:string){
  const bundle=await bundleWorkflowCode({workflowsPath:resolve(root,'runtime/workflow.js')});
  const bundlePath=resolve(directory,`workflow-${name}.js`);await writeFile(bundlePath,bundle.code);
- const release:RuntimeRelease={factorySha,harnessSha:'c8882950c7a267ae99937aaa048de22e6ecd7492',workflowHash:digest(bundle.code),deploymentName:'sf-version-matrix',buildId:factorySha,taskQueue:'sf-version-matrix',schemaVersion:1};
+ const release:RuntimeRelease={factorySha,harnessSha:'7d571cb233db55075f7f26178c97a870142092f1',workflowHash:digest(bundle.code),deploymentName:'sf-version-matrix',buildId:factorySha,taskQueue:'sf-version-matrix',schemaVersion:1};
  const harnessEntrypoint=resolve('.runtime/harness/dist/cli.js'),packageFile=resolve(directory,`worker-${name}.json`);
  const value={release,bundlePath,harnessEntrypoint,harnessEntrypointHash:digest(await readFile(harnessEntrypoint))};await writeFile(packageFile,JSON.stringify(value));
  return {...value,packageFile,main:resolve(root,'runtime/main.js')};
