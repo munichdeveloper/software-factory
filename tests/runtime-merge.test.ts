@@ -23,7 +23,12 @@ it('logs counts and pull request numbers only, and never rejects when a pass fai
   try {
     await new RuntimeMerge(42, async () => report).start(enabled(), snapshot);
     expect(JSON.parse(String(log.mock.calls[0]![0]))).toEqual({ event: 'factory-merge', repositoryId: 42, reviewed: 1, updated: 0, merged: 1, errors: [] });
-    await expect(new RuntimeMerge(42, async () => { throw new Error('secret provider body'); }).start(enabled(), snapshot)).resolves.toBeUndefined();
+    const failing = new RuntimeMerge(42, async () => { throw Object.assign(new Error('secret provider body'), { status: 403 }); });
+    await expect(failing.start(enabled(), snapshot)).resolves.toBeUndefined();
     expect(String(warn.mock.calls[0]![0])).not.toContain('secret');
+    expect(failing.errors).toEqual(['Merge: pass failed before reading pull requests (403)']);
+    // A pass's own errors replace those of the previous pass.
+    const partial = new RuntimeMerge(42, async () => ({ ...report, errors: ['PR #42: review/update/merge not confirmed (403); no unreviewed merge performed'] }));
+    await partial.start(enabled(), snapshot); expect(partial.errors).toEqual(['Merge: PR #42: review/update/merge not confirmed (403); no unreviewed merge performed']);
   } finally { log.mockRestore(); warn.mockRestore(); }
 });

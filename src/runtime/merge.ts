@@ -11,6 +11,8 @@ export interface MergePassReport { reviewed: number; updated: number; merged: nu
 export class RuntimeMerge {
   private running?: Promise<void>;
   private last = -Infinity;
+  /** Errors of the last completed pass (pull request numbers and status codes only), reported with the next reconciliation. */
+  errors: string[] = [];
   constructor(private repositoryId: number, private pass: (config: Config, snapshot: Snapshot) => Promise<MergePassReport>,
     private intervalMs = 180000, private now: () => number = Date.now) {}
   /** Starts a pass unless merging is off, one is running or the last started recently. Never rejects. */
@@ -18,10 +20,15 @@ export class RuntimeMerge {
     if (!config.merge.enabled || this.running || this.now() - this.last < this.intervalMs) return null;
     this.last = this.now();
     this.running = this.pass(config, snapshot).then(report => {
+      this.errors = report.errors.map(e => `Merge: ${e}`);
       // Errors carry pull request numbers and HTTP status codes only.
       if (report.reviewed || report.updated || report.merged || report.errors.length) console.log(JSON.stringify({ event: 'factory-merge',
         repositoryId: this.repositoryId, reviewed: report.reviewed, updated: report.updated, merged: report.merged, errors: report.errors }));
-    }, () => { console.warn(JSON.stringify({ event: 'factory-merge-failed', repositoryId: this.repositoryId })); })
+    }, (error: unknown) => {
+      const status = error && typeof error === 'object' && 'status' in error ? String(error.status) : 'unavailable';
+      this.errors = [`Merge: pass failed before reading pull requests (${status})`];
+      console.warn(JSON.stringify({ event: 'factory-merge-failed', repositoryId: this.repositoryId, status }));
+    })
       .finally(() => { this.running = undefined; });
     return this.running;
   }

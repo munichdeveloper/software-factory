@@ -1,6 +1,8 @@
 import { Octokit } from '@octokit/rest';
 import type { MergeFacts, MergePort, ReviewInput } from './contract.js';
 
+const forbidden = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && error.status === 403;
+
 export class GitHubMergePort implements MergePort {
   private api: Octokit;
   private target: { owner: string; repo: string };
@@ -33,8 +35,13 @@ export class GitHubMergePort implements MergePort {
       branchRules().catch((error: unknown) => {
         if (error && typeof error === 'object' && 'status' in error && error.status === 403) return [] as Awaited<ReturnType<typeof branchRules>>; throw error;
       }),
-      this.api.paginate(this.api.checks.listForRef, { ...this.target, ref: pr.head.sha, filter: 'latest', per_page: 100 }),
-      this.api.paginate(this.api.repos.listCommitStatusesForRef, { ...this.target, ref: pr.head.sha, per_page: 100 }),
+      // A token without checks:read (the Temporal broker's) reads the same states from the Actions jobs of the exact head.
+      this.api.paginate(this.api.checks.listForRef, { ...this.target, ref: pr.head.sha, filter: 'latest', per_page: 100 })
+        .then(runs => runs.map(c => ({ name: c.name, state: c.status === 'completed' ? c.conclusion ?? 'unknown' : c.status })))
+        .catch(async (error: unknown) => { if (!forbidden(error)) throw error; return this.actionJobs(pr.head.sha); }),
+      // Without statuses:read no legacy commit status is visible; required checks are still enforced by name.
+      this.api.paginate(this.api.repos.listCommitStatusesForRef, { ...this.target, ref: pr.head.sha, per_page: 100 })
+        .catch((error: unknown) => { if (forbidden(error)) return [] as { context: string; state: string }[]; throw error; }),
       this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: pr.head.sha, event: 'pull_request', status: 'action_required', per_page: 100 }),
       this.api.graphql<{ repository: { pullRequest: { mergeStateStatus: string; reviewDecision: string | null; mergedBy: { __typename: string } | null;
         reviewThreads: { nodes: { isResolved: boolean; comments: { nodes: { body: string }[] } }[]; pageInfo: { hasNextPage: boolean } } } } }>(`
@@ -55,13 +62,23 @@ export class GitHubMergePort implements MergePort {
       labels: pr.labels.map(l => l.name ?? ''), mergeState: native.mergeStateStatus, reviewDecision: native.reviewDecision,
       unresolvedThreads: native.reviewThreads.nodes.filter(t => !t.isResolved).map(t => t.comments.nodes.map(c => c.body).join('\n')),
       mergeSha: pr.merged ? pr.merge_commit_sha : null, mergeActorType: native.mergedBy?.__typename ?? null,
-      checks: [...checks.map(c => ({ name: c.name, state: c.status === 'completed' ? c.conclusion ?? 'unknown' : c.status })),
+      checks: [...checks,
         ...runs.filter(r => r.head_sha === pr.head.sha && r.conclusion === 'action_required' && r.pull_requests?.some(p => p.number === number))
           .map(r => ({ name: `Workflow-Freigabe erforderlich: ${r.name ?? r.path} (${r.html_url})`, state: 'action_required' })),
         ...[...latestStatuses].map(([name, state]) => ({ name, state }))],
       strictChecks: required.some(r => r.parameters?.strict_required_status_checks_policy) && rules.some(r => r.type === 'pull_request'),
       nativeRequiredChecks: required.flatMap(r => r.parameters?.required_status_checks.map(c => c.context) ?? []),
       comments: comments.map(c => ({ id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at })), behindBy };
+  }
+  /** The latest attempt of every Actions job on `head`, named and reported like its check run. */
+  private async actionJobs(head: string) {
+    const runs = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: head, per_page: 100 });
+    const checks: { name: string; state: string }[] = [];
+    for (const run of runs.filter(r => r.head_sha === head)) {
+      const jobs = await this.api.paginate(this.api.actions.listJobsForWorkflowRun, { ...this.target, run_id: run.id, filter: 'latest', per_page: 100 });
+      checks.push(...jobs.map(j => ({ name: j.name, state: j.status === 'completed' ? j.conclusion ?? 'unknown' : j.status })));
+    }
+    return checks;
   }
   async context(facts: MergeFacts, maxFiles: number, maxBytes: number): Promise<ReviewInput> {
     // Compare immutable commit IDs, not a mutable pull-request diff endpoint.

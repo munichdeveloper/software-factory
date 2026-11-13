@@ -132,3 +132,17 @@ it('re-runs only first attempts of failed pull-request runs on the exact head th
   expect(await api.rerunFailed(52, head, ['test-and-build (24)'])).toBe(1);
   expect(x.calls.filter(c => c.path.endsWith('/rerun-failed-jobs')).map(c => c.path)).toEqual(['/repos/owner/target/actions/runs/1/rerun-failed-jobs']);
 });
+it('reads check states from the Actions jobs of the exact head where the token has no checks or statuses access', async () => {
+  const denied = () => new Response('{"message":"Resource not accessible by integration"}', { status: 403, headers: { 'content-type': 'application/json' } });
+  const x = routes({
+    '/graphql': () => ({ data: { repository: { pullRequest: { mergeStateStatus: 'CLEAN', reviewDecision: null, mergedBy: null, reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } } } } } }),
+    '/rules/branches/main': () => [], '/check-runs': denied, '/statuses': denied,
+    '/pulls/52': () => ({ number: 52, title: 'F', body: '', state: 'open', draft: false, labels: [], merged: false, head: { sha: head, ref: 'sf/issue-7/x', repo: { full_name: 'owner/target' } }, base: { ref: 'main' } }),
+    '/comments': () => [], '/git/ref/heads/main': () => ({ object: { sha: base } }),
+    '/actions/runs/7/jobs': () => ({ total_count: 2, jobs: [{ name: 'test-and-build (24)', status: 'completed', conclusion: 'success' }, { name: 'docker', status: 'in_progress', conclusion: null }] }),
+    '/actions/runs': () => ({ total_count: 2, workflow_runs: [{ id: 7, head_sha: head }, { id: 8, head_sha: base }] }),
+    [`/compare/${base}...${head}`]: () => ({ behind_by: 0, files: [] }), '/repos/owner/target': () => ({ default_branch: 'main' }) });
+  const facts = await new GitHubMergePort('owner/target', 'token', 'Community', 'sf:automerge', x.fetcher).facts(52);
+  expect(facts.checks).toEqual([{ name: 'test-and-build (24)', state: 'success' }, { name: 'docker', state: 'in_progress' }]);
+  expect(x.calls.some(c => c.path.endsWith('/actions/runs/8/jobs'))).toBe(false);
+});

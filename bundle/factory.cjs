@@ -40748,6 +40748,7 @@ async function publishCoding(github, config2, repository, issue2, id, correlatio
 }
 
 // src/merge/github.ts
+var forbidden = (error62) => !!error62 && typeof error62 === "object" && "status" in error62 && error62.status === 403;
 var GitHubMergePort = class {
   /**
    * `token` is an Actions token or an already scoped client (the Temporal broker's installation client).
@@ -40794,8 +40795,16 @@ var GitHubMergePort = class {
         if (error62 && typeof error62 === "object" && "status" in error62 && error62.status === 403) return [];
         throw error62;
       }),
-      this.api.paginate(this.api.checks.listForRef, { ...this.target, ref: pr.head.sha, filter: "latest", per_page: 100 }),
-      this.api.paginate(this.api.repos.listCommitStatusesForRef, { ...this.target, ref: pr.head.sha, per_page: 100 }),
+      // A token without checks:read (the Temporal broker's) reads the same states from the Actions jobs of the exact head.
+      this.api.paginate(this.api.checks.listForRef, { ...this.target, ref: pr.head.sha, filter: "latest", per_page: 100 }).then((runs2) => runs2.map((c) => ({ name: c.name, state: c.status === "completed" ? c.conclusion ?? "unknown" : c.status }))).catch(async (error62) => {
+        if (!forbidden(error62)) throw error62;
+        return this.actionJobs(pr.head.sha);
+      }),
+      // Without statuses:read no legacy commit status is visible; required checks are still enforced by name.
+      this.api.paginate(this.api.repos.listCommitStatusesForRef, { ...this.target, ref: pr.head.sha, per_page: 100 }).catch((error62) => {
+        if (forbidden(error62)) return [];
+        throw error62;
+      }),
       this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: pr.head.sha, event: "pull_request", status: "action_required", per_page: 100 }),
       this.api.graphql(`
         query($owner:String!,$repo:String!,$number:Int!) { repository(owner:$owner,name:$repo) { pullRequest(number:$number) {
@@ -40826,7 +40835,7 @@ var GitHubMergePort = class {
       mergeSha: pr.merged ? pr.merge_commit_sha : null,
       mergeActorType: native.mergedBy?.__typename ?? null,
       checks: [
-        ...checks.map((c) => ({ name: c.name, state: c.status === "completed" ? c.conclusion ?? "unknown" : c.status })),
+        ...checks,
         ...runs.filter((r) => r.head_sha === pr.head.sha && r.conclusion === "action_required" && r.pull_requests?.some((p) => p.number === number4)).map((r) => ({ name: `Workflow-Freigabe erforderlich: ${r.name ?? r.path} (${r.html_url})`, state: "action_required" })),
         ...[...latestStatuses].map(([name, state]) => ({ name, state }))
       ],
@@ -40835,6 +40844,16 @@ var GitHubMergePort = class {
       comments: comments.map((c) => ({ id: c.id, author: c.user?.login ?? "", body: c.body ?? "", createdAt: c.created_at })),
       behindBy
     };
+  }
+  /** The latest attempt of every Actions job on `head`, named and reported like its check run. */
+  async actionJobs(head) {
+    const runs = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: head, per_page: 100 });
+    const checks = [];
+    for (const run of runs.filter((r) => r.head_sha === head)) {
+      const jobs = await this.api.paginate(this.api.actions.listJobsForWorkflowRun, { ...this.target, run_id: run.id, filter: "latest", per_page: 100 });
+      checks.push(...jobs.map((j) => ({ name: j.name, state: j.status === "completed" ? j.conclusion ?? "unknown" : j.status })));
+    }
+    return checks;
   }
   async context(facts, maxFiles, maxBytes) {
     const { data: comparison } = await this.api.repos.compareCommitsWithBasehead({ ...this.target, basehead: `${facts.base}...${facts.head}`, per_page: 1 });

@@ -73,6 +73,8 @@ export function runtimeServer(options: ServerOptions) {
         const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller });
         const report = await options.store.locked(binding.repository.repositoryId, 'manager', () => manager.run());
         if (manager.lastSnapshot) void binding.merge?.start(config, manager.lastSnapshot);
+        // The merge pass runs after the response; what its last pass could not do is reported here.
+        if (config.merge.enabled && binding.merge?.errors.length) report.errors.push(...binding.merge.errors);
         // One line per reconciliation that did or could not do something. Blockers and errors carry only
         // issue numbers and fixed codes, never repository content or external error text.
         const executed = report.decisions.filter(d => d.executed).map(d => `${d.action.kind}#${d.action.issueNumber}${d.action.status ? `:${d.action.status}` : ''}`);
