@@ -11,9 +11,12 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     }) as typeof fetch;
   }
   const json = (body: unknown, headers?: Record<string, string>) => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json', ...headers } });
+  const isHistory = (url: URL, body: unknown) => url.pathname === '/graphql' && JSON.stringify(body).includes('userContentEdits');
+  const history = (nodes: unknown[] = []) => json({ data: { repository: { issue: { userContentEdits: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } } } });
   it('authenticates ready approval against native label events and current repository permission', async () => {
     let permission='write';
-    const gh=new GitHubClient('owner/target','token',1000,transport(url=>{
+    const gh=new GitHubClient('owner/target','token',1000,transport((url,_m,body)=>{
+      if(isHistory(url,body))return history();
       if(url.pathname.endsWith('/permission'))return json({permission});
       if(url.pathname.endsWith('/timeline'))return json([{id:123,event:'labeled',label:{name:'harness:ready'},actor:{login:'maintainer'},created_at:'2026-11-06T10:00:00Z'}]);
       return json({number:1,title:'Task',body:'Implement',state:'open',labels:['harness:managed','harness:ready'],updated_at:'2026-11-06T10:00:00Z'});
@@ -23,8 +26,9 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
   });
   it('paginates managed issues/comments, includes merged PRs and targets the caller repository', async () => {
     const requested: string[] = [];
-    const gh = new GitHubClient('owner/target', 'token', 1000, transport((url) => {
+    const gh = new GitHubClient('owner/target', 'token', 1000, transport((url, _method, body) => {
       requested.push(url.href);
+      if (isHistory(url, body)) return history();
       if (url.pathname === '/graphql') return json({ data: { repository: { pullRequests: { nodes: [{ number: 9, state: 'MERGED', merged: true,
         mergedBy: { login: 'merge-agent', __typename: 'Bot' }, body: 'Fixes #1', closingIssuesReferences: {
         nodes: [{ number: 1, repository: { nameWithOwner: 'owner/target' } }, { number: 42, repository: { nameWithOwner: 'other/repo' } }], pageInfo: { hasNextPage: false }
@@ -57,8 +61,9 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
   it('reads the journal of open and recently touched tasks only', async () => {
     const requested: string[] = [], recent = new Date(Date.now() - 3600000).toISOString();
     const row = (number: number, state: string, updated_at: string) => ({ number, title: 'task', body: '', state, labels: [{ name: 'harness:managed' }], updated_at });
-    const gh = new GitHubClient('owner/target', 'token', 1000, transport(url => {
+    const gh = new GitHubClient('owner/target', 'token', 1000, transport((url, _method, body) => {
       requested.push(url.pathname);
+      if (isHistory(url, body)) return history();
       if (url.pathname === '/graphql') return json({ data: { repository: { pullRequests: { nodes: [], pageInfo: { hasNextPage: false } } } } });
       if (url.pathname.endsWith('/issues')) return json([row(1, 'open', '2020-01-01T00:00:00Z'), row(2, 'closed', recent), row(3, 'closed', '2020-01-01T00:00:00Z')]);
       if (/\/issues\/[12]\/(comments|timeline)$/.test(url.pathname)) return json([]);
@@ -93,7 +98,8 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     expect(await gh.canApprove('attacker')).toBe(false);
   });
   it('reads the current blocked-label provenance across timeline pages', async () => {
-    const gh = new GitHubClient('owner/target', 'token', 1000, transport(url => {
+    const gh = new GitHubClient('owner/target', 'token', 1000, transport((url, _method, body) => {
+      if (isHistory(url, body)) return history();
       if (!url.pathname.endsWith('/timeline')) return json({ number: 1, title: 'blocked', body: '', state: 'open',
         labels: [{ name: 'harness:managed' }, { name: 'harness:blocked' }], updated_at: '2026-11-06T10:00:00Z' });
       const firstPage = [{ id: 1, event: 'labeled', label: { name: 'harness:blocked' }, actor: { login: 'github-actions[bot]' }, created_at: '2026-11-06T10:00:00Z' }];
@@ -109,5 +115,29 @@ describe('Octokit adapter against simulated REST and GraphQL HTTP responses', ()
     expect((await gh.getIssue(1)).blockedLabelEvents?.map(e => [e.id, e.event, e.actor])).toEqual([
       [1, 'labeled', 'github-actions[bot]'], [2, 'unlabeled', 'github-actions[bot]'], [3, 'labeled', 'maintainer']
     ]);
+  });
+  it('reads title and body changes after the managed label with the editor\'s current write access', async () => {
+    const gh = new GitHubClient('owner/target', 'token', 1000, transport((url, _method, body) => {
+      if (isHistory(url, body)) return history([{ editedAt: '2026-11-06T10:05:00Z', editor: { login: 'stranger' } },
+        { editedAt: '2026-11-06T10:04:00Z', editor: { login: 'maintainer' } }, { editedAt: '2026-11-06T09:00:00Z', editor: null }]);
+      if (url.pathname.endsWith('/permission')) return json({ permission: url.pathname.includes('/maintainer/') ? 'write' : 'read' });
+      if (url.pathname.endsWith('/timeline')) return json([
+        { id: 1, event: 'labeled', label: { name: 'harness:managed' }, actor: { login: 'maintainer' }, created_at: '2026-11-06T10:00:00Z' },
+        { id: 2, event: 'renamed', actor: { login: 'stranger' }, created_at: '2026-11-06T10:06:00Z' }]);
+      return json({ number: 1, title: 'task', body: 'changed', state: 'open', labels: [{ name: 'harness:managed' }], updated_at: '2026-11-06T10:06:00Z' });
+    }));
+    const issue = await gh.getIssue(1);
+    expect(issue.managedAt).toBe('2026-11-06T10:00:00Z');
+    expect(issue.contentEdits).toEqual([{ actor: 'stranger', at: '2026-11-06T10:06:00Z', trusted: false },
+      { actor: 'stranger', at: '2026-11-06T10:05:00Z', trusted: false }, { actor: 'maintainer', at: '2026-11-06T10:04:00Z', trusted: true },
+      { actor: '', at: '2026-11-06T09:00:00Z', trusted: false }]);
+  });
+  it('fails instead of assuming an unchanged text when the content history is unavailable', async () => {
+    const gh = new GitHubClient('owner/target', 'token', 1000, transport((url, _method, body) => {
+      if (isHistory(url, body)) return json({ data: { repository: { issue: null } } });
+      if (url.pathname.endsWith('/timeline')) return json([]);
+      return json({ number: 1, title: 'task', body: '', state: 'open', labels: [{ name: 'harness:managed' }], updated_at: '2026-11-06T10:06:00Z' });
+    }));
+    await expect(gh.getIssue(1)).rejects.toThrow('Content history of #1 is unavailable');
   });
 });

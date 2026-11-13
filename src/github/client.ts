@@ -1,6 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import type { GitHubPort } from './port.js';
-import type { BlockLabelEvent, Comment, Issue, PullRequest, Snapshot, WorkflowRun } from '../types.js';
+import type { BlockLabelEvent, Comment, ContentEdit, Issue, PullRequest, Snapshot, WorkflowRun } from '../types.js';
 import { authorizeReadyLabel } from '../runtime/ready-approval.js';
 import type { ReadyApproval } from '../runtime/contract.js';
 import { allLabels, dependencies, managedLabel } from '../state/lifecycle.js';
@@ -47,7 +47,34 @@ export class GitHubClient implements GitHubPort {
           !('id' in e) || typeof e.id !== 'number' || !('created_at' in e) || typeof e.created_at !== 'string') return [];
       return [{ id: e.id, event: e.event as 'labeled' | 'unlabeled', actor: 'actor' in e ? e.actor?.login ?? '' : '', createdAt: e.created_at }];
     });
+    issue.managedAt = timeline.flatMap(e => e.event === 'labeled' && 'label' in e && e.label?.name === managedLabel &&
+      'created_at' in e && typeof e.created_at === 'string' ? [e.created_at] : []).sort().at(-1);
+    // Title changes are native timeline events; body changes are only exposed as GraphQL content edits.
+    const renames = timeline.flatMap(e => e.event === 'renamed' && 'created_at' in e && typeof e.created_at === 'string'
+      ? [{ actor: 'actor' in e ? e.actor?.login ?? '' : '', at: e.created_at }] : []);
+    const edits: { actor: string; at: string }[] = [...renames, ...await this.bodyEdits(issue.number)];
+    const trust = new Map<string, Promise<boolean>>();
+    const trusted = (actor: string) => { if (!trust.has(actor)) trust.set(actor, actor ? this.canApprove(actor) : Promise.resolve(false)); return trust.get(actor)!; };
+    issue.contentEdits = await Promise.all(edits.map(async (e): Promise<ContentEdit> => ({ ...e, trusted: await trusted(e.actor) })));
     return issue;
+  }
+  /** Every body revision with its editor. Fails rather than reporting an incomplete history. */
+  private async bodyEdits(number: number): Promise<{ actor: string; at: string }[]> {
+    type Page = { repository: { issue: { userContentEdits: { nodes: ({ editedAt: string; editor: { login: string } | null } | null)[];
+      pageInfo: { hasNextPage: boolean; endCursor: string | null } } } | null } };
+    const result: { actor: string; at: string }[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: Page = await this.api.graphql<Page>(`query($owner:String!,$repo:String!,$number:Int!,$cursor:String) { repository(owner:$owner,name:$repo) {
+        issue(number:$number) { userContentEdits(first:100, after:$cursor) { nodes { editedAt editor { login } } pageInfo { hasNextPage endCursor } } } } }`,
+        { ...this.target, number, cursor });
+      const connection = page.repository.issue?.userContentEdits;
+      if (!connection) throw new Error(`Content history of #${number} is unavailable`);
+      // GitHub also lists the original text as a revision; it predates any approval and is ignored by time.
+      for (const node of connection.nodes) if (node) result.push({ actor: node.editor?.login ?? '', at: node.editedAt });
+      cursor = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+    } while (cursor);
+    return result;
   }
   async comments(number: number): Promise<Comment[]> {
     const rows = await this.api.paginate(this.api.issues.listComments, { ...this.target, issue_number: number, per_page: 100 });

@@ -11,7 +11,16 @@ only the SHA-pinned public Harness, disables credential persistence and installs
 locked dependencies with lifecycle scripts disabled. Runtime handlers are trusted
 code, not dynamically loaded repository files. Incoming CI has contents-read only.
 
-Issue/PR text and comments are untrusted data. The planner has no API tools; plans
+Issue/PR text and comments are untrusted data. Applying `harness:managed` (and, under
+Temporal, `harness:ready`) approves the title and body as they are at that moment. An issue
+author keeps edit rights, also on public repositories, so SF reads the native title changes and
+body revisions of every managed issue. A change after the latest approval by an account without
+write access withdraws it: the Manager removes `harness:managed` and `harness:ready` and explains
+why, the policy denies every action except cancelling a worker, a ready grant is refused with
+`READY_CONTENT_CHANGED`, and the merge pass does not merge a Factory PR of such a task. Changes by
+people with write access keep the approval. A maintainer re-approves by applying `harness:managed`
+again after reading the new text. An unreadable edit history fails the run instead of being
+treated as unchanged. The planner has no API tools; plans
 are schema validated and independently checked against policy, current facts,
 concrete approvals and budgets. Trusted journal authors and native label timeline
 events distinguish automatic block provenance from later human blocks.

@@ -10,6 +10,7 @@ import { managedLabel, priorityLabels, withStatus } from '../state/lifecycle.js'
 import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
 import { workerInputSchema, type WorkerInput } from '../workers/contract.js';
 import { reworkMarker } from '../runtime/coding-context.js';
+import { untrustedEdit, untrustedEditReason } from '../state/content-trust.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
 import { deliverNotifications, type NotificationSink } from '../notifications/slack.js';
@@ -90,6 +91,27 @@ export class Manager {
           report.errors.push(`Recovery of execution ${execution.input.executionId} on #${task.issue.number} failed${code ? ` (${code})` : ''}; the intent remains unresolved`);
         }
       }
+    }
+    return changed;
+  }
+  /**
+   * A task whose text someone without write access changed after its approval is no longer approved work. The Manager
+   * removes `harness:managed` (and a `harness:ready` grant) so the issue leaves the Factory until a maintainer has read
+   * the new text and applies the label again. The policy denies such a task regardless, also where nothing is removed.
+   */
+  private async withdrawEdited(tasks: Task[], report: RunReport): Promise<boolean> {
+    let changed = false;
+    for (const task of tasks.filter(t => t.issue.state === 'open')) {
+      const edit = untrustedEdit(task.issue);
+      if (!edit) continue;
+      const reason = untrustedEditReason(edit);
+      report.blockers.push(`#${task.issue.number}: ${reason}`);
+      report.nextSteps.push(`#${task.issue.number}: review the changed text, then apply ${managedLabel} again to approve it`);
+      if (this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') continue;
+      await this.github.updateIssue(task.issue.number, { labels: task.issue.labels.filter(l => l !== managedLabel && l !== 'harness:ready') });
+      await this.github.writeComment?.(task.issue.number, `**Software Factory: approval withdrawn.** ${reason} (${edit.at}). ` +
+        `The Factory no longer works on this issue. A maintainer reviews the current title and description and applies \`${managedLabel}\` again to approve them.`);
+      changed = true;
     }
     return changed;
   }
@@ -232,6 +254,7 @@ export class Manager {
     let snapshot = await this.snapshot();
     let tasks = reconstruct(snapshot, this.config, this.now());
     if (await this.recover(tasks, report)) { snapshot = await this.snapshot(); tasks = reconstruct(snapshot, this.config, this.now()); }
+    if (await this.withdrawEdited(tasks, report)) { snapshot = await this.snapshot(); tasks = reconstruct(snapshot, this.config, this.now()); }
     this.observed = snapshot;
     report.tasks = tasks.length;
     for (const t of tasks) {

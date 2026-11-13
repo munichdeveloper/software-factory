@@ -78,7 +78,7 @@ it.each(['head', 'base', 'enrollment', 'draft', 'description'])('discards approv
   });
   await x.run(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.f.comments.some(c => c.body.includes('erneute Prüfung'))).toBe(true);
 });
-it.each(['closed', 'blocked', 'changed'])('revalidates the source task after AI review: %s', async change => {
+it.each(['closed', 'blocked', 'changed', 'edited by a stranger'])('revalidates the source task after AI review: %s', async change => {
   const x = fixture(); const task = issue(44); const execution = 'f'.repeat(32);
   x.snapshot.issues = [task]; x.f.headBranch = `sf/issue-44/${execution}`; x.f.labels = [];
   x.snapshot.comments.set(44, [{ id: 1, author: 'github-actions[bot]', createdAt: clock.toISOString(),
@@ -86,7 +86,8 @@ it.each(['closed', 'blocked', 'changed'])('revalidates the source task after AI 
       contractVersion: '1.0', executionId: execution, issueNumber: 44, status: 'success', summary: 'Created PR',
       artifacts: ['https://github.com/owner/target/pull/52'], error: null, proposedActions: [] } } }) }]);
   const tasks = { getIssue: vi.fn(async () => ({ ...task, state: change === 'closed' ? 'closed' as const : 'open' as const,
-    labels: change === 'blocked' ? [...task.labels, 'harness:blocked'] : task.labels, body: change === 'changed' ? task.body + 'New requirement' : task.body })) };
+    labels: change === 'blocked' ? [...task.labels, 'harness:blocked'] : task.labels, body: change === 'changed' ? task.body + 'New requirement' : task.body,
+    contentEdits: change === 'edited by a stranger' ? [{ actor: 'stranger', at: clock.toISOString(), trusted: false }] : [] })) };
   await new MergeManager(x.api, x.cfg, x.reviewer, 'test', tasks).run(x.snapshot);
   expect(x.reviewer.review).toHaveBeenCalledTimes(1); expect(x.api.merge).not.toHaveBeenCalled();
   expect(x.reviewer.review.mock.calls[0]![0].sourceTask?.number).toBe(44);
