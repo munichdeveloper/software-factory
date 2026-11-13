@@ -42,3 +42,12 @@ it('refuses another name for a bound ID, malformed input and runtimes without re
   const none = await fixture();
   expect((await none.call('/v1/repositories/77/registration', 'PUT', { repository: 'owner/x', githubInstallationId: 7 })).status).toBe(409);
 });
+it('serves a registered repository through the factory-manager.yml wrapper the SF Manager rolls out', async () => {
+  const { registeredItem } = await import('../src/runtime/main.js');
+  const release = { factorySha: 'a'.repeat(40), harnessSha: 'b'.repeat(40), workflowHash: 'c'.repeat(64), deploymentName: 'sf-worker',
+    buildId: 'build-1', taskQueue: 'sf-tasks', schemaVersion: 1 };
+  const item = registeredItem({ repositoryId: 7, repository: 'owner/app', githubInstallationId: 9 }, release);
+  expect(item).toMatchObject({ repositoryId: 7, repository: 'owner/app', githubInstallationId: 9, release,
+    executorWorkflow: 'factory-manager.yml', approvalMode: 'ready-label', requireHumanGate: false, validateCoding: true,
+    configPath: '.github/software-factory.yml', retainedReleases: [] });
+});

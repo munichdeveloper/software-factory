@@ -44,6 +44,14 @@ const registrySchema = z.strictObject({
     .refine(item => Number(!!item.githubTokenEnv) + Number(!!item.githubInstallationId) === 1, 'Select exactly one scoped credential source')
     .refine(item => item.approvalMode !== 'ready-label' || !item.requireHumanGate, 'Ready label replaces the manual gate')).min(1).max(100),
 });
+/**
+ * The registry entry of a repository the SF Manager registered: the rollout installs the executor wrapper as
+ * factory-manager.yml, the ready label is the grant, and coding is validated independently.
+ */
+export function registeredItem(registration: Registration, release: unknown) {
+  return registrySchema.shape.repositories.element.parse({ ...registration, release, executorWorkflow: 'factory-manager.yml',
+    approvalMode: 'ready-label', requireHumanGate: false, validateCoding: true });
+}
 /** Replaces every repository's release with the one of a worker package (the file `pack` writes). */
 export function supersedeRelease(repositories: { release: unknown; retainedReleases?: unknown }[], workerPackage: unknown) {
   const release = releaseSchema.parse(z.object({ release: z.unknown() }).parse(workerPackage).release);
@@ -133,7 +141,7 @@ export async function main(args = process.argv.slice(2)) {
       .parse(JSON.parse(await readFile(resolve(process.env.FACTORY_RELEASE_FILE), 'utf8'))).release) : null;
     const registered = async (registration: Registration) => {
       if (!release) throw new Error('REGISTRATION_REQUIRES_PINNED_RELEASE');
-      return bind(registrySchema.shape.repositories.element.parse({ ...registration, release, approvalMode: 'ready-label', requireHumanGate: false, validateCoding: true }));
+      return bind(registeredItem(registration, release));
     };
     for (const registration of await store.registrations()) {
       if (bindings.some(b => b.repository.repositoryId === registration.repositoryId)) continue;
