@@ -14,7 +14,7 @@ import { CodingRepository } from '../github/coding.js';
 import { MockPlanner, OpenAIPlanner } from '../llm/provider.js';
 import { assertRetainedReleases } from './retention.js';
 import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract.js';
-import { RuntimeStore } from './store.js';
+import { RuntimeStore, type Registration } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
@@ -25,6 +25,7 @@ import { RuntimeCodingPublisher } from './publisher.js';
 import { IssueScopedGitHub } from './issue-scope.js';
 import { defaultValidationPlan, validationPlanSchema } from './validation-contract.js';
 import { RuntimeMerge } from './merge.js';
+import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
 import { OpenAIMergeReviewer } from '../merge/reviewer.js';
@@ -82,8 +83,8 @@ export async function main(args = process.argv.slice(2)) {
   const temporal = new Client({ connection, namespace: registry.namespace });
   try {
     await store.migrate();
-    const bindings: RuntimeBinding[] = [];
-    for (const item of registry.repositories) {
+    type Item = z.infer<typeof registrySchema>['repositories'][number];
+    const bind = async (item: Item): Promise<RuntimeBinding> => {
       if (item.githubInstallationId && !(process.env.GITHUB_ALLOWED_INSTALLATION_IDS ?? '').split(',').includes(String(item.githubInstallationId))) throw new Error('INSTALLATION_NOT_ALLOWLISTED');
       const token = item.githubTokenEnv ? z.string().min(1).parse(process.env[item.githubTokenEnv]) : '';
       const api = item.githubInstallationId ? scopedRuntimeGitHub({ appId: z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
@@ -121,9 +122,32 @@ export async function main(args = process.argv.slice(2)) {
         new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
         config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), `temporal-merge:${item.repositoryId}`, github,
         { ownedOnly: !!item.issueNumbers }).run(snapshot));
-      bindings.push({ repository, controller, planner: config => config.llm.provider === 'mock' ? mock : openai, merge });
+      return { repository, controller, planner: config => config.llm.provider === 'mock' ? mock : openai, merge };
+    };
+    const bindings: RuntimeBinding[] = [];
+    for (const item of registry.repositories) bindings.push(await bind(item));
+    // Repositories the SF Manager registered (Temporal rollout): served with the PINNED worker release, the ready
+    // label as grant and independent validation. A registration that cannot be bound is reported, never fatal for
+    // the repositories of the static registry.
+    const release = process.env.FACTORY_RELEASE_FILE ? releaseSchema.parse(z.object({ release: z.unknown() })
+      .parse(JSON.parse(await readFile(resolve(process.env.FACTORY_RELEASE_FILE), 'utf8'))).release) : null;
+    const registered = async (registration: Registration) => {
+      if (!release) throw new Error('REGISTRATION_REQUIRES_PINNED_RELEASE');
+      return bind(registrySchema.shape.repositories.element.parse({ ...registration, release, approvalMode: 'ready-label', requireHumanGate: false, validateCoding: true }));
+    };
+    for (const registration of await store.registrations()) {
+      if (bindings.some(b => b.repository.repositoryId === registration.repositoryId)) continue;
+      try { bindings.push(await registered(registration)); }
+      catch (error) { console.warn(JSON.stringify({ event: 'factory-registration-unavailable', repositoryId: registration.repositoryId,
+        reason: error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'BINDING_FAILED' })); }
     }
-    const server = runtimeServer({ managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store });
+    const register = async (registration: Registration) => {
+      const binding = await registered(registration);
+      await store.register(registration);
+      return binding;
+    };
+    const server = runtimeServer({ managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
+      ...(process.env.SLACK_BOT_TOKEN ? { notifications: new SlackSink(process.env.SLACK_BOT_TOKEN) } : {}) });
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
     console.log(JSON.stringify({ service: 'factory-runtime', port, repositories: bindings.map(b => b.repository.repositoryId) }));

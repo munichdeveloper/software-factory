@@ -7,15 +7,21 @@ import type { Config } from '../config/index.js';
 import { admissionSchema, executionKey, snapshotSchema } from './contract.js';
 import { workerResultSchema } from '../workers/contract.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
-import type { RuntimeStore } from './store.js';
+import type { Registration, RuntimeStore } from './store.js';
 import type { RuntimeMerge } from './merge.js';
+import type { NotificationSink } from '../notifications/slack.js';
 
 export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController;
   /** A planner, or a choice made from the repository configuration that is current at each reconciliation. */
   planner: Planner | ((config: Config) => Planner);
   /** Reviews and merges the Factory's validated pull requests after a reconciliation, where configured. */
   merge?: RuntimeMerge }
-export interface ServerOptions { managerToken: string; workerToken: string; bindings: RuntimeBinding[]; store: RuntimeStore }
+export interface ServerOptions { managerToken: string; workerToken: string; bindings: RuntimeBinding[]; store: RuntimeStore;
+  /** Binds and persists a repository the SF Manager rolls out to Temporal; absent where the runtime takes no registrations. */
+  register?: (registration: Registration) => Promise<RuntimeBinding>;
+  /** Slack delivery for repositories whose configuration enables notifications (the broker's own bot token). */
+  notifications?: NotificationSink }
+const registrationSchema = z.strictObject({ repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/), githubInstallationId: z.number().int().positive().safe() });
 const secureEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 const actorSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}(?:\[bot\])?$/);
 async function read(request: IncomingMessage): Promise<unknown> {
@@ -45,6 +51,22 @@ export function runtimeServer(options: ServerOptions) {
         else throw new Error('UNKNOWN_OPERATION');
         return;
       }
+      const registration = path.match(/^\/v1\/repositories\/([1-9][0-9]{0,15})\/registration$/);
+      if (registration && request.method === 'PUT') {
+        const input = registrationSchema.parse(await read(request)), repositoryId = Number(registration[1]);
+        const existing = options.bindings.find(b => b.repository.repositoryId === repositoryId);
+        if (existing) {
+          if (existing.repository.repository.toLowerCase() !== input.repository.toLowerCase()) throw new Error('REGISTRATION_CONFLICT');
+          send(response, 200, { repositoryId, registered: true }); return;
+        }
+        if (!options.register) throw new Error('REGISTRATION_UNSUPPORTED');
+        // One registration at a time: a concurrent request for the same repository must not bind it twice.
+        const binding = await options.store.locked(repositoryId, 'registration', async () =>
+          options.bindings.find(b => b.repository.repositoryId === repositoryId) ?? await options.register!({ repositoryId, ...input }));
+        if (!options.bindings.includes(binding)) options.bindings.push(binding);
+        console.log(JSON.stringify({ event: 'factory-repository-registered', repositoryId }));
+        send(response, 200, { repositoryId, registered: true }); return;
+      }
       const match = path.match(/^\/v1\/repositories\/([1-9][0-9]*)\/(runs|observations|reconcile|deployment)(?:\/([a-f0-9]{32})(?:\/(approve|revoke|cancel))?)?$/);
       if (!match) { send(response, 404, { code: 'NOT_FOUND' }); return; }
       const binding = options.bindings.find(b => b.repository.repositoryId === Number(match[1]));
@@ -70,7 +92,8 @@ export function runtimeServer(options: ServerOptions) {
         const config = await binding.repository.config();
         if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
         const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
-        const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller });
+        const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller,
+          ...(options.notifications ? { notifications: options.notifications } : {}) });
         const report = await options.store.locked(binding.repository.repositoryId, 'manager', () => manager.run());
         if (manager.lastSnapshot) void binding.merge?.start(config, manager.lastSnapshot);
         // The merge pass runs after the response; what its last pass could not do is reported here.

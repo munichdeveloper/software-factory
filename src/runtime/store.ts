@@ -6,6 +6,7 @@ import { codingArtifactSchema, type CodingArtifact } from '../workers/coding.js'
 import { hash } from '../state/identity.js';
 import { validationReportSchema, type ValidationReport } from './validation-contract.js';
 
+export interface Registration { repositoryId: number; repository: string; githubInstallationId: number }
 export interface StoredRun {
   snapshot: RunSnapshot; binding: string; workflowId: string; runId: string | null; createdAt: string;
   approved: boolean; cancelled: boolean; terminal: boolean; result: WorkerResult | null;
@@ -36,7 +37,24 @@ export class RuntimeStore {
         repository_id bigint NOT NULL, execution_id text NOT NULL, digest text NOT NULL, artifact jsonb NOT NULL,
         PRIMARY KEY(repository_id,execution_id));
       ALTER TABLE factory_runtime_artifacts ADD COLUMN IF NOT EXISTS validation jsonb;
-      ALTER TABLE factory_runtime_artifacts ADD COLUMN IF NOT EXISTS validation_digest text;`);
+      ALTER TABLE factory_runtime_artifacts ADD COLUMN IF NOT EXISTS validation_digest text;
+      CREATE TABLE IF NOT EXISTS factory_runtime_registrations (
+        repository_id bigint PRIMARY KEY, repository text NOT NULL, installation_id bigint NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now());`);
+  }
+  /** Repositories the SF Manager registered with this runtime, in addition to the host's static registry. */
+  async registrations(): Promise<Registration[]> {
+    const { rows } = await this.pool.query<{ repository_id: string; repository: string; installation_id: string }>(
+      'SELECT repository_id, repository, installation_id FROM factory_runtime_registrations ORDER BY repository_id');
+    return rows.map(r => ({ repositoryId: Number(r.repository_id), repository: r.repository, githubInstallationId: Number(r.installation_id) }));
+  }
+  /** Idempotent; a repository ID is bound to one name and installation for good (a rename re-registers nothing). */
+  async register(item: Registration): Promise<void> {
+    const { rows } = await this.pool.query<{ repository: string; installation_id: string }>(
+      `INSERT INTO factory_runtime_registrations(repository_id, repository, installation_id) VALUES($1,$2,$3)
+       ON CONFLICT(repository_id) DO UPDATE SET repository_id=excluded.repository_id RETURNING repository, installation_id`,
+      [item.repositoryId, item.repository, item.githubInstallationId]);
+    if (rows[0]?.repository !== item.repository || Number(rows[0]?.installation_id) !== item.githubInstallationId) throw new Error('REGISTRATION_CONFLICT');
   }
   async locked<T>(repositoryId: number, executionId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
     const inherited = this.context.getStore(), client = inherited ?? await this.pool.connect(), key = `${repositoryId}:${executionId}`;
