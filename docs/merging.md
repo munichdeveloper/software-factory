@@ -58,6 +58,46 @@ are honored. Advisory, dry-run, global disable and merge disable perform no revi
 or merge mutations. Notifications and merge policy changes do not invalidate
 unrelated coding-worker approvals; merge approvals include their own full policy.
 
+## Risk-based auto-merge
+
+With `merge.risk.enabled` every merge candidate also gets a risk class (`low`,
+`medium`, `high`, `critical`), decided in parallel to the AI review once the
+required checks are green. The class only tightens `merge_pr: allow`: within
+`autoMergeUpTo` (default `medium`) the Factory merges on its own, above it a
+person approves with `/harness approve <id>` (the id also binds the assessment)
+or, with `aboveThreshold: block`, merges by hand. `critical` is never merged
+automatically. With `merge_pr: approval` the class is only shown.
+
+```yaml
+merge:
+  enabled: true
+  risk:
+    enabled: true
+    autoMergeUpTo: medium
+    areas:
+      - name: Dokumentation
+        paths: ['docs/**', '**/*.md']
+        class: low
+      - name: Datenbankmigrationen
+        paths: ['src/main/resources/db/migration/**']
+        class: high
+```
+
+- Built-in critical paths cannot be lowered: `.github/workflows/**`,
+  `.github/actions/**`, `.github/software-factory.yml`,
+  `.github/software-factory.validation.json`, `AGENTS.md` and `CODEOWNERS`.
+- A change covered completely by areas takes the highest area class without a
+  model call. Otherwise the AI assessor decides, and touched areas plus the size
+  rule (`maxLowRiskLines`, `maxMediumRiskLines`) act as a minimum.
+- The assessor sees the changed files and trusted `guidance`, never the PR title,
+  body, comments or task text. Any failure counts as `critical` and is retried in
+  the next pass.
+- The assessment is journaled as a `merge_risk` event per head, base and risk
+  configuration. A display-only label `sf:risk-<class>` is set by the Factory and
+  is never read as authorization. `mode: observe` classifies without gating.
+
+The concept and its reasoning are in [risk-based-merge.md](risk-based-merge.md).
+
 ## Technical gates remain mandatory
 
 A positive AI decision is necessary but insufficient. Immediately before merging,

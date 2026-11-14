@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Comment } from '../types.js';
 import { workerInputSchema, workerResultSchema } from '../workers/contract.js';
 import { mergeReviewSchema } from '../merge/contract.js';
+import { riskRecordSchema } from '../merge/risk.js';
 
 export const marker = '<!-- software-factory:v1 -->';
 const legacyMarker = '<!-- dev-agent-harness:v1 -->';
@@ -20,6 +21,7 @@ export const eventSchema = z.strictObject({
     z.strictObject({ type: z.literal('notification_attempt'), deliveryId: z.string().regex(/^[a-f0-9]{64}$/) }),
     z.strictObject({ type: z.literal('notification_rejected'), deliveryId: z.string().regex(/^[a-f0-9]{64}$/) }),
     z.strictObject({ type: z.literal('merge_review'), head: z.string().length(40), base: z.string().length(40), reviewKey: z.string().length(64), review: mergeReviewSchema }),
+    z.strictObject({ type: z.literal('merge_risk'), head: z.string().length(40), base: z.string().length(40), riskKey: z.string().length(64), risk: riskRecordSchema }),
     z.strictObject({ type: z.literal('merge_intent'), prNumber: z.number().int().positive(), head: z.string().length(40), base: z.string().length(40), reviewKey: z.string().length(64) }),
     z.strictObject({ type: z.literal('merge_completed'), prNumber: z.number().int().positive(), head: z.string().length(40), mergeSha: z.string().length(40) }),
     z.strictObject({ type: z.literal('branch_update'), head: z.string().length(40), base: z.string().length(40) }),

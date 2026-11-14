@@ -469,6 +469,144 @@
             "type": "string",
             "pattern": "^[a-zA-Z0-9_-]+\\.ya?ml$"
           }
+        },
+        "risk": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "mode": {
+              "default": "enforce",
+              "type": "string",
+              "enum": [
+                "enforce",
+                "observe"
+              ]
+            },
+            "autoMergeUpTo": {
+              "default": "medium",
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "aboveThreshold": {
+              "default": "approval",
+              "type": "string",
+              "enum": [
+                "approval",
+                "block"
+              ]
+            },
+            "maxLowRiskLines": {
+              "default": 300,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "maxMediumRiskLines": {
+              "default": 800,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "assessor": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "default": "llm",
+                  "type": "string",
+                  "enum": [
+                    "llm",
+                    "openai"
+                  ]
+                },
+                "model": {
+                  "default": "gpt-6.1-sol",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "reasoningEffort": {
+                  "default": "medium",
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                },
+                "timeoutSeconds": {
+                  "default": 90,
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 120
+                }
+              },
+              "additionalProperties": false
+            },
+            "guidance": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "areas": {
+              "default": [],
+              "maxItems": 30,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[^\\n]{1,100}$"
+                  },
+                  "paths": {
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z0-9._\\-*?/]+$"
+                    }
+                  },
+                  "class": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "critical"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "paths",
+                  "class"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

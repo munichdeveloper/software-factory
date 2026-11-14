@@ -5,10 +5,12 @@ import { untrustedEdit } from '../state/content-trust.js';
 import { hash, taskVersion } from '../state/identity.js';
 import type { GitHubPort } from '../github/port.js';
 import { permission, policyVersion } from '../policies/engine.js';
-import { mergeReviewSchema, type MergeFacts, type MergePort, type MergeReviewer } from './contract.js';
+import { mergeReviewSchema, type MergeFacts, type MergePort, type MergeReview, type MergeReviewer, type ReviewInput } from './contract.js';
+import { aboveThreshold, builtinCriticalPaths, classifyRisk, describeRisk, type RiskAssessor, type RiskRecord } from './risk.js';
 
 const safe = (s: string) => s.replaceAll('@', '@\u200b').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-const factsKey = (f: MergeFacts) => ({ ...f, comments: [], labels: [...f.labels].sort(),
+// The broker's own display-only risk labels are no input of a review: setting them must not invalidate it.
+const factsKey = (f: MergeFacts) => ({ ...f, comments: [], labels: f.labels.filter(l => !l.startsWith('sf:risk-')).sort(),
   nativeRequiredChecks: [...f.nativeRequiredChecks].sort(),
   checks: [...f.checks].sort((a, b) => `${a.name}:${a.state}`.localeCompare(`${b.name}:${b.state}`)) });
 export function mergeGate(f: MergeFacts, config: Config): string | null {
@@ -35,6 +37,8 @@ const behind = (f: MergeFacts, config: Config) => config.merge.protection === 'f
 export interface MergeOptions {
   /** Only pull requests the Factory published for its own tasks; no adoption by label (an issue-scoped broker). */
   ownedOnly?: boolean;
+  /** Assesses the risk class of a head when merge.risk is enabled; without it every assessment fails closed (critical). */
+  assessor?: RiskAssessor;
 }
 /** A pull request the Factory published for a task, with the outcome it was published with. */
 interface Ownership { task: Snapshot['issues'][number]; status: string; publishedHead: string | null }
@@ -143,22 +147,45 @@ export class MergeManager {
         if (pendingUpdate) await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
         const sourceTask = owner ? { number: owner.number, title: owner.title, body: owner.body } : null;
         // Immutable head/base IDs bind all source/context files. Mutable facts and task intent are included explicitly.
+        // The risk settings decide only whether a person approves; they are no input of the code review.
+        const { risk: _risk, ...mergePolicy } = this.config.merge; void _risk;
         const reviewKey = hash({ protocol: 'sf-merge-review-v1', repository: this.api.repository.toLowerCase(), sourceTask,
-          facts: factsKey(f), merge: this.config.merge, policy: policyVersion(this.config) });
+          facts: factsKey(f), merge: mergePolicy, policy: policyVersion(this.config) });
         const cached = this.events(f).find(e => e.data.type === 'merge_review' && e.data.reviewKey === reviewKey);
-        let review;
-        if (cached?.data.type === 'merge_review') review = cached.data.review;
-        else {
+        const risk = this.config.merge.risk;
+        // One assessment per head, base and risk configuration; the built-in list is part of the protocol.
+        const riskKey = risk.enabled ? hash({ protocol: 'sf-merge-risk-v1', repository: this.api.repository.toLowerCase(), head: f.head, base: f.base,
+          risk, builtin: builtinCriticalPaths }) : null;
+        const cachedRisk = riskKey ? this.events(f).find(e => e.data.type === 'merge_risk' && e.data.riskKey === riskKey) : undefined;
+        let context: Promise<ReviewInput> | undefined;
+        const current = f;
+        const load = () => context ??= this.api.context(current, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+        // Review and risk assessment are independent and run in parallel; the assessment never rejects (failures are critical).
+        const reviewing: Promise<MergeReview> = cached?.data.type === 'merge_review' ? Promise.resolve(cached.data.review) : (async () => {
           report.reviewed++;
           phase = 'Vollständigen Änderungskontext laden';
-          const input = await this.api.context(f, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+          const input = await load();
           if (sourceTask) input.sourceTask = sourceTask;
-          if (Buffer.byteLength(JSON.stringify({ ...input, facts: factsKey(f) })) > this.config.merge.review.maxContextBytes) throw new Error('Review context exceeds limit; no truncated approval');
+          if (Buffer.byteLength(JSON.stringify({ ...input, facts: factsKey(current) })) > this.config.merge.review.maxContextBytes) throw new Error('Review context exceeds limit; no truncated approval');
           phase = 'KI-Review';
-          review = mergeReviewSchema.parse(await this.reviewer.review(input));
-        }
+          return mergeReviewSchema.parse(await this.reviewer.review(input));
+        })();
+        const assessing: Promise<RiskRecord | null> = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === 'merge_risk' ? Promise.resolve(cachedRisk.data.risk)
+          : load().then(input => classifyRisk(input.changes, risk, this.options.assessor), () => classifyRisk([], risk, { assess: () => Promise.reject(new Error('No context')) }));
+        const [review, riskRecord] = await Promise.all([reviewing, assessing]);
         await this.event(f, `merge-review:${reviewKey}`, { type: 'merge_review', head: f.head, base: f.base, reviewKey, review },
           `**KI-Entscheidung: ${review.decision}**\n\n${review.reason}\n\n${review.findings.map(x => `- ${x.severity}: ${x.path} – ${x.explanation}`).join('\n')}\n\nHead: \`${f.head}\`; Basis: \`${f.base}\`.`);
+        if (riskKey && riskRecord) {
+          // A failed assessment is not journaled, so the next pass assesses again; until then it counts as critical.
+          if (riskRecord.source === 'error') await this.explain(f, describeRisk(riskRecord, risk));
+          else await this.event(f, `merge-risk:${riskKey}`, { type: 'merge_risk', head: f.head, base: f.base, riskKey, risk: riskRecord },
+            `${describeRisk(riskRecord, risk)}\n\nHead: \`${f.head}\`; Basis: \`${f.base}\`.`);
+          const label = `sf:risk-${riskRecord.class}`;
+          if (this.api.riskLabel && (!f.labels.includes(label) || f.labels.some(l => l.startsWith('sf:risk-') && l !== label))) {
+            phase = 'Risiko-Label setzen';
+            await this.api.riskLabel(number, label);
+          }
+        }
         if (f.checks.some(c => c.state === 'action_required')) { await this.explain(f, mergeGate(f, this.config)!); continue; }
         if (review.findings.some(x => x.severity === 'blocking') || ['request_changes', 'defer'].includes(review.decision)) continue;
         const live = await this.api.facts(number);
@@ -171,14 +198,23 @@ export class MergeManager {
             await this.explain(live, 'Die zugehörige Aufgabe wurde während des Reviews geschlossen, blockiert, abgemeldet oder fachlich verändert.'); continue;
           }
         }
-        if (permission(this.config, 'merge_pr') === 'approval') {
-          const approvalId = hash({ repository: this.api.repository, number, head: f.head, base: f.base, reviewKey, review });
+        // The risk class only tightens 'allow': above the threshold a person approves (or merges) instead of the Factory.
+        const riskGate = !!riskKey && !!riskRecord && risk.mode === 'enforce' && review.decision === 'merge' &&
+          permission(this.config, 'merge_pr') === 'allow' && aboveThreshold(riskRecord.class, risk);
+        if (riskGate && risk.aboveThreshold === 'block') {
+          await this.explain(live, `Risiko ${riskRecord!.class} liegt über der Schwelle ${risk.autoMergeUpTo}; die Factory mergt diesen PR nicht. Bitte selbst prüfen und mergen.`); continue;
+        }
+        if (permission(this.config, 'merge_pr') === 'approval' || riskGate) {
+          const approvalId = hash({ repository: this.api.repository, number, head: f.head, base: f.base, reviewKey, review,
+            ...(riskGate ? { riskKey, riskClass: riskRecord!.class } : {}) });
           let approved = false;
           for (const c of live.comments) {
             const match = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
             if (match?.[2] === approvalId && await this.api.canApprove(c.author)) approved = match[1] === 'approve';
           }
-          if (!approved) { await this.explain(live, `Menschliche Freigabe erforderlich: /harness approve ${approvalId}`); continue; }
+          if (!approved) {
+            await this.explain(live, `${riskGate ? `Risiko ${riskRecord!.class} liegt über der Schwelle ${risk.autoMergeUpTo}. ` : ''}Menschliche Freigabe erforderlich: /harness approve ${approvalId}`); continue;
+          }
         }
         if (review.decision === 'update_branch') {
           if (!this.config.merge.updateBranch || !behind(live, this.config) || live.unresolvedThreads.length ||

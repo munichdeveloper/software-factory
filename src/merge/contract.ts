@@ -30,6 +30,8 @@ export interface MergePort {
   dispatch(workflow: string, ref: string): Promise<void>;
   workflowAvailable(workflow: string): Promise<boolean>;
   canApprove(login: string): Promise<boolean>;
+  /** Sets `label` as the pull request's only `sf:risk-*` label (display only; never read as authorization). */
+  riskLabel?(number: number, label: string): Promise<void>;
   /** Marks a draft pull request ready for review, only while its head is still `head`. */
   ready?(number: number, head: string): Promise<void>;
   /**
