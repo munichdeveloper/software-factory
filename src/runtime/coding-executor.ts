@@ -2,7 +2,7 @@ import type { Octokit } from '@octokit/rest';
 import { unzipSync } from 'fflate';
 import { z } from 'zod';
 import { codingExecutionSchema } from './coding-contract.js';
-import { codingArtifactSchema, validateChanges, type CodingArtifact } from '../workers/coding.js';
+import { codingArtifactSchema, smallPullRequestGuidance, validateChanges, type CodingArtifact } from '../workers/coding.js';
 import type { Config } from '../config/index.js';
 import type { RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
@@ -147,7 +147,16 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
         catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
         return { text: validationGuidance };
       } })).text : '';
-    const description = guidance && input.description.length + guidance.length <= 20000 ? input.description + guidance : input.description;
+    // Resolved once and stored like the guidance above: switching the rule later does not change a dispatched request.
+    const scope = (await effects.perform({ key: 'coding-scope', payload: { baseSha: snapshot.baseSha }, authorize, contentAddressed: true,
+      validate: z.strictObject({ text: z.string().max(2000) }).parse, reconcile: async () => null,
+      apply: async () => {
+        try { await this.api.git.getRef({ ...target, ref: `heads/sf-temporal-executor/${input.executionId}` }); return { text: '' }; }
+        catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
+        return { text: coding.smallPullRequests ? smallPullRequestGuidance : '' };
+      } })).text;
+    let description = input.description;
+    for (const text of [guidance, scope]) if (text && description.length + text.length <= 20000) description += text;
     // Resolved once and stored: later polls rebuild the identical request even when a named branch has moved since.
     const extra = await effects.perform({ key: 'coding-context', payload: { baseSha: snapshot.baseSha, rework: reworkOf(input) }, authorize, contentAddressed: true,
       validate: z.strictObject({ entries: z.string().max(1000).array().max(30) }).parse, reconcile: async () => null,

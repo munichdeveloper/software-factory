@@ -2,13 +2,13 @@ import { expect, it, vi } from 'vitest';
 import { config, issue, MemoryGitHub } from './helpers.js';
 import { Manager } from '../src/manager/index.js';
 import { MockPlanner } from '../src/llm/provider.js';
-import { prepareCoding, publishCoding, validateChanges, type CodingArtifact } from '../src/workers/coding.js';
+import { prepareCoding, publishCoding, smallPullRequestGuidance, validateChanges, type CodingArtifact } from '../src/workers/coding.js';
 import { decodeEvent } from '../src/state/events.js';
 
 const base = { sha: 'c'.repeat(40), branch: 'main' };
 async function fixture() {
   const cfg = config(); cfg.workers.test.enabled = false;
-  cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
+  cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false, smallPullRequests: true };
   const gh = new MemoryGitHub(); gh.state.issues = [issue()];
   await new Manager(gh, cfg, new MockPlanner(), { correlationId: 'test' }).run();
   const intent = (await gh.comments(1)).map(c => decodeEvent(c, cfg.manager.trustedActors)).find(e => e?.data.type === 'intent')!;
@@ -29,6 +29,7 @@ it('dispatches Codex when selected and supplies only a generic single-run reques
   expect(prepared.request.worker).toBe('codex');
   expect(prepared.request).not.toHaveProperty('repository');
   expect(prepared.request.model).toBe('gpt-6.1-sol');
+  expect(prepared.request.task.description.endsWith(smallPullRequestGuidance)).toBe(true);
 });
 it('publishes a correlated PR and persists the result once across repeated callbacks', async () => {
   const f = await fixture();
