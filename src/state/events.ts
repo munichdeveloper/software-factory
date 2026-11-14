@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { Comment } from '../types.js';
 import { workerInputSchema, workerResultSchema } from '../workers/contract.js';
 import { mergeReviewSchema } from '../merge/contract.js';
-import { riskRecordSchema } from '../merge/risk.js';
+import { riskClassSchema, riskRecordSchema } from '../merge/risk.js';
 
 export const marker = '<!-- software-factory:v1 -->';
 const legacyMarker = '<!-- dev-agent-harness:v1 -->';
@@ -26,6 +26,9 @@ export const eventSchema = z.strictObject({
     z.strictObject({ type: z.literal('merge_completed'), prNumber: z.number().int().positive(), head: z.string().length(40), mergeSha: z.string().length(40) }),
     z.strictObject({ type: z.literal('branch_update'), head: z.string().length(40), base: z.string().length(40) }),
     z.strictObject({ type: z.literal('workflow_dispatch'), workflow: z.string().max(100), ref: z.string().max(200), sha: z.string().length(40) }),
+    // Written once per approval request of a risk gate; the Slack notice for a PR awaiting `/harness approve` reads it.
+    z.strictObject({ type: z.literal('merge_approval_required'), prNumber: z.number().int().positive(), head: z.string().length(40), base: z.string().length(40),
+      approvalId: z.string().regex(/^[a-f0-9]{64}$/), riskClass: riskClassSchema, autoMergeUpTo: riskClassSchema }),
     z.strictObject({ type: z.literal('merge_status'), head: z.string().length(40), base: z.string().length(40), reason: z.string().max(3000) }),
     z.strictObject({ type: z.literal('decision'), action: z.string().max(30000), outcome: z.enum(['allow', 'deny', 'approval', 'executed']), reason: z.string().max(2000) })
   ])

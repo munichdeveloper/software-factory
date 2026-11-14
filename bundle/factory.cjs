@@ -34927,6 +34927,8 @@ var configSchema = external_exports.strictObject({
     events: external_exports.strictObject({
       // Optional without a default, so configurations that leave it out keep their hash and in-flight runs stay current.
       run_started: notificationRule.optional(),
+      // A PR whose risk class is above merge.risk.autoMergeUpTo waits for `/harness approve`; optional for the same reason.
+      approval_required: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
@@ -39249,6 +39251,16 @@ var eventSchema = external_exports.strictObject({
     external_exports.strictObject({ type: external_exports.literal("merge_completed"), prNumber: external_exports.number().int().positive(), head: external_exports.string().length(40), mergeSha: external_exports.string().length(40) }),
     external_exports.strictObject({ type: external_exports.literal("branch_update"), head: external_exports.string().length(40), base: external_exports.string().length(40) }),
     external_exports.strictObject({ type: external_exports.literal("workflow_dispatch"), workflow: external_exports.string().max(100), ref: external_exports.string().max(200), sha: external_exports.string().length(40) }),
+    // Written once per approval request of a risk gate; the Slack notice for a PR awaiting `/harness approve` reads it.
+    external_exports.strictObject({
+      type: external_exports.literal("merge_approval_required"),
+      prNumber: external_exports.number().int().positive(),
+      head: external_exports.string().length(40),
+      base: external_exports.string().length(40),
+      approvalId: external_exports.string().regex(/^[a-f0-9]{64}$/),
+      riskClass: riskClassSchema,
+      autoMergeUpTo: riskClassSchema
+    }),
     external_exports.strictObject({ type: external_exports.literal("merge_status"), head: external_exports.string().length(40), base: external_exports.string().length(40), reason: external_exports.string().max(3e3) }),
     external_exports.strictObject({ type: external_exports.literal("decision"), action: external_exports.string().max(3e4), outcome: external_exports.enum(["allow", "deny", "approval", "executed"]), reason: external_exports.string().max(2e3) })
   ])
@@ -39811,7 +39823,8 @@ function reconciliationPlan(tasks, config2) {
 var labels = {
   run_started: "SF: Factory-Lauf gestartet",
   issue_created: "SF: Issue autonom angelegt",
-  pr_merged: "SF: PR durch Bot gemergt"
+  pr_merged: "SF: PR durch Bot gemergt",
+  approval_required: "SF: PR wartet auf Freigabe (Risiko \xFCber Schwelle)"
 };
 var runStartWindowMs = 24 * 60 * 60 * 1e3;
 var NotificationRejected = class extends Error {
@@ -39853,7 +39866,8 @@ var SlackSink = class {
 ${notification.repository ? `Repository: ${notification.repository}
 ` : ""}${notification.url}
 #${notification.number}: ${notification.title.slice(0, 300)}
-Akteur: ${notification.actor}`;
+${notification.detail ? `${notification.detail}
+` : ""}Akteur: ${notification.actor}`;
     try {
       const response = await this.fetcher("https://slack.com/api/chat.postMessage", {
         method: "POST",
@@ -39906,7 +39920,8 @@ async function deliverNotifications(github, config2, snapshot, sink, correlation
       event: notification.event,
       number: notification.number,
       channel,
-      ...notification.executionId ? { executionId: notification.executionId } : {}
+      ...notification.executionId ? { executionId: notification.executionId } : {},
+      ...notification.approvalId ? { approvalId: notification.approvalId } : {}
     });
     const deliveries = (await github.comments(journal)).flatMap((c) => {
       const e = decodeEvent(c, config2.manager.trustedActors);
@@ -39985,6 +40000,30 @@ Decision: ${intent.actionId}
         title: created.title,
         actor: "Software Factory",
         url: `https://github.com/${github.repository}/issues/${created.number}`
+      });
+    }
+  }
+  if (settings.events.approval_required?.enabled) for (const pr of snapshot.prs) {
+    if (pr.state !== "open" || !pr.headSha) continue;
+    let comments;
+    try {
+      comments = await github.comments(pr.number);
+    } catch (error62) {
+      if (error62 instanceof Error && error62.message === "ISSUE_OUTSIDE_RUNTIME_SCOPE") continue;
+      throw error62;
+    }
+    for (const c of comments) {
+      const e = decodeEvent(c, config2.manager.trustedActors);
+      if (e?.data.type !== "merge_approval_required" || e.data.prNumber !== pr.number || e.data.head !== pr.headSha || !afterStart(e.at)) continue;
+      await deliver(pr.number, {
+        event: "approval_required",
+        number: pr.number,
+        title: pr.title ?? `PR #${pr.number}`,
+        actor: "Software Factory",
+        url: `https://github.com/${github.repository}/pull/${pr.number}`,
+        repository: github.repository,
+        approvalId: e.data.approvalId,
+        detail: `Risiko ${e.data.riskClass} liegt \xFCber der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}`
       });
     }
   }
@@ -41594,6 +41633,15 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
             if (match?.[2] === approvalId && await this.api.canApprove(c.author)) approved = match[1] === "approve";
           }
           if (!approved) {
+            if (riskGate) await this.event(live, `merge-approval-required:${approvalId}`, {
+              type: "merge_approval_required",
+              prNumber: number4,
+              head: f.head,
+              base: f.base,
+              approvalId,
+              riskClass: riskRecord.class,
+              autoMergeUpTo: risk.autoMergeUpTo
+            });
             await this.explain(live, `${riskGate ? `Risiko ${riskRecord.class} liegt \xFCber der Schwelle ${risk.autoMergeUpTo}. ` : ""}Menschliche Freigabe erforderlich: /harness approve ${approvalId}`);
             continue;
           }

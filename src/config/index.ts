@@ -151,6 +151,8 @@ export const configSchema = z.strictObject({
     events: z.strictObject({
       // Optional without a default, so configurations that leave it out keep their hash and in-flight runs stay current.
       run_started: notificationRule.optional(),
+      // A PR whose risk class is above merge.risk.autoMergeUpTo waits for `/harness approve`; optional for the same reason.
+      approval_required: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})

@@ -215,3 +215,51 @@ it('names the repository in a run start message', async () => {
     url: 'https://github.com/owner/target/issues/4', repository: 'owner/target', executionId: id });
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
+
+async function approvalFixture(head = 'a'.repeat(40)) {
+  const cfg = config(); cfg.notifications.slack.enabled = true; cfg.notifications.slack.channel = channel;
+  cfg.notifications.slack.events.approval_required = { enabled: true, channel: null };
+  const gh = new MemoryGitHub();
+  gh.state.prs = [{ number: 52, state: 'open', merged: false, closingIssues: [], referencedIssues: [], title: 'Rework billing', headRefName: 'sf/issue-4/x', headSha: 'a'.repeat(40) }];
+  const request = (approvalId = key, at = clock.toISOString()) => gh.writeEvent(52, { version: 1, key: `merge-approval-required:${approvalId}`, at, correlationId: 'test',
+    data: { type: 'merge_approval_required', prNumber: 52, head, base: 'b'.repeat(40), approvalId, riskClass: 'high', autoMergeUpTo: 'medium' } });
+  const send = vi.fn<NotificationSink['send']>(async () => ({ channel, timestamp: '1.23' }));
+  const deliver = () => deliverNotifications(gh, cfg, structuredClone(gh.state), { send }, 'test', clock);
+  return { cfg, gh, request, send, deliver };
+}
+it('announces a PR waiting for a risk approval once per approval request', async () => {
+  const f = await approvalFixture(); await f.request();
+  expect(await f.deliver()).toEqual([]); expect(await f.deliver()).toEqual([]);
+  expect(f.send).toHaveBeenCalledTimes(1);
+  expect(f.send.mock.calls[0]![1]).toMatchObject({ event: 'approval_required', number: 52, title: 'Rework billing', approvalId: key,
+    url: `https://github.com/${f.gh.repository}/pull/52`, repository: f.gh.repository });
+  expect(f.send.mock.calls[0]![1].detail).toBe(`Risiko high liegt über der Schwelle medium. Freigabe im PR: /harness approve ${key}`);
+  // A new assessment asks again and is announced again.
+  await f.request(decision); await f.deliver(); expect(f.send).toHaveBeenCalledTimes(2);
+});
+it.each(['absent', 'disabled', 'closed', 'moved-head', 'untrusted', 'since', 'other-channel'])('handles approval notices: %s', async condition => {
+  const f = await approvalFixture(condition === 'moved-head' ? 'c'.repeat(40) : undefined); await f.request();
+  if (condition === 'absent') delete f.cfg.notifications.slack.events.approval_required;
+  if (condition === 'disabled') f.cfg.notifications.slack.events.approval_required = { enabled: false, channel: null };
+  if (condition === 'closed') f.gh.state.prs[0]!.state = 'closed';
+  if (condition === 'untrusted') for (const c of f.gh.state.comments.get(52)!) c.author = 'attacker';
+  if (condition === 'since') f.cfg.notifications.slack.since = new Date(clock.getTime() + 1000).toISOString();
+  if (condition === 'other-channel') f.cfg.notifications.slack.events.approval_required = { enabled: true, channel: 'C987654321' };
+  await f.deliver();
+  if (condition === 'other-channel') expect(f.send.mock.calls[0]![0]).toBe('C987654321');
+  else expect(f.send).not.toHaveBeenCalled();
+});
+it('leaves configurations without approval notices unchanged', () => {
+  expect(config().notifications.slack.events).not.toHaveProperty('approval_required');
+});
+it('renders the approval notice with its detail line', async () => {
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    const body = JSON.parse(String(init!.body));
+    expect(body.blocks[0].text.text).toBe(`SF: PR wartet auf Freigabe (Risiko über Schwelle)\nRepository: owner/target\nhttps://github.com/owner/target/pull/52\n#52: Rework billing\nRisiko high liegt über der Schwelle medium. Freigabe im PR: /harness approve ${key}\nAkteur: Software Factory`);
+    return new Response(JSON.stringify({ ok: true, channel, ts: '1.23' }));
+  });
+  await new SlackSink('fixture-token', fetcher).send(channel, { event: 'approval_required', number: 52, title: 'Rework billing', actor: 'Software Factory',
+    url: 'https://github.com/owner/target/pull/52', repository: 'owner/target', approvalId: key,
+    detail: `Risiko high liegt über der Schwelle medium. Freigabe im PR: /harness approve ${key}` });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

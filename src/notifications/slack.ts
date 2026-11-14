@@ -4,13 +4,18 @@ import type { Snapshot } from '../types.js';
 import { decodeEvent } from '../state/events.js';
 import { hash } from '../state/identity.js';
 
-export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged'; number: number; title: string; actor: string; url: string;
+export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged' | 'approval_required'; number: number; title: string; actor: string; url: string;
   /** Shown in the message; run starts name their repository because one channel can collect several. */
   repository?: string;
   /** A task can start several runs (retries, rework); each start is its own delivery. */
-  executionId?: string }
+  executionId?: string;
+  /** One approval request of a risk gate; a new head or base asks again and is announced again. */
+  approvalId?: string;
+  /** Trusted, Factory-generated detail line (never PR or issue content). */
+  detail?: string }
 const labels: Record<Notification['event'], string> = {
-  run_started: 'SF: Factory-Lauf gestartet', issue_created: 'SF: Issue autonom angelegt', pr_merged: 'SF: PR durch Bot gemergt' };
+  run_started: 'SF: Factory-Lauf gestartet', issue_created: 'SF: Issue autonom angelegt', pr_merged: 'SF: PR durch Bot gemergt',
+  approval_required: 'SF: PR wartet auf Freigabe (Risiko über Schwelle)' };
 // A run start is news only shortly after it happened; older starts are never announced, even without `since`.
 const runStartWindowMs = 24 * 60 * 60 * 1000;
 export interface NotificationSink { send(channel: string, notification: Notification): Promise<{ channel: string; timestamp: string }> }
@@ -41,7 +46,7 @@ export class SlackSink implements NotificationSink {
     this.lastCall = Date.now();
     // Titles are untrusted. Plain text and disabled parsing prevent @channel / link injection.
     const text = `${labels[notification.event]}\n${notification.repository ? `Repository: ${notification.repository}\n` : ''}${notification.url}\n` +
-      `#${notification.number}: ${notification.title.slice(0, 300)}\nAkteur: ${notification.actor}`;
+      `#${notification.number}: ${notification.title.slice(0, 300)}\n${notification.detail ? `${notification.detail}\n` : ''}Akteur: ${notification.actor}`;
     try {
       const response = await this.fetcher('https://slack.com/api/chat.postMessage', {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
@@ -82,7 +87,8 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
     const channel = rule.channel ?? settings.channel;
     if (!channel || !sink) { errors.push(`Slack ${notification.event}: channel or connection missing`); return; }
     const deliveryId = hash({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel,
-      ...(notification.executionId ? { executionId: notification.executionId } : {}) });
+      ...(notification.executionId ? { executionId: notification.executionId } : {}),
+      ...(notification.approvalId ? { approvalId: notification.approvalId } : {}) });
     // Re-read to handle repeated manager runs and duplicate PR links across tasks.
     const deliveries = (await github.comments(journal)).flatMap(c => {
       const e = decodeEvent(c, config.manager.trustedActors);
@@ -135,6 +141,23 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
         i.body.includes(`Origin: #${parent.number}\nDecision: ${intent.actionId}\n`));
       if (created) await deliver(parent.number, { event: 'issue_created', number: created.number, title: created.title,
         actor: 'Software Factory', url: `https://github.com/${github.repository}/issues/${created.number}` });
+    }
+  }
+  // A risk gate asked for `/harness approve` on an open PR. Only the current head counts: a PR that moved on, was
+  // merged or closed meanwhile no longer waits for that approval. Approval itself is not checked; a notice for a
+  // request that was approved within the same pass is harmless, a missed one is not.
+  if (settings.events.approval_required?.enabled) for (const pr of snapshot.prs) {
+    if (pr.state !== 'open' || !pr.headSha) continue;
+    let comments;
+    // An issue-scoped runtime may not read pull requests outside its scope; those cannot carry its approvals.
+    try { comments = await github.comments(pr.number); }
+    catch (error) { if (error instanceof Error && error.message === 'ISSUE_OUTSIDE_RUNTIME_SCOPE') continue; throw error; }
+    for (const c of comments) {
+      const e = decodeEvent(c, config.manager.trustedActors);
+      if (e?.data.type !== 'merge_approval_required' || e.data.prNumber !== pr.number || e.data.head !== pr.headSha || !afterStart(e.at)) continue;
+      await deliver(pr.number, { event: 'approval_required', number: pr.number, title: pr.title ?? `PR #${pr.number}`, actor: 'Software Factory',
+        url: `https://github.com/${github.repository}/pull/${pr.number}`, repository: github.repository, approvalId: e.data.approvalId,
+        detail: `Risiko ${e.data.riskClass} liegt über der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}` });
     }
   }
   if (settings.events.pr_merged.enabled) for (const pr of snapshot.prs) {
