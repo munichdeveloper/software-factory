@@ -154,3 +154,13 @@ it('rejects changed artifacts, protected paths, base changes, branch collisions 
 it('reauthorizes before every new external effect and never writes after revocation', async () => {
   const f = fixture(); f.authorize.mockRejectedValue(new Error('APPROVAL_REVOKED')); await expect(f.publish()).rejects.toThrow('APPROVAL_REVOKED'); expect(f.writes).toEqual([]);
 });
+it('authorizes refs, pull requests and comments, not every content-addressed object (software-factory#93)', async () => {
+  const many = (count: number) => { const source = artifact();
+    source.changes = Array.from({ length: count }, (_, i) => ({ path: `file-${i}.txt`, content: Buffer.from(`content ${i}`).toString('base64'), mode: '100644' as const }));
+    return source; };
+  const one = fixture(); await one.publish(many(1)); const few = one.authorize.mock.calls.length;
+  const f = fixture(); await f.publish(many(30));
+  expect(f.writes.filter(w => w.kind === 'blob')).toHaveLength(30);
+  expect(f.authorize.mock.calls.length).toBe(few);
+  expect(few).toBeLessThanOrEqual(6);
+});
