@@ -34584,6 +34584,17 @@ var permissionSchema = external_exports.enum(["allow", "deny", "approval"]);
 var bounded = (min, max, value) => external_exports.number().int().min(min).max(max).default(value);
 var slackChannel = external_exports.string().regex(/^(?:[CG][A-Z0-9]{8,}|#[a-z0-9_-]{1,80})$/);
 var notificationRule = external_exports.strictObject({ enabled: external_exports.boolean().default(false), channel: slackChannel.nullable().default(null) });
+var monitoringSchema = external_exports.strictObject({
+  enabled: external_exports.boolean().default(true),
+  /** A run still active this many minutes after its worker timeout is reported as stuck. */
+  stuckRunMinutes: bounded(5, 1440, 60),
+  /** A run waiting this long at its approval gate is reported. */
+  approvalWaitHours: bounded(1, 720, 48),
+  /** This many attempts of a task in a row ending with the same error code count as an endless retry. */
+  repeatedFailures: bounded(2, 20, 3),
+  /** Consecutive reconciliations a task's label may differ from its derived status, or a reconciliation may fail, before it is reported. */
+  stalledPasses: bounded(2, 200, 10)
+});
 var configSchema = external_exports.strictObject({
   version: external_exports.literal(1),
   factory: external_exports.strictObject({ enabled: external_exports.boolean().default(true), scope: external_exports.string().min(1).max(4e3) }),
@@ -34697,7 +34708,8 @@ var configSchema = external_exports.strictObject({
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
-  }).prefault({}) }).prefault({})
+  }).prefault({}) }).prefault({}),
+  monitoring: monitoringSchema.partial().optional()
 });
 function loadConfig(source) {
   const doc = (0, import_yaml.parseDocument)(source, { uniqueKeys: true });
