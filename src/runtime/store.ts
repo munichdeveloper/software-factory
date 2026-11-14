@@ -5,6 +5,7 @@ import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
 import { codingArtifactSchema, type CodingArtifact } from '../workers/coding.js';
 import { hash } from '../state/identity.js';
 import { validationReportSchema, type ValidationReport } from './validation-contract.js';
+import type { Finding, FindingKind, SanityStore } from './sanity.js';
 
 export interface Registration { repositoryId: number; repository: string; githubInstallationId: number }
 export interface StoredRun {
@@ -16,7 +17,8 @@ type Row = { snapshot: unknown; binding: string; workflow_id: string; run_id: st
 const decode = (row: Row): StoredRun => ({ snapshot: snapshotSchema.parse(row.snapshot), binding: row.binding,
   workflowId: row.workflow_id, runId: row.run_id, createdAt: row.created_at.toISOString(), approved: row.approved,
   cancelled: row.cancelled, terminal: row.terminal, result: row.result === null ? null : workerResultSchema.parse(row.result) });
-export class RuntimeStore {
+export interface StoredFinding extends Finding { firstSeen: string; lastSeen: string; resolvedAt: string | null }
+export class RuntimeStore implements SanityStore {
   private context = new AsyncLocalStorage<PoolClient>();
   private db() { return this.context.getStore() ?? this.pool; }
   constructor(readonly pool: Pool) {}
@@ -40,7 +42,11 @@ export class RuntimeStore {
       ALTER TABLE factory_runtime_artifacts ADD COLUMN IF NOT EXISTS validation_digest text;
       CREATE TABLE IF NOT EXISTS factory_runtime_registrations (
         repository_id bigint PRIMARY KEY, repository text NOT NULL, installation_id bigint NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT now());`);
+        created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS factory_runtime_findings (
+        repository_id bigint NOT NULL, key text NOT NULL, kind text NOT NULL, issue_number integer, detail text NOT NULL,
+        first_seen timestamptz NOT NULL, last_seen timestamptz NOT NULL, resolved_at timestamptz,
+        PRIMARY KEY(repository_id,key));`);
   }
   /** Repositories the SF Manager registered with this runtime, in addition to the host's static registry. */
   async registrations(): Promise<Registration[]> {
@@ -154,5 +160,27 @@ export class RuntimeStore {
     if (!artifact || hash(artifact) !== report.artifactHash) throw new Error('VALIDATION_ARTIFACT_CONFLICT');
     await this.db().query('UPDATE factory_runtime_artifacts SET validation=$3,validation_digest=$4 WHERE repository_id=$1 AND execution_id=$2 AND (validation IS NULL OR validation_digest=$4)', [repositoryId, executionId, JSON.stringify(report), digest]);
     if (hash(await this.validation(repositoryId, executionId)) !== digest) throw new Error('VALIDATION_REPORT_CONFLICT');
+  }
+  /** Open findings and those resolved in the last week, newest first. */
+  async findings(repositoryId: number): Promise<StoredFinding[]> {
+    const { rows } = await this.db().query<{ key: string; kind: FindingKind; issue_number: number | null; detail: string; first_seen: Date; last_seen: Date; resolved_at: Date | null }>(
+      `SELECT * FROM factory_runtime_findings WHERE repository_id=$1 AND (resolved_at IS NULL OR resolved_at > now() - interval '7 days')
+       ORDER BY resolved_at IS NULL DESC, first_seen DESC LIMIT 200`, [repositoryId]);
+    return rows.map(r => ({ key: r.key, kind: r.kind, issueNumber: r.issue_number, detail: r.detail, firstSeen: r.first_seen.toISOString(),
+      lastSeen: r.last_seen.toISOString(), resolvedAt: r.resolved_at?.toISOString() ?? null }));
+  }
+  async syncFindings(repositoryId: number, findings: Finding[], kinds: readonly FindingKind[], now: Date) {
+    const { rows } = await this.pool.query<{ key: string; kind: FindingKind; issue_number: number | null; detail: string }>(
+      'SELECT key, kind, issue_number, detail FROM factory_runtime_findings WHERE repository_id=$1 AND resolved_at IS NULL AND kind = ANY($2)', [repositoryId, [...kinds]]);
+    const open = new Map(rows.map(r => [r.key, { key: r.key, kind: r.kind, issueNumber: r.issue_number, detail: r.detail }]));
+    const current = new Set(findings.map(f => f.key));
+    const opened = findings.filter(f => !open.has(f.key)), resolved = [...open.values()].filter(f => !current.has(f.key));
+    for (const f of findings) await this.pool.query(`INSERT INTO factory_runtime_findings(repository_id,key,kind,issue_number,detail,first_seen,last_seen)
+      VALUES($1,$2,$3,$4,$5,$6,$6) ON CONFLICT(repository_id,key) DO UPDATE SET detail=excluded.detail, last_seen=excluded.last_seen,
+      first_seen=CASE WHEN factory_runtime_findings.resolved_at IS NULL THEN factory_runtime_findings.first_seen ELSE excluded.first_seen END, resolved_at=NULL`,
+    [repositoryId, f.key, f.kind, f.issueNumber, f.detail, now]);
+    if (resolved.length) await this.pool.query('UPDATE factory_runtime_findings SET resolved_at=$3 WHERE repository_id=$1 AND key = ANY($2) AND resolved_at IS NULL',
+      [repositoryId, resolved.map(f => f.key), now]);
+    return { opened, resolved };
   }
 }

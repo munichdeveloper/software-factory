@@ -17,6 +17,7 @@ import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract
 import { RuntimeStore, type Registration } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { startReconcileSchedule } from './schedule.js';
+import { SanityMonitor } from './sanity.js';
 import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
@@ -159,7 +160,8 @@ export async function main(args = process.argv.slice(2)) {
       return binding;
     };
     const notifications = process.env.SLACK_BOT_TOKEN ? new SlackSink(process.env.SLACK_BOT_TOKEN) : undefined;
-    const serverOptions = { managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
+    const monitor = new SanityMonitor(store);
+    const serverOptions = { monitor, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
       ...(notifications ? { notifications } : {}) };
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     const addresses = await listenAddresses(process.env.FACTORY_RUNTIME_LISTEN_ALIAS);
@@ -170,7 +172,7 @@ export async function main(args = process.argv.slice(2)) {
     // 180 s like the Manager did: one pass costs about 150 GitHub requests, once a minute already exceeds an App
     // installation's 5000 requests per hour.
     const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '180');
-    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
+    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
     console.log(JSON.stringify({ service: 'factory-runtime', port, addresses, reconcileIntervalSeconds: interval, repositories: bindings.map(b => b.repository.repositoryId) }));
     await new Promise<void>(resolve => {
       const stop = () => { void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };

@@ -898,6 +898,40 @@
         }
       },
       "additionalProperties": false
+    },
+    "monitoring": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "stuckRunMinutes": {
+          "default": 60,
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 1440
+        },
+        "approvalWaitHours": {
+          "default": 48,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 720
+        },
+        "repeatedFailures": {
+          "default": 3,
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20
+        },
+        "stalledPasses": {
+          "default": 10,
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 200
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": [

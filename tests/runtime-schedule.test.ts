@@ -54,3 +54,14 @@ it('never overlaps passes and stops cleanly', async () => {
   await stop(); await vi.advanceTimersByTimeAsync(5000);
   expect(s.tryLocked).toHaveBeenCalledTimes(2);
 });
+
+it('tells the sanity check about failed reconciliations, but not about BUSY or non-Temporal repositories', async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const s = store(), monitor = { observed: vi.fn(async () => {}), failed: vi.fn(async () => {}) };
+  s.tryLocked.mockImplementationOnce(async () => { throw new Error('BUSY'); })
+    .mockImplementationOnce(async () => { throw new Error('ACTOR_NOT_AUTHORIZED'); });
+  stops.push(startReconcileSchedule([binding(1), binding(2), binding(3, 'actions')], { store: s as unknown as RuntimeStore, monitor: monitor as never }, 1000));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(monitor.failed.mock.calls).toEqual([[2, 'ACTOR_NOT_AUTHORIZED']]);
+});
