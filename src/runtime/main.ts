@@ -162,7 +162,9 @@ export async function main(args = process.argv.slice(2)) {
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
     // The broker reconciles its repositories itself; 0 leaves it to external callers (the SF Manager) as before.
-    const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '30');
+    // 180 s like the Manager did: one pass costs about 150 GitHub requests, once a minute already exceeds an App
+    // installation's 5000 requests per hour.
+    const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '180');
     const stopSchedule = interval ? startReconcileSchedule(bindings, { store, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
     console.log(JSON.stringify({ service: 'factory-runtime', port, reconcileIntervalSeconds: interval, repositories: bindings.map(b => b.repository.repositoryId) }));
     await new Promise<void>(resolve => {
