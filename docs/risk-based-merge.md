@@ -53,7 +53,7 @@ Vier Klassen, absichtlich grob, damit Regeln und KI dieselbe Sprache sprechen:
 | `high` | Fehler hätten Wirkung auf Daten, Sicherheit, Geld oder viele Nutzer | Datenbankmigration, Auth/Rechte, Zahlungslogik, öffentliche API, Konfiguration der Laufzeit |
 | `critical` | Änderung an der Kontrolle selbst oder irreversible Wirkung | CI-Workflows, Factory-Konfiguration, `AGENTS.md`, Deploy-/Infrastruktur, Löschen von Daten |
 
-Die Schwelle `merge.risk.autoMergeUpTo` legt fest, bis zu welcher Klasse der Broker selbst merged (Default `low`,
+Die Schwelle `merge.risk.autoMergeUpTo` legt fest, bis zu welcher Klasse der Broker selbst merged (Default `medium`,
 erlaubt `low`, `medium`, `high`). `critical` wird **nie** automatisch gemergt, unabhängig von der Schwelle.
 
 ## 4. Wie die Klasse entsteht
@@ -186,7 +186,7 @@ merge:
   risk:
     enabled: false              # Hauptschalter, Default aus
     mode: enforce               # observe = nur bewerten und anzeigen, nichts blockieren
-    autoMergeUpTo: low          # low | medium | high; critical nie
+    autoMergeUpTo: medium       # low | medium | high; critical nie
     aboveThreshold: approval    # approval = /harness approve, block = Mensch merged selbst
     maxLowRiskLines: 300        # mehr geänderte Zeilen: mindestens medium
     assessor:
@@ -258,9 +258,10 @@ etwa „Alles unter `billing/` betrifft Geld“. Es gilt als vertrauenswürdige 
    `MergeManager`, `approvalId` mit `riskKey`, Label `sf:risk-*`, Tests nach dem Muster des Reviews (Prompt-Injection im
    Diff, Modellfehler, Teil-/Vollabdeckung, eingebaute Pfade, neuer Head, Freigabe für alte Bewertung).
 2. **SF Manager.** Abschnitt „Merge & Risiko“, Bereichs-Tabelle mit Vorschau, Kalibrierungsansicht.
-3. **Rollout Controla.** Neue Version über den Manager, `risk.enabled: true` mit `mode: observe` für ein bis zwei Wochen,
-   Bereiche anhand der Kalibrierung schärfen, dann `mode: enforce` mit `autoMergeUpTo: low`.
-4. **Ausbau.** Schwelle auf `medium` anheben, wenn die Kalibrierung trägt; Preview für reine `low`-Bereichs-PRs
+3. **Rollout Controla.** Neue Version über den Manager, direkt `risk.enabled: true` mit `mode: enforce` und
+   `autoMergeUpTo: medium` (entschieden, ohne vorgeschaltete Beobachtungsphase). Bereiche anhand der
+   Kalibrierungsansicht laufend schärfen.
+4. **Ausbau.** Preview für reine `low`-Bereichs-PRs
    optional überspringen; Rückkopplung aus Reverts (ein revertierter Auto-Merge erzeugt einen Hinweis zur Bereichs-
    oder Schwellenanpassung).
 
@@ -275,11 +276,10 @@ etwa „Alles unter `billing/` betrifft Geld“. Es gilt als vertrauenswürdige 
 3. **Darf der Risiko-Modus `merge_pr: approval` lockern** (also `low` automatisch mergen, obwohl sonst alles
    freigegeben werden muss)? Empfehlung: nein. Wer risikobasiert mergen will, stellt bewusst auf `allow` und nutzt die
    Schwelle als Bremse. So bleibt `allow` die einzige Stelle, an der autonomes Mergen erlaubt wird.
-4. **Default-Schwelle.** Empfehlung: `low`. Für Controla heißt das nach Einschalten: Doku, Tests und kleine
-   Anpassungen laufen automatisch, Fachlogik braucht Freigabe. Das ist strenger als heute (`allow` für alles), was als
-   Einstieg gewollt ist.
-5. **Wirkung auf Controla heute.** Controla merged aktuell alles autonom, was das Review freigibt. Mit `enforce` würden
-   dort mehr PRs auf Freigabe warten. Empfehlung: zuerst `observe`, damit sichtbar wird, wie viele das wären.
+4. **Default-Schwelle.** Entschieden: `medium`. Doku, Tests, kleine Anpassungen und abgegrenzte Fachlogik laufen
+   automatisch; Migrationen, Sicherheit, Geld und öffentliche APIs (`high`) brauchen Freigabe.
+5. **Wirkung auf Controla heute.** Entschieden: Controla geht direkt mit `mode: enforce` und `autoMergeUpTo: medium`
+   live, ohne zweiwöchige Beobachtungsphase. `observe` bleibt als Option für andere Repositories.
 6. **Eingebaute kritische Pfade nicht absenkbar?** Empfehlung: ja, fest im Code. Eine Factory, die ihre eigenen
    Workflows oder ihre Konfiguration autonom ändert, kann ihre Gates aushebeln.
 7. **Label `sf:risk-*` und Commit-Status `sf/risk`.** Empfehlung: Label ja (sofort nützlich zum Filtern), Commit-Status
