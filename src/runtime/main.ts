@@ -23,7 +23,7 @@ import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
 import { scopedRuntimeGitHub } from './github-app.js';
-import { ActionsCodingExecutor } from './coding-executor.js';
+import { ActionsCodingExecutor, codingWorkflow } from './coding-executor.js';
 import { RuntimeEffects } from './effects.js';
 import { RuntimeCodingPublisher, containsCommit } from './publisher.js';
 import { IssueScopedGitHub } from './issue-scope.js';
@@ -109,6 +109,12 @@ export async function main(args = process.argv.slice(2)) {
       const repository: RuntimeRepository = { ...item, github, config: async () => loadConfig(await source.readConfig(item.configPath, item.baseRef)),
         baseSha: async () => item.baseRef ? (await api.git.getRef({ ...{ owner, repo }, ref: `heads/${item.baseRef}` })).data.object.sha : (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
       repository.baseContains = async sha => containsCommit(api, { owner, repo }, await repository.baseSha(), sha);
+      repository.executorWrapper = async () => {
+        try {
+          const data = (await api.repos.getContent({ owner, repo, path: `.github/workflows/${item.executorWorkflow ?? codingWorkflow}`, ref: await repository.baseSha() })).data;
+          return 'content' in data && data.encoding === 'base64' ? Buffer.from(data.content, 'base64').toString('utf8') : null;
+        } catch (error) { if (error && typeof error === 'object' && 'status' in error && error.status === 404) return null; throw error; }
+      };
       const controller = new RuntimeController(repository, store, temporal);
       if (item.approvalMode === 'ready-label') repository.readyApproval = async (number, expected, rework) => source.readyApproval(number, (await repository.config()).manager.trustedActors, expected, rework);
       if (item.validateCoding) repository.validationPlan = async () => {

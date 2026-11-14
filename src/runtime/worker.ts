@@ -39,6 +39,15 @@ export function createActivities(pack: WorkerPackage, broker: (operation: string
     async publish(value, binding, result) { return workerResultSchema.parse(await broker('publish', validate(value), binding, result)); },
   };
 }
+/** The broker's fixed reason code for a refused call, so the run's failure names it; anything else stays generic. */
+export async function brokerReason(response: Response): Promise<string> {
+  try {
+    const body = await runtimeJson(response, 2000);
+    const reason = body && typeof body === 'object' && 'reason' in body ? body.reason : undefined;
+    if (typeof reason === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(reason)) return reason;
+  } catch { /* An unreadable refusal is reported like an unreachable broker. */ }
+  return 'BROKER_REJECTED_OR_UNAVAILABLE';
+}
 export async function startRuntimeWorker(pack: WorkerPackage, address: string, namespace: string, brokerUrl: string, token: string) {
   const release = releaseSchema.parse(pack.release), url = runtimeUrl(brokerUrl);
   if (!isAbsolute(pack.bundlePath) || !isAbsolute(pack.harnessEntrypoint) || token.length < 32 ||
@@ -52,7 +61,7 @@ export async function startRuntimeWorker(pack: WorkerPackage, address: string, n
     const response = await fetch(new URL(`/v1/worker/${operation}`, url), { method: 'POST', redirect: 'error',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ snapshot, binding, ...(result ? { result } : {}) }), signal: AbortSignal.timeout(operation === 'publish' ? 110000 : 25000) });
-    if (!response.ok) { await response.body?.cancel(); throw new Error('BROKER_REJECTED_OR_UNAVAILABLE'); }
+    if (!response.ok) throw new Error(await brokerReason(response));
     return runtimeJson(response, 100000);
   });
   const connection = await NativeConnection.connect({ address });
