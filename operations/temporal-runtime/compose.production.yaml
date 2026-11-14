@@ -18,7 +18,7 @@ name: sfm
 # installed repositories: the broker refuses every run whose executor wrapper pins a different commit
 # (EXECUTOR_WRAPPER_RELEASE_MISMATCH). The SF Manager rolls out published releases only.
 x-worker-release: &worker-release
-  WORKER_FACTORY_SHA: a475c0bb4c33791f591d93ae36eca94391250b26
+  WORKER_FACTORY_SHA: a7be4652e5cecb8e133028762616b583b8121615
   WORKER_DEPLOYMENT: sf-backofficer
   WORKER_QUEUE: sf-backofficer-v1
 x-service: &service
