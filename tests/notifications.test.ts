@@ -169,3 +169,49 @@ it.each([{}, { ok: true }, { ok: false, error: 'private token' }])('rejects inva
   const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(response)));
   await expect(new SlackSink('fixture-token', fetcher).checkConnection()).rejects.toThrow('Slack connection failed: check');
 });
+
+async function runStartFixture(at = clock.toISOString()) {
+  const cfg = config(); cfg.notifications.slack.enabled = true; cfg.notifications.slack.channel = channel;
+  cfg.notifications.slack.events.run_started = { enabled: true, channel: null };
+  const gh = new MemoryGitHub(); gh.state.issues = [{ ...issue(4), title: 'Add the export button' }];
+  const receipt = (executionId: string, when = at) => gh.writeEvent(4, { version: 1, key: `temporal-receipt:${executionId}`, at: when, correlationId: 'test',
+    data: { type: 'temporal_receipt', executionId, workflowId: `sf-${executionId}`, runId: '00000000-0000-4000-8000-000000000001', binding: 'd'.repeat(64) } });
+  const send = vi.fn<NotificationSink['send']>(async () => ({ channel, timestamp: '1.23' }));
+  const deliver = () => deliverNotifications(gh, cfg, structuredClone(gh.state), { send }, 'test', clock);
+  return { cfg, gh, receipt, send, deliver };
+}
+it('announces each confirmed run start once, naming the repository and the task', async () => {
+  const f = await runStartFixture(); await f.receipt(id);
+  expect(await f.deliver()).toEqual([]); expect(await f.deliver()).toEqual([]);
+  expect(f.send).toHaveBeenCalledTimes(1);
+  expect(f.send.mock.calls[0]![1]).toMatchObject({ event: 'run_started', number: 4, title: 'Add the export button',
+    repository: f.gh.repository, url: `https://github.com/${f.gh.repository}/issues/4`, executionId: id });
+  // A retry or rework of the same task is a new run and is announced again.
+  await f.receipt('e'.repeat(32)); await f.deliver(); expect(f.send).toHaveBeenCalledTimes(2);
+});
+it('routes run starts to their own channel', async () => {
+  const f = await runStartFixture(); f.cfg.notifications.slack.events.run_started = { enabled: true, channel: 'C987654321' };
+  await f.receipt(id); await f.deliver(); expect(f.send.mock.calls[0]![0]).toBe('C987654321');
+});
+it.each(['absent', 'disabled', 'intent-only', 'untrusted', 'stale', 'since'])('does not announce a run start: %s', async condition => {
+  const f = await runStartFixture(condition === 'stale' ? new Date(clock.getTime() - 25 * 3600 * 1000).toISOString() : undefined);
+  if (condition === 'absent') delete f.cfg.notifications.slack.events.run_started;
+  if (condition === 'disabled') f.cfg.notifications.slack.events.run_started = { enabled: false, channel: null };
+  if (condition === 'since') f.cfg.notifications.slack.since = new Date(clock.getTime() + 1000).toISOString();
+  if (condition !== 'intent-only') await f.receipt(id);
+  if (condition === 'untrusted') for (const c of f.gh.state.comments.get(4)!) c.author = 'attacker';
+  await f.deliver(); expect(f.send).not.toHaveBeenCalled();
+});
+it('leaves configurations without run starts unchanged', () => {
+  expect(config().notifications.slack.events).not.toHaveProperty('run_started');
+});
+it('names the repository in a run start message', async () => {
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    const body = JSON.parse(String(init!.body));
+    expect(body.blocks[0].text.text).toBe('SF: Factory-Lauf gestartet\nRepository: owner/target\nhttps://github.com/owner/target/issues/4\n#4: Add the export button\nAkteur: Software Factory');
+    return new Response(JSON.stringify({ ok: true, channel, ts: '1.23' }));
+  });
+  await new SlackSink('fixture-token', fetcher).send(channel, { event: 'run_started', number: 4, title: 'Add the export button', actor: 'Software Factory',
+    url: 'https://github.com/owner/target/issues/4', repository: 'owner/target', executionId: id });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

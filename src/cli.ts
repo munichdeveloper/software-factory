@@ -14,6 +14,7 @@ import { CodingRepository } from './github/coding.js';
 import { prepareCoding, publishCoding } from './workers/coding.js';
 import { GitHubMergePort } from './merge/github.js';
 import { OpenAIMergeReviewer } from './merge/reviewer.js';
+import { OpenAIRiskAssessor } from './merge/risk.js';
 import { MergeManager } from './merge/manager.js';
 import { GitHubDeployPort } from './deploy/github.js';
 import { deploySummary, executeDeploy, parseDeployEnvironment, planDeploy, readEvent } from './deploy/index.js';
@@ -118,7 +119,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         console.log(JSON.stringify({ outcome: 'merge-disabled' })); return;
       }
       const report = await new MergeManager(new GitHubMergePort(repository, process.env.GITHUB_TOKEN ?? '', config.factory.scope, config.merge.adoptLabel),
-        config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), correlationId, github).run(await github.snapshot(config.manager.workflow));
+        config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), correlationId, github,
+        { assessor: new OpenAIRiskAssessor(process.env.OPENAI_API_KEY ?? '', config) }).run(await github.snapshot(config.manager.workflow));
       console.log(JSON.stringify({ correlationId, ...report }));
       if (report.errors.length) process.exitCode = 1;
       return;

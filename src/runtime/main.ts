@@ -32,6 +32,7 @@ import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
 import { OpenAIMergeReviewer } from '../merge/reviewer.js';
+import { OpenAIRiskAssessor } from '../merge/risk.js';
 
 const registrySchema = z.strictObject({
   namespace: z.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
@@ -133,7 +134,7 @@ export async function main(args = process.argv.slice(2)) {
       const merge = new RuntimeMerge(item.repositoryId, (config, snapshot) => new MergeManager(
         new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
         config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), `temporal-merge:${item.repositoryId}`, github,
-        { ownedOnly: !!item.issueNumbers }).run(snapshot));
+        { ownedOnly: !!item.issueNumbers, assessor: new OpenAIRiskAssessor(process.env.OPENAI_API_KEY ?? '', config) }).run(snapshot));
       return { repository, controller, planner: config => config.llm.provider === 'mock' ? mock : openai, merge };
     };
     const bindings: RuntimeBinding[] = [];

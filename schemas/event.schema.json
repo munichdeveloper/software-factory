@@ -669,6 +669,157 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "merge_risk"
+            },
+            "head": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "base": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "riskKey": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "risk": {
+              "type": "object",
+              "properties": {
+                "class": {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "critical"
+                  ]
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "builtin",
+                    "areas",
+                    "ai",
+                    "error"
+                  ]
+                },
+                "aiClass": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "critical"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "matchedAreas": {
+                  "maxItems": 30,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                },
+                "builtinPaths": {
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "lines": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "factors": {
+                  "maxItems": 15,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "factor": {
+                        "type": "string",
+                        "enum": [
+                          "data_schema",
+                          "data_loss",
+                          "security",
+                          "auth",
+                          "payments",
+                          "external_integration",
+                          "public_api",
+                          "runtime_config",
+                          "dependency",
+                          "business_logic",
+                          "ui",
+                          "docs",
+                          "tests",
+                          "test_coverage",
+                          "size"
+                        ]
+                      },
+                      "path": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "explanation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "factor",
+                      "path",
+                      "explanation"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "class",
+                "source",
+                "aiClass",
+                "matchedAreas",
+                "builtinPaths",
+                "lines",
+                "reason",
+                "factors"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "head",
+            "base",
+            "riskKey",
+            "risk"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "merge_intent"
             },
             "prNumber": {

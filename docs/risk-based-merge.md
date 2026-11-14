@@ -1,6 +1,6 @@
 # Konzept: Risikobasiertes Auto-Merge
 
-Status: **Konzept, nicht implementiert.** Dieses Dokument beschreibt, wie die Factory für jeden Merge-Kandidaten eine
+Status: **umgesetzt in der Factory** (Issue #80); Konfiguration und Verhalten siehe [merging.md](merging.md#risk-based-auto-merge). Offen: SF-Manager-Oberfläche (sf-manager#33), Slack-Hinweis bei wartender Freigabe, Commit-Status `sf/risk`. Ursprünglicher Konzepttext: Dieses Dokument beschreibt, wie die Factory für jeden Merge-Kandidaten eine
 Risikoklasse bestimmt und davon abhängig macht, ob der Broker selbst merged oder eine menschliche Freigabe verlangt.
 Die Risikobewertung erfolgt standardmäßig durch KI. Pro Repository lassen sich Bereiche (Pfade) mit festen
 Risikoklassen hinterlegen, die die KI-Bewertung ergänzen oder ersetzen.
@@ -70,8 +70,9 @@ flowchart TD
 ```
 
 **Schritt 1: Eingebaute kritische Pfade.** Unabhängig von der Konfiguration gelten als `critical`:
-`.github/workflows/**`, `.github/software-factory.yml`, `.github/software-factory.validation.json`, `AGENTS.md`,
-`CODEOWNERS`, `.github/CODEOWNERS` und die vom Installationsvertrag verwalteten Dateien. Ein PR, der das Regelwerk der
+`.github/workflows/**`, `.github/actions/**`, `.github/software-factory.yml`, `.github/software-factory.validation.json`,
+`AGENTS.md`, `CODEOWNERS`, `.github/CODEOWNERS`, `docs/CODEOWNERS`; die vom Installationsvertrag verwalteten Dateien liegen
+alle darunter. Ein PR, der das Regelwerk der
 Factory selbst ändert, darf sich nicht selbst freigeben. Diese Liste ist im Code fest und nicht absenkbar.
 
 **Schritt 2: Konfigurierte Bereiche.** Jeder Bereich ist eine Liste von Glob-Mustern mit einer Klasse. Zwei Fälle:

@@ -25,12 +25,12 @@ Generated JSON schemas share the executable Zod source.
 | `execution.dispatchGraceMinutes` | `10` | Actions visibility grace, 1–60; expiry quarantines uncertain intents |
 | `execution.rework` | `false` | Temporal coding with independent validation only: a failed validation starts a further attempt within `maxRetries` instead of waiting for a person. Enable only after the executor release that fetches task context is rolled out |
 | `workers.coding.loopback` | `false` | Temporal executor only: the worker's commands may bind and connect on a private loopback interface (local server, browser tests) and get the locked Playwright browser; all other network stays closed. Needs the executor release that supports it |
-| `workers.coding.smallPullRequests` | `true` | Tells the coding worker to keep each change to the task's one concern (no drive-by refactoring, renaming or unrelated fixes) and, for a task that bundles several concerns or is too large for one reviewable change, to report `blocked` with a proposed split instead of one large PR; the planner cuts follow-ups to one concern each. Fixed per execution when it is first dispatched. The planned risk-based merge (more than 800 changed lines raises the risk) stays the hard limit |
 | `monitoring.enabled` | `true` | Temporal: the broker's sanity check of this repository's runs after each reconciliation (no extra GitHub requests). The whole `monitoring` section is optional and leaves the configuration hash unchanged while absent |
 | `monitoring.stuckRunMinutes` | `60` | A run still active this many minutes after its worker timeout is reported as stuck, 5–1440 |
 | `monitoring.approvalWaitHours` | `48` | A run waiting at its approval gate this long is reported, 1–720 |
 | `monitoring.repeatedFailures` | `3` | This many attempts in a row ending with the same error code are reported as an endless retry, 2–20 |
 | `monitoring.stalledPasses` | `10` | Consecutive reconciliations a status label may differ from the derived status, or reconciliations may fail or report errors, before it is reported, 2–200 |
+| `workers.coding.smallPullRequests` | `true` | Tells the coding worker to keep each change to the task's one concern (no drive-by refactoring, renaming or unrelated fixes) and, for a task that bundles several concerns or is too large for one reviewable change, to report `blocked` with a proposed split instead of one large PR; the planner cuts follow-ups to one concern each. Fixed per execution when it is first dispatched. Risk-based merging (`merge.risk`, more than 800 changed lines are at least `high`) stays the hard limit |
 | `llm.provider` | `mock` | Deterministic mock or real `openai` Responses API |
 | `llm.model` | `gpt-4.1-mini` | Explicit provider model string; account must have access |
 | `llm.reasoningEffort` | `null` | Omit capability, or `none`, `minimal`, `low`, `medium`, `high`, `xhigh`; must match model |
@@ -41,6 +41,14 @@ Generated JSON schemas share the executable Zod source.
 | `workers.test.operation` | `sha256` | Digest, deterministic `fail`, or deterministic `blocked` |
 | `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper |
 | `workers.review` | `false` | Must be false; not implemented |
+| `merge.risk.enabled` | `false` | Risk-based auto-merge, see [merging](merging.md#risk-based-auto-merge); requires `merge.enabled` |
+| `merge.risk.mode` | `enforce` | `enforce` gates merges by risk class; `observe` only classifies and shows |
+| `merge.risk.autoMergeUpTo` | `medium` | Highest class the Factory merges on its own: `low`, `medium`, `high`; `critical` never |
+| `merge.risk.aboveThreshold` | `approval` | `approval` asks for `/harness approve`; `block` leaves the merge to a person |
+| `merge.risk.maxLowRiskLines`/`maxMediumRiskLines` | `300`/`800` | More changed lines make a change at least `medium`/`high` |
+| `merge.risk.assessor` | `{provider: llm, model: gpt-6.1-sol, reasoningEffort: medium, timeoutSeconds: 90}` | AI assessor; `llm` follows `llm.provider`, a mock configuration fails closed (critical) |
+| `merge.risk.guidance` | `null` | Trusted project hint for the assessor, at most 2000 characters |
+| `merge.risk.areas` | `[]` | Up to 30 `{name, paths, class}` with relative globs (`*`, `?`, `**`); lower the class only when they cover every changed file, otherwise a minimum |
 | `deploy.enabled` | `false` | Optional deployment of the default branch, see [deploy](deploy.md) |
 | `deploy.trigger` | `checks` | `checks` (after `deploy.workflows` succeeded) or `push` |
 | `deploy.workflows` | `[]` | CI workflow names; required for `checks` |

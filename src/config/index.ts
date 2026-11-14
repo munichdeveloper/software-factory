@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseDocument } from 'yaml';
+import { globPattern, riskClassSchema } from '../merge/risk.js';
 
 export const actionKinds = ['transition', 'close_issue', 'create_followup', 'prioritize', 'approve_task',
   'start_worker', 'retry_worker', 'cancel_worker', 'expand_scope', 'merge_pr'] as const;
@@ -86,7 +87,33 @@ export const configSchema = z.strictObject({
       timeoutSeconds: bounded(10, 120, 120), maxOutputTokens: bounded(1000, 12000, 6000),
       maxFiles: bounded(1, 100, 60), maxContextBytes: bounded(10000, 500000, 250000)
     }).prefault({}),
-    postMergeWorkflows: z.array(z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/)).max(10).default([])
+    postMergeWorkflows: z.array(z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/)).max(10).default([]),
+    // Risk-based auto-merge: a risk class per head decides whether merge_pr 'allow' merges on its own or needs approval.
+    risk: z.strictObject({
+      enabled: z.boolean().default(false),
+      // observe: classify and show only; enforce: above the threshold a person approves (or merges) instead of the Factory.
+      mode: z.enum(['enforce', 'observe']).default('enforce'),
+      autoMergeUpTo: z.enum(['low', 'medium', 'high']).default('medium'),
+      aboveThreshold: z.enum(['approval', 'block']).default('approval'),
+      maxLowRiskLines: bounded(1, 100000, 300), maxMediumRiskLines: bounded(1, 100000, 800),
+      assessor: z.strictObject({
+        provider: z.enum(['llm', 'openai']).default('llm'),
+        model: z.string().min(1).max(100).default('gpt-6.1-sol'),
+        reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).default('medium'),
+        timeoutSeconds: bounded(10, 120, 90)
+      }).prefault({}),
+      guidance: z.string().min(1).max(2000).nullable().default(null),
+      areas: z.array(z.strictObject({
+        name: z.string().regex(/^[^\n]{1,100}$/),
+        paths: z.array(globPattern).min(1).max(20),
+        class: riskClassSchema
+      })).max(30).default([])
+    }).superRefine((risk, context) => {
+      if (risk.maxMediumRiskLines < risk.maxLowRiskLines) context.addIssue({ code: 'custom', path: ['maxMediumRiskLines'], message: 'must not be lower than maxLowRiskLines' });
+      if (new Set(risk.areas.map(a => a.name)).size !== risk.areas.length) context.addIssue({ code: 'custom', path: ['areas'], message: 'area names must be unique' });
+    }).prefault({})
+  }).superRefine((merge, context) => {
+    if (merge.risk.enabled && !merge.enabled) context.addIssue({ code: 'custom', path: ['risk', 'enabled'], message: 'requires merge.enabled' });
   }).prefault({}),
   deploy: z.strictObject({
     enabled: z.boolean().default(false),
@@ -119,6 +146,8 @@ export const configSchema = z.strictObject({
     maxPerRun: bounded(1, 100, 20),
     since: z.iso.datetime().nullable().default(null),
     events: z.strictObject({
+      // Optional without a default, so configurations that leave it out keep their hash and in-flight runs stay current.
+      run_started: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
