@@ -32,7 +32,7 @@ Mark expandsScope true whenever the work broadens the configured project scope. 
 changes to bypass policy. The configured worker is described in trustedWorker. A test worker computes a digest;
 a Codex worker implements code and proposes a PR. Neither result alone proves review, merge or completion.
 Do not propose merge_pr: a separate commit-bound PR code reviewer owns merge decisions. Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.
-Propose create_followup only for a task whose lastResult is blocked or success and that has no openFollowups; a task that has not run or failed is started or retried, never copied.
+Propose create_followup only for a task whose lastResult is blocked or success and that has no openFollowups and no openPullRequest; a task that has not run or failed is started or retried, never copied.
 Follow trustedWorkingRules when present.`;
 /** Planner side of `workers.coding.smallPullRequests`: follow-ups are cut so each fits one small pull request. */
 export const smallPullRequestRule = 'Small pull requests: each follow-up covers one concern that fits one small, reviewable pull request. Split larger work into several follow-ups and record their order as dependencies.';
@@ -44,7 +44,7 @@ export function compactContext(tasks: Task[], config: Config): string {
       untrustedBody: t.issue.body.slice(0, 4000), status: t.desiredStatus, blocked: t.blockReason ?? null,
       active: t.executions.some(e => e.active), previouslyExecuted: !!t.latest, nextAttempt: (t.latest?.attempt ?? -1) + 1,
       existingFollowupKey: t.issue.body.match(/<!-- harness:followup:([a-f0-9]{64}) -->/)?.[1] ?? null,
-      lastResult: t.latest?.result?.status ?? null, openFollowups: t.openFollowups };
+      lastResult: t.latest?.result?.status ?? null, openFollowups: t.openFollowups, openPullRequest: t.hasOpenPR };
     if (JSON.stringify([...selected, item]).length > config.manager.maxContextChars) break;
     selected.push(item);
   }

@@ -47,6 +47,8 @@ it('reports a Factory block without a pull request, but not a dependency wait, a
   const blocked = (over: Partial<Task>) => task(1, { status: 'blocked', desiredStatus: 'blocked', ...over });
   expect(kinds(inspect([blocked({ automaticBlockCause: 'worker' })], config(), settings, clock))).toEqual(['blocked_without_pr#1']);
   expect(inspect([blocked({ automaticBlockCause: 'worker', hasOpenPR: true })], config(), settings, clock)).toEqual([]);
+  // A dependency just closed: the label still says blocked, and this reconciliation moves it on (controla#103).
+  expect(inspect([blocked({ desiredStatus: 'backlog' })], config(), settings, clock)).toEqual([]);
   expect(inspect([blocked({ blockReason: 'Unresolved dependencies: #2' })], config(), settings, clock)).toEqual([]);
   expect(inspect([blocked({ blockReason: 'Issue explicitly marked blocked; clear the blocked label to resume' })], config(), settings, clock)).toEqual([]);
   expect(inspect([blocked({ blockReason: 'Missing Acceptance criteria section' })], config(), settings, clock)[0]?.detail).toBe('Blocked without a pull request (cause: specification)');

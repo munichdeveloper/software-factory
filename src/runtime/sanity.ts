@@ -51,7 +51,8 @@ export function inspect(tasks: Task[], config: Config, settings: MonitoringSetti
     // A Factory block without a pull request: no person was asked to block it and nothing waits for review.
     // Waiting for a dependency and a block a person set are not dead ends.
     const waiting = task.blockReason?.startsWith('Unresolved dependencies') || task.blockReason?.startsWith('Issue explicitly marked blocked');
-    if (task.status === 'blocked' && !active && !task.hasOpenPR && !waiting) {
+    // A label this reconciliation is about to change (for example once a dependency closed) is not a dead end either.
+    if (task.status === 'blocked' && task.desiredStatus === 'blocked' && !active && !task.hasOpenPR && !waiting) {
       const cause = task.automaticBlockCause ?? (task.blockReason ? 'specification' : latest?.result?.status === 'blocked' ? 'worker' : 'unknown');
       found.push(finding('blocked_without_pr', n, `Blocked without a pull request (cause: ${cause}${latest?.result ? `, last attempt ${latest.attempt}` : ''})`));
     }
