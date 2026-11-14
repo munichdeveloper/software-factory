@@ -45,7 +45,7 @@ function fixture(selectedSnapshot = snapshot) {
   const store = new Store(), writes: { kind: string; body: Record<string, unknown> }[] = [];
   const blobs = new Map<string, string>();
   let branch: string | null = null, pr: Record<string, unknown> | null = null, comment: Record<string, unknown> | null = null;
-  let lost: string | null = null, before: string | null = null, collision = false, duplicate = false, moved = false;
+  let lost: string | null = null, before: string | null = null, collision = false, duplicate = false, moved: false | 'forward' | 'rewritten' = false;
   const closed: number[] = [];
   const object = (body: unknown) => createHash('sha1').update(JSON.stringify(body)).digest('hex');
   const fetcher: typeof fetch = async (input, init) => {
@@ -59,6 +59,7 @@ function fixture(selectedSnapshot = snapshot) {
     }
     if (path === '') data = { id: 42, default_branch: 'main' };
     else if (path === `/git/ref/heads/${selectedSnapshot.baseRef ?? 'main'}`) data = { object: { sha: moved ? '9'.repeat(40) : snapshot.baseSha } };
+    else if (path.startsWith(`/compare/${snapshot.baseSha}...`)) data = moved === 'forward' ? { status: 'ahead', merge_base_commit: { sha: snapshot.baseSha } } : { status: 'diverged', merge_base_commit: { sha: '1'.repeat(40) } };
     else if (path === `/git/commits/${snapshot.baseSha}`) data = { tree: { sha: '4'.repeat(40) } };
     else if (path === `/git/trees/${'4'.repeat(40)}`) data = { truncated: false, tree: [] };
     else if (path.startsWith('/git/blobs/') && method === 'GET') { const sha = path.split('/').at(-1)!; data = blobs.has(sha) ? { sha, content: blobs.get(sha) } : {}; if (!blobs.has(sha)) status = 404; }
@@ -82,7 +83,7 @@ function fixture(selectedSnapshot = snapshot) {
   const authorize = vi.fn(async () => {});
   const publisher = () => new RuntimeCodingPublisher(api, new RuntimeEffects(store, 42, snapshot.admission.input.executionId, hash(selectedSnapshot)), authorize, ['factory[bot]']);
   const publish = (source = artifact(), validation?: ValidationReport) => publisher().publish(selectedSnapshot, source, '2026-11-09T13:00:00.000Z', validation);
-  return { store, writes, publish, authorize, lose: (key: string) => { lost = key; }, failBefore: (key: string) => { before = key; }, collide: () => { collision = true; }, duplicate: () => { duplicate = true; }, move: () => { moved = true; } };
+  return { store, writes, publish, authorize, lose: (key: string) => { lost = key; }, failBefore: (key: string) => { before = key; }, collide: () => { collision = true; }, duplicate: () => { duplicate = true; }, move: (how: 'forward' | 'rewritten' = 'rewritten') => { moved = how; } };
 }
 it('serializes concurrent publishers, creates exactly one draft and reuses durable receipts', async () => {
   const f = fixture(); const [a, b] = await Promise.all([f.publish(), f.publish()]); expect(a).toEqual(b);
@@ -115,7 +116,7 @@ it('replaces the draft of the attempt a rework continues, and no pull request of
 it('publishes canary changes only against the frozen integration branch', async () => {
   const f = fixture(snapshotSchema.parse({...snapshot,baseRef:'test/temporal-rc'})); await f.publish();
   expect(f.writes.find(w=>w.kind==='draft-pr')!.body.base).toBe('test/temporal-rc');
-  const moved=fixture(snapshotSchema.parse({...snapshot,baseRef:'test/temporal-rc'}));moved.move();
+  const moved=fixture(snapshotSchema.parse({...snapshot,baseRef:'test/temporal-rc'}));moved.move('forward');
   await expect(moved.publish()).rejects.toThrow('BASE_MOVED'); expect(moved.writes).toEqual([]);
 });
 it('cannot publish a model change outside the frozen canary path scope', async () => {
@@ -136,6 +137,12 @@ it.each(['branch', 'draft-pr', 'publication-comment'])('recovers GitHub acceptan
 it('blocks an ambiguous PR request without evidence rather than sending again', async () => {
   const f = fixture(); f.failBefore('draft-pr'); await expect(f.publish()).rejects.toThrow();
   await expect(f.publish()).rejects.toThrow('EFFECT_UNCERTAIN'); expect(f.writes.filter(w => w.kind === 'draft-pr')).toHaveLength(0);
+});
+it('publishes after the default branch moved forward, but not after it was rewritten', async () => {
+  const forward = fixture(); forward.move('forward'); await forward.publish();
+  expect(forward.writes.find(w => w.kind === 'commit')!.body.parents).toEqual([snapshot.baseSha]);
+  expect(forward.writes.find(w => w.kind === 'draft-pr')!.body.base).toBe('main');
+  const rewritten = fixture(); rewritten.move('rewritten'); await expect(rewritten.publish()).rejects.toThrow('BASE_MOVED'); expect(rewritten.writes).toEqual([]);
 });
 it('rejects changed artifacts, protected paths, base changes, branch collisions and duplicate PR evidence', async () => {
   const f = fixture(); await f.publish(); const changed = artifact(); changed.changes[0]!.content = 'eA=='; await expect(f.publish(changed)).rejects.toThrow('EFFECT_PAYLOAD_CONFLICT');

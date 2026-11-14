@@ -145,6 +145,19 @@ describe('Temporal admission, identity and approval', () => {
     f.cfg.execution.maxRetries++; await expect(f.controller.authorize(row.snapshot, row.binding)).rejects.toThrow('STALE_SNAPSHOT'); f.cfg.execution.maxRetries--;
     f.repo.baseSha = async () => 'e'.repeat(40); await expect(f.controller.authorize(row.snapshot, row.binding)).rejects.toThrow('STALE_SNAPSHOT');
   });
+  it('keeps a run whose default branch only moved forward, but not after a rewrite or on a frozen base ref', async () => {
+    const f = await fixture(false); await f.controller.start(f.admission); const row = f.store.row!;
+    f.repo.baseSha = async () => 'e'.repeat(40);
+    f.repo.baseContains = async sha => sha === row.snapshot.baseSha; await expect(f.controller.authorize(row.snapshot, row.binding)).resolves.toBeTruthy();
+    f.repo.baseContains = async () => false; await expect(f.controller.authorize(row.snapshot, row.binding)).rejects.toThrow('STALE_SNAPSHOT');
+    f.repo.baseContains = async () => true; f.cfg.execution.maxRetries++;
+    await expect(f.controller.authorize(row.snapshot, row.binding)).rejects.toThrow('STALE_SNAPSHOT'); f.cfg.execution.maxRetries--;
+    const canary = await fixture(false); canary.repo.baseRef = 'test/temporal-rc'; await canary.controller.start(canary.admission);
+    const frozen = canary.store.row!; expect(frozen.snapshot.baseRef).toBe('test/temporal-rc');
+    await expect(canary.controller.authorize(frozen.snapshot, frozen.binding)).resolves.toBeTruthy();
+    canary.repo.baseSha = async () => 'e'.repeat(40); canary.repo.baseContains = async () => true;
+    await expect(canary.controller.authorize(frozen.snapshot, frozen.binding)).rejects.toThrow('STALE_SNAPSHOT');
+  });
   it('revokes approval and preserves cancellation independently of wake-up signal delivery', async () => {
     const f = await fixture(); await f.controller.start(f.admission); const row = f.store.row!;
     await f.controller.gate(f.result.executionId, row.binding, 'maintainer', true); await f.controller.gate(f.result.executionId, row.binding, 'maintainer', false);

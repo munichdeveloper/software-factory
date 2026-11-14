@@ -21,7 +21,7 @@ import { startRuntimeWorker, type WorkerPackage } from './worker.js';
 import { scopedRuntimeGitHub } from './github-app.js';
 import { ActionsCodingExecutor } from './coding-executor.js';
 import { RuntimeEffects } from './effects.js';
-import { RuntimeCodingPublisher } from './publisher.js';
+import { RuntimeCodingPublisher, containsCommit } from './publisher.js';
 import { IssueScopedGitHub } from './issue-scope.js';
 import { defaultValidationPlan, validationPlanSchema } from './validation-contract.js';
 import { RuntimeMerge } from './merge.js';
@@ -103,6 +103,7 @@ export async function main(args = process.argv.slice(2)) {
       if ((await api.repos.get({ owner, repo })).data.id !== item.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
       const repository: RuntimeRepository = { ...item, github, config: async () => loadConfig(await source.readConfig(item.configPath, item.baseRef)),
         baseSha: async () => item.baseRef ? (await api.git.getRef({ ...{ owner, repo }, ref: `heads/${item.baseRef}` })).data.object.sha : (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
+      repository.baseContains = async sha => containsCommit(api, { owner, repo }, await repository.baseSha(), sha);
       const controller = new RuntimeController(repository, store, temporal);
       if (item.approvalMode === 'ready-label') repository.readyApproval = async (number, expected, rework) => source.readyApproval(number, (await repository.config()).manager.trustedActors, expected, rework);
       if (item.validateCoding) repository.validationPlan = async () => {

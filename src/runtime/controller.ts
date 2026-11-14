@@ -21,6 +21,8 @@ export interface RuntimeRepository {
   readyApproval?(issueNumber: number, expected?: ReadyApproval, rework?: ReadyApproval): Promise<ReadyApproval>;
   validationPlan?(): Promise<ValidationPlan>;
   github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
+  /** Whether the current base still contains `sha`, i.e. the base only moved forward. Without it any move is stale. */
+  baseContains?(sha: string): Promise<boolean>;
   coding?: { executor: CodingExecutionPort; publish(snapshot: RunSnapshot, binding: string, artifact: CodingArtifact, createdAt: string, validation?: ValidationReport): Promise<{ url: string }> };
 }
 export class RuntimeController implements WorkerRuntimePort {
@@ -60,10 +62,17 @@ export class RuntimeController implements WorkerRuntimePort {
     }
     if (this.repo.repositoryId !== snapshot.repositoryId || this.repo.repository !== snapshot.repository || this.repo.baseRef !== snapshot.baseRef || this.repo.executorWorkflow !== snapshot.executorWorkflow || hash(this.repo.allowedPaths ?? null) !== hash(snapshot.allowedPaths ?? null) ||
       ![this.repo.release, ...(this.repo.retainedReleases ?? [])].some(r => hash(r) === hash(snapshot.release)) || config.execution.engine !== 'temporal' ||
-      hash(config) !== snapshot.configHash || policyVersion(config) !== snapshot.admission.policyHash || await this.repo.baseSha() !== snapshot.baseSha) throw new Error('STALE_SNAPSHOT');
+      hash(config) !== snapshot.configHash || policyVersion(config) !== snapshot.admission.policyHash || !await this.baseCurrent(snapshot)) throw new Error('STALE_SNAPSHOT');
     const auth = await authorizeDelegation(this.repo.github, config, snapshot.admission.input.issueNumber, snapshot.admission.input.executionId);
     if (auth.cancelled || hash(auth.input) !== hash(snapshot.admission.input)) throw new Error('DELEGATION_REVOKED');
     return config;
+  }
+  // Work merged into the default branch while a run waits or works does not invalidate it: the pull request is built on
+  // the frozen base and its checks run against the current branch. A rewritten base, or any move of an explicitly
+  // frozen base ref, still does. Config and policy changes are caught separately through their hashes.
+  private async baseCurrent(snapshot: RunSnapshot) {
+    if (await this.repo.baseSha() === snapshot.baseSha) return true;
+    return !snapshot.baseRef && !!this.repo.baseContains && await this.repo.baseContains(snapshot.baseSha);
   }
   get readyIsGrant() { return !!this.repo.readyApproval; }
   async preflight(issueNumber: number, reworkOfExecutionId?: string): Promise<void> {
