@@ -160,12 +160,12 @@ list the file see them.
 
 ## The Factory's own runtime
 
-This repository deploys its own runtime stack (broker, worker, SF Manager and their databases) the same way:
+This repository deploys its own runtime stack (broker, worker and their databases, plus the SF Manager's database) the same way:
 `.github/software-factory.yml` enables `deploy` after the `CI` workflow succeeded on `main`, and
 `operations/temporal-runtime/compose.production.yaml` is the compose file of the release.
 
 - The **broker** is built on the host from the deployed release (`SF_RELEASE_SHA`). A merge to `main`
-  therefore replaces the broker and restarts the services sharing its network namespace (worker, Manager).
+  therefore replaces the broker and restarts the worker, which shares its network namespace.
   Running Temporal workflows keep their Run-ID across this restart.
 - The **PINNED worker release** is named in the compose file itself (`x-worker-release`, a published Factory
   commit). Every deployment builds the worker image from that commit, with its package baked in, and the broker
@@ -174,15 +174,17 @@ This repository deploys its own runtime stack (broker, worker, SF Manager and th
   The broker refuses to start while a run of another release is still active; the deployment then fails and the
   previous release keeps running. Installed repositories additionally need their executor wrapper rolled to the
   same commit through the SF Manager.
-- The **Manager image** is named by commit in the compose file. The Factory installed deploy-only in
-  `munichdeveloper/sf-manager` builds `sf-manager:<commit>` on the host after each merge there; a pull request
-  here then switches the stack to that commit.
+- The **SF Manager** is deployed by its own repository: the Factory installed deploy-only in
+  `munichdeveloper/sf-manager` builds and starts its web and job worker on the host after each merge there
+  (`operations/image/compose.yaml`). They reach the broker (`runtime-broker:8095`) and their database
+  (`manager-db`) through the internal network `sf-runtime-api`, which this stack creates, and Traefik through
+  `sfm_front`. Nothing about the Manager is pinned here.
 - Credentials (`*.env`) and `registry.json` stay on the host in the deploy path and never pass through GitHub.
   The exception is the broker's merge review key: the wrapper passes the repository secret
   `BROKER_OPENAI_API_KEY` as `OPENAI_API_KEY` through `deploy-env`, and the broker lists `.sf-deploy.env`
   after `broker.env` (see `docs/temporal-runtime.md`).
-- The public host name of the Manager is read from `SFM_HOST` in the host's `.env`. Without it the compose file
-  does not resolve and the deployment fails before any container changes.
+- The public host name of the Manager, `SFM_HOST` in the host's `.env`, is read by the Manager's own deployment
+  (its `deploy.envFile` links that file).
 
 One-time setup: add `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST` and `DEPLOY_USER` to the
 `production` environment of this repository. Until they exist every deployment is skipped with a warning.

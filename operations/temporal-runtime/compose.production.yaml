@@ -3,7 +3,7 @@
 # built from the release that is being deployed; SF_RELEASE_SHA is set by the deployment.
 #
 # Host state that never passes through GitHub lives in SFM_CONFIG_DIR (default: the deploy path):
-#   .env            SFM_HOST (public host name of the Manager)
+#   .env            SFM_HOST (public host name of the Manager, read by the Manager's own deployment)
 #   *.env           service credentials
 #   registry.json   runtime registry (repositories, modes; its release entry is superseded, see below)
 # Secrets kept in GitHub reach the stack through the deployment's .sf-deploy.env (see runtime-broker).
@@ -12,9 +12,8 @@ name: sfm
 # image and its package from this published Factory commit, and the broker serves its repositories with exactly
 # that release. Nothing on the host has to be edited. Installed repositories still need their executor wrapper
 # rolled to the same commit (SF Manager), and a deployment fails closed while a run of another release is active.
-# The Manager image is built on this host by the Factory deployment of munichdeveloper/sf-manager (a private
-# repository, so it cannot be built from here). Its two services below name the commit to run; that image must
-# exist on the host before this file is deployed, otherwise the deployment fails and the previous release stays.
+# The SF Manager (web and job worker) is deployed by its own repository, munichdeveloper/sf-manager
+# (operations/image/compose.yaml), and reaches the broker and its database here through the runtime-api network.
 # Only a published release may be named here, and only together with the rollout of that same release to the
 # installed repositories: the broker refuses every run whose executor wrapper pins a different commit
 # (EXECUTOR_WRAPPER_RELEASE_MISMATCH). The SF Manager rolls out published releases only.
@@ -33,8 +32,8 @@ x-service: &service
 services:
   manager-db:
     <<: *service
-    # web, manager-worker and runtime-worker share runtime-broker's network namespace. Every deploy recreates the
-    # broker, which removes that namespace under their open connections without closing them; TCP keepalives let
+    # Clients that share runtime-broker's network namespace lose it whenever a deploy recreates the broker, under
+    # their open connections and without closing them; TCP keepalives let
     # Postgres drop such dead connections after about 90 seconds instead of two hours (max_connections ran out).
     command: [postgres, -c, tcp_keepalives_idle=60, -c, tcp_keepalives_interval=10, -c, tcp_keepalives_count=3]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
@@ -51,8 +50,8 @@ services:
       retries: 20
   runtime-db:
     <<: *service
-    # web, manager-worker and runtime-worker share runtime-broker's network namespace. Every deploy recreates the
-    # broker, which removes that namespace under their open connections without closing them; TCP keepalives let
+    # Clients that share runtime-broker's network namespace lose it whenever a deploy recreates the broker, under
+    # their open connections and without closing them; TCP keepalives let
     # Postgres drop such dead connections after about 90 seconds instead of two hours (max_connections ran out).
     command: [postgres, -c, tcp_keepalives_idle=60, -c, tcp_keepalives_interval=10, -c, tcp_keepalives_count=3]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
@@ -90,7 +89,6 @@ services:
     tmpfs: [/tmp]
     networks:
       private: {}
-      front: {}
       temporal: {}
       runtime-api: { aliases: [factory-runtime-api] }
     mem_limit: 1g
@@ -108,14 +106,6 @@ services:
       timeout: 3s
       retries: 10
       start_period: 30s
-    labels:
-      traefik.enable: 'true'
-      traefik.docker.network: sfm_front
-      traefik.http.routers.sfm.rule: Host(`${SFM_HOST:?}`)
-      traefik.http.routers.sfm.entrypoints: websecure
-      traefik.http.routers.sfm.tls: 'true'
-      traefik.http.routers.sfm.tls.certresolver: letsencrypt
-      traefik.http.services.sfm.loadbalancer.server.port: '3000'
   runtime-worker:
     <<: *service
     build:
@@ -134,62 +124,14 @@ services:
     mem_limit: 1g
     depends_on:
       runtime-broker: { condition: service_healthy }
-  web:
-    <<: *service
-    image: sf-manager:a9125754a50cfcb0c847788dfe2ef2bdf569439c # keep both Manager services on the same commit
-    network_mode: service:runtime-broker
-    read_only: true
-    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
-    environment:
-      APP_URL: https://${SFM_HOST:?}
-      FACTORY_RUNTIME_URL: http://127.0.0.1:8095
-      NODE_ENV: production
-    tmpfs: [/tmp]
-    mem_limit: 1g
-    depends_on:
-      manager-db: { condition: service_healthy }
-      runtime-broker: { condition: service_healthy }
-    healthcheck:
-      test:
-        [
-          CMD,
-          node,
-          -e,
-          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
-        ]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-  manager-worker:
-    <<: *service
-    image: sf-manager:a9125754a50cfcb0c847788dfe2ef2bdf569439c # keep both Manager services on the same commit
-    network_mode: service:runtime-broker
-    read_only: true
-    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
-    environment:
-      APP_URL: https://${SFM_HOST:?}
-      FACTORY_RUNTIME_URL: http://127.0.0.1:8095
-      NODE_ENV: production
-    command: [sh, -c, 'node dist/migrate.mjs && exec node dist/main.mjs']
-    tmpfs: [/tmp]
-    mem_limit: 768m
-    depends_on:
-      manager-db: { condition: service_healthy }
-      runtime-broker: { condition: service_healthy }
-    healthcheck:
-      test: [CMD, node, dist/worker-health.mjs]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    stop_grace_period: 40s
 networks:
   private: { internal: true }
   # Shared with the SF Manager's own deployment (munichdeveloper/sf-manager, operations/image/compose.yaml): only
   # the broker API and the Manager database are attached; the fixed name lets the other project join it.
   runtime-api: { name: sf-runtime-api, internal: true }
-  front: {}
+  # Traefik's network, which Traefik is attached to; no service here uses it any more, the SF Manager's web service
+  # joins it as sfm_front. Declared with its existing name so it stays stable.
+  front: { name: sfm_front }
   temporal: { external: true, name: sf-temporal_access }
 volumes:
   manager-data: {}
