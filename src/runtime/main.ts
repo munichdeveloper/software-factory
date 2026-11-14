@@ -18,6 +18,7 @@ import { RuntimeStore, type Registration } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { startReconcileSchedule } from './schedule.js';
 import { SanityMonitor } from './sanity.js';
+import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
 import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
@@ -160,7 +161,7 @@ export async function main(args = process.argv.slice(2)) {
       return binding;
     };
     const notifications = process.env.SLACK_BOT_TOKEN ? new SlackSink(process.env.SLACK_BOT_TOKEN) : undefined;
-    const monitor = new SanityMonitor(store);
+    const monitor = new SanityMonitor(store, undefined, process.env.SLACK_BOT_TOKEN ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined);
     const serverOptions = { monitor, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
       ...(notifications ? { notifications } : {}) };
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');

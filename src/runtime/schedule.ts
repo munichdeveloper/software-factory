@@ -20,7 +20,7 @@ export function startReconcileSchedule(bindings: RuntimeBinding[], options: Pick
         // Fixed codes only: never external error text, repository content or connection strings.
         if (!quiet.has(reason)) console.warn(JSON.stringify({ event: 'factory-reconcile-failed', repositoryId: binding.repository.repositoryId, reason,
           httpStatus: error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' ? error.status : undefined }));
-        if (!quiet.has(reason)) await options.monitor?.failed(binding.repository.repositoryId, reason);
+        if (!quiet.has(reason)) await options.monitor?.failed(binding.repository, reason);
       }
     }
   };

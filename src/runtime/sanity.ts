@@ -1,4 +1,5 @@
-import { monitoringSettings, type Config, type MonitoringSettings } from '../config/index.js';
+import { monitoringChannel, monitoringSettings, type Config, type MonitoringSettings } from '../config/index.js';
+import { sanityText, type SanityAlertSink } from '../notifications/sanity-alerts.js';
 import type { Snapshot } from '../types.js';
 import type { RunReport } from '../manager/report.js';
 import { reconstruct, type Task } from '../state/reconstruct.js';
@@ -77,6 +78,7 @@ export function dependencyCycles(tasks: Task[]): number[][] {
   return [...cycles.values()];
 }
 
+interface Target { repositoryId: number; repository: string }
 interface History { stalled: Map<number, { status: string; passes: number }>; failures: number; lastFailure: string | null; errorPasses: number }
 export interface SanityStore {
   /** Records the current findings of the given kinds; returns what opened and what was resolved since the last call. */
@@ -91,17 +93,19 @@ export interface SanityStore {
 export class SanityMonitor {
   private history = new Map<number, History>();
   private settings = new Map<number, MonitoringSettings>();
-  constructor(private store: SanityStore, private now: () => Date = () => new Date()) {}
+  private channels = new Map<number, string | null>();
+  constructor(private store: SanityStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink) {}
   private state(repositoryId: number): History {
     let history = this.history.get(repositoryId);
     if (!history) this.history.set(repositoryId, history = { stalled: new Map(), failures: 0, lastFailure: null, errorPasses: 0 });
     return history;
   }
   /** After a reconciliation that completed (possibly with errors). Never throws. */
-  async observed(repositoryId: number, config: Config, snapshot: Snapshot | undefined, report: RunReport): Promise<void> {
+  async observed(target: Target, config: Config, snapshot: Snapshot | undefined, report: RunReport): Promise<void> {
+    const { repositoryId } = target;
     await this.guard(repositoryId, async () => {
       const settings = monitoringSettings(config);
-      this.settings.set(repositoryId, settings);
+      this.settings.set(repositoryId, settings); this.channels.set(repositoryId, monitoringChannel(config));
       if (!settings.enabled || !snapshot) return;
       const now = this.now(), history = this.state(repositoryId);
       const tasks = reconstruct(snapshot, config, now);
@@ -118,11 +122,12 @@ export class SanityMonitor {
       history.failures = 0; history.lastFailure = null;
       history.errorPasses = report.errors.length ? history.errorPasses + 1 : 0;
       if (history.errorPasses >= settings.stalledPasses) found.push(finding('reconcile_failing', null, `${history.errorPasses} reconciliations in a row reported errors`));
-      await this.record(repositoryId, found, findingKinds, now);
+      await this.record(target, found, findingKinds, now);
     });
   }
   /** After a reconciliation that failed with a fixed code (BUSY and disabled repositories are not failures). Never throws. */
-  async failed(repositoryId: number, reason: string): Promise<void> {
+  async failed(target: Target, reason: string): Promise<void> {
+    const { repositoryId } = target;
     await this.guard(repositoryId, async () => {
       const settings = this.settings.get(repositoryId) ?? monitoringSettings({} as Config);
       if (!settings.enabled) return;
@@ -131,14 +136,19 @@ export class SanityMonitor {
       const found = history.failures >= settings.stalledPasses
         ? [finding('reconcile_failing', null, `${history.failures} reconciliations in a row failed (${history.lastFailure})`)] : [];
       // Without a view of the repository only this finding can change; the others stay as last seen.
-      await this.record(repositoryId, found, ['reconcile_failing'], this.now());
+      await this.record(target, found, ['reconcile_failing'], this.now());
     });
   }
-  private async record(repositoryId: number, found: Finding[], kinds: readonly FindingKind[], now: Date) {
+  private async record({ repositoryId, repository }: Target, found: Finding[], kinds: readonly FindingKind[], now: Date) {
     const unique = [...new Map(found.map(f => [f.key, f])).values()];
     const { opened, resolved } = await this.store.syncFindings(repositoryId, unique, kinds, now);
     if (opened.length || resolved.length) console.log(JSON.stringify({ event: 'factory-sanity', repositoryId, active: unique.length,
       opened: opened.map(f => ({ kind: f.kind, issue: f.issueNumber, detail: f.detail })), resolved: resolved.map(f => ({ kind: f.kind, issue: f.issueNumber })) }));
+    const channel = this.channels.get(repositoryId);
+    if (!channel || !this.alerts || (!opened.length && !resolved.length)) return;
+    // At most once: a message lost to Slack is not repeated, the finding stays visible in the store and the log.
+    try { await this.alerts.post(channel, sanityText(repository, opened, resolved)); }
+    catch { console.warn(JSON.stringify({ event: 'factory-sanity-alert-failed', repositoryId })); }
   }
   private async guard(repositoryId: number, work: () => Promise<void>) {
     try { await work(); }

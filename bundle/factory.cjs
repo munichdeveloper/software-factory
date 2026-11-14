@@ -34783,7 +34783,10 @@ var monitoringSchema = external_exports.strictObject({
   /** This many attempts of a task in a row ending with the same error code count as an endless retry. */
   repeatedFailures: bounded(2, 20, 3),
   /** Consecutive reconciliations a task's label may differ from its derived status, or a reconciliation may fail, before it is reported. */
-  stalledPasses: bounded(2, 200, 10)
+  stalledPasses: bounded(2, 200, 10),
+  /** Posts new and resolved findings to Slack with the broker's bot, in `channel` or else the notifications channel where notifications are enabled. */
+  slack: external_exports.boolean().default(true),
+  channel: slackChannel.nullable().default(null)
 });
 var configSchema = external_exports.strictObject({
   version: external_exports.literal(1),
