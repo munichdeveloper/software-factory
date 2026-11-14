@@ -213,6 +213,8 @@ export class MergeManager {
             if (match?.[2] === approvalId && await this.api.canApprove(c.author)) approved = match[1] === 'approve';
           }
           if (!approved) {
+            if (riskGate) await this.event(live, `merge-approval-required:${approvalId}`, { type: 'merge_approval_required', prNumber: number,
+              head: f.head, base: f.base, approvalId, riskClass: riskRecord!.class, autoMergeUpTo: risk.autoMergeUpTo });
             await this.explain(live, `${riskGate ? `Risiko ${riskRecord!.class} liegt über der Schwelle ${risk.autoMergeUpTo}. ` : ''}Menschliche Freigabe erforderlich: /harness approve ${approvalId}`); continue;
           }
         }

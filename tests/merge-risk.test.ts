@@ -113,6 +113,20 @@ describe('risk gate in the merge pass', () => {
     x.approve(); await x.run(); expect(x.api.merge).toHaveBeenCalledWith(52, 'a'.repeat(40), 'squash');
     expect(x.reviewer.review).toHaveBeenCalledTimes(1); expect(x.assessor.assess).toHaveBeenCalledTimes(1);
   });
+  it('records one approval request per approval id for the Slack notice', async () => {
+    const x = fixture(undefined, 'high');
+    await x.run(); await x.run();
+    const requests = x.f.comments.map(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data).filter(d => d?.type === 'merge_approval_required');
+    const id = [...x.f.comments].reverse().find(c => c.body.includes('/harness approve'))!.body.match(/\/harness approve ([a-f0-9]{64})/)![1];
+    expect(requests).toEqual([{ type: 'merge_approval_required', prNumber: 52, head: 'a'.repeat(40), base: 'b'.repeat(40), approvalId: id, riskClass: 'high', autoMergeUpTo: 'medium' }]);
+  });
+  it('records no approval request within the threshold or when blocking', async () => {
+    for (const [cls, block] of [['low', false], ['high', true]] as const) {
+      const x = fixture(undefined, cls); if (block) x.cfg.merge.risk.aboveThreshold = 'block';
+      await x.run();
+      expect(x.f.comments.some(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data.type === 'merge_approval_required')).toBe(false);
+    }
+  });
   it('rejects an approval given for another assessment', async () => {
     const x = fixture(undefined, 'high');
     await x.run(); x.approve();

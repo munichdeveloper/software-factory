@@ -942,6 +942,62 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "merge_approval_required"
+            },
+            "prNumber": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "head": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "base": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "approvalId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "riskClass": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical"
+              ]
+            },
+            "autoMergeUpTo": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "prNumber",
+            "head",
+            "base",
+            "approvalId",
+            "riskClass",
+            "autoMergeUpTo"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "merge_status"
             },
             "head": {
