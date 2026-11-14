@@ -41240,13 +41240,13 @@ var GitHubMergePort = class {
     return count;
   }
   async riskLabel(number4, label) {
-    const { data: labels } = await this.api.issues.listLabelsOnIssue({ ...this.target, issue_number: number4, per_page: 100 });
-    for (const stale of labels.map((l) => l.name).filter((name) => name.startsWith("sf:risk-") && name !== label)) {
+    const { data: labels2 } = await this.api.issues.listLabelsOnIssue({ ...this.target, issue_number: number4, per_page: 100 });
+    for (const stale of labels2.map((l) => l.name).filter((name) => name.startsWith("sf:risk-") && name !== label)) {
       await this.api.issues.removeLabel({ ...this.target, issue_number: number4, name: stale }).catch((error62) => {
         if (!(error62 && typeof error62 === "object" && "status" in error62 && error62.status === 404)) throw error62;
       });
     }
-    if (!labels.some((l) => l.name === label)) await this.api.issues.addLabels({ ...this.target, issue_number: number4, labels: [label] });
+    if (!labels2.some((l) => l.name === label)) await this.api.issues.addLabels({ ...this.target, issue_number: number4, labels: [label] });
   }
   async canApprove(login) {
     try {
