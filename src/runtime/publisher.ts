@@ -12,6 +12,12 @@ const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const objectReceipt = z.strictObject({ sha });
 const prReceipt = z.strictObject({ number: z.number().int().positive(), url: z.url(), head: sha });
 const commentReceipt = z.strictObject({ id: z.number().int().positive() });
+/** True when `ancestor` is reachable from `head`, so `head` only added commits on top of it. */
+export async function containsCommit(api: Octokit, target: { owner: string; repo: string }, head: string, ancestor: string) {
+  if (head === ancestor) return true;
+  const { data } = await api.repos.compareCommits({ ...target, base: ancestor, head, per_page: 1 });
+  return data.status === 'ahead' && data.merge_base_commit.sha === ancestor;
+}
 const missing = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && error.status === 404;
 
 /** Trusted broker only: validates artifacts and publishes API data, never executes target code. */
@@ -34,7 +40,9 @@ export class RuntimeCodingPublisher {
     const branch = `sf/issue-${input.issueNumber}/${input.executionId}`, baseBranch = snapshot.baseRef ?? live.default_branch;
     const authorize = async () => {
       await this.authorize();
-      if ((await this.api.git.getRef({ ...target, ref: `heads/${baseBranch}` })).data.object.sha !== snapshot.baseSha) throw new Error('BASE_MOVED');
+      const head = (await this.api.git.getRef({ ...target, ref: `heads/${baseBranch}` })).data.object.sha;
+      // The default branch may move forward (see RuntimeController); a frozen base ref and a rewritten branch may not.
+      if (head !== snapshot.baseSha && (snapshot.baseRef || !await containsCommit(this.api, target, head, snapshot.baseSha))) throw new Error('BASE_MOVED');
     };
     await authorize();
     const parent = (await this.api.git.getCommit({ ...target, commit_sha: snapshot.baseSha })).data;
