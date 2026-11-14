@@ -16,6 +16,7 @@ import { assertRetainedReleases } from './retention.js';
 import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract.js';
 import { RuntimeStore, type Registration } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
+import { startReconcileSchedule } from './schedule.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
 import { scopedRuntimeGitHub } from './github-app.js';
@@ -155,13 +156,17 @@ export async function main(args = process.argv.slice(2)) {
       await store.register(registration);
       return binding;
     };
+    const notifications = process.env.SLACK_BOT_TOKEN ? new SlackSink(process.env.SLACK_BOT_TOKEN) : undefined;
     const server = runtimeServer({ managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
-      ...(process.env.SLACK_BOT_TOKEN ? { notifications: new SlackSink(process.env.SLACK_BOT_TOKEN) } : {}) });
+      ...(notifications ? { notifications } : {}) });
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-    console.log(JSON.stringify({ service: 'factory-runtime', port, repositories: bindings.map(b => b.repository.repositoryId) }));
+    // The broker reconciles its repositories itself; 0 leaves it to external callers (the SF Manager) as before.
+    const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '30');
+    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
+    console.log(JSON.stringify({ service: 'factory-runtime', port, reconcileIntervalSeconds: interval, repositories: bindings.map(b => b.repository.repositoryId) }));
     await new Promise<void>(resolve => {
-      const stop = () => { server.close(() => resolve()); };
+      const stop = () => { void stopSchedule().finally(() => server.close(() => resolve())); };
       process.once('SIGINT', stop); process.once('SIGTERM', stop);
     });
   } finally { await connection.close(); await store.pool.end(); }
