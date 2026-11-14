@@ -122,21 +122,44 @@ describe('lifecycle scenarios', () => {
     expect(w.status(1)).toEqual(['done']);
     await healthy(w);
   });
-  it('retries a failed run on a fresh grant instead of consuming that grant', async () => {
+  it('retries a failed run under the grant that admitted it, and only within the retry limit', async () => {
     for (const end of ['crash', 'failed'] as const) {
-      const w = new World({ readyLabel: true }); w.open(1); w.grant(1); await w.tick();
+      const w = new World({ readyLabel: true, maxRetries: 1 }); w.open(1); w.grant(1); await w.tick();
       const first = execution(w, 1);
       if (end === 'crash') w.crash(first); else await w.finish(first, 'failed');
       await w.tick(); await w.tick();
+      const second = execution(w, 1);
+      expect(second, end).not.toBe(first);
+      expect(w.status(1), end).toEqual(['running']);
+      expect(w.events(1).flatMap(e => e.type === 'intent' ? [e.input.contextReferences] : [])[1], end).toContain(`urn:sf-retry:${first}`);
+      expect(w.store.rows.get(second)!.snapshot.readyApproval, end).toEqual(w.store.rows.get(first)!.snapshot.readyApproval);
+      expect(w.github.readyFor(1).filter(e => e.event === 'labeled'), end).toHaveLength(1);
+      // At the limit the task stays failed; a new attempt needs a revised task.
+      if (end === 'crash') w.crash(second); else await w.finish(second, 'failed');
+      await w.tick(); await w.tick();
       expect(w.status(1), end).toEqual(['failed']);
       expect(w.running(), end).toEqual([]);
-      w.grant(1); await w.tick(); await w.tick();
-      expect(w.status(1), end).toEqual(['running']);
-      expect(execution(w, 1), end).not.toBe(first);
-      // The Manager took the label only when it moved the task to running, never before the retry started.
-      expect(w.github.readyFor(1).filter(e => e.event === 'unlabeled')).toHaveLength(2);
       await healthy(w);
     }
+  });
+  it('does not carry the grant over a person who took it back after the failure', async () => {
+    const w = new World({ readyLabel: true }); w.open(1); w.grant(1); await w.tick();
+    const first = execution(w, 1);
+    await w.finish(first, 'failed');
+    // A person sets the task aside: a new label event after the Manager's own unlabel revokes the proof.
+    w.github.human(1, [...w.issue(1).labels, 'harness:ready']); w.github.human(1, w.issue(1).labels.filter(l => l !== 'harness:ready'));
+    await w.tick(); await w.tick();
+    expect(w.events(1).filter(e => e.type === 'intent')).toHaveLength(1);
+    expect(w.running()).toEqual([]);
+    await healthy(w);
+  });
+  it('refuses a retry whose named attempt did not fail', async () => {
+    const w = new World({ readyLabel: true }); w.open(1); w.grant(1); await w.tick();
+    const first = execution(w, 1), source = w.store.rows.get(first)!.snapshot.admission;
+    const input = { ...source.input, executionId: 'e'.repeat(32), contextReferences: [...source.input.contextReferences, `urn:sf-retry:${first}`] };
+    await w.github.writeEvent(1, { version: 1, key: `intent:${input.executionId}`, at: w.now.toISOString(), correlationId: 'test', data: { type: 'intent', input, actionId: 'a'.repeat(64), attempt: 1 } });
+    await expect(w.controller.start({ input, actionId: 'a'.repeat(64), policyHash: source.policyHash })).rejects.toMatchObject({ code: 'RETRY_SOURCE_INVALID' });
+    expect(w.store.rows.has(input.executionId)).toBe(false);
   });
   it('holds a task at the human gate until it is approved', async () => {
     const w = new World({ humanGate: true }); w.open(1);

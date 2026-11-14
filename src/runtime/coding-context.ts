@@ -14,6 +14,12 @@ export function reworkOf(input: { contextReferences: string[] }): string | null 
   const ids = input.contextReferences.flatMap(r => r.match(/^urn:sf-rework:([a-f0-9]{32})$/)?.[1] ?? []);
   return ids.length === 1 ? ids[0]! : null;
 }
+/** Written by the Manager into the intent of a retry after a failed attempt: which execution it repeats. */
+export const retryMarker = (previousExecutionId: string) => `urn:sf-retry:${previousExecutionId}`;
+export function retryOf(input: { contextReferences: string[] }): string | null {
+  const ids = input.contextReferences.flatMap(r => r.match(/^urn:sf-retry:([a-f0-9]{32})$/)?.[1] ?? []);
+  return ids.length === 1 ? ids[0]! : null;
+}
 
 // Ref and branch names are echoed into a prompt and a shell-free git call: keep them to an inert alphabet.
 const label = (value: string) => value.replace(/[^A-Za-z0-9._/#-]/g, '').slice(0, 200);

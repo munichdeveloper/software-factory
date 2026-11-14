@@ -9,7 +9,7 @@ import { lastBlockLabelEventId } from '../state/blocks.js';
 import { managedLabel, priorityLabels, withStatus } from '../state/lifecycle.js';
 import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
 import { workerInputSchema, type WorkerInput } from '../workers/contract.js';
-import { reworkMarker } from '../runtime/coding-context.js';
+import { retryMarker, reworkMarker } from '../runtime/coding-context.js';
 import { untrustedEdit, untrustedEditReason } from '../state/content-trust.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
@@ -204,9 +204,12 @@ export class Manager {
         const id = executionId(this.github.repository, live, attempt);
         // A rework names the attempt it continues, so the runtime can hand its changes and validation outcome to the worker.
         const rework = action.kind === 'retry_worker' && task.reworkable && this.config.execution.engine === 'temporal';
+        // A retry after a failed run names it too, so the grant that admitted it carries over (software-factory#93).
+        const retry = action.kind === 'retry_worker' && !rework && task.latest?.result?.status === 'failed' && this.config.execution.engine === 'temporal';
+        const previous = rework || retry ? task.latest!.input.executionId : undefined;
         // A missing grant is known before anything durable exists: do not leave an intent that can never start.
         if (this.config.execution.engine === 'temporal' && this.options.workerRuntime?.preflight) {
-          try { await this.options.workerRuntime.preflight(live.number, rework ? task.latest!.input.executionId : undefined); }
+          try { await this.options.workerRuntime.preflight(live.number, previous); }
           catch (error) {
             if (!(error instanceof RuntimeAdmissionRejected)) throw error;
             this.rejections.push({ issueNumber: live.number, code: error.code, recorded: false }); return false;
@@ -215,7 +218,7 @@ export class Manager {
         // Intent first. If dispatch or subsequent writes fail, a future run observes this intent AND actual runs.
         const input = workerInputSchema.parse({ contractVersion: '1.0', repository: this.github.repository,
           issueNumber: live.number, taskVersion: action.taskVersion, description: live.body, acceptanceCriteria: task.criteria,
-          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(rework ? [reworkMarker(task.latest!.input.executionId)] : [])], executionId: id,
+          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : [])], executionId: id,
           allowedActions: ['publish_result'], limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16000 },
           operation: this.config.workers.test.operation,
           worker: this.config.workers.coding && this.config.workers.coding.enabled ? 'codex' : 'test' });

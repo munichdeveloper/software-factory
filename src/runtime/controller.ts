@@ -13,7 +13,7 @@ import { executorWrapper, type CodingExecutionPort } from './coding-executor.js'
 import type { CodingArtifact } from '../workers/coding.js';
 import type { ReadyApproval } from './contract.js';
 import { bindValidation, type ValidationPlan, type ValidationReport } from './validation-contract.js';
-import { reworkOf } from './coding-context.js';
+import { retryOf, reworkOf } from './coding-context.js';
 
 export interface RuntimeRepository {
   repositoryId: number; repository: string; release: RuntimeRelease; retainedReleases?: RuntimeRelease[]; requireHumanGate: boolean;
@@ -79,10 +79,23 @@ export class RuntimeController implements WorkerRuntimePort {
    * validation. Its ready grant, where one admitted it, carries over to the rework.
    */
   private async reworked(input: { issueNumber: number; taskVersion: string; contextReferences: string[] }, previousId = reworkOf(input)): Promise<StoredRun | null> {
-    if (!previousId) return null;
+    if (!previousId) return this.retried(input);
     const previous = await this.store.get(this.repo.repositoryId, previousId);
     if (!previous || previous.snapshot.admission.input.issueNumber !== input.issueNumber || previous.snapshot.admission.input.taskVersion !== input.taskVersion ||
       previous.result?.status !== 'blocked' || (await this.store.validation(this.repo.repositoryId, previousId))?.status !== 'failed') throw new Error('REWORK_SOURCE_INVALID');
+    return previous;
+  }
+  /**
+   * The attempt a retry repeats: same task and version, ended without a cancellation, either failed or stopped before it
+   * committed a result. Its ready grant, where one admitted it, carries over, so an infrastructure failure needs no new
+   * label (software-factory#93). A person's cancellation, unlabel or new grant still ends that grant.
+   */
+  private async retried(input: { issueNumber: number; taskVersion: string; contextReferences: string[] }): Promise<StoredRun | null> {
+    const previousId = retryOf(input);
+    if (!previousId) return null;
+    const previous = await this.store.get(this.repo.repositoryId, previousId);
+    if (!previous || previous.snapshot.admission.input.issueNumber !== input.issueNumber || previous.snapshot.admission.input.taskVersion !== input.taskVersion ||
+      previous.cancelled || !previous.terminal || previous.result && previous.result.status !== 'failed') throw new Error('RETRY_SOURCE_INVALID');
     return previous;
   }
   private scope(number: number) { if (this.repo.issueNumbers && !this.repo.issueNumbers.includes(number)) throw new Error('ISSUE_OUTSIDE_RUNTIME_SCOPE'); }
@@ -108,7 +121,7 @@ export class RuntimeController implements WorkerRuntimePort {
     return !snapshot.baseRef && !!this.repo.baseContains && await this.repo.baseContains(snapshot.baseSha);
   }
   get readyIsGrant() { return !!this.repo.readyApproval; }
-  async preflight(issueNumber: number, reworkOfExecutionId?: string): Promise<void> {
+  async preflight(issueNumber: number, previousExecutionId?: string): Promise<void> {
     try {
       this.scope(issueNumber);
       // The broker dispatches only an executor workflow that pins its own release. Refused here, before an intent
@@ -117,7 +130,7 @@ export class RuntimeController implements WorkerRuntimePort {
       if (coding && coding.enabled && this.repo.executorWrapper &&
         await this.repo.executorWrapper() !== executorWrapper(this.repo.release.factorySha, this.repo.release.harnessSha, !!this.repo.validationPlan)) throw new Error('EXECUTOR_WRAPPER_RELEASE_MISMATCH');
       if (this.repo.readyApproval) {
-        const previous = reworkOfExecutionId ? await this.store.get(this.repo.repositoryId, reworkOfExecutionId) : null;
+        const previous = previousExecutionId ? await this.store.get(this.repo.repositoryId, previousExecutionId) : null;
         await this.repo.readyApproval(issueNumber, undefined, previous?.snapshot.admission.input.issueNumber === issueNumber ? previous.snapshot.readyApproval : undefined);
       }
     } catch (error) { const code = admissionCode(error); throw code ? new RuntimeAdmissionRejected(code) : error; }
