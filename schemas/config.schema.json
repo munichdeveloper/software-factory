@@ -295,6 +295,10 @@
                 "loopback": {
                   "default": false,
                   "type": "boolean"
+                },
+                "smallPullRequests": {
+                  "default": true,
+                  "type": "boolean"
                 }
               },
               "required": [

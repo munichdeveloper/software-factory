@@ -25,6 +25,7 @@ Generated JSON schemas share the executable Zod source.
 | `execution.dispatchGraceMinutes` | `10` | Actions visibility grace, 1–60; expiry quarantines uncertain intents |
 | `execution.rework` | `false` | Temporal coding with independent validation only: a failed validation starts a further attempt within `maxRetries` instead of waiting for a person. Enable only after the executor release that fetches task context is rolled out |
 | `workers.coding.loopback` | `false` | Temporal executor only: the worker's commands may bind and connect on a private loopback interface (local server, browser tests) and get the locked Playwright browser; all other network stays closed. Needs the executor release that supports it |
+| `workers.coding.smallPullRequests` | `true` | Tells the coding worker to keep each change to the task's one concern (no drive-by refactoring, renaming or unrelated fixes) and, for a task that bundles several concerns or is too large for one reviewable change, to report `blocked` with a proposed split instead of one large PR; the planner cuts follow-ups to one concern each. Fixed per execution when it is first dispatched. The planned risk-based merge (more than 800 changed lines raises the risk) stays the hard limit |
 | `llm.provider` | `mock` | Deterministic mock or real `openai` Responses API |
 | `llm.model` | `gpt-4.1-mini` | Explicit provider model string; account must have access |
 | `llm.reasoningEffort` | `null` | Omit capability, or `none`, `minimal`, `low`, `medium`, `high`, `xhigh`; must match model |

@@ -39,6 +39,12 @@ export function validateChanges(artifact: CodingArtifact): void {
   }
   if (total > 5000000) throw new Error('Artifact exceeds publication limit');
 }
+/**
+ * Small, single-concern pull requests are reviewed more reliably and rank lower in the planned risk-based merge, whose
+ * size rule (more than 800 changed lines) stays the hard limit. Sent when `workers.coding.smallPullRequests` is on.
+ */
+export const smallPullRequestGuidance = '\n\nFactory working rule, small pull requests: keep this change to the one concern of this task. Change only what the task and its acceptance criteria need: no drive-by refactoring, renaming, reformatting, dependency upgrades or unrelated fixes, even where they look worthwhile; mention them in your summary instead. If the task bundles several independent concerns or is too large for one reviewable change, do not build one large change: make no changes, report `blocked` and name in your summary how to split it into follow-up tasks, one concern each.';
+
 const taskId = (repository: string, issue: number) => `github:${repository}#${issue}`;
 
 export async function prepareCoding(github: GitHubPort, config: Config, repository: CodingRepositoryPort,
@@ -50,7 +56,9 @@ export async function prepareCoding(github: GitHubPort, config: Config, reposito
   const base = await repository.base();
   sha.parse(base.sha);
   return { base, request: { contractVersion: '3.0', executionId: id, worker: 'codex',
-    task: { id: taskId(github.repository, issue), version: auth.input.taskVersion, description: auth.input.description,
+    task: { id: taskId(github.repository, issue), version: auth.input.taskVersion,
+      description: config.workers.coding.smallPullRequests && auth.input.description.length + smallPullRequestGuidance.length <= 20000
+        ? auth.input.description + smallPullRequestGuidance : auth.input.description,
       acceptanceCriteria: auth.input.acceptanceCriteria, contextReferences: auth.input.contextReferences },
     baseSha: base.sha, allowedActions: ['edit_workspace', 'run_commands'], model: config.workers.coding.model,
     effort: config.workers.coding.reasoningEffort,

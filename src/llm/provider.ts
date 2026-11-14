@@ -31,7 +31,10 @@ Follow-ups need a stable semantic key (same work always same key), context, goal
 Mark expandsScope true whenever the work broadens the configured project scope. Never propose workflow/security
 changes to bypass policy. The configured worker is described in trustedWorker. A test worker computes a digest;
 a Codex worker implements code and proposes a PR. Neither result alone proves review, merge or completion.
-Do not propose merge_pr: a separate commit-bound PR code reviewer owns merge decisions. Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.`;
+Do not propose merge_pr: a separate commit-bound PR code reviewer owns merge decisions. Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.
+Follow trustedWorkingRules when present.`;
+/** Planner side of `workers.coding.smallPullRequests`: follow-ups are cut so each fits one small pull request. */
+export const smallPullRequestRule = 'Small pull requests: each follow-up covers one concern that fits one small, reviewable pull request. Split larger work into several follow-ups and record their order as dependencies.';
 export function compactContext(tasks: Task[], config: Config): string {
   const selected: unknown[] = [];
   for (const t of [...tasks].sort((a, b) => priority(a) - priority(b) || a.issue.number - b.issue.number)) {
@@ -45,6 +48,7 @@ export function compactContext(tasks: Task[], config: Config): string {
   }
   return JSON.stringify({ trustedScope: config.factory.scope,
     trustedWorker: config.workers.coding && config.workers.coding.enabled ? 'Codex coding worker (edits, tests, opens a PR via SF)' : 'Non-mutating digest test worker',
+    ...(config.workers.coding && config.workers.coding.enabled && config.workers.coding.smallPullRequests ? { trustedWorkingRules: smallPullRequestRule } : {}),
     untrustedTasks: selected });
 }
 export class OpenAIPlanner implements Planner {

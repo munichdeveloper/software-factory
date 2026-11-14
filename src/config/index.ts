@@ -42,7 +42,9 @@ export const configSchema = z.strictObject({
       reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).default('high'),
       validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null),
       /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
-      loopback: z.boolean().default(false) })]).default(false),
+      loopback: z.boolean().default(false),
+      /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
+      smallPullRequests: z.boolean().default(true) })]).default(false),
     review: z.literal(false).default(false)
   }).prefault({}),
   reporting: z.strictObject({ persistDecisions: z.boolean().default(true) }).prefault({}),

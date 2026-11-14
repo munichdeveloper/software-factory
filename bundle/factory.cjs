@@ -34627,7 +34627,9 @@ var configSchema = external_exports.strictObject({
       reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh"]).default("high"),
       validationWorkflow: external_exports.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null),
       /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
-      loopback: external_exports.boolean().default(false)
+      loopback: external_exports.boolean().default(false),
+      /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
+      smallPullRequests: external_exports.boolean().default(true)
     })]).default(false),
     review: external_exports.literal(false).default(false)
   }).prefault({}),
@@ -39482,7 +39484,9 @@ Follow-ups need a stable semantic key (same work always same key), context, goal
 Mark expandsScope true whenever the work broadens the configured project scope. Never propose workflow/security
 changes to bypass policy. The configured worker is described in trustedWorker. A test worker computes a digest;
 a Codex worker implements code and proposes a PR. Neither result alone proves review, merge or completion.
-Do not propose merge_pr: a separate commit-bound PR code reviewer owns merge decisions. Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.`;
+Do not propose merge_pr: a separate commit-bound PR code reviewer owns merge decisions. Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.
+Follow trustedWorkingRules when present.`;
+var smallPullRequestRule = "Small pull requests: each follow-up covers one concern that fits one small, reviewable pull request. Split larger work into several follow-ups and record their order as dependencies.";
 function compactContext(tasks, config2) {
   const selected = [];
   for (const t of [...tasks].sort((a, b) => priority(a) - priority(b) || a.issue.number - b.issue.number)) {
@@ -39505,6 +39509,7 @@ function compactContext(tasks, config2) {
   return JSON.stringify({
     trustedScope: config2.factory.scope,
     trustedWorker: config2.workers.coding && config2.workers.coding.enabled ? "Codex coding worker (edits, tests, opens a PR via SF)" : "Non-mutating digest test worker",
+    ...config2.workers.coding && config2.workers.coding.enabled && config2.workers.coding.smallPullRequests ? { trustedWorkingRules: smallPullRequestRule } : {},
     untrustedTasks: selected
   });
 }
@@ -40735,6 +40740,7 @@ function validateChanges(artifact) {
   }
   if (total > 5e6) throw new Error("Artifact exceeds publication limit");
 }
+var smallPullRequestGuidance = "\n\nFactory working rule, small pull requests: keep this change to the one concern of this task. Change only what the task and its acceptance criteria need: no drive-by refactoring, renaming, reformatting, dependency upgrades or unrelated fixes, even where they look worthwhile; mention them in your summary instead. If the task bundles several independent concerns or is too large for one reviewable change, do not build one large change: make no changes, report `blocked` and name in your summary how to split it into follow-up tasks, one concern each.";
 var taskId = (repository, issue2) => `github:${repository}#${issue2}`;
 async function prepareCoding(github, config2, repository, issue2, id, correlationId) {
   const auth2 = await authorizeDelegation(github, config2, issue2, id);
@@ -40753,7 +40759,7 @@ async function prepareCoding(github, config2, repository, issue2, id, correlatio
     task: {
       id: taskId(github.repository, issue2),
       version: auth2.input.taskVersion,
-      description: auth2.input.description,
+      description: config2.workers.coding.smallPullRequests && auth2.input.description.length + smallPullRequestGuidance.length <= 2e4 ? auth2.input.description + smallPullRequestGuidance : auth2.input.description,
       acceptanceCriteria: auth2.input.acceptanceCriteria,
       contextReferences: auth2.input.contextReferences
     },

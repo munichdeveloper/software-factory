@@ -142,7 +142,7 @@ export class World {
     if (options.merging) { Object.assign(this.cfg.merge, { enabled: true, protection: 'factory', requiredChecks: ['test'], updateBranch: true }); this.cfg.autonomy.overrides.merge_pr = 'allow'; }
     if (options.coding || options.rework || options.merging) {
       this.cfg.execution.rework = !!options.rework;
-      this.cfg.workers.coding = { enabled: true, agent: 'codex', model: 'test-model', reasoningEffort: 'high', validationWorkflow: null, loopback: false };
+      this.cfg.workers.coding = { enabled: true, agent: 'codex', model: 'test-model', reasoningEffort: 'high', validationWorkflow: null, loopback: false, smallPullRequests: true };
       this.repo.validationPlan = async () => defaultValidationPlan();
       this.repo.coding = { executor: { poll: async snapshot => this.outcomes.get(snapshot.admission.input.executionId) ?? null, cancel: async () => {} },
         // The broker's publisher: one draft pull request per attempt; a rework replaces the one it continues.
