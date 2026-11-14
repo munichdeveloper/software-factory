@@ -30,6 +30,30 @@ async function read(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
 const send = (response: ServerResponse, code: number, body: unknown) => { response.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(body)); };
+/**
+ * One reconciliation of a repository: picks up ready tasks, starts and advances runs, then the merge pass. Callers are the
+ * broker's own schedule and, while it still sends them, the SF Manager. The actor of a Manager call never grants execution.
+ */
+export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications'>) {
+  const config = await binding.repository.config();
+  if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
+  const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
+  const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller,
+    ...(options.notifications ? { notifications: options.notifications } : {}) });
+  // A reconciliation still running answers the next request with BUSY instead of queueing it: callers retry on a
+  // schedule and give up after their own timeout, so waiting requests would pile up and exhaust the database pool.
+  const report = await options.store.tryLocked(binding.repository.repositoryId, 'manager', () => manager.run());
+  if (manager.lastSnapshot) void binding.merge?.start(config, manager.lastSnapshot);
+  // The merge pass runs after the response; what its last pass could not do is reported here.
+  if (config.merge.enabled && binding.merge?.errors.length) report.errors.push(...binding.merge.errors);
+  // One line per reconciliation that did or could not do something. Blockers and errors carry only
+  // issue numbers and fixed codes, never repository content or external error text.
+  const executed = report.decisions.filter(d => d.executed).map(d => `${d.action.kind}#${d.action.issueNumber}${d.action.status ? `:${d.action.status}` : ''}`);
+  if (executed.length || report.errors.length || report.blockers.length) console.log(JSON.stringify({ event: 'factory-reconcile',
+    repositoryId: binding.repository.repositoryId, outcome: report.outcome, executed, errors: report.errors, blockers: report.blockers }));
+  return report;
+}
+
 export function runtimeServer(options: ServerOptions) {
   if (options.managerToken.length < 32 || options.workerToken.length < 32 || secureEqual(options.managerToken, options.workerToken)) throw new Error('SEPARATE_RUNTIME_TOKENS_REQUIRED');
   if (new Set(options.bindings.map(b => b.repository.repositoryId)).size !== options.bindings.length) throw new Error('DUPLICATE_REPOSITORY_BINDING');
@@ -89,23 +113,7 @@ export function runtimeServer(options: ServerOptions) {
       if (resource === 'reconcile' && !id) {
         const input = z.strictObject({ actor: actorSchema }).parse(body);
         if (!await binding.repository.github.canApprove(input.actor)) throw new Error('ACTOR_NOT_AUTHORIZED');
-        const config = await binding.repository.config();
-        if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
-        const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
-        const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller,
-          ...(options.notifications ? { notifications: options.notifications } : {}) });
-        // A reconciliation still running answers the next request with BUSY instead of queueing it: callers retry on a
-        // schedule and give up after their own timeout, so waiting requests would pile up and exhaust the database pool.
-        const report = await options.store.tryLocked(binding.repository.repositoryId, 'manager', () => manager.run());
-        if (manager.lastSnapshot) void binding.merge?.start(config, manager.lastSnapshot);
-        // The merge pass runs after the response; what its last pass could not do is reported here.
-        if (config.merge.enabled && binding.merge?.errors.length) report.errors.push(...binding.merge.errors);
-        // One line per reconciliation that did or could not do something. Blockers and errors carry only
-        // issue numbers and fixed codes, never repository content or external error text.
-        const executed = report.decisions.filter(d => d.executed).map(d => `${d.action.kind}#${d.action.issueNumber}${d.action.status ? `:${d.action.status}` : ''}`);
-        if (executed.length || report.errors.length || report.blockers.length) console.log(JSON.stringify({ event: 'factory-reconcile',
-          repositoryId: binding.repository.repositoryId, outcome: report.outcome, executed, errors: report.errors, blockers: report.blockers }));
-        send(response, 200, report); return;
+        send(response, 200, await reconcileBinding(binding, options)); return;
       }
       if (resource === 'runs' && id && action === 'cancel') {
         // Machine callers are authorized by the scoped admission identity; UI additionally checks its actor.
