@@ -144,6 +144,16 @@ export class GitHubMergePort implements MergePort {
     }
     return count;
   }
+  async riskLabel(number: number, label: string) {
+    const { data: labels } = await this.api.issues.listLabelsOnIssue({ ...this.target, issue_number: number, per_page: 100 });
+    for (const stale of labels.map(l => l.name).filter(name => name.startsWith('sf:risk-') && name !== label)) {
+      await this.api.issues.removeLabel({ ...this.target, issue_number: number, name: stale }).catch((error: unknown) => {
+        if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error;
+      });
+    }
+    // GitHub creates a missing label when it is added to an issue or pull request.
+    if (!labels.some(l => l.name === label)) await this.api.issues.addLabels({ ...this.target, issue_number: number, labels: [label] });
+  }
   async canApprove(login: string) {
     try { return ['admin', 'maintain', 'write'].includes((await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login })).data.permission); }
     catch { return false; }
