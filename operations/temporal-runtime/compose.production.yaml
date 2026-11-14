@@ -41,7 +41,8 @@ services:
     image: postgres:17.11-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager-db.env
     volumes: [manager-data:/var/lib/postgresql/data]
-    networks: [private]
+    # runtime-api: the SF Manager, deployed by its own repository, reaches its database as manager-db there.
+    networks: [private, runtime-api]
     mem_limit: 1g
     healthcheck:
       test: [CMD-SHELL, pg_isready -U sf -d sf_manager]
@@ -82,9 +83,16 @@ services:
       - .sf-deploy.env
     environment:
       TEMPORAL_ADDRESS: temporal:7233
+      # Besides loopback the broker listens only on its address in runtime-api (this alias exists only there), so
+      # the SF Manager's own Compose project reaches http://runtime-broker:8095 and the Temporal network does not.
+      FACTORY_RUNTIME_LISTEN_ALIAS: factory-runtime-api
     volumes: ['${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/registry.json:/run/factory/registry.json:ro']
     tmpfs: [/tmp]
-    networks: [private, front, temporal]
+    networks:
+      private: {}
+      front: {}
+      temporal: {}
+      runtime-api: { aliases: [factory-runtime-api] }
     mem_limit: 1g
     depends_on:
       runtime-db: { condition: service_healthy }
@@ -178,6 +186,9 @@ services:
     stop_grace_period: 40s
 networks:
   private: { internal: true }
+  # Shared with the SF Manager's own deployment (munichdeveloper/sf-manager, operations/image/compose.yaml): only
+  # the broker API and the Manager database are attached; the fixed name lets the other project join it.
+  runtime-api: { name: sf-runtime-api, internal: true }
   front: {}
   temporal: { external: true, name: sf-temporal_access }
 volumes:
