@@ -129,6 +129,8 @@ export const configSchema = z.strictObject({
     maxPerRun: bounded(1, 100, 20),
     since: z.iso.datetime().nullable().default(null),
     events: z.strictObject({
+      // Optional without a default, so configurations that leave it out keep their hash and in-flight runs stay current.
+      run_started: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
