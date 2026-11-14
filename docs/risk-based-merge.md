@@ -112,7 +112,8 @@ Faktoren (feste Aufzählung, damit Auswertungen möglich sind): `data_schema`, `
 `tests`, `test_coverage`, `size`.
 
 **Schritt 4: Größenregel.** Zusätzlich deterministisch: Überschreitet die Änderung `merge.risk.maxLowRiskLines`
-geänderte Zeilen (Default 300), ist die Klasse mindestens `medium`. Große Änderungen sind schwer zu überblicken, egal was
+geänderte Zeilen (Default 300), ist die Klasse mindestens `medium`, über `merge.risk.maxMediumRiskLines` (Default
+800) mindestens `high`. Die zweite Stufe ist bei der Schwelle `medium` die eigentliche Bremse. Große Änderungen sind schwer zu überblicken, egal was
 sie berühren.
 
 **Ergebnis.** `class = max(KI, Mindestklassen der Bereiche, Größenregel)`, bzw. `critical`, wenn eingebaute Pfade
@@ -162,7 +163,7 @@ wird nach seiner Klasse entschieden. Sonst müsste ein Mensch hochriskante PRs z
 **Sichtbarkeit.**
 
 - Die Merge-Status-Meldung am PR zeigt Klasse, Herkunft, Gründe und berührte Bereiche, z. B. „Risiko **high**
-  (Bereich `db/migrations/**`, KI: medium). Automatischer Merge nur bis `low`. Freigabe: `/harness approve …`“.
+  (Bereich `db/migrations/**`, KI: medium). Automatischer Merge nur bis `medium`. Freigabe: `/harness approve …`“.
 - Ein Label `sf:risk-low|medium|high|critical` macht die Klasse in PR-Listen filterbar. Es ist reine Anzeige, der
   Merge-Pass liest es nie als Freigabe. Der Broker setzt und entfernt es selbst.
 - Optional ein Commit-Status `sf/risk`, sobald `statuses: write` mit der Preview ohnehin kommt.
@@ -189,6 +190,7 @@ merge:
     autoMergeUpTo: medium       # low | medium | high; critical nie
     aboveThreshold: approval    # approval = /harness approve, block = Mensch merged selbst
     maxLowRiskLines: 300        # mehr geänderte Zeilen: mindestens medium
+    maxMediumRiskLines: 800     # mehr geänderte Zeilen: mindestens high
     assessor:
       provider: llm             # wie merge.review.provider; mock bewertet immer critical
       model: gpt-6.1-sol
