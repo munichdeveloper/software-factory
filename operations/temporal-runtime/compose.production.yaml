@@ -128,7 +128,7 @@ services:
       runtime-broker: { condition: service_healthy }
   web:
     <<: *service
-    image: sf-manager:f6f7c1d94e450e4f3e3cb66bd01fbccc06f94d9a # keep both Manager services on the same commit
+    image: sf-manager:24405ec76503a120c7ef6855d439718d327292db # keep both Manager services on the same commit
     network_mode: service:runtime-broker
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
@@ -155,7 +155,7 @@ services:
       start_period: 30s
   manager-worker:
     <<: *service
-    image: sf-manager:f6f7c1d94e450e4f3e3cb66bd01fbccc06f94d9a # keep both Manager services on the same commit
+    image: sf-manager:24405ec76503a120c7ef6855d439718d327292db # keep both Manager services on the same commit
     network_mode: service:runtime-broker
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
