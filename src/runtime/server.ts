@@ -49,6 +49,9 @@ const send = (response: ServerResponse, code: number, body: unknown) => { respon
 export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor'>) {
   const config = await binding.repository.config();
   if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
+  // Runs the previous release still serves end after their retention, so the planner can retry them on this release.
+  const expired = await binding.controller.expireRetained?.() ?? [];
+  if (expired.length) console.log(JSON.stringify({ event: 'factory-retained-release-expired', repositoryId: binding.repository.repositoryId, executions: expired }));
   const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
   const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller,
     ...(options.notifications ? { notifications: options.notifications } : {}) });

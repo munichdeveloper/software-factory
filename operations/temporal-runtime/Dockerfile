@@ -30,17 +30,24 @@ CMD ["serve", "--file", "/run/factory/registry.json"]
 # The PINNED worker release: built from the published Factory commit WORKER_FACTORY_SHA, never from the commit being
 # deployed, and packed at build time so image and package are one immutable unit. The repository is public; the
 # Harness pin is the one that release itself declares.
-FROM node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d AS worker-build
+FROM node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d AS worker-tools
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY operations/temporal-runtime/build-worker.sh /usr/local/bin/build-worker
+WORKDIR /app
+
+FROM worker-tools AS worker-build
 ARG WORKER_FACTORY_SHA
 ARG WORKER_DEPLOYMENT
 ARG WORKER_QUEUE
-RUN node -e "if(!/^[a-f0-9]{40}$/.test(process.env.WORKER_FACTORY_SHA||''))process.exit(1)"
-WORKDIR /app
-RUN git init . && git remote add origin https://github.com/munichdeveloper/software-factory.git && git fetch --depth=1 origin "$WORKER_FACTORY_SHA" && git checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = "$WORKER_FACTORY_SHA" && rm -rf .git
-RUN npm ci --ignore-scripts && npm run build && npm prune --omit=dev --ignore-scripts
-RUN HARNESS=$(node -p "require('./temporal-runtime.json').harness.ref") && git init .runtime/harness && cd .runtime/harness && git remote add origin https://github.com/munichdeveloper/dev-agent-harness.git && git fetch --depth=1 origin "$HARNESS" && git checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = "$HARNESS" && rm -rf .git && npm ci --ignore-scripts && npm run build && npm prune --omit=dev --ignore-scripts
-RUN node dist/runtime/main.js pack --output /app/package --factory-sha "$WORKER_FACTORY_SHA" --harness-sha "$(node -p "require('./temporal-runtime.json').harness.ref")" --harness /app/.runtime/harness/dist/cli.js --deployment "$WORKER_DEPLOYMENT" --build "$WORKER_FACTORY_SHA" --queue "$WORKER_QUEUE"
+RUN sh /usr/local/bin/build-worker "$WORKER_FACTORY_SHA" "$WORKER_DEPLOYMENT" "$WORKER_QUEUE"
+
+# The PREVIOUS worker release (the one before the last host rollout) on the same deployment and queue. It only finishes
+# runs admitted before the rollout; the broker retains its release for them and starts every new run on the current one.
+FROM worker-tools AS previous-worker-build
+ARG PREVIOUS_WORKER_FACTORY_SHA
+ARG WORKER_DEPLOYMENT
+ARG WORKER_QUEUE
+RUN sh /usr/local/bin/build-worker "$PREVIOUS_WORKER_FACTORY_SHA" "$WORKER_DEPLOYMENT" "$WORKER_QUEUE"
 
 FROM node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d AS worker
 WORKDIR /app
@@ -57,10 +64,27 @@ USER node
 ENTRYPOINT ["node", "dist/runtime/main.js"]
 CMD ["worker", "--file", "/app/package/worker-package.json"]
 
-# The broker of the commit being deployed, told which worker release serves its repositories.
+FROM node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d AS previous-worker
+WORKDIR /app
+ARG PREVIOUS_WORKER_FACTORY_SHA
+LABEL org.opencontainers.image.title="Software Factory Temporal Worker (previous release)" org.opencontainers.image.revision=$PREVIOUS_WORKER_FACTORY_SHA
+COPY --from=previous-worker-build /app/package.json /app/package-lock.json ./
+COPY --from=previous-worker-build /app/node_modules ./node_modules
+COPY --from=previous-worker-build /app/dist ./dist
+COPY --from=previous-worker-build /app/.runtime/harness/package.json ./.runtime/harness/package.json
+COPY --from=previous-worker-build /app/.runtime/harness/node_modules ./.runtime/harness/node_modules
+COPY --from=previous-worker-build /app/.runtime/harness/dist ./.runtime/harness/dist
+COPY --from=previous-worker-build /app/package ./package
+USER node
+ENTRYPOINT ["node", "dist/runtime/main.js"]
+CMD ["worker", "--file", "/app/package/worker-package.json"]
+
+# The broker of the commit being deployed, told which worker release serves its repositories and which previous
+# release it retains for runs admitted before the last host rollout.
 FROM base-runtime AS broker
 COPY --from=worker-build /app/package/worker-package.json /app/worker-release.json
-ENV FACTORY_RELEASE_FILE=/app/worker-release.json
+COPY --from=previous-worker-build /app/package/worker-package.json /app/previous-worker-release.json
+ENV FACTORY_RELEASE_FILE=/app/worker-release.json FACTORY_PREVIOUS_RELEASE_FILE=/app/previous-worker-release.json
 
 # Default target: the plain runtime image, as before (CI packaging, manual installations with a registry release).
 FROM base-runtime AS runtime

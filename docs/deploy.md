@@ -171,9 +171,14 @@ This repository deploys its own runtime stack (broker, worker and their database
   commit). Every deployment builds the worker image from that commit, with its package baked in, and the broker
   serves its repositories with exactly that release; the `release` entries of `registry.json` are superseded.
   Rolling out a worker release is therefore a pull request that changes this one commit, not a step on the host.
-  The broker refuses to start while a run of another release is still active; the deployment then fails and the
-  previous release keeps running. Installed repositories additionally need their executor wrapper rolled to the
-  same commit through the SF Manager.
+  A worker release rollout also moves the old commit to `PREVIOUS_WORKER_FACTORY_SHA`. Its worker
+  (`runtime-worker-previous`, same deployment and queue) finishes the runs admitted before the rollout, and the
+  broker retains that release for them only; every new run starts on the current release. So a rollout never
+  waits for open runs and never unbinds a repository. A run of the previous release still open after
+  `FACTORY_RETAINED_RUN_HOURS` (broker environment, default 2, `0` keeps it) is terminated with
+  `RETAINED_RELEASE_EXPIRED`; the planner retries it on the current release with the original `harness:ready`
+  grant (software-factory#102). Only runs of any other, older release still stop the broker from starting.
+  Installed repositories additionally need their executor wrapper rolled to the same commit through the SF Manager.
 - The **SF Manager** is deployed by its own repository: the Factory installed deploy-only in
   `munichdeveloper/sf-manager` builds and starts its web and job worker and runs its database on the host after
   each merge there (`operations/image/compose.yaml`, data in the volume `sfm_manager-data`). They reach the broker

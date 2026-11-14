@@ -13,6 +13,7 @@ import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
 import { MockPlanner, OpenAIPlanner } from '../llm/provider.js';
 import { assertRetainedReleases } from './retention.js';
+import { hash } from '../state/identity.js';
 import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract.js';
 import { RuntimeStore, type Registration } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
@@ -53,14 +54,23 @@ const registrySchema = z.strictObject({
  * The registry entry of a repository the SF Manager registered: the rollout installs the executor wrapper as
  * factory-manager.yml, the ready label is the grant, and coding is validated independently.
  */
-export function registeredItem(registration: Registration, release: unknown) {
-  return registrySchema.shape.repositories.element.parse({ ...registration, release, executorWorkflow: 'factory-manager.yml',
+export function registeredItem(registration: Registration, release: unknown, retainedReleases: unknown[] = []) {
+  return registrySchema.shape.repositories.element.parse({ ...registration, release, retainedReleases, executorWorkflow: 'factory-manager.yml',
     approvalMode: 'ready-label', requireHumanGate: false, validateCoding: true });
 }
-/** Replaces every repository's release with the one of a worker package (the file `pack` writes). */
-export function supersedeRelease(repositories: { release: unknown; retainedReleases?: unknown }[], workerPackage: unknown) {
-  const release = releaseSchema.parse(z.object({ release: z.unknown() }).parse(workerPackage).release);
-  for (const item of repositories) Object.assign(item, { release, retainedReleases: [] });
+const packageRelease = (workerPackage: unknown) => releaseSchema.parse(z.object({ release: z.unknown() }).parse(workerPackage).release);
+/**
+ * The releases of the worker packages the host runs (the files `pack` writes): the current one serves every new run;
+ * the previous one, where it differs, is retained only for runs admitted before the last host rollout.
+ */
+export function hostReleases(workerPackage: unknown, previousPackage?: unknown) {
+  const release = packageRelease(workerPackage), previous = previousPackage === undefined ? null : packageRelease(previousPackage);
+  return { release, retainedReleases: previous && hash(previous) !== hash(release) ? [previous] : [] };
+}
+/** Replaces every repository's releases with those of the host's worker packages. */
+export function supersedeRelease(repositories: { release: unknown; retainedReleases?: unknown }[], workerPackage: unknown, previousPackage?: unknown) {
+  const releases = hostReleases(workerPackage, previousPackage);
+  for (const item of repositories) Object.assign(item, releases);
 }
 export async function main(args = process.argv.slice(2)) {
   const { positionals, values } = parseArgs({ args, allowPositionals: true, options: {
@@ -87,10 +97,15 @@ export async function main(args = process.argv.slice(2)) {
   }
   if (positionals[0] !== 'serve') throw new Error('Use serve, worker or pack');
   const registry = registrySchema.parse(JSON.parse(await readFile(resolve(z.string().min(1).parse(values.file)), 'utf8')));
-  // A stack that builds its PINNED worker itself names that worker's release here; it then replaces the registry's
-  // release entries, so a release rollout needs no edit on the host. Runs of another release are not retained:
-  // the start guard below refuses to orphan them.
-  if (process.env.FACTORY_RELEASE_FILE) supersedeRelease(registry.repositories, JSON.parse(await readFile(resolve(process.env.FACTORY_RELEASE_FILE), 'utf8')));
+  // A stack that builds its PINNED worker itself names that worker's release here, and the previous worker's release
+  // it still runs; they replace the registry's release entries, so a release rollout needs no edit on the host. Runs of
+  // any other release are not retained: the start guard below refuses to orphan them (software-factory#102).
+  const packageFile = async (name: string) => process.env[name] ? JSON.parse(await readFile(resolve(process.env[name]!), 'utf8')) as unknown : undefined;
+  const workerPackage = await packageFile('FACTORY_RELEASE_FILE'), previousPackage = await packageFile('FACTORY_PREVIOUS_RELEASE_FILE');
+  const host = workerPackage === undefined ? null : hostReleases(workerPackage, previousPackage);
+  if (workerPackage !== undefined) supersedeRelease(registry.repositories, workerPackage, previousPackage);
+  // Runs of the previous release are ended after this many hours; 0 keeps them until they end by themselves.
+  const retainedRunMs = z.coerce.number().min(0).max(720).parse(process.env.FACTORY_RETAINED_RUN_HOURS ?? '2') * 3600000;
   const store = new RuntimeStore(new Pool({ connectionString: process.env.FACTORY_RUNTIME_DATABASE_URL, max: 8, connectionTimeoutMillis: 5000 }));
   const connection = await Connection.connect({ address: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233', connectTimeout: '5 seconds' });
   const temporal = new Client({ connection, namespace: registry.namespace });
@@ -106,7 +121,7 @@ export async function main(args = process.argv.slice(2)) {
       const github = item.issueNumbers ? new IssueScopedGitHub(source, item.issueNumbers) : source;
       const [owner, repo] = item.repository.split('/') as [string, string];
       if ((await api.repos.get({ owner, repo })).data.id !== item.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
-      const repository: RuntimeRepository = { ...item, github, config: async () => loadConfig(await source.readConfig(item.configPath, item.baseRef)),
+      const repository: RuntimeRepository = { ...item, github, retainedRunMs, config: async () => loadConfig(await source.readConfig(item.configPath, item.baseRef)),
         baseSha: async () => item.baseRef ? (await api.git.getRef({ ...{ owner, repo }, ref: `heads/${item.baseRef}` })).data.object.sha : (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
       repository.baseContains = async sha => containsCommit(api, { owner, repo }, await repository.baseSha(), sha);
       repository.executorWrapper = async () => {
@@ -149,11 +164,9 @@ export async function main(args = process.argv.slice(2)) {
     // Repositories the SF Manager registered (Temporal rollout): served with the PINNED worker release, the ready
     // label as grant and independent validation. A registration that cannot be bound is reported, never fatal for
     // the repositories of the static registry.
-    const release = process.env.FACTORY_RELEASE_FILE ? releaseSchema.parse(z.object({ release: z.unknown() })
-      .parse(JSON.parse(await readFile(resolve(process.env.FACTORY_RELEASE_FILE), 'utf8'))).release) : null;
     const registered = async (registration: Registration) => {
-      if (!release) throw new Error('REGISTRATION_REQUIRES_PINNED_RELEASE');
-      return bind(registeredItem(registration, release));
+      if (!host) throw new Error('REGISTRATION_REQUIRES_PINNED_RELEASE');
+      return bind(registeredItem(registration, host.release, host.retainedReleases));
     };
     for (const registration of await store.registrations()) {
       if (bindings.some(b => b.repository.repositoryId === registration.repositoryId)) continue;
