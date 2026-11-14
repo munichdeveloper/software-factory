@@ -34694,6 +34694,8 @@ var configSchema = external_exports.strictObject({
     maxPerRun: bounded(1, 100, 20),
     since: external_exports.iso.datetime().nullable().default(null),
     events: external_exports.strictObject({
+      // Optional without a default, so configurations that leave it out keep their hash and in-flight runs stay current.
+      run_started: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
@@ -39222,8 +39224,8 @@ var GitHubClient = class {
   async updateIssue(issue2, update) {
     await this.api.issues.update({ ...this.target, issue_number: issue2, ...update });
   }
-  async createIssue(title, body, labels) {
-    return normalizeIssue((await this.api.issues.create({ ...this.target, title, body, labels })).data);
+  async createIssue(title, body, labels2) {
+    return normalizeIssue((await this.api.issues.create({ ...this.target, title, body, labels: labels2 })).data);
   }
   async bootstrap() {
     const existing = await this.api.paginate(this.api.issues.listLabelsForRepo, { ...this.target, per_page: 100 });
@@ -39235,8 +39237,8 @@ var GitHubClient = class {
         created.push(name);
       } catch (error62) {
         if (!(error62 instanceof Error && "status" in error62 && error62.status === 422)) throw error62;
-        const labels = await this.api.paginate(this.api.issues.listLabelsForRepo, { ...this.target, per_page: 100 });
-        if (!labels.some((l) => l.name === name)) throw error62;
+        const labels2 = await this.api.paginate(this.api.issues.listLabelsForRepo, { ...this.target, per_page: 100 });
+        if (!labels2.some((l) => l.name === name)) throw error62;
       }
     }
     return created;
@@ -39573,6 +39575,12 @@ function reconciliationPlan(tasks, config2) {
 }
 
 // src/notifications/slack.ts
+var labels = {
+  run_started: "SF: Factory-Lauf gestartet",
+  issue_created: "SF: Issue autonom angelegt",
+  pr_merged: "SF: PR durch Bot gemergt"
+};
+var runStartWindowMs = 24 * 60 * 60 * 1e3;
 var NotificationRejected = class extends Error {
 };
 var httpStatus = (error62) => {
@@ -39608,9 +39616,9 @@ var SlackSink = class {
     const delay = this.lastCall + 1100 - Date.now();
     if (delay > 0) await new Promise((resolve3) => setTimeout(resolve3, delay));
     this.lastCall = Date.now();
-    const label = notification.event === "issue_created" ? "SF: Issue autonom angelegt" : "SF: PR durch Bot gemergt";
-    const text = `${label}
-${notification.url}
+    const text = `${labels[notification.event]}
+${notification.repository ? `Repository: ${notification.repository}
+` : ""}${notification.url}
 #${notification.number}: ${notification.title.slice(0, 300)}
 Akteur: ${notification.actor}`;
     try {
@@ -39654,13 +39662,19 @@ async function deliverNotifications(github, config2, snapshot, sink, correlation
   const afterStart = (date5) => !settings.since || !!date5 && Date.parse(date5) >= Date.parse(settings.since);
   const deliver = async (journal, notification) => {
     const rule = settings.events[notification.event];
-    if (!rule.enabled) return;
+    if (!rule?.enabled) return;
     const channel = rule.channel ?? settings.channel;
     if (!channel || !sink) {
       errors.push(`Slack ${notification.event}: channel or connection missing`);
       return;
     }
-    const deliveryId = hash2({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel });
+    const deliveryId = hash2({
+      repository: github.repository.toLowerCase(),
+      event: notification.event,
+      number: notification.number,
+      channel,
+      ...notification.executionId ? { executionId: notification.executionId } : {}
+    });
     const deliveries = (await github.comments(journal)).flatMap((c) => {
       const e = decodeEvent(c, config2.manager.trustedActors);
       return e && "deliveryId" in e.data && e.data.deliveryId === deliveryId ? [e] : [];
@@ -39712,6 +39726,18 @@ async function deliverNotifications(github, config2, snapshot, sink, correlation
       errors.push(`Slack ${notification.event} #${notification.number}: Slack accepted delivery but receipt persistence failed${httpStatus(error62)} on #${journal}; automatic resend blocked`);
     }
   };
+  if (settings.events.run_started?.enabled) for (const task of snapshot.issues) for (const event of events(task.number)) {
+    if (event.data.type !== "temporal_receipt" && event.data.type !== "receipt" || !afterStart(event.at) || now.getTime() - Date.parse(event.at) > runStartWindowMs) continue;
+    await deliver(task.number, {
+      event: "run_started",
+      number: task.number,
+      title: task.title,
+      actor: "Software Factory",
+      url: `https://github.com/${github.repository}/issues/${task.number}`,
+      repository: github.repository,
+      executionId: event.data.executionId
+    });
+  }
   for (const parent of snapshot.issues) {
     const trusted = events(parent.number);
     if (settings.events.issue_created.enabled) for (const event of trusted) {
@@ -40012,8 +40038,8 @@ var Manager = class {
             journaled = true;
           }
         }
-        const labels = withStatus(live, action.status);
-        if ([...live.labels].sort().join("\0") === [...labels].sort().join("\0")) return journaled;
+        const labels2 = withStatus(live, action.status);
+        if ([...live.labels].sort().join("\0") === [...labels2].sort().join("\0")) return journaled;
         if (action.status === "blocked" && !live.labels.includes("harness:blocked")) {
           const floor = lastBlockLabelEventId(live);
           const id = hash2({ actionId: actionId(action, policyVersion(this.config)), floor });
@@ -40024,7 +40050,7 @@ var Manager = class {
             afterLabelEventId: floor
           });
         }
-        await this.github.updateIssue(live.number, { labels });
+        await this.github.updateIssue(live.number, { labels: labels2 });
         return true;
       }
       case "close_issue":
@@ -40032,9 +40058,9 @@ var Manager = class {
         return true;
       case "approve_task": {
         if (snapshot.readyIsGrant) return false;
-        const labels = withStatus(live, "ready");
-        if ([...live.labels].sort().join("\0") === [...labels].sort().join("\0")) return false;
-        await this.github.updateIssue(live.number, { labels });
+        const labels2 = withStatus(live, "ready");
+        if ([...live.labels].sort().join("\0") === [...labels2].sort().join("\0")) return false;
+        await this.github.updateIssue(live.number, { labels: labels2 });
         return true;
       }
       case "prioritize": {
