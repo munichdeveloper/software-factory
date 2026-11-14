@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { Manager } from '../src/manager/index.js';
-import { MockPlanner, OpenAIPlanner, proposal, type Planner } from '../src/llm/provider.js';
+import { Manager, ownFields } from '../src/manager/index.js';
+import { compactContext, MockPlanner, OpenAIPlanner, proposal, type Planner } from '../src/llm/provider.js';
 import { reconstruct } from '../src/state/reconstruct.js';
 import { executeDelegation } from '../src/workers/execute-delegation.js';
 import { decodeEvent, encodeEvent } from '../src/state/events.js';
-import { clock, config, issue, MemoryGitHub, fakeHarness } from './helpers.js';
+import { clock, config, issue, MemoryGitHub, fakeHarness, finishedAttempt } from './helpers.js';
 
 function setup(profile: 'advisory' | 'supervised' | 'autonomous' = 'autonomous') {
   const github = new MemoryGitHub(); const cfg = config(profile);
@@ -61,7 +61,7 @@ describe('manager integration with simulated GitHub responses', () => {
     expect(github.mutations).toContain('cancel:1'); expect(github.dispatches).toBe(1);
   });
   it('10: deduplicates follow-ups by stable semantic key across runs', async () => {
-    const { github, run } = setup(); github.state.issues.push(issue());
+    const { github, run } = setup(); github.state.issues.push(issue()); await finishedAttempt(github, 1, 'blocked');
     const planner: Planner = { async plan(tasks) { const a = proposal(tasks[0]!, 'create_followup', 'Needed work', { followup: {
       key: 'required-documentation', title: 'Document behavior', context: 'Needed after #1', goal: 'Explain usage', acceptanceCriteria: ['Examples work'], dependencies: [1], expandsScope: false } });
       return { version: 1, actions: [a, a] }; } };
@@ -249,5 +249,22 @@ describe('manager integration with simulated GitHub responses', () => {
     github.labelBlock(1, true);
     expect((await executeDelegation(github, cfg, 1, id, 'worker', fakeHarness)).status).toBe('cancelled');
     expect(github.state.issues[0]!.labels).toContain('harness:blocked');
+  });
+});
+
+describe('planner proposals and follow-ups (software-factory#93)', () => {
+  it('drops fields of another operation instead of denying the whole proposal', () => {
+    const action = { kind: 'start_worker' as const, issueNumber: 1, taskVersion: 'a'.repeat(64), status: 'ready' as const, priority: 'high' as const,
+      attempt: 0, followup: null, reason: 'Start' };
+    expect(ownFields(action)).toEqual({ ...action, status: null, priority: null });
+    expect(ownFields({ ...action, kind: 'transition', attempt: 3 })).toEqual({ ...action, kind: 'transition', priority: null, attempt: null });
+  });
+  it('knows the open follow-ups of a task and shows them to the planner', () => {
+    const github = new MemoryGitHub(), cfg = config();
+    github.state.issues.push(issue(1), { ...issue(2), body: `Context\n\nOrigin: #1\nDecision: x\n\n<!-- harness:followup:${'b'.repeat(64)} -->` },
+      { ...issue(3), state: 'closed', body: `Origin: #1\n\n<!-- harness:followup:${'c'.repeat(64)} -->` }, { ...issue(4), body: 'Origin: #1 without marker' });
+    const tasks = reconstruct(github.state, cfg, clock);
+    expect(tasks[0]!.openFollowups).toEqual([2]); expect(tasks[1]!.openFollowups).toEqual([]);
+    expect(JSON.parse(compactContext(tasks, cfg)).untrustedTasks[0]).toMatchObject({ openFollowups: [2], lastResult: null });
   });
 });

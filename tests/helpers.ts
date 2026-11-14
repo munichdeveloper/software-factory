@@ -1,4 +1,5 @@
 import { configSchema, type Config } from '../src/config/index.js';
+import { taskVersion } from '../src/state/identity.js';
 import type { GitHubPort } from '../src/github/port.js';
 import type { Comment, Issue, Snapshot, WorkflowRun } from '../src/types.js';
 import { encodeEvent, type HarnessEvent } from '../src/state/events.js';
@@ -72,4 +73,15 @@ export class MemoryGitHub implements GitHubPort {
     const rows = this.state.comments.get(number) ?? [];
     rows.push({ id: rows.length + 1, body: `/harness approve ${id}`, author, createdAt: clock.toISOString() }); this.state.comments.set(number, rows);
   }
+}
+/** Records a finished attempt of an issue, as a Manager intent followed by its worker result. */
+export async function finishedAttempt(github: MemoryGitHub, number: number, status: 'blocked' | 'success' | 'failed', attempt = 0) {
+  const task = github.state.issues.find(i => i.number === number)!;
+  const executionId = `${String(number).padStart(4, '0')}${String(attempt).padStart(4, '0')}`.padEnd(32, 'a');
+  const input = { contractVersion: '1.0' as const, repository: github.repository, issueNumber: number, taskVersion: taskVersion(task), description: task.body,
+    acceptanceCriteria: ['Deterministic observable result'], contextReferences: [], executionId, allowedActions: ['publish_result' as const],
+    limits: { timeoutMinutes: 30, maxOutputBytes: 16000 as const }, operation: 'sha256' as const, worker: 'test' as const };
+  await github.writeEvent(number, { version: 1, key: `intent:${executionId}`, at: clock.toISOString(), correlationId: 'test', data: { type: 'intent', input, actionId: 'a'.repeat(64), attempt } });
+  await github.writeEvent(number, { version: 1, key: `result:${executionId}`, at: clock.toISOString(), correlationId: 'test', data: { type: 'result', result: {
+    contractVersion: '1.0', executionId, issueNumber: number, status, summary: 'Finished attempt', artifacts: [], error: null, proposedActions: [] } } });
 }

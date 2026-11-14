@@ -39519,6 +39519,7 @@ function currentAutomaticBlock(issue2, events, trustedActors) {
 }
 
 // src/state/reconstruct.ts
+var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
 function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
   return snapshot.issues.map((issue2) => {
     const version2 = taskVersion(issue2);
@@ -39604,6 +39605,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     else if (snapshot.readyIsGrant) {
       if (["backlog", "ready", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = issue2.labels.includes("harness:ready") ? "ready" : "backlog";
     } else if (["backlog", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = "ready";
+    const openFollowups = snapshot.issues.filter((i) => i.state === "open" && followupOrigin(i.body) === issue2.number).map((i) => i.number);
     return {
       issue: issue2,
       version: version2,
@@ -39612,6 +39614,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       events,
       executions,
       latest,
+      openFollowups,
       blocked: !!blockReason,
       blockReason,
       automaticBlockCause: reworkable && automaticBlockCause === "worker" ? void 0 : automaticBlockCause,
@@ -39681,6 +39684,8 @@ function evaluate(action, ctx) {
   if (action.kind === "create_followup") {
     if (!action.followup) return deny("Follow-up details are required");
     if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
+    if (!task.latest?.result || !["blocked", "success"].includes(task.latest.result.status)) return deny("Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself");
+    if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map((n) => `#${n}`).join(", ")}`);
     if (action.followup.expandsScope) {
       const scope = permission(config2, "expand_scope");
       if (scope === "deny") return deny("Scope expansion forbidden");
@@ -39732,6 +39737,7 @@ Mark expandsScope true whenever the work broadens the configured project scope. 
 changes to bypass policy. The configured worker is described in trustedWorker. A test worker computes a digest;
 a Codex worker implements code and proposes a PR. Neither result alone proves review, merge or completion.
 Do not propose merge_pr: a separate commit-bound PR code reviewer owns merge decisions. Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.
+Propose create_followup only for a task whose lastResult is blocked or success and that has no openFollowups; a task that has not run or failed is started or retried, never copied.
 Follow trustedWorkingRules when present.`;
 var smallPullRequestRule = "Small pull requests: each follow-up covers one concern that fits one small, reviewable pull request. Split larger work into several follow-ups and record their order as dependencies.";
 function compactContext(tasks, config2) {
@@ -39748,7 +39754,9 @@ function compactContext(tasks, config2) {
       active: t.executions.some((e) => e.active),
       previouslyExecuted: !!t.latest,
       nextAttempt: (t.latest?.attempt ?? -1) + 1,
-      existingFollowupKey: t.issue.body.match(/<!-- harness:followup:([a-f0-9]{64}) -->/)?.[1] ?? null
+      existingFollowupKey: t.issue.body.match(/<!-- harness:followup:([a-f0-9]{64}) -->/)?.[1] ?? null,
+      lastResult: t.latest?.result?.status ?? null,
+      openFollowups: t.openFollowups
     };
     if (JSON.stringify([...selected, item]).length > config2.manager.maxContextChars) break;
     selected.push(item);
@@ -40145,6 +40153,15 @@ function statusComment(task, config2, context) {
 }
 
 // src/manager/index.ts
+function ownFields(action) {
+  return {
+    ...action,
+    status: action.kind === "transition" ? action.status : null,
+    priority: action.kind === "prioritize" ? action.priority : null,
+    followup: action.kind === "create_followup" ? action.followup : null,
+    attempt: ["start_worker", "retry_worker"].includes(action.kind) ? action.attempt : null
+  };
+}
 var Manager = class {
   constructor(github, config2, planner, options) {
     this.github = github;
@@ -40476,7 +40493,7 @@ ${marker2}`;
     const eligible = tasks.filter((t) => t.issue.state === "open" && !t.blocked && !t.hasClosingMerge && !t.executions.some((e) => e.active));
     if (eligible.length && this.config.llm.maxCalls > 0) {
       try {
-        entries.push(...planSchema.parse(await this.planner.plan(eligible, this.config)).actions.map((action) => ({ action, source: "planner" })));
+        entries.push(...planSchema.parse(await this.planner.plan(eligible, this.config)).actions.map((action) => ({ action: ownFields(action), source: "planner" })));
       } catch {
         report.errors.push("LLM planning failed; deterministic reconciliation remains available (no unvalidated actions executed)");
       }
@@ -40518,7 +40535,10 @@ ${marker2}`;
         record2.executed = await this.execute(action, task, snapshot);
         if (record2.executed) {
           budget.actions++;
-          if (action.kind === "create_followup") budget.newIssues++;
+          if (action.kind === "create_followup") {
+            budget.newIssues++;
+            (budget.followupOrigins ??= []).push(action.issueNumber);
+          }
           await this.audit(action, "executed", "Action executed successfully");
         }
       } catch (error62) {

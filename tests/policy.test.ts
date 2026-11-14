@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { evaluate, permission, policyVersion } from '../src/policies/engine.js';
 import { actionKinds, configSchema } from '../src/config/index.js';
-import { reconstruct } from '../src/state/reconstruct.js';
+import { reconstruct, type Task } from '../src/state/reconstruct.js';
+import type { Action } from '../src/types.js';
 import { proposal } from '../src/llm/provider.js';
 import { config, issue, MemoryGitHub, clock } from './helpers.js';
 import { actionId } from '../src/state/identity.js';
@@ -10,6 +11,25 @@ function fixture() {
   const cfg = config(); const api = new MemoryGitHub(); api.state.issues.push(issue());
   return { cfg, task: reconstruct(api.state, cfg, clock)[0]!, budget: { actions: 0, newIssues: 0, activeWorkers: 0 } };
 }
+const blockedTask = (task: Task, status: 'blocked' | 'success' | 'failed' = 'blocked'): Task =>
+  ({ ...task, latest: { ...task.latest, attempt: 0, result: { status } } as Task['latest'] });
+const followup = (task: Task): Action => proposal(task, 'create_followup', 'Split', { followup: { key: 'part', title: 'Part', context: 'Context', goal: 'Goal',
+  acceptanceCriteria: ['Observable'], dependencies: [], expandsScope: false } });
+describe('follow-ups only answer a finished attempt (software-factory#93)', () => {
+  it('denies follow-ups of a task that has not run or failed for reasons outside it', () => {
+    const f = fixture(), ctx = { config: f.cfg, budget: f.budget, source: 'planner' as const, approved: true };
+    expect(evaluate(followup(f.task), { ...ctx, task: f.task }).reason).toContain('finished attempt');
+    expect(evaluate(followup(f.task), { ...ctx, task: blockedTask(f.task, 'failed') }).reason).toContain('finished attempt');
+    expect(evaluate(followup(f.task), { ...ctx, task: blockedTask(f.task) }).outcome).toBe('allow');
+    expect(evaluate(followup(f.task), { ...ctx, task: blockedTask(f.task, 'success') }).outcome).toBe('allow');
+  });
+  it('allows one split per run but no further copies while follow-ups are open', () => {
+    const f = fixture(), task = { ...blockedTask(f.task), openFollowups: [91] };
+    const ctx = { config: f.cfg, task, source: 'planner' as const, approved: true };
+    expect(evaluate(followup(task), { ...ctx, budget: f.budget }).reason).toBe('Task already has open follow-ups: #91');
+    expect(evaluate(followup(task), { ...ctx, budget: { ...f.budget, newIssues: 1, followupOrigins: [1] } }).outcome).toBe('allow');
+  });
+});
 describe('independent autonomy policy engine', () => {
   for (const profile of ['advisory', 'supervised', 'autonomous'] as const) {
     for (const kind of actionKinds) {
@@ -31,7 +51,7 @@ describe('independent autonomy policy engine', () => {
       config: f.cfg, ...f, source: 'planner', approved: true }).outcome).toBe('deny');
   });
   it('scope expansion requires its separate permission', () => {
-    const f = fixture(); const action = proposal(f.task, 'create_followup', 'New area', { followup: { key: 'new-area', title: 'New scope',
+    const f = { ...fixture() }; f.task = blockedTask(f.task); const action = proposal(f.task, 'create_followup', 'New area', { followup: { key: 'new-area', title: 'New scope',
       context: 'Context', goal: 'Expand', acceptanceCriteria: ['Observable'], dependencies: [], expandsScope: true } });
     const ctx = { config: f.cfg, ...f, source: 'planner' as const, approved: false };
     expect(evaluate(action, ctx).outcome).toBe('deny'); f.cfg.autonomy.overrides.expand_scope = 'approval';

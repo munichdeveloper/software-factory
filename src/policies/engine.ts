@@ -15,7 +15,9 @@ export const policyVersion = (config: Config): string => { const { notifications
 export function permission(config: Config, kind: Action['kind']): Permission {
   return config.autonomy.overrides[kind] ?? defaults[config.autonomy.profile][kind];
 }
-export interface Budget { actions: number; newIssues: number; activeWorkers: number }
+export interface Budget { actions: number; newIssues: number; activeWorkers: number;
+  /** Tasks that received a follow-up in this run: a split into several follow-ups is one response. */
+  followupOrigins?: number[] }
 export interface PolicyContext { config: Config; task: Task; budget: Budget; approved: boolean; source: 'reconcile' | 'planner' | 'worker' }
 export function evaluate(action: Action, ctx: PolicyContext): Decision {
   const { config, task, budget } = ctx;
@@ -64,6 +66,10 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
   if (action.kind === 'create_followup') {
     if (!action.followup) return deny('Follow-up details are required');
     if (budget.newIssues >= config.execution.maxNewIssues) return deny('Maximum new issues per run reached');
+    // Follow-ups answer what an attempt found. A task that has not run, or whose run failed for reasons outside the
+    // task, is started or retried itself; a copy would only compete for the same worker slot (software-factory#93).
+    if (!task.latest?.result || !['blocked', 'success'].includes(task.latest.result.status)) return deny('Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself');
+    if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map(n => `#${n}`).join(', ')}`);
     if (action.followup.expandsScope) {
       const scope = permission(config, 'expand_scope');
       if (scope === 'deny') return deny('Scope expansion forbidden');
