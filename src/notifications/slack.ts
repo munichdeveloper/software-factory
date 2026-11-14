@@ -4,7 +4,15 @@ import type { Snapshot } from '../types.js';
 import { decodeEvent } from '../state/events.js';
 import { hash } from '../state/identity.js';
 
-export interface Notification { event: 'issue_created' | 'pr_merged'; number: number; title: string; actor: string; url: string }
+export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged'; number: number; title: string; actor: string; url: string;
+  /** Shown in the message; run starts name their repository because one channel can collect several. */
+  repository?: string;
+  /** A task can start several runs (retries, rework); each start is its own delivery. */
+  executionId?: string }
+const labels: Record<Notification['event'], string> = {
+  run_started: 'SF: Factory-Lauf gestartet', issue_created: 'SF: Issue autonom angelegt', pr_merged: 'SF: PR durch Bot gemergt' };
+// A run start is news only shortly after it happened; older starts are never announced, even without `since`.
+const runStartWindowMs = 24 * 60 * 60 * 1000;
 export interface NotificationSink { send(channel: string, notification: Notification): Promise<{ channel: string; timestamp: string }> }
 // Only a definite rejection permits automatic retry. Transport/response failures are ambiguous.
 export class NotificationRejected extends Error {}
@@ -31,9 +39,9 @@ export class SlackSink implements NotificationSink {
     const delay = this.lastCall + 1100 - Date.now();
     if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
     this.lastCall = Date.now();
-    const label = notification.event === 'issue_created' ? 'SF: Issue autonom angelegt' : 'SF: PR durch Bot gemergt';
     // Titles are untrusted. Plain text and disabled parsing prevent @channel / link injection.
-    const text = `${label}\n${notification.url}\n#${notification.number}: ${notification.title.slice(0, 300)}\nAkteur: ${notification.actor}`;
+    const text = `${labels[notification.event]}\n${notification.repository ? `Repository: ${notification.repository}\n` : ''}${notification.url}\n` +
+      `#${notification.number}: ${notification.title.slice(0, 300)}\nAkteur: ${notification.actor}`;
     try {
       const response = await this.fetcher('https://slack.com/api/chat.postMessage', {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
@@ -70,10 +78,11 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
   const afterStart = (date: string | undefined) => !settings.since || (!!date && Date.parse(date) >= Date.parse(settings.since));
   const deliver = async (journal: number, notification: Notification) => {
     const rule = settings.events[notification.event];
-    if (!rule.enabled) return;
+    if (!rule?.enabled) return;
     const channel = rule.channel ?? settings.channel;
     if (!channel || !sink) { errors.push(`Slack ${notification.event}: channel or connection missing`); return; }
-    const deliveryId = hash({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel });
+    const deliveryId = hash({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel,
+      ...(notification.executionId ? { executionId: notification.executionId } : {}) });
     // Re-read to handle repeated manager runs and duplicate PR links across tasks.
     const deliveries = (await github.comments(journal)).flatMap(c => {
       const e = decodeEvent(c, config.manager.trustedActors);
@@ -108,6 +117,14 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
         data: { type: 'notification_sent', deliveryId, channel: receipt.channel, timestamp: receipt.timestamp } });
     } catch (error) { errors.push(`Slack ${notification.event} #${notification.number}: Slack accepted delivery but receipt persistence failed${httpStatus(error)} on #${journal}; automatic resend blocked`); }
   };
+  // A run has started once the runtime (or, legacy, the Actions dispatch) confirmed it with a trusted receipt on its Issue.
+  // Intents alone never count: a start can still be refused or fail.
+  if (settings.events.run_started?.enabled) for (const task of snapshot.issues) for (const event of events(task.number)) {
+    if ((event.data.type !== 'temporal_receipt' && event.data.type !== 'receipt') || !afterStart(event.at) ||
+      now.getTime() - Date.parse(event.at) > runStartWindowMs) continue;
+    await deliver(task.number, { event: 'run_started', number: task.number, title: task.title, actor: 'Software Factory',
+      url: `https://github.com/${github.repository}/issues/${task.number}`, repository: github.repository, executionId: event.data.executionId });
+  }
   for (const parent of snapshot.issues) {
     const trusted = events(parent.number);
     if (settings.events.issue_created.enabled) for (const event of trusted) {

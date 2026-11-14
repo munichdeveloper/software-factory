@@ -22,6 +22,9 @@ notifications:
     maxPerRun: 20
     since: '2026-11-07T00:00:00Z' # Optional UTC cutoff; null includes earlier provable SF events.
     events:
+      run_started: # Optional; leave it out to keep it off.
+        enabled: true
+        channel: null
       issue_created:
         enabled: true
         channel: null # Optional override; null inherits the default channel.
@@ -39,6 +42,15 @@ authorization. Existing installations continue with notifications disabled.
 
 ## What triggers a message
 
+- `run_started`: a Factory run has started on a task. It counts as started once
+  the Temporal runtime (or, for Actions dispatch, the workflow run) confirmed it
+  with a trusted receipt on the task's Issue; an intent alone never notifies, since
+  the start can still be refused. The message names the repository, the Issue
+  number and title, and links the Issue. Each run is announced once: a retry or
+  rework of the same task is a new run and is announced again. Starts older than
+  24 hours are never announced, so turning the event on later does not replay
+  history. Leaving `run_started` out of the configuration keeps it off and leaves
+  the configuration hash, and with it running executions, unchanged.
 - `issue_created`: a follow-up actually created by the SF bot, correlated with a
   mandatory trusted creation intent on the parent Issue. No notifications for
   plans, dry runs, denied actions, manually created Issues, or historical Issues
@@ -50,7 +62,7 @@ authorization. Existing installations continue with notifications disabled.
   the PR was written by AI. `actors` can narrow that bot set. This does not enable
   PR merging. The optional dedicated AI-reviewed merge workflow is configured separately.
 
-Messages contain the event, title, GitHub link, and actor; no issue body or LLM
+Messages contain the event, title, GitHub link, and actor (run starts also the repository); no issue body or LLM
 transcript. Untrusted titles use Slack plain-text blocks with mention parsing and
 link previews disabled.
 
