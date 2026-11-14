@@ -16,7 +16,12 @@ export interface Task {
   /** The latest attempt failed only its independent validation and a further attempt is allowed to repair it. */
   reworkable: boolean;
   automaticBlockCause?: BlockCause;
+  /** Open follow-up issues the Factory created from this task (`Origin: #n`). */
+  openFollowups: number[];
 }
+/** A Factory follow-up names its origin task and carries the follow-up marker. */
+export const followupOrigin = (body: string): number | null =>
+  body.includes('<!-- harness:followup:') ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
 export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()): Task[] {
   return snapshot.issues.map(issue => {
     const version = taskVersion(issue);
@@ -92,7 +97,8 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     // person: the task rests in backlog until the grant is there, and a grant that is present always wins.
     else if (snapshot.readyIsGrant) { if (['backlog', 'ready', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = issue.labels.includes('harness:ready') ? 'ready' : 'backlog'; }
     else if (['backlog', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = 'ready';
-    return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest,
+    const openFollowups = snapshot.issues.filter(i => i.state === 'open' && followupOrigin(i.body) === issue.number).map(i => i.number);
+    return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, openFollowups,
       blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable };
   });
 }

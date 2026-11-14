@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { config, issue, MemoryGitHub, clock } from './helpers.js';
+import { config, issue, MemoryGitHub, clock, finishedAttempt } from './helpers.js';
 import { deliverNotifications, NotificationRejected, SlackSink, type Notification, type NotificationSink } from '../src/notifications/slack.js';
 import { actionId, hash, taskVersion } from '../src/state/identity.js';
 import { policyVersion } from '../src/policies/engine.js';
@@ -119,7 +119,7 @@ it('notification settings preserve existing policy approvals and execution ident
 it('manager creates mandatory provenance before creation and delivers immediately, even without decision audit', async () => {
   const cfg = config(); cfg.reporting.persistDecisions = false; cfg.notifications.slack.enabled = true;
   cfg.notifications.slack.channel = channel; cfg.notifications.slack.events.issue_created.enabled = true;
-  const gh = new MemoryGitHub(); gh.state.issues = [issue()];
+  const gh = new MemoryGitHub(); gh.state.issues = [issue()]; await finishedAttempt(gh, 1, 'blocked');
   const create = gh.createIssue.bind(gh);
   gh.createIssue = async (...args) => { const result = await create(...args); gh.state.issues.at(-1)!.authorType = 'Bot'; return result; };
   const action = { kind: 'create_followup' as const, issueNumber: 1, taskVersion: taskVersion(gh.state.issues[0]!), status: null,

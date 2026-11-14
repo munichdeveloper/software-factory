@@ -85,6 +85,12 @@ run evaluates but never executes. `expand_scope` gates a follow-up explicitly
 marked `expandsScope=true`; standalone scope changes are unsupported. PR merging
 requires the separate opt-in AI review workflow documented in [merging](merging.md).
 `approve_task` marks a well-specified task ready; it never grants worker permission.
+`create_followup` answers a finished attempt: it is allowed only when the task's
+latest attempt reported `blocked` or `success`, and not while a follow-up of the
+task (`Origin: #n`) is still open, except for further parts of a split proposed
+in the same run. A task that has not run, or whose run failed, is started or
+retried itself, never copied. Fields of another operation in a planner proposal
+(for example `status` on `start_worker`) are dropped before the policy decides.
 
 ```yaml
 autonomy:

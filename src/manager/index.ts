@@ -18,6 +18,14 @@ import { statusComment, statusMarker } from './status.js';
 import { admissionCode, RuntimeAdmissionRejected, type WorkerRuntimePort } from '../runtime/contract.js';
 
 export interface ManagerOptions { correlationId: string; now?: () => Date; notifications?: NotificationSink; workerRuntime?: WorkerRuntimePort }
+/**
+ * A planner proposal keeps only the fields of its own operation. The model often fills `status` on a start_worker;
+ * the policy denies any action with foreign fields, so the proposal was lost although its intent was clear.
+ */
+export function ownFields(action: Action): Action {
+  return { ...action, status: action.kind === 'transition' ? action.status : null, priority: action.kind === 'prioritize' ? action.priority : null,
+    followup: action.kind === 'create_followup' ? action.followup : null, attempt: ['start_worker', 'retry_worker'].includes(action.kind) ? action.attempt : null };
+}
 export class Manager {
   private now: () => Date;
   /** Definite runtime admission rejections of the current run; reported as blockers, never as uncertain dispatches. */
@@ -272,7 +280,7 @@ export class Manager {
     const entries: { action: Action; source: 'reconcile' | 'planner' | 'worker' }[] = reconciliationPlan(tasks, this.config).map(action => ({ action, source: 'reconcile' }));
     const eligible = tasks.filter(t => t.issue.state === 'open' && !t.blocked && !t.hasClosingMerge && !t.executions.some(e => e.active));
     if (eligible.length && this.config.llm.maxCalls > 0) {
-      try { entries.push(...planSchema.parse(await this.planner.plan(eligible, this.config)).actions.map(action => ({ action, source: 'planner' as const }))); }
+      try { entries.push(...planSchema.parse(await this.planner.plan(eligible, this.config)).actions.map(action => ({ action: ownFields(action), source: 'planner' as const }))); }
       catch { report.errors.push('LLM planning failed; deterministic reconciliation remains available (no unvalidated actions executed)'); }
     }
     for (const t of tasks) {
@@ -304,7 +312,7 @@ export class Manager {
         record.executed = await this.execute(action, task, snapshot);
         if (record.executed) {
           budget.actions++;
-          if (action.kind === 'create_followup') budget.newIssues++;
+          if (action.kind === 'create_followup') { budget.newIssues++; (budget.followupOrigins ??= []).push(action.issueNumber); }
           await this.audit(action, 'executed', 'Action executed successfully');
         }
       } catch (error) {
