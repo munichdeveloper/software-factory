@@ -160,7 +160,7 @@ list the file see them.
 
 ## The Factory's own runtime
 
-This repository deploys its own runtime stack (broker, worker and their databases, plus the SF Manager's database) the same way:
+This repository deploys its own runtime stack (broker, worker and their database) the same way:
 `.github/software-factory.yml` enables `deploy` after the `CI` workflow succeeded on `main`, and
 `operations/temporal-runtime/compose.production.yaml` is the compose file of the release.
 
@@ -175,10 +175,10 @@ This repository deploys its own runtime stack (broker, worker and their database
   previous release keeps running. Installed repositories additionally need their executor wrapper rolled to the
   same commit through the SF Manager.
 - The **SF Manager** is deployed by its own repository: the Factory installed deploy-only in
-  `munichdeveloper/sf-manager` builds and starts its web and job worker on the host after each merge there
-  (`operations/image/compose.yaml`). They reach the broker (`runtime-broker:8095`) and their database
-  (`manager-db`) through the internal network `sf-runtime-api`, which this stack creates, and Traefik through
-  `sfm_front`. Nothing about the Manager is pinned here.
+  `munichdeveloper/sf-manager` builds and starts its web and job worker and runs its database on the host after
+  each merge there (`operations/image/compose.yaml`, data in the volume `sfm_manager-data`). They reach the broker
+  (`runtime-broker:8095`) through the internal network `sf-runtime-api`, which this stack creates, and Traefik
+  through `sfm_front`. Nothing about the Manager is pinned here.
 - Credentials (`*.env`) and `registry.json` stay on the host in the deploy path and never pass through GitHub.
   The exception is the broker's merge review key: the wrapper passes the repository secret
   `BROKER_OPENAI_API_KEY` as `OPENAI_API_KEY` through `deploy-env`, and the broker lists `.sf-deploy.env`
