@@ -17,6 +17,8 @@ import { retryOf, reworkOf } from './coding-context.js';
 
 export interface RuntimeRepository {
   repositoryId: number; repository: string; release: RuntimeRelease; retainedReleases?: RuntimeRelease[]; requireHumanGate: boolean;
+  /** How long a run of a retained release may stay open before the broker ends it (software-factory#102). */
+  retainedRunMs?: number;
   baseRef?: string; executorWorkflow?: string; issueNumbers?: number[]; allowedPaths?: string[];
   readyApproval?(issueNumber: number, expected?: ReadyApproval, rework?: ReadyApproval): Promise<ReadyApproval>;
   validationPlan?(): Promise<ValidationPlan>;
@@ -27,6 +29,7 @@ export interface RuntimeRepository {
   baseContains?(sha: string): Promise<boolean>;
   coding?: { executor: CodingExecutionPort; publish(snapshot: RunSnapshot, binding: string, artifact: CodingArtifact, createdAt: string, validation?: ValidationReport): Promise<{ url: string }> };
 }
+export const retainedExpired = 'RETAINED_RELEASE_EXPIRED';
 /** Codes raised before the executor run was dispatched: nothing ran in the repository. */
 const notDispatched = ['EXECUTOR_WRAPPER_RELEASE_MISMATCH', 'CODING_NOT_AUTHORIZED', 'REPOSITORY_ID_MISMATCH', 'EXECUTOR_REF_CONFLICT',
   'EXECUTOR_REQUEST_LIMIT', 'EXECUTOR_RUN_SCAN_LIMIT', 'MULTIPLE_EXECUTOR_RUNS', 'EXECUTOR_RUN_CONFLICT', 'CODING_EXECUTOR_UNAVAILABLE'];
@@ -37,6 +40,7 @@ const hints: Record<string, string> = {
   READY_APPROVAL_CHANGED: 'The ready grant changed while the run was in progress.',
   BROKER_REJECTED_OR_UNAVAILABLE: 'The runtime broker was unreachable or refused the call without a reason.',
   CODING_EXECUTOR_DEADLINE: 'The executor run did not deliver a result before the deadline.',
+  RETAINED_RELEASE_EXPIRED: 'The run was admitted on the previous runtime release and outlived its retention after a host rollout; a retry runs on the current release.',
 };
 /** The fixed code a failed workflow ended with: the innermost error code of its failure, or the Temporal status. */
 export async function workflowFailure(handle: { result(): Promise<unknown> }, status: 'failed' | 'timed_out'): Promise<string> {
@@ -237,6 +241,25 @@ export class RuntimeController implements WorkerRuntimePort {
     await this.current(row.snapshot);
     await this.store.gate(this.repo.repositoryId, id, binding, actor, approved);
     if (row.runId) await this.temporal.workflow.getHandle(row.workflowId, row.runId).signal('approvalChanged');
+  }
+  /**
+   * Ends runs of a retained (previous) release that are older than the retention bound, so a host rollout never waits
+   * on them. Terminated with a fixed reason, not cancelled: the run counts as failed, and its retry keeps the ready
+   * grant and starts on the current release. Returns the execution IDs it ended.
+   */
+  async expireRetained(now = Date.now()): Promise<string[]> {
+    const limit = this.repo.retainedRunMs, current = hash(this.repo.release), expired: string[] = [];
+    if (!limit) return expired;
+    for await (const row of this.store.inFlight(this.repo.repositoryId)) {
+      if (hash(row.snapshot.release) === current || row.cancelled || row.result || !row.runId || now - Date.parse(row.createdAt) < limit) continue;
+      const handle = this.temporal.workflow.getHandle(row.workflowId, row.runId);
+      if ((await handle.describe()).status.name !== 'RUNNING') continue;
+      // The executor run of that release cannot deliver any more; a conflict there must not keep the workflow alive.
+      if (row.snapshot.admission.input.worker === 'codex' && this.repo.coding) await this.repo.coding.executor.cancel(row.snapshot, row.binding).catch(() => undefined);
+      await handle.terminate(retainedExpired);
+      expired.push(row.snapshot.admission.input.executionId);
+    }
+    return expired;
   }
   async cancel(id: string) {
     const row = await this.store.get(this.repo.repositoryId, id);

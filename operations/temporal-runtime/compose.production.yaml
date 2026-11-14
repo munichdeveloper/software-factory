@@ -11,14 +11,19 @@ name: sfm
 # The PINNED worker release. Changing it is the release rollout on this host: the deployment builds the worker
 # image and its package from this published Factory commit, and the broker serves its repositories with exactly
 # that release. Nothing on the host has to be edited. Installed repositories still need their executor wrapper
-# rolled to the same commit (SF Manager), and a deployment fails closed while a run of another release is active.
+# rolled to the same commit (SF Manager), and runs of the previous release (PREVIOUS_WORKER_FACTORY_SHA) keep running on their own worker.
 # The SF Manager (web and job worker) is deployed by its own repository, munichdeveloper/sf-manager
 # (operations/image/compose.yaml), together with its database, and reaches the broker here through the runtime-api network.
 # Only a published release may be named here, and only together with the rollout of that same release to the
 # installed repositories: the broker refuses every run whose executor wrapper pins a different commit
 # (EXECUTOR_WRAPPER_RELEASE_MISMATCH). The SF Manager rolls out published releases only.
+# PREVIOUS_WORKER_FACTORY_SHA is the release this one replaced: a host rollout moves the old WORKER_FACTORY_SHA here.
+# Its worker (runtime-worker-previous) only finishes runs admitted before the rollout, so a rollout never waits for open
+# runs and never unbinds a repository; the broker ends such a run after FACTORY_RETAINED_RUN_HOURS (default 2) and the
+# planner retries it on the current release (software-factory#102). It may equal WORKER_FACTORY_SHA.
 x-worker-release: &worker-release
   WORKER_FACTORY_SHA: a7be4652e5cecb8e133028762616b583b8121615
+  PREVIOUS_WORKER_FACTORY_SHA: a475c0bb4c33791f591d93ae36eca94391250b26
   WORKER_DEPLOYMENT: sf-backofficer
   WORKER_QUEUE: sf-backofficer-v1
 x-service: &service
@@ -94,6 +99,26 @@ services:
       context: .
       dockerfile: operations/temporal-runtime/Dockerfile
       target: worker
+      args: *worker-release
+    network_mode: service:runtime-broker
+    read_only: true
+    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/worker.env
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: software-factory-backofficer
+      FACTORY_BROKER_URL: http://127.0.0.1:8095
+    tmpfs: [/tmp]
+    mem_limit: 1g
+    depends_on:
+      runtime-broker: { condition: service_healthy }
+  # Same deployment and queue as runtime-worker, pinned to the previous release: Temporal routes the PINNED runs of
+  # that build here. Idle once they ended.
+  runtime-worker-previous:
+    <<: *service
+    build:
+      context: .
+      dockerfile: operations/temporal-runtime/Dockerfile
+      target: previous-worker
       args: *worker-release
     network_mode: service:runtime-broker
     read_only: true
