@@ -69,6 +69,8 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
     // Follow-ups answer what an attempt found. A task that has not run, or whose run failed for reasons outside the
     // task, is started or retried itself; a copy would only compete for the same worker slot (software-factory#93).
     if (!task.latest?.result || !['blocked', 'success'].includes(task.latest.result.status)) return deny('Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself');
+    // An open pull request still delivers the task; a follow-up written now copies work that is about to be merged (controla#103).
+    if (task.hasOpenPR) return deny('Task has an open pull request; follow-ups wait until it is merged or closed');
     if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map(n => `#${n}`).join(', ')}`);
     if (action.followup.expandsScope) {
       const scope = permission(config, 'expand_scope');

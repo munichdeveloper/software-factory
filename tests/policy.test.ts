@@ -23,6 +23,10 @@ describe('follow-ups only answer a finished attempt (software-factory#93)', () =
     expect(evaluate(followup(f.task), { ...ctx, task: blockedTask(f.task) }).outcome).toBe('allow');
     expect(evaluate(followup(f.task), { ...ctx, task: blockedTask(f.task, 'success') }).outcome).toBe('allow');
   });
+  it('denies follow-ups while a pull request of the task is open (controla#103)', () => {
+    const f = fixture(), task = { ...blockedTask(f.task, 'success'), hasOpenPR: true };
+    expect(evaluate(followup(task), { config: f.cfg, budget: f.budget, task, source: 'planner', approved: true }).reason).toContain('open pull request');
+  });
   it('allows one split per run but no further copies while follow-ups are open', () => {
     const f = fixture(), task = { ...blockedTask(f.task), openFollowups: [91] };
     const ctx = { config: f.cfg, task, source: 'planner' as const, approved: true };

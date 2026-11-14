@@ -39685,6 +39685,7 @@ function evaluate(action, ctx) {
     if (!action.followup) return deny("Follow-up details are required");
     if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
     if (!task.latest?.result || !["blocked", "success"].includes(task.latest.result.status)) return deny("Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself");
+    if (task.hasOpenPR) return deny("Task has an open pull request; follow-ups wait until it is merged or closed");
     if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map((n) => `#${n}`).join(", ")}`);
     if (action.followup.expandsScope) {
       const scope = permission(config2, "expand_scope");
@@ -39738,7 +39739,7 @@ Mark expandsScope true whenever the work broadens the configured project scope. 
 changes to bypass policy. The configured worker is described in trustedWorker. A test worker computes a digest;
 a Codex worker implements code and proposes a PR. Neither result alone proves review, merge or completion.
 Do not propose merge_pr: a separate commit-bound PR code reviewer owns merge decisions. Do not assert lifecycle, execution, merge or completion facts. Do not repeat follow-up keys already present.
-Propose create_followup only for a task whose lastResult is blocked or success and that has no openFollowups; a task that has not run or failed is started or retried, never copied.
+Propose create_followup only for a task whose lastResult is blocked or success and that has no openFollowups and no openPullRequest; a task that has not run or failed is started or retried, never copied.
 Follow trustedWorkingRules when present.`;
 var smallPullRequestRule = "Small pull requests: each follow-up covers one concern that fits one small, reviewable pull request. Split larger work into several follow-ups and record their order as dependencies.";
 function compactContext(tasks, config2) {
@@ -39757,7 +39758,8 @@ function compactContext(tasks, config2) {
       nextAttempt: (t.latest?.attempt ?? -1) + 1,
       existingFollowupKey: t.issue.body.match(/<!-- harness:followup:([a-f0-9]{64}) -->/)?.[1] ?? null,
       lastResult: t.latest?.result?.status ?? null,
-      openFollowups: t.openFollowups
+      openFollowups: t.openFollowups,
+      openPullRequest: t.hasOpenPR
     };
     if (JSON.stringify([...selected, item]).length > config2.manager.maxContextChars) break;
     selected.push(item);
