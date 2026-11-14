@@ -39702,6 +39702,7 @@ function evaluate(action, ctx) {
 
 // src/runtime/coding-context.ts
 var reworkMarker = (previousExecutionId) => `urn:sf-rework:${previousExecutionId}`;
+var retryMarker = (previousExecutionId) => `urn:sf-retry:${previousExecutionId}`;
 
 // src/llm/provider.ts
 var proposal = (task, kind, reason, values = {}) => ({
@@ -40390,9 +40391,11 @@ ${marker2}`;
         const attempt = action.attempt;
         const id = executionId(this.github.repository, live, attempt);
         const rework = action.kind === "retry_worker" && task.reworkable && this.config.execution.engine === "temporal";
+        const retry = action.kind === "retry_worker" && !rework && task.latest?.result?.status === "failed" && this.config.execution.engine === "temporal";
+        const previous = rework || retry ? task.latest.input.executionId : void 0;
         if (this.config.execution.engine === "temporal" && this.options.workerRuntime?.preflight) {
           try {
-            await this.options.workerRuntime.preflight(live.number, rework ? task.latest.input.executionId : void 0);
+            await this.options.workerRuntime.preflight(live.number, previous);
           } catch (error62) {
             if (!(error62 instanceof RuntimeAdmissionRejected)) throw error62;
             this.rejections.push({ issueNumber: live.number, code: error62.code, recorded: false });
@@ -40406,7 +40409,7 @@ ${marker2}`;
           taskVersion: action.taskVersion,
           description: live.body,
           acceptanceCriteria: task.criteria,
-          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...rework ? [reworkMarker(task.latest.input.executionId)] : []],
+          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : []],
           executionId: id,
           allowedActions: ["publish_result"],
           limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16e3 },

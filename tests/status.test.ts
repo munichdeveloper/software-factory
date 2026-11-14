@@ -66,7 +66,10 @@ describe('status comment of a blocked task', () => {
 describe('status comment of a failed task waiting for a new grant', () => {
   it('names the failed attempt instead of only saying that it is ready', async () => {
     const w = new World({ readyLabel: true }); w.open(1); w.grant(1); await w.tick();
-    await w.finish(w.running()[0]!.snapshot.admission.input.executionId, 'failed'); await w.tick(); await w.tick();
+    await w.finish(w.running()[0]!.snapshot.admission.input.executionId, 'failed');
+    // A person withdrew the grant after the failure, so the retry cannot carry it over.
+    w.github.human(1, [...w.issue(1).labels, 'harness:ready']); w.github.human(1, w.issue(1).labels.filter(l => l !== 'harness:ready'));
+    await w.tick(); await w.tick();
     const task = reconstruct({ ...structuredClone(w.github.state), runtimeExecutions: await w.controller.observations(w.events(1).flatMap(e => e.type === 'intent' ? [e.input.executionId] : [])), readyIsGrant: true }, w.cfg, w.now)[0]!;
     const text = statusComment(task, w.cfg, { ...context, rejection: 'READY_APPROVAL_REQUIRED' });
     expect(text).toContain('The last run failed (attempt 1 of 3). **A further attempt waits only for the grant.**');

@@ -56,8 +56,11 @@ export const admissionCode = (error: unknown) => error instanceof Error && /^[A-
 export interface WorkerRuntimePort {
   /** True when harness:ready, applied by an authorized person, is what grants execution. */
   readonly readyIsGrant?: boolean;
-  /** Checks grants that must exist before a durable intent is written. Rejects with RuntimeAdmissionRejected. */
-  preflight?(issueNumber: number, reworkOfExecutionId?: string): Promise<void>;
+  /**
+   * Checks grants that must exist before a durable intent is written. Rejects with RuntimeAdmissionRejected.
+   * `previousExecutionId` names the attempt a rework continues or a retry repeats; its grant may carry over.
+   */
+  preflight?(issueNumber: number, previousExecutionId?: string): Promise<void>;
   start(admission: Admission): Promise<RuntimeObservation>;
   observations(executionIds: string[]): Promise<RuntimeObservation[]>;
   cancel(executionId: string): Promise<void>;

@@ -22,8 +22,8 @@ export async function authorizeReadyLabel(issue: Issue, events: BlockLabelEvent[
   // A human unlabel, a new grant, or any unknown transition revokes this exact proof.
   const taken = later.length === 1 && later[0]!.event === 'unlabeled' && trustedActors.includes(later[0]!.actor);
   const consumed = expected && taken && issue.labels.includes('harness:running');
-  // The grant that admitted an attempt also covers its bounded rework: same proof, consumed only by the Manager,
-  // and the task still in a status the Manager set for that attempt or its successor.
+  // The grant that admitted an attempt also covers its bounded rework or its retry after a failure: same proof, consumed
+  // only by the Manager, and the task still in a status the Manager set for that attempt or its successor.
   const carried = rework && hash(proof) === hash(rework) && taken && ['harness:running', 'harness:failed', 'harness:blocked'].some(l => issue.labels.includes(l));
   if (later.length && !consumed && !carried || !issue.labels.includes('harness:ready') && !consumed && !carried) throw new Error('READY_APPROVAL_REVOKED');
   return proof;
