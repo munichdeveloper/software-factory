@@ -63,5 +63,5 @@ it('tells the sanity check about failed reconciliations, but not about BUSY or n
     .mockImplementationOnce(async () => { throw new Error('ACTOR_NOT_AUTHORIZED'); });
   stops.push(startReconcileSchedule([binding(1), binding(2), binding(3, 'actions')], { store: s as unknown as RuntimeStore, monitor: monitor as never }, 1000));
   await vi.advanceTimersByTimeAsync(1000);
-  expect(monitor.failed.mock.calls).toEqual([[2, 'ACTOR_NOT_AUTHORIZED']]);
+  expect(monitor.failed.mock.calls.map(c => [(c as unknown[])[0] as { repositoryId: number }, (c as unknown[])[1]]).map(([r, code]) => [r.repositoryId, code])).toEqual([[2, 'ACTOR_NOT_AUTHORIZED']]);
 });

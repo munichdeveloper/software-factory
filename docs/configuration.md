@@ -31,6 +31,8 @@ Generated JSON schemas share the executable Zod source.
 | `monitoring.repeatedFailures` | `3` | This many attempts in a row ending with the same error code are reported as an endless retry, 2–20 |
 | `monitoring.stalledPasses` | `10` | Consecutive reconciliations a status label may differ from the derived status, or reconciliations may fail or report errors, before it is reported, 2–200 |
 | `workers.coding.smallPullRequests` | `true` | Tells the coding worker to keep each change to the task's one concern (no drive-by refactoring, renaming or unrelated fixes) and, for a task that bundles several concerns or is too large for one reviewable change, to report `blocked` with a proposed split instead of one large PR; the planner cuts follow-ups to one concern each. Fixed per execution when it is first dispatched. Risk-based merging (`merge.risk`, more than 800 changed lines are at least `high`) stays the hard limit |
+| `monitoring.slack` | `true` | Posts new and resolved findings to Slack with the broker's bot (`SLACK_BOT_TOKEN`), one message per reconciliation that changed something, at most once |
+| `monitoring.channel` | `null` | Slack channel for findings; `null` uses `notifications.slack.channel` where `notifications.slack.enabled`, otherwise nothing is posted |
 | `llm.provider` | `mock` | Deterministic mock or real `openai` Responses API |
 | `llm.model` | `gpt-4.1-mini` | Explicit provider model string; account must have access |
 | `llm.reasoningEffort` | `null` | Omit capability, or `none`, `minimal`, `low`, `medium`, `high`, `xhigh`; must match model |

@@ -22,7 +22,10 @@ export const monitoringSchema = z.strictObject({
   /** This many attempts of a task in a row ending with the same error code count as an endless retry. */
   repeatedFailures: bounded(2, 20, 3),
   /** Consecutive reconciliations a task's label may differ from its derived status, or a reconciliation may fail, before it is reported. */
-  stalledPasses: bounded(2, 200, 10)
+  stalledPasses: bounded(2, 200, 10),
+  /** Posts new and resolved findings to Slack with the broker's bot, in `channel` or else the notifications channel where notifications are enabled. */
+  slack: z.boolean().default(true),
+  channel: slackChannel.nullable().default(null)
 });
 export type MonitoringSettings = z.infer<typeof monitoringSchema>;
 export const configSchema = z.strictObject({
@@ -163,3 +166,9 @@ export function loadConfig(source: string): Config {
   return result.data;
 }
 export const monitoringSettings = (config: Config): MonitoringSettings => monitoringSchema.parse(config.monitoring ?? {});
+/** Where a repository's sanity findings go in Slack, or null. */
+export function monitoringChannel(config: Config): string | null {
+  const settings = monitoringSettings(config);
+  if (!settings.enabled || !settings.slack) return null;
+  return settings.channel ?? (config.notifications.slack.enabled ? config.notifications.slack.channel : null);
+}

@@ -20,6 +20,7 @@ const task = (number: number, over: Partial<Task> = {}, body?: string): Task => 
 };
 const settings = monitoringSettings(config());
 const kinds = (found: Finding[]) => found.map(f => `${f.kind}#${f.issueNumber}`);
+const repo = { repositoryId: 1, repository: 'owner/target' };
 const later = (minutes: number) => new Date(clock.getTime() + minutes * 60000);
 
 it('reports a run that outlives its worker timeout plus the grace, and a long approval wait', () => {
@@ -76,18 +77,18 @@ it('counts a status that never settles and failing reconciliations over passes, 
   const store = new MemoryFindings(), monitor = new SanityMonitor(store, () => clock), cfg = config();
   cfg.monitoring = { stalledPasses: 3 };
   // awaiting-pr without any pull request: the derived status differs, every pass.
-  for (let i = 0; i < 2; i++) await monitor.observed(1, cfg, snapshot(['harness:managed', 'harness:awaiting-pr']), report());
+  for (let i = 0; i < 2; i++) await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:awaiting-pr']), report());
   expect([...store.open.keys()]).toEqual([]);
-  await monitor.observed(1, cfg, snapshot(['harness:managed', 'harness:awaiting-pr']), report());
+  await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:awaiting-pr']), report());
   expect([...store.open.keys()]).toEqual(['status_stalled:1']);
-  await monitor.observed(1, cfg, snapshot(['harness:managed', 'harness:backlog']), report());
+  await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report());
   expect([...store.open.keys()]).toEqual([]);
 
-  for (let i = 0; i < 3; i++) await monitor.failed(1, 'OPERATION_FAILED');
+  for (let i = 0; i < 3; i++) await monitor.failed(repo, 'OPERATION_FAILED');
   expect([...store.open.values()].map(f => f.detail)).toEqual(['3 reconciliations in a row failed (OPERATION_FAILED)']);
-  await monitor.observed(1, cfg, snapshot(['harness:managed', 'harness:backlog']), report());
+  await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report());
   expect(store.open.size).toBe(0);
-  for (let i = 0; i < 3; i++) await monitor.observed(1, cfg, snapshot(['harness:managed', 'harness:backlog']), report(['LLM planning failed']));
+  for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report(['LLM planning failed']));
   expect([...store.open.keys()]).toEqual(['reconcile_failing:-']);
 });
 
@@ -95,10 +96,35 @@ it('stays silent where a repository turns it off and never lets a store failure 
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const store = { syncFindings: vi.fn(async () => { throw new Error('pool exhausted: postgres://secret'); }) };
   const monitor = new SanityMonitor(store, () => clock), cfg = config();
-  await expect(monitor.observed(1, cfg, snapshot(['harness:managed', 'harness:backlog']), report())).resolves.toBeUndefined();
+  await expect(monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report())).resolves.toBeUndefined();
   expect(warn.mock.calls.map(c => c[0])).toEqual([JSON.stringify({ event: 'factory-sanity-failed', repositoryId: 1 })]);
   cfg.monitoring = { enabled: false }; store.syncFindings.mockClear();
-  await monitor.observed(1, cfg, snapshot(['harness:managed', 'harness:awaiting-pr']), report());
-  await monitor.failed(1, 'OPERATION_FAILED');
+  await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:awaiting-pr']), report());
+  await monitor.failed(repo, 'OPERATION_FAILED');
   expect(store.syncFindings).not.toHaveBeenCalled();
+});
+
+it('posts new and resolved findings once to the configured or the notifications channel, and survives a Slack failure', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const alerts = { post: vi.fn(async () => {}) }, store = new MemoryFindings(), monitor = new SanityMonitor(store, () => clock, alerts), cfg = config();
+  cfg.monitoring = { stalledPasses: 2 };
+  const stuck = snapshot(['harness:managed', 'harness:awaiting-pr']), fine = snapshot(['harness:managed', 'harness:backlog']);
+  for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, stuck, report());
+  expect(alerts.post).not.toHaveBeenCalled(); // no channel anywhere
+  await monitor.observed(repo, cfg, fine, report());
+  cfg.notifications.slack.enabled = true; cfg.notifications.slack.channel = '#factory';
+  for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, stuck, report());
+  await monitor.observed(repo, cfg, fine, report());
+  expect(alerts.post.mock.calls).toEqual([
+    ['#factory', 'SF Sanity-Check: owner/target\nNeue Probleme:\n• Status stellt sich nicht ein – https://github.com/owner/target/issues/1\n  Status awaiting-pr should be backlog but has not changed for 2 reconciliations'],
+    ['#factory', 'SF Sanity-Check: owner/target\nBehoben:\n• Status stellt sich nicht ein – https://github.com/owner/target/issues/1'],
+  ]);
+  cfg.monitoring = { stalledPasses: 2, channel: 'C0123456789' }; alerts.post.mockRejectedValueOnce(new Error('xoxb-secret'));
+  for (let i = 0; i < 2; i++) await monitor.observed(repo, cfg, stuck, report());
+  expect(alerts.post).toHaveBeenLastCalledWith('C0123456789', expect.any(String));
+  expect(warn.mock.calls.map(c => c[0])).toEqual([JSON.stringify({ event: 'factory-sanity-alert-failed', repositoryId: 1 })]);
+  cfg.monitoring = { stalledPasses: 2, slack: false }; alerts.post.mockClear();
+  await monitor.observed(repo, cfg, fine, report());
+  expect(alerts.post).not.toHaveBeenCalled();
 });

@@ -54,7 +54,7 @@ export async function reconcileBinding(binding: RuntimeBinding, options: Pick<Se
   const executed = report.decisions.filter(d => d.executed).map(d => `${d.action.kind}#${d.action.issueNumber}${d.action.status ? `:${d.action.status}` : ''}`);
   if (executed.length || report.errors.length || report.blockers.length) console.log(JSON.stringify({ event: 'factory-reconcile',
     repositoryId: binding.repository.repositoryId, outcome: report.outcome, executed, errors: report.errors, blockers: report.blockers }));
-  await options.monitor?.observed(binding.repository.repositoryId, config, manager.lastSnapshot, report);
+  await options.monitor?.observed(binding.repository, config, manager.lastSnapshot, report);
   return report;
 }
 
