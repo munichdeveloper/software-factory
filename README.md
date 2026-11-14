@@ -53,7 +53,9 @@ drift. Optional [AI-reviewed PR merging](docs/merging.md) is disabled by default
 It requires a real code-review decision and native GitHub gates; green CI alone
 does not authorize a merge. Existing PRs can be explicitly enrolled by label.
 A [concept for per-PR preview environments](docs/preview-environments.md) on Coolify
-(not implemented) describes an additional E2E gate before merging.
+(not implemented) describes an additional E2E gate before merging. A
+[concept for risk-based auto-merge](docs/risk-based-merge.md) (not implemented) lets
+the Factory merge low-risk PRs on its own and ask for approval above a threshold.
 
 ## Deployment after pushes (v0.5.0)
 
