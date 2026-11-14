@@ -13,7 +13,7 @@ name: sfm
 # that release. Nothing on the host has to be edited. Installed repositories still need their executor wrapper
 # rolled to the same commit (SF Manager), and a deployment fails closed while a run of another release is active.
 # The SF Manager (web and job worker) is deployed by its own repository, munichdeveloper/sf-manager
-# (operations/image/compose.yaml), and reaches the broker and its database here through the runtime-api network.
+# (operations/image/compose.yaml), together with its database, and reaches the broker here through the runtime-api network.
 # Only a published release may be named here, and only together with the rollout of that same release to the
 # installed repositories: the broker refuses every run whose executor wrapper pins a different commit
 # (EXECUTOR_WRAPPER_RELEASE_MISMATCH). The SF Manager rolls out published releases only.
@@ -30,24 +30,6 @@ x-service: &service
     driver: json-file
     options: { max-size: 10m, max-file: '3' }
 services:
-  manager-db:
-    <<: *service
-    # Clients that share runtime-broker's network namespace lose it whenever a deploy recreates the broker, under
-    # their open connections and without closing them; TCP keepalives let
-    # Postgres drop such dead connections after about 90 seconds instead of two hours (max_connections ran out).
-    command: [postgres, -c, tcp_keepalives_idle=60, -c, tcp_keepalives_interval=10, -c, tcp_keepalives_count=3]
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
-    image: postgres:17.11-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
-    env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager-db.env
-    volumes: [manager-data:/var/lib/postgresql/data]
-    # runtime-api: the SF Manager, deployed by its own repository, reaches its database as manager-db there.
-    networks: [private, runtime-api]
-    mem_limit: 1g
-    healthcheck:
-      test: [CMD-SHELL, pg_isready -U sf -d sf_manager]
-      interval: 5s
-      timeout: 3s
-      retries: 20
   runtime-db:
     <<: *service
     # Clients that share runtime-broker's network namespace lose it whenever a deploy recreates the broker, under
@@ -127,12 +109,12 @@ services:
 networks:
   private: { internal: true }
   # Shared with the SF Manager's own deployment (munichdeveloper/sf-manager, operations/image/compose.yaml): only
-  # the broker API and the Manager database are attached; the fixed name lets the other project join it.
+  # the broker API is attached here; the fixed name lets the other project join it.
   runtime-api: { name: sf-runtime-api, internal: true }
   # Traefik's network, which Traefik is attached to; no service here uses it any more, the SF Manager's web service
   # joins it as sfm_front. Declared with its existing name so it stays stable.
   front: { name: sfm_front }
   temporal: { external: true, name: sf-temporal_access }
+# The Manager database and its volume sfm_manager-data belong to the SF Manager's own stack (external volume there).
 volumes:
-  manager-data: {}
   runtime-data: {}
