@@ -289,3 +289,11 @@ describe('why a run failed (software-factory#93)', () => {
     await expect(f.controller.preflight(1)).resolves.toBeUndefined();
   });
 });
+
+it('authorizes a coding poll once and hands the executor that configuration (software-factory#93)', async () => {
+  const f = await fixture(false, true); await f.controller.start(f.admission); const row = f.store.row!;
+  const poll = vi.fn(async () => null); Object.assign(f.repo, { coding: { executor: { poll, cancel: vi.fn() }, publish: vi.fn() } });
+  const config = vi.spyOn(f.repo, 'config');
+  expect(await f.controller.executeCoding(row.snapshot, row.binding)).toBeNull();
+  expect(config).toHaveBeenCalledOnce(); expect(poll).toHaveBeenCalledWith(row.snapshot, row.binding, f.cfg);
+});

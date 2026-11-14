@@ -201,13 +201,14 @@ export class RuntimeController implements WorkerRuntimePort {
     }
     return result;
   }
-  async authorize(snapshot: RunSnapshot, binding: string): Promise<StoredRun> {
+  async authorize(snapshot: RunSnapshot, binding: string): Promise<StoredRun> { return (await this.authorized(snapshot, binding)).stored; }
+  /** One complete authorization, with the configuration it found current. */
+  private async authorized(snapshot: RunSnapshot, binding: string): Promise<{ stored: StoredRun; config: Config }> {
     this.scope(snapshot.admission.input.issueNumber);
     const stored = await this.store.get(this.repo.repositoryId, snapshot.admission.input.executionId);
     if (!stored || stored.binding !== binding || hash(snapshot) !== binding || stored.cancelled) throw new Error('UNKNOWN_OR_CANCELLED_RUN');
     if (snapshot.requireHumanGate && !stored.approved) throw new Error('APPROVAL_REQUIRED');
-    await this.current(snapshot);
-    return stored;
+    return { stored, config: await this.current(snapshot) };
   }
   async gateApproved(snapshot: RunSnapshot, binding: string) {
     this.scope(snapshot.admission.input.issueNumber);
@@ -253,12 +254,14 @@ export class RuntimeController implements WorkerRuntimePort {
       summary, error: artifact.result.error, artifacts: [`urn:sf-artifact:${hash(artifact)}`, ...(validation ? [`urn:sf-validation:${hash(validation)}`] : [])], proposedActions: [] });
   }
   async executeCoding(snapshot: RunSnapshot, binding: string): Promise<WorkerResult | null> {
-    await this.authorize(snapshot, binding);
+    // Authorized once per poll. Each poll used to check three times (about 30 GitHub requests every 15 seconds),
+    // which alone exceeds an App installation's hourly budget during a run (software-factory#93).
+    const { config } = await this.authorized(snapshot, binding);
     if (snapshot.admission.input.worker !== 'codex' || !this.repo.coding) throw new Error('CODING_EXECUTOR_UNAVAILABLE');
     const id = snapshot.admission.input.executionId, previous = await this.store.artifact(this.repo.repositoryId, id);
     const validation = snapshot.validationPlan ? await this.store.validation(this.repo.repositoryId, id) : null;
     if (previous && (!snapshot.validationPlan || validation)) return this.codingResult(snapshot, previous, validation);
-    const outcome = await this.repo.coding.executor.poll(snapshot, binding, await this.current(snapshot));
+    const outcome = await this.repo.coding.executor.poll(snapshot, binding, config);
     if (!outcome) return null;
     if ('failed' in outcome) return workerResultSchema.parse({ contractVersion: '1.0', executionId: id, issueNumber: snapshot.admission.input.issueNumber,
       status: 'failed', summary: 'Isolated coding executor failed', error: 'Inspect the scoped executor run', artifacts: [], proposedActions: [] });

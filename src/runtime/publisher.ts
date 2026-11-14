@@ -45,6 +45,10 @@ export class RuntimeCodingPublisher {
       if (head !== snapshot.baseSha && (snapshot.baseRef || !await containsCommit(this.api, target, head, snapshot.baseSha))) throw new Error('BASE_MOVED');
     };
     await authorize();
+    // Blobs, the tree and the commit are content-addressed objects that no ref names yet: creating them changes nothing
+    // anyone sees. They rely on the authorization above; every ref, pull request and comment below authorizes again.
+    // Authorizing before each of them cost about ten GitHub requests per changed file (software-factory#93).
+    const objects = async () => {};
     const parent = (await this.api.git.getCommit({ ...target, commit_sha: snapshot.baseSha })).data;
     const entries = (await this.api.git.getTree({ ...target, tree_sha: parent.tree.sha, recursive: '1' })).data;
     if (entries.truncated) throw new Error('BASE_TREE_TRUNCATED');
@@ -61,7 +65,7 @@ export class RuntimeCodingPublisher {
       if (change.content === null) { if (!previous) throw new Error('DELETE_MISSING_FILE'); }
       else {
         const bytes = Buffer.from(change.content, 'base64'), expected = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
-        const receipt = await this.effects.perform({ key: `blob:${expected}`, payload: { sha: expected }, authorize,
+        const receipt = await this.effects.perform({ key: `blob:${expected}`, payload: { sha: expected }, authorize: objects,
           contentAddressed: true, validate: objectReceipt.parse,
           reconcile: async () => { try { const value = (await this.api.git.getBlob({ ...target, file_sha: expected })).data;
             if (value.sha !== expected || Buffer.from(value.content.replaceAll('\n', ''), 'base64').compare(bytes)) throw new Error('BLOB_CONFLICT'); return { sha: expected };
@@ -72,7 +76,7 @@ export class RuntimeCodingPublisher {
       }
       tree.push({ path: change.path, mode: change.mode, type: 'blob', sha: blob });
     }
-    const newTree = await this.effects.perform({ key: 'tree', payload: { base: parent.tree.sha, tree }, authorize, contentAddressed: true,
+    const newTree = await this.effects.perform({ key: 'tree', payload: { base: parent.tree.sha, tree }, authorize: objects, contentAddressed: true,
       validate: objectReceipt.parse, reconcile: async () => null,
       apply: async () => ({ sha: (await this.api.git.createTree({ ...target, base_tree: parent.tree.sha, tree })).data.sha }) });
     if (newTree.sha === parent.tree.sha) throw new Error('NO_CHANGES');
@@ -80,7 +84,7 @@ export class RuntimeCodingPublisher {
     // Explicit immutable author/committer dates make retries content-addressed, even after a lost response.
     const identity = { name: 'Software Factory', email: 'software-factory@users.noreply.github.com', date: createdAt };
     const commitInput = { message, tree: newTree.sha, parents: [snapshot.baseSha], author: identity, committer: identity };
-    const commit = await this.effects.perform({ key: 'commit', payload: commitInput, authorize, contentAddressed: true,
+    const commit = await this.effects.perform({ key: 'commit', payload: commitInput, authorize: objects, contentAddressed: true,
       validate: objectReceipt.parse, reconcile: async () => null,
       apply: async () => ({ sha: (await this.api.git.createCommit({ ...target, ...commitInput })).data.sha }) });
     await this.effects.perform({ key: 'branch', payload: { branch, sha: commit.sha }, authorize, validate: objectReceipt.parse,

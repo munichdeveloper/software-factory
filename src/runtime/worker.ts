@@ -30,7 +30,8 @@ export function createActivities(pack: WorkerPackage, broker: (operation: string
           context.heartbeat();
           const result = await broker('coding-execution', snapshot, binding);
           if (result !== null) return workerResultSchema.parse(result);
-          await new Promise(resolve => setTimeout(resolve, snapshot.validationPlan ? 15000 : 4000));
+          // A validated run takes ten minutes or more; every poll costs GitHub requests from the installation's budget.
+          await new Promise(resolve => setTimeout(resolve, snapshot.validationPlan ? 30000 : 4000));
         } } finally { clearInterval(heartbeat); }
         throw new Error('CODING_EXECUTOR_DEADLINE');
       }

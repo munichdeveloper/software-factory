@@ -38,6 +38,7 @@ export function decodeCodingArchive(bytes: Uint8Array): CodingArtifact {
   validateChanges(artifact); return artifact;
 }
 export interface CodingExecutionPort {
+  /** `config` is the configuration of an authorization the caller has just completed; new effects authorize again. */
   poll(snapshot: RunSnapshot, binding: string, config: Config): Promise<{ artifact: CodingArtifact; validation?: ValidationReport } | { failed: true } | null>;
   cancel(snapshot: RunSnapshot, binding: string): Promise<void>;
 }
@@ -129,7 +130,6 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 409)) throw error; }
   }
   async poll(snapshot: RunSnapshot, binding: string, config: Config) {
-    await this.authorize(snapshot, binding);
     const input = snapshot.admission.input, coding = config.workers.coding, workflow = snapshot.executorWorkflow ?? codingWorkflow;
     if (input.worker !== 'codex' || !coding || !coding.enabled || binding !== hash(snapshot)) throw new Error('CODING_NOT_AUTHORIZED');
     const [owner, repo] = snapshot.repository.split('/') as [string, string], target = { owner, repo };
