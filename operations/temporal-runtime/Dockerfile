@@ -12,7 +12,7 @@ FROM node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96
 WORKDIR /app
 ARG FACTORY_SHA
 RUN node -e "if(!/^[a-f0-9]{40}$/.test(process.env.FACTORY_SHA||''))process.exit(1)"
-LABEL org.opencontainers.image.title="Software Factory Temporal Runtime" org.opencontainers.image.version="0.8.6" org.opencontainers.image.revision=$FACTORY_SHA
+LABEL org.opencontainers.image.title="Software Factory Temporal Runtime" org.opencontainers.image.version="0.8.7" org.opencontainers.image.revision=$FACTORY_SHA
 RUN mkdir -p /run/factory-package && chown node:node /run/factory-package
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
