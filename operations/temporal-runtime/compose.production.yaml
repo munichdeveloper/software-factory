@@ -19,7 +19,7 @@ name: sfm
 # installed repositories: the broker refuses every run whose executor wrapper pins a different commit
 # (EXECUTOR_WRAPPER_RELEASE_MISMATCH). The SF Manager rolls out published releases only.
 x-worker-release: &worker-release
-  WORKER_FACTORY_SHA: 227fd778d030b95f3f8863d669b3d0ffece9c31d
+  WORKER_FACTORY_SHA: 0c386200f43543efceb20eb2c0f21d0a4f6656cc
   WORKER_DEPLOYMENT: sf-backofficer
   WORKER_QUEUE: sf-backofficer-v1
 x-service: &service
@@ -128,7 +128,7 @@ services:
       runtime-broker: { condition: service_healthy }
   web:
     <<: *service
-    image: sf-manager:24405ec76503a120c7ef6855d439718d327292db # keep both Manager services on the same commit
+    image: sf-manager:36b82b4fc247edf56f7ade3b886d2edaf42b5f5b # keep both Manager services on the same commit
     network_mode: service:runtime-broker
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
@@ -155,7 +155,7 @@ services:
       start_period: 30s
   manager-worker:
     <<: *service
-    image: sf-manager:24405ec76503a120c7ef6855d439718d327292db # keep both Manager services on the same commit
+    image: sf-manager:36b82b4fc247edf56f7ade3b886d2edaf42b5f5b # keep both Manager services on the same commit
     network_mode: service:runtime-broker
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/manager.env
