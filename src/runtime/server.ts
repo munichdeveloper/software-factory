@@ -10,6 +10,7 @@ import { RuntimeController, type RuntimeRepository } from './controller.js';
 import type { Registration, RuntimeStore } from './store.js';
 import type { RuntimeMerge } from './merge.js';
 import type { NotificationSink } from '../notifications/slack.js';
+import type { SanityMonitor } from './sanity.js';
 
 export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController;
   /** A planner, or a choice made from the repository configuration that is current at each reconciliation. */
@@ -20,7 +21,9 @@ export interface ServerOptions { managerToken: string; workerToken: string; bind
   /** Binds and persists a repository the SF Manager rolls out to Temporal; absent where the runtime takes no registrations. */
   register?: (registration: Registration) => Promise<RuntimeBinding>;
   /** Slack delivery for repositories whose configuration enables notifications (the broker's own bot token). */
-  notifications?: NotificationSink }
+  notifications?: NotificationSink;
+  /** The broker's sanity check, told about every completed reconciliation. */
+  monitor?: SanityMonitor }
 const registrationSchema = z.strictObject({ repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/), githubInstallationId: z.number().int().positive().safe() });
 const secureEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 const actorSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}(?:\[bot\])?$/);
@@ -34,7 +37,7 @@ const send = (response: ServerResponse, code: number, body: unknown) => { respon
  * One reconciliation of a repository: picks up ready tasks, starts and advances runs, then the merge pass. Callers are the
  * broker's own schedule and, while it still sends them, the SF Manager. The actor of a Manager call never grants execution.
  */
-export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications'>) {
+export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor'>) {
   const config = await binding.repository.config();
   if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
   const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
@@ -51,6 +54,7 @@ export async function reconcileBinding(binding: RuntimeBinding, options: Pick<Se
   const executed = report.decisions.filter(d => d.executed).map(d => `${d.action.kind}#${d.action.issueNumber}${d.action.status ? `:${d.action.status}` : ''}`);
   if (executed.length || report.errors.length || report.blockers.length) console.log(JSON.stringify({ event: 'factory-reconcile',
     repositoryId: binding.repository.repositoryId, outcome: report.outcome, executed, errors: report.errors, blockers: report.blockers }));
+  await options.monitor?.observed(binding.repository.repositoryId, config, manager.lastSnapshot, report);
   return report;
 }
 
@@ -91,13 +95,16 @@ export function runtimeServer(options: ServerOptions) {
         console.log(JSON.stringify({ event: 'factory-repository-registered', repositoryId }));
         send(response, 200, { repositoryId, registered: true }); return;
       }
-      const match = path.match(/^\/v1\/repositories\/([1-9][0-9]*)\/(runs|observations|reconcile|deployment)(?:\/([a-f0-9]{32})(?:\/(approve|revoke|cancel))?)?$/);
+      const match = path.match(/^\/v1\/repositories\/([1-9][0-9]*)\/(runs|observations|reconcile|deployment|findings)(?:\/([a-f0-9]{32})(?:\/(approve|revoke|cancel))?)?$/);
       if (!match) { send(response, 404, { code: 'NOT_FOUND' }); return; }
       const binding = options.bindings.find(b => b.repository.repositoryId === Number(match[1]));
       if (!binding) throw new Error('UNKNOWN_REPOSITORY');
       const [, , resource, id, action] = match;
       if (request.method === 'GET' && resource === 'deployment' && !id) {
         send(response, 200, await binding.controller.deployment()); return;
+      }
+      if (request.method === 'GET' && resource === 'findings' && !id) {
+        send(response, 200, { findings: await options.store.findings(binding.repository.repositoryId) }); return;
       }
       if (request.method === 'GET' && resource === 'runs' && !id) {
         const rows = await options.store.list(binding.repository.repositoryId);

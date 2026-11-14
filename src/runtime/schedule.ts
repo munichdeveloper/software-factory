@@ -9,7 +9,7 @@ const quiet = new Set(['BUSY', 'TEMPORAL_NOT_ENABLED']);
  * ends), and the per-repository lock answers a concurrent Manager call with BUSY. Bindings registered later are
  * picked up on the next pass. Returns a function that stops the schedule and waits for a running pass.
  */
-export function startReconcileSchedule(bindings: RuntimeBinding[], options: Pick<ServerOptions, 'store' | 'notifications'>, intervalMs: number) {
+export function startReconcileSchedule(bindings: RuntimeBinding[], options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor'>, intervalMs: number) {
   let timer: NodeJS.Timeout | undefined, stopped = false, running: Promise<void> = Promise.resolve();
   const pass = async () => {
     for (const binding of [...bindings]) {
@@ -20,6 +20,7 @@ export function startReconcileSchedule(bindings: RuntimeBinding[], options: Pick
         // Fixed codes only: never external error text, repository content or connection strings.
         if (!quiet.has(reason)) console.warn(JSON.stringify({ event: 'factory-reconcile-failed', repositoryId: binding.repository.repositoryId, reason,
           httpStatus: error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' ? error.status : undefined }));
+        if (!quiet.has(reason)) await options.monitor?.failed(binding.repository.repositoryId, reason);
       }
     }
   };

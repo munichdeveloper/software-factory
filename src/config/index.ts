@@ -7,6 +7,23 @@ export const permissionSchema = z.enum(['allow', 'deny', 'approval']);
 const bounded = (min: number, max: number, value: number) => z.number().int().min(min).max(max).default(value);
 const slackChannel = z.string().regex(/^(?:[CG][A-Z0-9]{8,}|#[a-z0-9_-]{1,80})$/);
 const notificationRule = z.strictObject({ enabled: z.boolean().default(false), channel: slackChannel.nullable().default(null) });
+/**
+ * The broker's sanity check of a repository's Factory runs (stuck runs, dead ends, endless retries). Optional and without
+ * defaults in the parsed configuration: a repository that does not set it keeps its configuration hash, so in-flight runs
+ * stay current. Read it through monitoringSettings().
+ */
+export const monitoringSchema = z.strictObject({
+  enabled: z.boolean().default(true),
+  /** A run still active this many minutes after its worker timeout is reported as stuck. */
+  stuckRunMinutes: bounded(5, 1440, 60),
+  /** A run waiting this long at its approval gate is reported. */
+  approvalWaitHours: bounded(1, 720, 48),
+  /** This many attempts of a task in a row ending with the same error code count as an endless retry. */
+  repeatedFailures: bounded(2, 20, 3),
+  /** Consecutive reconciliations a task's label may differ from its derived status, or a reconciliation may fail, before it is reported. */
+  stalledPasses: bounded(2, 200, 10)
+});
+export type MonitoringSettings = z.infer<typeof monitoringSchema>;
 export const configSchema = z.strictObject({
   version: z.literal(1),
   factory: z.strictObject({ enabled: z.boolean().default(true), scope: z.string().min(1).max(4000) }),
@@ -105,7 +122,8 @@ export const configSchema = z.strictObject({
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
-  }).prefault({}) }).prefault({})
+  }).prefault({}) }).prefault({}),
+  monitoring: monitoringSchema.partial().optional()
 });
 export type Config = z.infer<typeof configSchema>;
 export function loadConfig(source: string): Config {
@@ -115,3 +133,4 @@ export function loadConfig(source: string): Config {
   if (!result.success) throw new Error(`Invalid factory configuration: ${result.error.issues.map(i => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ')}`);
   return result.data;
 }
+export const monitoringSettings = (config: Config): MonitoringSettings => monitoringSchema.parse(config.monitoring ?? {});

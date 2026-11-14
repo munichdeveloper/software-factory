@@ -12,7 +12,7 @@ async function fixture(merge?: { start: ReturnType<typeof vi.fn>; errors?: strin
   const controller = { observations: vi.fn(async () => []), gateApproved: vi.fn(async () => false), authorize: vi.fn(async () => ({})),
     publish: vi.fn(), gate: vi.fn(async () => {}), cancel: vi.fn(async () => {}), start: vi.fn(), deployment: vi.fn(async () => ({ workerReady: true })) };
   const repository = { repositoryId: 42, github, config: async () => cfg };
-  const store = { list: vi.fn(async () => []), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()),
+  const store = { list: vi.fn(async () => []), findings: vi.fn(async () => [{ key: 'run_stuck:7:x', kind: 'run_stuck', issueNumber: 7 }]), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()),
     tryLocked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
   const managerToken = 'm'.repeat(32), workerToken = 'w'.repeat(32);
   const server = runtimeServer({ managerToken, workerToken, bindings: [{ repository, controller, planner: new MockPlanner(), merge } as unknown as RuntimeBinding], store: store as unknown as RuntimeStore });
@@ -39,6 +39,12 @@ describe('private runtime HTTP boundaries', () => {
     expect((await f.call('/v1/repositories/42/runs', undefined, f.workerToken)).status).toBe(401);
     expect((await f.call('/v1/worker/gate', {}, f.managerToken)).status).toBe(401);
     expect(() => runtimeServer({ managerToken: 'a'.repeat(32), workerToken: 'a'.repeat(32), bindings: [], store: f.store as unknown as RuntimeStore })).toThrow('SEPARATE_RUNTIME_TOKENS');
+  });
+  it('serves the sanity findings of a repository to the manager only', async () => {
+    const f = await fixture();
+    expect((await f.call('/v1/repositories/42/findings', undefined, f.workerToken)).status).toBe(401);
+    expect(await (await f.call('/v1/repositories/42/findings')).json()).toEqual({ findings: [{ key: 'run_stuck:7:x', kind: 'run_stuck', issueNumber: 7 }] });
+    expect(f.store.findings).toHaveBeenCalledWith(42);
   });
   it('rejects unknown repositories, invalid commands and extra actor fields', async () => {
     const f = await fixture(); expect((await f.call('/v1/repositories/43/runs')).status).toBe(409);
