@@ -9,7 +9,7 @@ import { decodeEvent } from '../state/events.js';
 import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
 import { RuntimeStore, type StoredRun } from './store.js';
 import { admissionCode, admissionSchema, RuntimeAdmissionRejected, snapshotSchema, workflowId, type Admission, type RunSnapshot, type RuntimeObservation, type RuntimeRelease, type RuntimeState, type WorkerRuntimePort } from './contract.js';
-import type { CodingExecutionPort } from './coding-executor.js';
+import { executorWrapper, type CodingExecutionPort } from './coding-executor.js';
 import type { CodingArtifact } from '../workers/coding.js';
 import type { ReadyApproval } from './contract.js';
 import { bindValidation, type ValidationPlan, type ValidationReport } from './validation-contract.js';
@@ -21,9 +21,42 @@ export interface RuntimeRepository {
   readyApproval?(issueNumber: number, expected?: ReadyApproval, rework?: ReadyApproval): Promise<ReadyApproval>;
   validationPlan?(): Promise<ValidationPlan>;
   github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
+  /** The executor workflow file at the current base, or null where it is missing. */
+  executorWrapper?(): Promise<string | null>;
   /** Whether the current base still contains `sha`, i.e. the base only moved forward. Without it any move is stale. */
   baseContains?(sha: string): Promise<boolean>;
   coding?: { executor: CodingExecutionPort; publish(snapshot: RunSnapshot, binding: string, artifact: CodingArtifact, createdAt: string, validation?: ValidationReport): Promise<{ url: string }> };
+}
+/** Codes raised before the executor run was dispatched: nothing ran in the repository. */
+const notDispatched = ['EXECUTOR_WRAPPER_RELEASE_MISMATCH', 'CODING_NOT_AUTHORIZED', 'REPOSITORY_ID_MISMATCH', 'EXECUTOR_REF_CONFLICT',
+  'EXECUTOR_REQUEST_LIMIT', 'EXECUTOR_RUN_SCAN_LIMIT', 'MULTIPLE_EXECUTOR_RUNS', 'EXECUTOR_RUN_CONFLICT', 'CODING_EXECUTOR_UNAVAILABLE'];
+const hints: Record<string, string> = {
+  EXECUTOR_WRAPPER_RELEASE_MISMATCH: 'The executor workflow in the repository pins a different Factory release than the runtime; roll the repository out to the runtime release through the SF Manager.',
+  STALE_SNAPSHOT: 'The configuration, policy, base branch or runtime release changed while the run was in progress.',
+  DELEGATION_REVOKED: 'The task or its delegation changed while the run was in progress.',
+  READY_APPROVAL_CHANGED: 'The ready grant changed while the run was in progress.',
+  BROKER_REJECTED_OR_UNAVAILABLE: 'The runtime broker was unreachable or refused the call without a reason.',
+  CODING_EXECUTOR_DEADLINE: 'The executor run did not deliver a result before the deadline.',
+};
+/** The fixed code a failed workflow ended with: the innermost error code of its failure, or the Temporal status. */
+export async function workflowFailure(handle: { result(): Promise<unknown> }, status: 'failed' | 'timed_out'): Promise<string> {
+  if (status === 'timed_out') return 'WORKFLOW_TIMED_OUT';
+  try { await handle.result(); } catch (error) {
+    let code: string | undefined, current: unknown = error;
+    for (let depth = 0; current && depth < 8; depth++) {
+      if (current instanceof Error && /^[A-Z][A-Z0-9_]{1,63}$/.test(current.message)) code = current.message;
+      if (current && typeof current === 'object' && 'type' in current && current.type === 'TIMEOUT_TYPE_HEARTBEAT') code ??= 'ACTIVITY_HEARTBEAT_TIMEOUT';
+      current = current instanceof Error ? current.cause : undefined;
+    }
+    if (code) return code;
+  }
+  return 'WORKFLOW_FAILED';
+}
+function failedResult(snapshot: RunSnapshot, code: string): WorkerResult {
+  const input = snapshot.admission.input, before = notDispatched.includes(code);
+  const summary = `${before ? 'dispatch_failed: the executor run was not dispatched' : 'The run stopped before a result was committed'} (${code}).${hints[code] ? ` ${hints[code]}` : ''}`;
+  return workerResultSchema.parse({ contractVersion: '1.0', executionId: input.executionId, issueNumber: input.issueNumber, status: 'failed',
+    summary, artifacts: [], error: code, proposedActions: [] });
 }
 export class RuntimeController implements WorkerRuntimePort {
   constructor(private repo: RuntimeRepository, private store: RuntimeStore, private temporal: Client) {}
@@ -78,6 +111,11 @@ export class RuntimeController implements WorkerRuntimePort {
   async preflight(issueNumber: number, reworkOfExecutionId?: string): Promise<void> {
     try {
       this.scope(issueNumber);
+      // The broker dispatches only an executor workflow that pins its own release. Refused here, before an intent
+      // exists, a release skew between runtime host and repository costs no attempt (software-factory#93).
+      const coding = this.repo.coding && this.repo.executorWrapper ? (await this.repo.config()).workers.coding : false;
+      if (coding && coding.enabled && this.repo.executorWrapper &&
+        await this.repo.executorWrapper() !== executorWrapper(this.repo.release.factorySha, this.repo.release.harnessSha, !!this.repo.validationPlan)) throw new Error('EXECUTOR_WRAPPER_RELEASE_MISMATCH');
       if (this.repo.readyApproval) {
         const previous = reworkOfExecutionId ? await this.store.get(this.repo.repositoryId, reworkOfExecutionId) : null;
         await this.repo.readyApproval(issueNumber, undefined, previous?.snapshot.admission.input.issueNumber === issueNumber ? previous.snapshot.readyApproval : undefined);
@@ -155,7 +193,9 @@ export class RuntimeController implements WorkerRuntimePort {
       if (status !== 'running') await this.store.terminal(this.repo.repositoryId, id);
       // Only a blocked result needs explaining; its small validation report says which checks failed.
       const report = row.result?.status === 'blocked' && row.snapshot.validationPlan ? await this.store.validation(this.repo.repositoryId, id) : null;
-      result.push({ issueNumber: row.snapshot.admission.input.issueNumber, executionId: id, workflowId: row.workflowId, runId: row.runId, status, phase: state.phase, binding: row.binding, createdAt: row.createdAt, result: row.result,
+      // A run that failed without committing a result says why, instead of the Manager's generic failure (software-factory#93).
+      const stopped = !row.result && (status === 'failed' || status === 'timed_out') ? failedResult(row.snapshot, await workflowFailure(handle, status)) : null;
+      result.push({ issueNumber: row.snapshot.admission.input.issueNumber, executionId: id, workflowId: row.workflowId, runId: row.runId, status, phase: state.phase, binding: row.binding, createdAt: row.createdAt, result: row.result ?? stopped,
         ...(report ? { validation: { status: report.status, reason: report.reason, runId: report.workflowRunId,
           failed: report.checks.filter(c => c.status === 'failed').map(c => ({ name: c.name, exitCode: c.exitCode })) } } : {}) });
     }

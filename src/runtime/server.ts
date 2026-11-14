@@ -32,6 +32,15 @@ async function read(request: IncomingMessage): Promise<unknown> {
   for await (const chunk of request) { const bytes = Buffer.from(chunk); size += bytes.length; if (size > 300000) throw new Error('BODY_LIMIT'); chunks.push(bytes); }
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
+/**
+ * The fixed code that names why an operation was blocked: an error code of our own, the HTTP status of a GitHub call
+ * that failed (for example 403 when the App installation's rate limit is used up), or OPERATION_FAILED.
+ */
+export function blockedReason(error: unknown): string {
+  if (error instanceof Error && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.message)) return error.message;
+  const status = error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' ? error.status : undefined;
+  return status && Number.isInteger(status) && status >= 100 && status < 600 ? `GITHUB_HTTP_${status}` : 'OPERATION_FAILED';
+}
 const send = (response: ServerResponse, code: number, body: unknown) => { response.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(body)); };
 /**
  * One reconciliation of a repository: picks up ready tasks, starts and advances runs, then the merge pass. Callers are the
@@ -134,11 +143,15 @@ export function runtimeServer(options: ServerOptions) {
       }
       throw new Error('NOT_FOUND');
     } catch (error) {
-      console.warn(JSON.stringify({ event: 'factory-runtime-blocked', reason: error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'OPERATION_FAILED',
+      const reason = blockedReason(error);
+      console.warn(JSON.stringify({ event: 'factory-runtime-blocked', reason,
         httpStatus: error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' ? error.status : undefined }));
       // Never serialize external API/PG errors, request bodies or connection strings.
       const code = error instanceof z.ZodError || error instanceof SyntaxError ? 'INVALID_REQUEST' : 'RUNTIME_OPERATION_BLOCKED';
-      send(response, code === 'INVALID_REQUEST' ? 400 : 409, { code });
+      // The worker carries the fixed reason code into its Temporal failure, so a failed run can say why it failed
+      // (software-factory#93). Only the code leaves the broker, never the error text.
+      const worker = (request.url ?? '').startsWith('/v1/worker/');
+      send(response, code === 'INVALID_REQUEST' ? 400 : 409, { code, ...(worker ? { reason } : {}) });
     }
   });
 }

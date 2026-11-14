@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Server } from 'node:http';
-import { runtimeServer, type RuntimeBinding } from '../src/runtime/server.js';
+import { blockedReason, runtimeServer, type RuntimeBinding } from '../src/runtime/server.js';
+import { brokerReason } from '../src/runtime/worker.js';
 import type { RuntimeStore } from '../src/runtime/store.js';
 import { config, MemoryGitHub } from './helpers.js';
 import { MockPlanner } from '../src/llm/provider.js';
@@ -116,4 +117,25 @@ it('answers a reconciliation that overlaps a running one at once instead of queu
   const busy = await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer' });
   expect(busy.status).toBe(409); expect(await busy.json()).toEqual({ code: 'RUNTIME_OPERATION_BLOCKED' });
   expect(f.store.locked).not.toHaveBeenCalledWith(42, 'manager', expect.any(Function));
+});
+
+describe('reason codes for refused worker calls (software-factory#93)', () => {
+  it('names our own codes and failed GitHub calls, never error text', () => {
+    expect(blockedReason(new Error('STALE_SNAPSHOT'))).toBe('STALE_SNAPSHOT');
+    expect(blockedReason(Object.assign(new Error('API rate limit exceeded for installation'), { status: 403 }))).toBe('GITHUB_HTTP_403');
+    expect(blockedReason(new Error('private connection string'))).toBe('OPERATION_FAILED');
+  });
+  it('tells the worker the reason, but not the manager', async () => {
+    const f = await fixture();
+    const worker = await f.call('/v1/worker/authorize', { snapshot: {} }, f.workerToken);
+    expect(worker.status).toBe(400); expect(await worker.json()).toEqual({ code: 'INVALID_REQUEST', reason: 'OPERATION_FAILED' });
+    f.controller.deployment.mockRejectedValueOnce(new Error('STALE_SNAPSHOT'));
+    expect(await (await f.call('/v1/repositories/42/deployment')).json()).toEqual({ code: 'RUNTIME_OPERATION_BLOCKED' });
+  });
+  it('lets the worker fail with the broker code and stays generic for anything else', async () => {
+    const reply = (body: string) => new Response(body, { status: 409, headers: { 'Content-Type': 'application/json' } });
+    expect(await brokerReason(reply(JSON.stringify({ code: 'RUNTIME_OPERATION_BLOCKED', reason: 'GITHUB_HTTP_403' })))).toBe('GITHUB_HTTP_403');
+    expect(await brokerReason(reply(JSON.stringify({ reason: 'not a code' })))).toBe('BROKER_REJECTED_OR_UNAVAILABLE');
+    expect(await brokerReason(reply('<html>proxy error</html>'))).toBe('BROKER_REJECTED_OR_UNAVAILABLE');
+  });
 });

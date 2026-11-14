@@ -1,7 +1,8 @@
 import { Pool, type PoolClient } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkflowExecutionAlreadyStartedError, type Client } from '@temporalio/client';
-import { RuntimeController, type RuntimeRepository } from '../src/runtime/controller.js';
+import { RuntimeController, workflowFailure, type RuntimeRepository } from '../src/runtime/controller.js';
+import { executorWrapper } from '../src/runtime/coding-executor.js';
 import { RuntimeStore, type StoredRun } from '../src/runtime/store.js';
 import { type Admission, type RuntimeRelease } from '../src/runtime/contract.js';
 import { Manager } from '../src/manager/index.js';
@@ -248,5 +249,43 @@ describe('durable result outbox', () => {
     expect(await activities.gateApproved(row.snapshot, row.binding)).toBe(true); await activities.authorize(row.snapshot, row.binding);
     await expect(activities.authorize({ ...row.snapshot, release: { ...release, buildId: 'forged' } }, row.binding)).rejects.toThrow('WORKER_RELEASE_MISMATCH');
     expect(hash(row.snapshot)).toBe(row.binding);
+  });
+});
+
+describe('why a run failed (software-factory#93)', () => {
+  it('names the code a failed workflow ended with instead of a generic failure', async () => {
+    const f = await fixture(false); await f.controller.start(f.admission);
+    const failure = Object.assign(new Error('Workflow execution failed'), { cause: Object.assign(new Error('Activity task failed'), { cause: new Error('STALE_SNAPSHOT') }) });
+    Object.assign(f.handle, { result: async () => { throw failure; } }); f.status('FAILED');
+    const observed = (await f.controller.observations([f.result.executionId]))[0]!;
+    expect(observed.status).toBe('failed');
+    expect(observed.result).toMatchObject({ status: 'failed', error: 'STALE_SNAPSHOT', artifacts: [] });
+    expect(observed.result!.summary).toContain('stopped before a result was committed (STALE_SNAPSHOT)');
+  });
+  it('says when the executor was never dispatched', async () => {
+    const f = await fixture(false); await f.controller.start(f.admission);
+    Object.assign(f.handle, { result: async () => { throw Object.assign(new Error('failed'), { cause: new Error('EXECUTOR_WRAPPER_RELEASE_MISMATCH') }); } }); f.status('FAILED');
+    const observed = (await f.controller.observations([f.result.executionId]))[0]!;
+    expect(observed.result!.summary).toMatch(/^dispatch_failed: the executor run was not dispatched \(EXECUTOR_WRAPPER_RELEASE_MISMATCH\)/);
+    expect(observed.result!.error).toBe('EXECUTOR_WRAPPER_RELEASE_MISMATCH');
+  });
+  it('keeps a committed result and reports timeouts and unknown failures by status', async () => {
+    expect(await workflowFailure({ result: async () => { throw new Error('private text'); } }, 'failed')).toBe('WORKFLOW_FAILED');
+    expect(await workflowFailure({ result: async () => null }, 'timed_out')).toBe('WORKFLOW_TIMED_OUT');
+    const f = await fixture(false); await f.controller.start(f.admission);
+    f.store.row!.result = f.result; f.status('FAILED');
+    expect((await f.controller.observations([f.result.executionId]))[0]!.result).toEqual(f.result);
+  });
+  it('refuses a start before the intent when the executor workflow pins another release', async () => {
+    const f = await fixture(false, true);
+    const wrapper = vi.fn(async (): Promise<string | null> => executorWrapper('0'.repeat(40), release.harnessSha));
+    Object.assign(f.repo, { executorWrapper: wrapper, coding: { executor: { poll: vi.fn(), cancel: vi.fn() }, publish: vi.fn() } });
+    await expect(f.controller.preflight(1)).rejects.toMatchObject({ code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH' });
+    wrapper.mockResolvedValue(null);
+    await expect(f.controller.preflight(1)).rejects.toMatchObject({ code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH' });
+    wrapper.mockResolvedValue(executorWrapper(release.factorySha, release.harnessSha));
+    await expect(f.controller.preflight(1)).resolves.toBeUndefined();
+    f.cfg.workers.coding = false; wrapper.mockResolvedValue(null);
+    await expect(f.controller.preflight(1)).resolves.toBeUndefined();
   });
 });

@@ -72,7 +72,9 @@ export function statusComment(task: Task, config: Config, context: { repository:
     const previous = result && ['failed', 'cancelled'].includes(result.status)
       ? `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'} (attempt ${task.latest!.attempt + 1} of ${config.execution.maxRetries + 1}). ` : '';
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : 'Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${context.rejection}\`).**`];
-    needs = ready ? grant : 'Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.';
+    needs = ready ? grant : context.rejection === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'
+      ? 'Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards.'
+      : 'Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.';
   } else if (result?.status === 'success') { state = ['Implemented and independently validated.']; needs = 'Review and merge the pull request. The Factory does not merge on its own in this installation.'; }
   else if (result?.status === 'blocked') {
     ({ state, needs } = blocked(task, context.repository, context.readyIsGrant, config));
