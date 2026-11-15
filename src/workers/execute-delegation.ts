@@ -19,8 +19,13 @@ export async function authorizeDelegation(github: GitHubPort, config: Config, is
   if (event?.data.type !== 'intent') throw new Error('No trusted manager intent for this execution');
   const input = workerInputSchema.parse(event.data.input);
   if (input.repository.toLowerCase() !== github.repository.toLowerCase() || input.issueNumber !== issueNumber) throw new Error('Worker repository/issue mismatch');
-  const original: Action = { kind: event.data.attempt === 0 ? 'start_worker' : 'retry_worker', issueNumber,
-    taskVersion: input.taskVersion, attempt: event.data.attempt, status: null, priority: null, followup: null, reason: 'Revalidate original delegation' };
+  const { attempt, actionId: delegatedId } = event.data;
+  const delegation = (kind: Action['kind']): Action => ({ kind, issueNumber,
+    taskVersion: input.taskVersion, attempt, status: null, priority: null, followup: null, reason: 'Revalidate original delegation' });
+  // A first start keeps attempt zero unless earlier starts of the task version were refused by the runtime; their numbers
+  // stay taken (software-factory#53). So the attempt alone does not say whether it was a start or a retry: the action ID does.
+  const original = [delegation(attempt === 0 ? 'start_worker' : 'retry_worker'), delegation(attempt === 0 ? 'retry_worker' : 'start_worker')]
+    .find(a => actionId(a, policyVersion(config)) === delegatedId) ?? delegation(attempt === 0 ? 'start_worker' : 'retry_worker');
   let approved = false;
   for (const c of comments) {
     const command = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);

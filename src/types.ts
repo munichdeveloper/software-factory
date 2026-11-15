@@ -25,6 +25,8 @@ export interface ContentEdit { actor: string; at: string; trusted: boolean }
 export interface Issue { number: number; title: string; body: string; state: 'open' | 'closed'; labels: string[]; updatedAt: string; createdAt?: string; authorType?: string; reopenedAt?: string; blockedLabelEvents?: BlockLabelEvent[];
   /** When `harness:managed` was last applied, from the native timeline. */
   managedAt?: string;
+  /** When `harness:ready` was last applied, from the native timeline. */
+  readyAt?: string;
   /** Title and body changes, read for managed issues; absent only where nothing was read. */
   contentEdits?: ContentEdit[] }
 export interface Comment { id: number; body: string; author: string; createdAt: string }

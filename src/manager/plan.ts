@@ -17,7 +17,8 @@ export function reconciliationPlan(tasks: Task[], config: Config): Action[] {
     }
     if (t.reworkable) actions.push(proposal(t, 'retry_worker', 'Rework after a failed independent validation, within the configured limit'));
     else if (t.issue.state === 'open' && !t.blocked && !t.hasClosingMerge && !t.hasOpenPR && t.latest?.result &&
-      ['failed', 'cancelled'].includes(t.latest.result.status) && !t.executions.some(e => e.active) && t.latest.attempt < config.execution.maxRetries) {
+      ['failed', 'cancelled'].includes(t.latest.result.status) && !t.executions.some(e => e.active) && t.attemptsUsed <= config.execution.maxRetries &&
+      !t.refusal?.waiting) {
       actions.push(proposal(t, 'retry_worker', 'Retry failed execution within configured limit'));
     }
     return actions;

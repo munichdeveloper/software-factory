@@ -4,7 +4,7 @@ import type { Planner } from '../llm/provider.js';
 import { actionSchema, planSchema, type Action, type Snapshot } from '../types.js';
 import { actionId, executionId, hash, taskVersion } from '../state/identity.js';
 import { decodeEvent, type HarnessEvent } from '../state/events.js';
-import { reconstruct, type Task } from '../state/reconstruct.js';
+import { admissionRejectedSummary, reconstruct, type Task } from '../state/reconstruct.js';
 import { lastBlockLabelEventId } from '../state/blocks.js';
 import { managedLabel, priorityLabels, withStatus } from '../state/lifecycle.js';
 import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
@@ -75,7 +75,9 @@ export class Manager {
     catch (error) {
       if (!(error instanceof RuntimeAdmissionRejected)) throw error;
       await this.event(input.issueNumber, `result:${id}`, { type: 'result', result: { contractVersion: '1.0', executionId: id, issueNumber: input.issueNumber,
-        status: 'cancelled', summary: `Runtime admission rejected before start: ${error.code}`, artifacts: [], error: error.code, proposedActions: [] } });
+        status: 'cancelled', summary: `${admissionRejectedSummary}: ${error.code}`, artifacts: [], error: error.code, proposedActions: [] } });
+      // The policy it was refused under: a changed policy or configuration admits the next start without waiting.
+      if (/^[A-Z][A-Z0-9_]{0,79}$/.test(error.code)) await this.event(input.issueNumber, `admission-rejected:${id}`, { type: 'admission_rejected', executionId: id, code: error.code, policyHash: policyVersion(this.config) });
       this.rejections.push({ issueNumber: input.issueNumber, code: error.code, recorded: true }); return null;
     }
     await this.event(input.issueNumber, `temporal-receipt:${id}`, { type: 'temporal_receipt', executionId: id,
@@ -278,7 +280,7 @@ export class Manager {
         report.nextSteps.push(`#${t.issue.number}: inspect actual Actions runs before manually resolving the original execution`);
       }
       if (t.issue.state === 'open' && t.latest?.result && ['blocked', 'needs_approval'].includes(t.latest.result.status)) report.blockers.push(`#${t.issue.number}: worker reports ${t.latest.result.status}; revise task or provide missing input`);
-      if (t.issue.state === 'open' && t.latest?.result && ['failed', 'cancelled'].includes(t.latest.result.status) && t.latest.attempt >= this.config.execution.maxRetries) report.blockers.push(`#${t.issue.number}: retry budget exhausted`);
+      if (t.issue.state === 'open' && t.latest?.result && ['failed', 'cancelled'].includes(t.latest.result.status) && t.attemptsUsed > this.config.execution.maxRetries) report.blockers.push(`#${t.issue.number}: retry budget exhausted`);
     }
     const entries: { action: Action; source: 'reconcile' | 'planner' | 'worker' }[] = reconciliationPlan(tasks, this.config).map(action => ({ action, source: 'reconcile' }));
     const eligible = tasks.filter(t => t.issue.state === 'open' && !t.blocked && !t.hasClosingMerge && !t.executions.some(e => e.active));

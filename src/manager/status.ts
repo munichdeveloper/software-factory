@@ -36,7 +36,7 @@ function blocked(task: Task, repository: string, readyIsGrant: boolean, config: 
       // The job log only carries the verdict; the output of each check is uploaded as a separate artifact of that run.
       `Output of the checks: download the artifact \`coding-validation-logs-${task.latest!.input.executionId}\` in the "Artifacts" section at the bottom of that run page (one log file per check, kept for 7 days).`);
     state.push(model === 'success' ? 'The worker itself reported success; it could not run these checks in its isolated environment.' : `The worker itself reported \`${model ?? 'blocked'}\`.`);
-    needs = `${task.reworkable ? '' : config.execution.rework && task.latest!.attempt > 0 ? `The automatic rework attempts are used up (${task.latest!.attempt + 1} of ${config.execution.maxRetries + 1} attempts). ` : 'The Factory does not repair a failed validation on its own in this installation. '}Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
+    needs = `${task.reworkable ? '' : config.execution.rework && task.attemptsUsed > 1 ? `The automatic rework attempts are used up (${task.attemptsUsed} of ${config.execution.maxRetries + 1} attempts). ` : 'The Factory does not repair a failed validation on its own in this installation. '}Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
   } else {
     state.push(`**Blocked because the worker itself stopped**${verdict === 'passed' ? ', although the independent validation passed' : ''}. It did not consider the task complete.`);
     needs = `Read the worker's explanation below. If its changes are acceptable, continue in the draft pull request yourself; if the task has to change, ${again}.`;
@@ -57,6 +57,8 @@ export function statusComment(task: Task, config: Config, context: { repository:
   const links = (result?.artifacts ?? []).filter(a => /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/.test(a));
   const grant = 'An authorized person applies the label `harness:ready`. Nothing else is missing; the run starts on the next reconciliation.';
   let state: string[], needs = 'Nothing.';
+  // A refusal of this reconciliation, or one recorded earlier that still holds.
+  const rejection = context.rejection ?? (task.refusal?.waiting ? task.refusal.code : undefined);
   if (task.issue.state === 'closed') state = ['The task is closed.'];
   else if (task.executions.some(e => e.ambiguous)) state = ['A start was sent and its outcome is not known yet. The Factory keeps resolving it and starts nothing else for this task meanwhile.'];
   else if (waiting) { state = ['A run is waiting at the approval gate.']; needs = 'Approve or cancel the run in the SF Manager.'; }
@@ -66,28 +68,30 @@ export function statusComment(task: Task, config: Config, context: { repository:
     needs = task.blockReason.startsWith('Unresolved dependencies') ? 'Close the issues this task depends on, or remove them from its `Depends on:` line.'
       : task.blockReason.startsWith('Missing Acceptance') ? 'Add a section `## Acceptance criteria` with at least one list item to the task text.'
       : 'Remove the label `harness:blocked` when the task may continue.';
-  } else if (context.rejection) {
-    const ready = context.rejection.startsWith('READY_');
+  } else if (rejection) {
+    const ready = rejection.startsWith('READY_');
     // A retry after a failed attempt says so; "ready to run" alone hid that the previous run had failed.
     const previous = result && ['failed', 'cancelled'].includes(result.status)
-      ? `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'} (attempt ${task.latest!.attempt + 1} of ${config.execution.maxRetries + 1}). ` : '';
-    state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : 'Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${context.rejection}\`).**`];
-    needs = ready ? grant : context.rejection === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'
+      ? `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}). ` : '';
+    state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : 'Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
+    needs = ready ? grant : rejection === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'
       ? 'Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards.'
       : 'Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.';
+    // A refusal that still holds is not offered again on every reconciliation (software-factory#53).
+    if (task.refusal?.waiting) state.push('', `The next start waits for a new grant, a changed policy or configuration, or at the latest until ${task.refusal.until}.`);
   } else if (result?.status === 'success') { state = ['Implemented and independently validated.']; needs = 'Review and merge the pull request. The Factory does not merge on its own in this installation.'; }
   else if (result?.status === 'blocked') {
     ({ state, needs } = blocked(task, context.repository, context.readyIsGrant, config));
     // Same facts, different consequence: the Factory repairs this itself and needs nobody yet.
     if (task.reworkable) {
-      state.push('', `Attempt ${task.latest!.attempt + 1} of ${config.execution.maxRetries + 1}. A further attempt starts on its own; it continues these changes and receives the failed checks and their output.`);
+      state.push('', `Attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}. A further attempt starts on its own; it continues these changes and receives the failed checks and their output.`);
       needs = 'Nothing; the Factory reworks the failed checks on its own.';
     }
   }
   else if (result?.status === 'needs_approval') { state = ['The last run asks for an approval before it continues.']; needs = `Read the worker's request: ${quoted(result.summary)}`; }
   else if (result) {
-    const left = task.latest!.attempt < config.execution.maxRetries, code = result.error && /^[A-Z_]{1,60}$/.test(result.error) ? ` (\`${result.error}\`)` : '';
-    state = [`The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'}${code} (attempt ${task.latest!.attempt + 1} of ${config.execution.maxRetries + 1}).`];
+    const left = task.attemptsUsed <= config.execution.maxRetries, code = result.error && /^[A-Z_]{1,60}$/.test(result.error) ? ` (\`${result.error}\`)` : '';
+    state = [`The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'}${code} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}).`];
     needs = left ? 'Nothing; the Factory retries on its own.' : 'The retry limit is reached. Revise the task text to start over.';
   } else if (task.hasOpenPR) { state = ['A pull request for this task is open.']; needs = 'Review and merge the pull request.'; }
   else if (context.readyIsGrant && !task.issue.labels.includes('harness:ready')) { state = ['Ready to run. **Waiting only for the grant.**']; needs = grant; }

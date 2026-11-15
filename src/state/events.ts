@@ -15,6 +15,8 @@ export const eventSchema = z.strictObject({
     z.strictObject({ type: z.literal('receipt'), executionId: z.string().length(32), runId: z.number().int().positive() }),
     z.strictObject({ type: z.literal('temporal_receipt'), executionId: z.string().length(32), workflowId: z.string().max(200), runId: z.uuid(), binding: z.string().length(64) }),
     z.strictObject({ type: z.literal('result'), result: workerResultSchema }),
+    // The runtime definitely refused to start an execution; with the policy it was refused under (software-factory#53).
+    z.strictObject({ type: z.literal('admission_rejected'), executionId: z.string().length(32), code: z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/), policyHash: z.string().length(64) }),
     z.strictObject({ type: z.literal('block_intent'), taskVersion: z.string().length(64), cause: blockCauseSchema, afterLabelEventId: z.number().int().nonnegative() }),
     z.strictObject({ type: z.literal('issue_creation_intent'), followupKey: z.string().regex(/^[a-f0-9]{64}$/), actionId: z.string().regex(/^[a-f0-9]{64}$/) }),
     z.strictObject({ type: z.literal('notification_sent'), deliveryId: z.string().regex(/^[a-f0-9]{64}$/), channel: z.string().max(100), timestamp: z.string().max(100) }),
