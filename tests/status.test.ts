@@ -41,7 +41,7 @@ describe('status comment of a blocked task', () => {
     expect(pending).toContain('Failed checks: `browser` (exit code 1).');
     expect(pending).toContain('Attempt 1 of 3. A further attempt starts on its own; it continues these changes and receives the failed checks and their output.');
     expect(pending).toContain('**Needed from you:** Nothing; the Factory reworks the failed checks on its own.');
-    const exhausted = statusComment({ ...task, latest: { ...task.latest!, attempt: 2 } }, cfg, context);
+    const exhausted = statusComment({ ...task, latest: { ...task.latest!, attempt: 2 }, attemptsUsed: 3 }, cfg, context);
     expect(exhausted).toContain('**Needed from you:** The automatic rework attempts are used up (3 of 3 attempts). Either fix the failing checks');
   });
   it('says that the worker itself stopped when the validation passed, and repeats its reason', async () => {

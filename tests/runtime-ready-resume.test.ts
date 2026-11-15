@@ -8,6 +8,8 @@ import { authorizeReadyLabel } from '../src/runtime/ready-approval.js';
 import { Manager } from '../src/manager/index.js';
 import { MockPlanner } from '../src/llm/provider.js';
 import { decodeEvent } from '../src/state/events.js';
+import { policyVersion } from '../src/policies/engine.js';
+import { statusMarker } from '../src/manager/status.js';
 import type { BlockLabelEvent } from '../src/types.js';
 import type { WorkerResult } from '../src/workers/contract.js';
 import { config, issue, MemoryGitHub } from './helpers.js';
@@ -73,8 +75,14 @@ function fixture() {
     const result: WorkerResult = { contractVersion: '1.0', executionId: input.executionId, issueNumber: 1, status: 'blocked', summary: 'Validation unavailable', artifacts: [], error: null, proposedActions: [] };
     await store.complete(42, input.executionId, result); status.set(row.workflowId, 'COMPLETED');
   };
-  return { cfg, github, store, repo, manager, events, advance, finishBlocked,
-    unknownDeployment: () => { deploymentBuild = 'other'; }, failStart: (error: Error) => { startError = error; } };
+  /** The worker of the latest execution fails without a refusal: a real attempt. */
+  const finishFailed = async () => {
+    const row = [...store.rows.values()].at(-1)!, input = row.snapshot.admission.input;
+    const result: WorkerResult = { contractVersion: '1.0', executionId: input.executionId, issueNumber: 1, status: 'failed', summary: 'Tests failed', artifacts: [], error: 'CHECK_FAILED', proposedActions: [] };
+    await store.complete(42, input.executionId, result); status.set(row.workflowId, 'COMPLETED');
+  };
+  return { cfg, github, store, repo, manager, events, advance, finishBlocked, finishFailed,
+    unknownDeployment: () => { deploymentBuild = 'other'; }, knownDeployment: () => { deploymentBuild = release.buildId; }, failStart: (error: Error) => { startError = error; } };
 }
 const labels = (f: ReturnType<typeof fixture>) => f.github.state.issues[0]!.labels.filter(l => l !== 'harness:managed');
 
@@ -218,5 +226,51 @@ describe('recovering an intent the runtime has no record of', () => {
     expect(report.blockers).toContain('#1: runtime admission rejected (DELEGATION_REVOKED); the execution was closed as cancelled');
     expect(f.store.rows.size).toBe(0);
     expect(f.events().find(e => e.type === 'result')).toMatchObject({ result: { status: 'cancelled', error: 'DELEGATION_REVOKED' } });
+  });
+});
+
+describe('a start the runtime refused (software-factory#53)', () => {
+  const status = (f: ReturnType<typeof fixture>) => (f.github.state.comments.get(1) ?? []).find(c => c.body.startsWith(statusMarker))?.body ?? '';
+  const attempts = (f: ReturnType<typeof fixture>) => f.events().flatMap(e => e.type === 'intent' ? [e.attempt] : []);
+  it('costs no attempt, waits for a changed condition and leaves maxRetries attempts for real runs', async () => {
+    const f = fixture(); delete f.repo.readyApproval; f.cfg.execution.maxRetries = 1;
+    f.unknownDeployment();
+    let report = await f.manager();
+    expect(report.blockers).toContain('#1: runtime admission rejected (UNKNOWN_WORKER_DEPLOYMENT_VERSION); the execution was closed as cancelled');
+    expect(f.events().find(e => e.type === 'admission_rejected')).toMatchObject({ code: 'UNKNOWN_WORKER_DEPLOYMENT_VERSION', policyHash: policyVersion(f.cfg) });
+    expect(status(f)).toContain('The runtime refused to start this task (`UNKNOWN_WORKER_DEPLOYMENT_VERSION`).** Nothing ran, so this costs no attempt.');
+    expect(status(f)).not.toContain('attempt 1 of');
+    // Nothing changed: the following reconciliations do not knock again.
+    f.advance(5); report = await f.manager();
+    expect(attempts(f)).toEqual([0]);
+    expect(report.decisions.some(d => d.action.kind === 'start_worker')).toBe(false);
+    expect(status(f)).toContain('The next start waits for a new grant, a changed policy or configuration, or at the latest until');
+    // After the backoff one more try, refused again; the wait doubles.
+    f.advance(11); await f.manager(); expect(attempts(f)).toEqual([0, 1]);
+    f.advance(20); await f.manager(); expect(attempts(f)).toEqual([0, 1]);
+    // A changed configuration admits the next start at once. It keeps a fresh attempt number, so execution IDs stay unique.
+    f.knownDeployment(); f.cfg.manager.maxActions += 1;
+    report = await f.manager();
+    expect(report.errors).toEqual([]); expect(attempts(f)).toEqual([0, 1, 2]); expect(f.store.rows.size).toBe(1);
+    // The first real run fails: one retry (maxRetries 1) is still left despite two refusals.
+    await f.finishFailed(); f.advance(1); report = await f.manager();
+    expect(report.errors).toEqual([]); expect(attempts(f)).toEqual([0, 1, 2, 3]); expect(f.store.rows.size).toBe(2);
+    expect(report.blockers).not.toContain('#1: retry budget exhausted');
+    // The retry fails as well: now the budget of real runs is used up.
+    await f.finishFailed(); f.advance(1); report = await f.manager();
+    expect(attempts(f)).toEqual([0, 1, 2, 3]); expect(report.blockers).toContain('#1: retry budget exhausted');
+    expect(status(f)).toContain('(attempt 2 of 2)');
+  });
+  it('starts again at once after a new grant', async () => {
+    const f = fixture(); f.github.human(1, ['harness:managed', 'harness:ready']);
+    const original = f.repo.readyApproval!; let calls = 0;
+    // Refused once after the intent (the grant changed between preflight and admission), then admitted.
+    f.repo.readyApproval = async (number, expected) => { if (++calls === 2) throw new Error('READY_APPROVAL_REVOKED'); return original(number, expected); };
+    await f.manager(); expect(attempts(f)).toEqual([0]);
+    f.advance(1); await f.manager(); expect(attempts(f)).toEqual([0]);
+    // A person grants again: the timeline shows the label applied after the refusal.
+    f.github.state.issues[0]!.readyAt = f.github.now.toISOString();
+    f.advance(1); const report = await f.manager();
+    expect(report.errors).toEqual([]); expect(attempts(f)).toEqual([0, 1]); expect(f.store.rows.size).toBe(1);
   });
 });

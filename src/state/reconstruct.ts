@@ -5,13 +5,35 @@ import { decodeEvent, type BlockCause, type HarnessEvent } from './events.js';
 import { currentAutomaticBlock } from './blocks.js';
 import { acceptanceCriteria, dependencies, issueStatus } from './lifecycle.js';
 import { taskVersion } from './identity.js';
+import { policyVersion } from '../policies/engine.js';
+
+/** Summary of the cancelled result the Manager writes when the runtime definitely refused a start. */
+export const admissionRejectedSummary = 'Runtime admission rejected before start';
+/** A refused start is offered again at the latest after this wait, doubling per refusal in a row (software-factory#53). */
+export const admissionBackoffMinutes = (refusals: number) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
 
 export interface Execution { input: WorkerInput; attempt: number; actionId: string; at: string; run?: WorkflowRun; runtime?: import('../runtime/contract.js').RuntimeObservation; result?: WorkerResult; active: boolean; ambiguous: boolean; timedOut: boolean;
   /** A Temporal run whose task was closed or revised underneath it: its result can no longer be published. */
-  orphaned: boolean }
+  orphaned: boolean;
+  /** The runtime refused to start this execution (its code). Nothing ran, so it is not an attempt. */
+  rejected?: string;
+  /** The policy version the refusal happened under, where the journal records it. */
+  rejectedPolicy?: string }
+/** The last start of the current task version was refused by the runtime, and no real attempt followed. */
+export interface AdmissionRefusal { code: string; at: string; refusals: number;
+  /** The refusal still holds: neither grant, policy nor configuration changed and the backoff has not run out. */
+  waiting: boolean; until: string }
 export interface Task {
   issue: Issue; version: string; status: Status; desiredStatus: Status; events: HarnessEvent[];
-  executions: Execution[]; latest?: Execution; blocked: boolean; blockReason?: string;
+  executions: Execution[];
+  /** The latest real attempt of the current task version; a start the runtime refused is none. */
+  latest?: Execution;
+  /** Real attempts of the current task version (refused starts excluded): what counts against execution.maxRetries. */
+  attemptsUsed: number;
+  /** The attempt number of the next intent; refused starts keep their numbers, so execution IDs stay unique. */
+  nextAttempt: number;
+  refusal?: AdmissionRefusal;
+  blocked: boolean; blockReason?: string;
   hasOpenPR: boolean; hasClosingMerge: boolean; criteria: string[];
   /** The latest attempt failed only its independent validation and a further attempt is allowed to repair it. */
   reworkable: boolean;
@@ -49,13 +71,29 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
       const elapsed = now.getTime() - new Date(runtime?.createdAt ?? run?.createdAt ?? event.at).getTime();
       // A result cannot release a slot while the corresponding workflow is still running.
       const active = runtime ? runtime.status === 'running' : run ? run.status !== 'completed' : !result;
+      const rejection = events.find(e => e.data.type === 'admission_rejected' && e.data.executionId === input.executionId);
+      const rejected = result?.status === 'cancelled' && !runtime && !run && result.summary.startsWith(admissionRejectedSummary) ? result.error ?? 'UNKNOWN' : undefined;
       executions.push({ input, attempt, actionId, at: event.at, run, runtime, result, active,
+        ...(rejected ? { rejected, ...(rejection?.data.type === 'admission_rejected' ? { rejectedPolicy: rejection.data.policyHash } : {}) } : {}),
         orphaned: active && !!runtime && (issue.state === 'closed' || input.taskVersion !== version),
         ambiguous: !runtime && !run && !result && elapsed > config.execution.dispatchGraceMinutes * 60000,
         timedOut: runtime?.phase !== 'awaiting-approval' && !!(run || runtime) && active && elapsed > input.limits.timeoutMinutes * 60000 });
     }
     const currentExecutions = executions.filter(e => e.input.taskVersion === version);
-    const latest = currentExecutions.sort((a, b) => a.attempt - b.attempt).at(-1);
+    currentExecutions.sort((a, b) => a.attempt - b.attempt);
+    const real = currentExecutions.filter(e => !e.rejected);
+    const latest = real.at(-1);
+    const nextAttempt = (currentExecutions.at(-1)?.attempt ?? -1) + 1;
+    // Refused starts after the latest real attempt: the next start waits for a changed condition or the backoff.
+    const refused = currentExecutions.filter(e => e.rejected && (!latest || e.attempt > latest.attempt));
+    const lastRefused = refused.at(-1);
+    let refusal: AdmissionRefusal | undefined;
+    if (lastRefused) {
+      const at = (events.find(e => e.data.type === 'result' && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
+      const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 60000).toISOString();
+      const changed = (!!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config)) || (!!issue.readyAt && issue.readyAt > at);
+      refusal = { code: lastRefused.rejected!, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
+    }
     const criteria = acceptanceCriteria(issue.body);
     const deps = dependencies(issue.body);
     const unresolved = deps.filter(n => snapshot.dependencyStates.get(n) !== true);
@@ -77,7 +115,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     const ownPRsOnly = linked.filter(p => p.state === 'open').every(p => executions.some(e => p.headRefName === `sf/issue-${issue.number}/${e.input.executionId}`));
     const failedValidation = latest?.runtime?.validation;
     const reworkable = config.execution.rework && issue.state === 'open' && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some(e => e.active) &&
-      latest?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' && latest.attempt < config.execution.maxRetries;
+      latest?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' && real.length <= config.execution.maxRetries;
     let desiredStatus: Status = issueStatus(issue) ?? 'backlog';
     if (issue.state === 'closed') desiredStatus = 'done';
     else if (explicitBlock) desiredStatus = 'blocked';
@@ -90,7 +128,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     // The Manager must leave that label alone until the retry has started; replacing it with `failed` would
     // consume the grant it is waiting for.
     else if (snapshot.readyIsGrant && issue.labels.includes('harness:ready') && !hasOpenPR && latest?.result &&
-      ['failed', 'cancelled'].includes(latest.result.status) && latest.attempt < config.execution.maxRetries) desiredStatus = 'ready';
+      ['failed', 'cancelled'].includes(latest.result.status) && real.length <= config.execution.maxRetries) desiredStatus = 'ready';
     else if (latest?.result) desiredStatus = ({ success: 'awaiting-pr', failed: 'failed', cancelled: 'failed', blocked: 'blocked', needs_approval: 'awaiting-approval' } as const)[latest.result.status];
     else if (hasOpenPR) desiredStatus = 'awaiting-pr';
     // A runnable task rests in ready. Where ready is a person's grant, the Manager leaves the label to that
@@ -98,7 +136,8 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     else if (snapshot.readyIsGrant) { if (['backlog', 'ready', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = issue.labels.includes('harness:ready') ? 'ready' : 'backlog'; }
     else if (['backlog', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = 'ready';
     const openFollowups = snapshot.issues.filter(i => i.state === 'open' && followupOrigin(i.body) === issue.number).map(i => i.number);
-    return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, openFollowups,
+    return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, attemptsUsed: real.length, nextAttempt,
+      ...(refusal ? { refusal } : {}), openFollowups,
       blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable };
   });
 }

@@ -16,7 +16,8 @@ const failed = (attempt: number, error: string | null) => execution(attempt, { r
 const task = (number: number, over: Partial<Task> = {}, body?: string): Task => {
   const executions = over.executions ?? [];
   return { issue: { ...issue(number), ...(body ? { body } : {}) }, version, status: 'running', desiredStatus: 'running', events: [], executions,
-    latest: [...executions].sort((a, b) => a.attempt - b.attempt).at(-1), blocked: false, hasOpenPR: false, hasClosingMerge: false, criteria: ['x'], reworkable: false, ...over };
+    latest: [...executions].sort((a, b) => a.attempt - b.attempt).at(-1), attemptsUsed: executions.filter(e => !e.rejected).length,
+    nextAttempt: executions.length ? Math.max(...executions.map(e => e.attempt)) + 1 : 0, blocked: false, hasOpenPR: false, hasClosingMerge: false, criteria: ['x'], reworkable: false, ...over };
 };
 const settings = monitoringSettings(config());
 const kinds = (found: Finding[]) => found.map(f => `${f.kind}#${f.issueNumber}`);
@@ -40,7 +41,7 @@ it('reports exhausted retries and the same error code ending several attempts in
   expect(kinds(inspect([task(1, { executions: [failed(0, 'BASE_MOVED'), failed(1, 'STALE_SNAPSHOT'), failed(2, 'STALE_SNAPSHOT')] })], cfg, settings, clock))).toEqual([]);
   cfg.execution.maxRetries = 2;
   const exhausted = inspect([task(1, { executions: [failed(0, null), failed(1, null), failed(2, 'free text from upstream')] })], cfg, settings, clock);
-  expect(exhausted.map(f => f.detail)).toEqual(['Retry budget used up after attempt 2 (failed); the task cannot progress without a person']);
+  expect(exhausted.map(f => f.detail)).toEqual(['Retry budget used up after 3 attempts (failed); the task cannot progress without a person']);
 });
 
 it('reports a Factory block without a pull request, but not a dependency wait, a person\'s block or a pending review', () => {

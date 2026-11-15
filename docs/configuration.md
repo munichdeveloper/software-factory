@@ -19,7 +19,7 @@ Generated JSON schemas share the executable Zod source.
 | `autonomy.overrides` | `{}` | Per-action `allow`, `deny`, `approval`; unknown actions fail |
 | `execution.dryRun` | `false` | Evaluate without writes/dispatch; manual dry-run also enables this |
 | `execution.maxParallelWorkers` | `1` | Active/uncertain executions, including old task versions, 1–20 |
-| `execution.maxRetries` | `2` | Retries after initial attempt, 0–5; separately approved per attempt |
+| `execution.maxRetries` | `2` | Retries after initial attempt, 0–5; separately approved per attempt. A start the runtime refused before it ran does not count |
 | `execution.maxNewIssues` | `3` | Follow-ups created/run, 0–20 |
 | `execution.workerTimeoutMinutes` | `30` | Worker cap, 1–30; overdue active runs cancelled before retry |
 | `execution.dispatchGraceMinutes` | `10` | Actions visibility grace, 1–60; expiry quarantines uncertain intents |

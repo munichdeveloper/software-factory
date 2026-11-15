@@ -53,13 +53,16 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
     const rework = action.kind === 'retry_worker' && task.reworkable;
     if (task.hasClosingMerge || task.hasOpenPR && !rework) return deny('Task already has implementation PRs');
     if (budget.activeWorkers >= config.execution.maxParallelWorkers) return deny('Maximum parallel workers reached');
+    // A start the runtime refused is not repeated until something it depends on changed (software-factory#53).
+    if (task.refusal?.waiting) return deny(`Runtime refused the last start (${task.refusal.code}); waiting for a new grant, a policy or configuration change, or until ${task.refusal.until}`);
     if (action.kind === 'retry_worker') {
       if (!task.latest?.result || !rework && !['failed', 'cancelled'].includes(task.latest.result.status)) return deny('No failed execution to retry');
-      if (task.latest.attempt >= config.execution.maxRetries) return deny('Maximum retries reached');
-      if (action.attempt !== task.latest.attempt + 1) return deny('Retry proposal is not bound to the next concrete attempt');
+      if (task.attemptsUsed > config.execution.maxRetries) return deny('Maximum retries reached');
+      if (action.attempt !== task.nextAttempt) return deny('Retry proposal is not bound to the next concrete attempt');
     } else {
       if (task.latest) return deny('Current task version already executed; use retry for failures or revise the task');
-      if (action.attempt !== 0) return deny('Initial execution must use attempt zero');
+      // Zero, unless starts of this task version were refused before: their numbers stay taken.
+      if (action.attempt !== task.nextAttempt) return deny('Initial execution must use the next free attempt number');
     }
   }
   if (action.kind === 'cancel_worker' && !task.executions.some(e => e.orphaned || e.active && e.timedOut && (e.run || e.runtime))) return deny('No timed out or orphaned workflow to cancel');

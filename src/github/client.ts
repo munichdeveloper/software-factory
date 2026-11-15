@@ -49,6 +49,8 @@ export class GitHubClient implements GitHubPort {
     });
     issue.managedAt = timeline.flatMap(e => e.event === 'labeled' && 'label' in e && e.label?.name === managedLabel &&
       'created_at' in e && typeof e.created_at === 'string' ? [e.created_at] : []).sort().at(-1);
+    issue.readyAt = timeline.flatMap(e => e.event === 'labeled' && 'label' in e && e.label?.name === 'harness:ready' &&
+      'created_at' in e && typeof e.created_at === 'string' ? [e.created_at] : []).sort().at(-1);
     // Title changes are native timeline events; body changes are only exposed as GraphQL content edits.
     const renames = timeline.flatMap(e => e.event === 'renamed' && 'created_at' in e && typeof e.created_at === 'string'
       ? [{ actor: 'actor' in e ? e.actor?.login ?? '' : '', at: e.created_at }] : []);

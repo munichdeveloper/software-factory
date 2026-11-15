@@ -458,6 +458,36 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "admission_rejected"
+            },
+            "executionId": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 32
+            },
+            "code": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{0,79}$"
+            },
+            "policyHash": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "type",
+            "executionId",
+            "code",
+            "policyHash"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "block_intent"
             },
             "taskVersion": {
