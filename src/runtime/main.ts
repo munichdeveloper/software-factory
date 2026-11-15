@@ -23,7 +23,7 @@ import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
 import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
-import { scopedRuntimeGitHub } from './github-app.js';
+import { appInstallationId, scopedRuntimeGitHub } from './github-app.js';
 import { ActionsCodingExecutor, codingWorkflow } from './coding-executor.js';
 import { RuntimeEffects } from './effects.js';
 import { RuntimeCodingPublisher, containsCommit } from './publisher.js';
@@ -33,7 +33,7 @@ import { RuntimeMerge } from './merge.js';
 import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
-import { assertCanaryConfig, canaryLabel, canaryRepository, runCanary } from './canary.js';
+import { assertCanaryConfig, bindCanaryRepository, canaryLabel, canaryRepository, runCanary } from './canary.js';
 import { OpenAIMergeReviewer } from '../merge/reviewer.js';
 import { OpenAIRiskAssessor } from '../merge/risk.js';
 
@@ -108,7 +108,11 @@ export async function main(args = process.argv.slice(2)) {
   const host = workerPackage === undefined ? null : hostReleases(workerPackage, previousPackage);
   // The acceptance repository of the deployment canary (software-factory#27): bound without a ready grant and with the
   // test worker only. Configured through the deployment (FACTORY_CANARY_REPOSITORY), never by editing the host.
-  const canaryItem = canaryRepository(process.env.FACTORY_CANARY_REPOSITORY);
+  // A canary that cannot be bound is logged and left out: it must never keep the broker from serving the others.
+  const canaryItem = await boundCanary().catch(error => {
+    console.error(JSON.stringify({ event: 'factory-canary', outcome: 'unbound', reason: error instanceof Error ? error.message.slice(0, 200) : 'unknown' }));
+    return null;
+  });
   if (canaryItem && host && !registry.repositories.some(r => r.repositoryId === canaryItem.repositoryId)) {
     registry.repositories.push(registrySchema.shape.repositories.element.parse({ ...canaryItem, release: host.release,
       approvalMode: 'manual', requireHumanGate: false, validateCoding: false }));
@@ -214,14 +218,25 @@ export async function main(args = process.argv.slice(2)) {
     });
   } finally { await connection.close(); await store.pool.end(); }
 }
+/** FACTORY_CANARY_REPOSITORY with its App installation, or null when no canary is configured. */
+async function boundCanary() {
+  const item = canaryRepository(process.env.FACTORY_CANARY_REPOSITORY);
+  if (!item) return null;
+  return bindCanaryRepository(item, process.env.GITHUB_ALLOWED_INSTALLATION_IDS, (owner, repo) => appInstallationId({
+    appId: z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID), privateKey: z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY) }, owner, repo));
+}
 /**
  * The deployment canary, run inside the broker container after a deployment: one task in the acceptance repository
  * through the whole chain (software-factory#27). Prints one JSON line and returns the exit code: 0 passed or no canary
  * configured, 1 failed (the line names the stage that did not complete).
  */
 async function canary(release: string, timeout: string | undefined): Promise<number> {
-  const item = canaryRepository(process.env.FACTORY_CANARY_REPOSITORY);
-  if (!item) { console.log(JSON.stringify({ event: 'factory-canary', outcome: 'skipped', reason: 'FACTORY_CANARY_REPOSITORY not set' })); return 0; }
+  if (!canaryRepository(process.env.FACTORY_CANARY_REPOSITORY)) { console.log(JSON.stringify({ event: 'factory-canary', outcome: 'skipped', reason: 'FACTORY_CANARY_REPOSITORY not set' })); return 0; }
+  const item = await boundCanary().catch((error: unknown) => {
+    console.log(JSON.stringify({ event: 'factory-canary', outcome: 'failed', stage: 'create', detail: error instanceof Error ? error.message.slice(0, 200) : 'unknown' }));
+    return null;
+  });
+  if (!item) return 1;
   const api = scopedRuntimeGitHub({ appId: z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
     privateKey: z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), installationId: item.githubInstallationId, repositoryId: item.repositoryId });
   const github = new GitHubClient(item.repository, '', 30000, fetch, api);

@@ -91,6 +91,12 @@ deploy:
     url: null # e.g. http://127.0.0.1:3000/ checked on the host after docker compose up --wait
     timeoutSeconds: 300
   rollback: true
+  # End-to-end canary in the acceptance repository once the new release is healthy (software-factory#27). A failed
+  # canary fails the deployment; the new release stays active (verify.rollback: false).
+  verify:
+    script: operations/temporal-runtime/canary.sh
+    timeoutSeconds: 900
+    rollback: false
   keepReleases: 5
   timeoutMinutes: 30
   githubDeployment: false # The wrapper's GitHub environment already records each deployment.

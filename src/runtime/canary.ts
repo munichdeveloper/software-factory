@@ -13,9 +13,22 @@ import type { RuntimeObservation } from './contract.js';
  */
 export const canaryRepositorySchema = z.strictObject({
   repositoryId: z.number().int().positive().safe(), repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
-  githubInstallationId: z.number().int().positive().safe(),
+  // Optional: without it the broker asks its GitHub App for the repository's installation (software-factory#27).
+  githubInstallationId: z.number().int().positive().safe().optional(),
 });
 export type CanaryRepository = z.infer<typeof canaryRepositorySchema>;
+export type BoundCanaryRepository = CanaryRepository & { githubInstallationId: number };
+/**
+ * Completes the installation of the canary repository: a configured one is kept, otherwise the App is asked. Either
+ * way the installation must be allow-listed (GITHUB_ALLOWED_INSTALLATION_IDS), or the canary is refused.
+ */
+export async function bindCanaryRepository(item: CanaryRepository, allowed: string | undefined,
+  lookup: (owner: string, repo: string) => Promise<number>): Promise<BoundCanaryRepository> {
+  const [owner, repo] = item.repository.split('/') as [string, string];
+  const githubInstallationId = item.githubInstallationId ?? await lookup(owner, repo);
+  if (!(allowed ?? '').split(',').map(id => id.trim()).includes(String(githubInstallationId))) throw new Error('CANARY_INSTALLATION_NOT_ALLOWLISTED');
+  return { ...item, githubInstallationId };
+}
 /** Reads FACTORY_CANARY_REPOSITORY; empty means no canary is configured. */
 export function canaryRepository(value: string | undefined): CanaryRepository | null {
   return value?.trim() ? canaryRepositorySchema.parse(JSON.parse(value)) : null;

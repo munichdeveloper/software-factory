@@ -150,7 +150,10 @@ or time-out fails the deployment job and names the stage that did not complete (
 `result`, `lifecycle` or `reconcile`). `deploy.verify.rollback` decides whether it also restarts the previous release.
 
 The acceptance repository is configured through the deployment, never on the host: `FACTORY_CANARY_REPOSITORY`
-(`{"repositoryId": …, "repository": "owner/name", "githubInstallationId": …}`) in the broker's deployment environment.
+(`{"repositoryId": …, "repository": "owner/name"}`, optionally with `"githubInstallationId": …`) in the broker's
+deployment environment; this host sets it in `compose.production.yaml`. Without an installation id the broker asks its
+GitHub App for the repository's installation; a canary that cannot be bound is logged (`"outcome":"unbound"`) and never
+stops the broker from serving the other repositories.
 The broker binds it like a static registry entry, but without a ready-label grant and without a manual gate, so the canary
 needs no person; its configuration must enable the test worker and must not enable coding (`CANARY_CODING_FORBIDDEN`), so
 it needs no model secret and changes no code. Its installation must be in `GITHUB_ALLOWED_INSTALLATION_IDS` and its

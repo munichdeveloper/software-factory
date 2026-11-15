@@ -29,6 +29,13 @@ export class GitHubUsage {
 }
 const usage = new GitHubUsage();
 setInterval(() => { const summary = usage.flush(); if (summary) console.log(JSON.stringify(summary)); }, 60000).unref();
+/** The App's installation on one repository, asked with the App's own JWT (no installation token is created). */
+export async function appInstallationId(options: { appId: string; privateKey: string }, owner: string, repo: string, fetcher: typeof fetch = fetch): Promise<number> {
+  const silent = { debug() {}, info() {}, warn() {}, error() {} };
+  const app = new Octokit({ authStrategy: createAppAuth, auth: { appId: options.appId, privateKey: options.privateKey.replaceAll('\\n', '\n') }, request: { timeout: 20000, fetch: fetcher }, log: silent });
+  const { data } = await app.apps.getRepoInstallation({ owner, repo });
+  return z.number().int().positive().safe().parse(data.id);
+}
 /** The App key stays in the broker; EVERY installation token is limited to one numeric repository. */
 export function scopedRuntimeGitHub(options: { appId: string; privateKey: string; installationId: number; repositoryId: number }, fetcher: typeof fetch = fetch): Octokit {
   if (!Number.isSafeInteger(options.installationId) || options.installationId <= 0 || !Number.isSafeInteger(options.repositoryId) || options.repositoryId <= 0) throw new Error('INVALID_APP_SCOPE');
