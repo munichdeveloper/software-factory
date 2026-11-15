@@ -130,3 +130,29 @@ The first attempt on Issue10 correctly returned blocked: network-isolated depend
 
 Release preparation, limitations and package instructions: `docs/releases/v0.7.0-rc.1.md` and `v0.7.0-rc.1-acceptance.md`. Complete evidence is under `docs/evidence/temporal-runtime/backofficer-rc-20261110/`. The unpublished prerelease draft is https://github.com/munichdeveloper/software-factory/releases/tag/untagged-b42749fbfe684690bad6. Uploaded source/evidence/checksum assets were downloaded again and byte-hash matched; `release.json` records exact asset hashes. WF05/06 and the operating/UI/retirement acceptance gaps above remain open.
 
+
+## Deployment canary
+
+A healthy broker is not yet a working chain: on 2026-11-11 a freshly deployed broker was healthy while every new start was
+denied. After each runtime deployment the docker-ssh deployment therefore runs `operations/temporal-runtime/canary.sh`
+(`deploy.verify.script`) on the host (software-factory#27). It runs `node dist/runtime/main.js canary` inside the broker
+container, which
+
+1. closes canary issues (`sf:canary`) left over from earlier deployments,
+2. creates one canary task (`harness:managed`, `sf:canary`) in the acceptance repository,
+3. waits, within `SF_CANARY_TIMEOUT_SECONDS` (default 840), for exactly one intent, exactly one Temporal run, a journaled
+   successful result and a lifecycle label that matches the reconstructed facts; the broker's own reconciliation
+   schedule picks the task up,
+4. closes the canary issue, passed or not.
+
+The script then checks that the broker logged no reconciliation error for the acceptance repository meanwhile. A failure
+or time-out fails the deployment job and names the stage that did not complete (`create`, `intent`, `temporal-run`,
+`result`, `lifecycle` or `reconcile`). `deploy.verify.rollback` decides whether it also restarts the previous release.
+
+The acceptance repository is configured through the deployment, never on the host: `FACTORY_CANARY_REPOSITORY`
+(`{"repositoryId": …, "repository": "owner/name", "githubInstallationId": …}`) in the broker's deployment environment.
+The broker binds it like a static registry entry, but without a ready-label grant and without a manual gate, so the canary
+needs no person; its configuration must enable the test worker and must not enable coding (`CANARY_CODING_FORBIDDEN`), so
+it needs no model secret and changes no code. Its installation must be in `GITHUB_ALLOWED_INSTALLATION_IDS` and its
+`manager.trustedActors` must name the broker's App bot. Without the variable the canary is skipped and the deployment
+passes as before.

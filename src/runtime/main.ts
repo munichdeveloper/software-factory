@@ -33,6 +33,7 @@ import { RuntimeMerge } from './merge.js';
 import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
+import { assertCanaryConfig, canaryLabel, canaryRepository, runCanary } from './canary.js';
 import { OpenAIMergeReviewer } from '../merge/reviewer.js';
 import { OpenAIRiskAssessor } from '../merge/risk.js';
 
@@ -76,6 +77,7 @@ export async function main(args = process.argv.slice(2)) {
   const { positionals, values } = parseArgs({ args, allowPositionals: true, options: {
     file: { type: 'string' }, output: { type: 'string' }, 'factory-sha': { type: 'string' }, 'harness-sha': { type: 'string' },
     harness: { type: 'string' }, deployment: { type: 'string' }, build: { type: 'string' }, queue: { type: 'string' },
+    release: { type: 'string' }, timeout: { type: 'string' },
   } });
   if (positionals[0] === 'pack') {
     const out = resolve(values.output ?? '.runtime/temporal-package'), harness = resolve(z.string().min(1).parse(values.harness));
@@ -95,7 +97,8 @@ export async function main(args = process.argv.slice(2)) {
     await startRuntimeWorker(pack, process.env.TEMPORAL_ADDRESS ?? 'localhost:7233', process.env.TEMPORAL_NAMESPACE ?? 'software-factory-poc',
       process.env.FACTORY_BROKER_URL ?? '', process.env.FACTORY_WORKER_TOKEN ?? ''); return;
   }
-  if (positionals[0] !== 'serve') throw new Error('Use serve, worker or pack');
+  if (positionals[0] === 'canary') { process.exitCode = await canary(values.release ?? '', values.timeout); return; }
+  if (positionals[0] !== 'serve') throw new Error('Use serve, worker, pack or canary');
   const registry = registrySchema.parse(JSON.parse(await readFile(resolve(z.string().min(1).parse(values.file)), 'utf8')));
   // A stack that builds its PINNED worker itself names that worker's release here, and the previous worker's release
   // it still runs; they replace the registry's release entries, so a release rollout needs no edit on the host. Runs of
@@ -103,6 +106,13 @@ export async function main(args = process.argv.slice(2)) {
   const packageFile = async (name: string) => process.env[name] ? JSON.parse(await readFile(resolve(process.env[name]!), 'utf8')) as unknown : undefined;
   const workerPackage = await packageFile('FACTORY_RELEASE_FILE'), previousPackage = await packageFile('FACTORY_PREVIOUS_RELEASE_FILE');
   const host = workerPackage === undefined ? null : hostReleases(workerPackage, previousPackage);
+  // The acceptance repository of the deployment canary (software-factory#27): bound without a ready grant and with the
+  // test worker only. Configured through the deployment (FACTORY_CANARY_REPOSITORY), never by editing the host.
+  const canaryItem = canaryRepository(process.env.FACTORY_CANARY_REPOSITORY);
+  if (canaryItem && host && !registry.repositories.some(r => r.repositoryId === canaryItem.repositoryId)) {
+    registry.repositories.push(registrySchema.shape.repositories.element.parse({ ...canaryItem, release: host.release,
+      approvalMode: 'manual', requireHumanGate: false, validateCoding: false }));
+  }
   if (workerPackage !== undefined) supersedeRelease(registry.repositories, workerPackage, previousPackage);
   // Runs of the previous release are ended after this many hours; 0 keeps them until they end by themselves.
   const retainedRunMs = z.coerce.number().min(0).max(720).parse(process.env.FACTORY_RETAINED_RUN_HOURS ?? '2') * 3600000;
@@ -121,7 +131,11 @@ export async function main(args = process.argv.slice(2)) {
       const github = item.issueNumbers ? new IssueScopedGitHub(source, item.issueNumbers) : source;
       const [owner, repo] = item.repository.split('/') as [string, string];
       if ((await api.repos.get({ owner, repo })).data.id !== item.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
-      const repository: RuntimeRepository = { ...item, github, retainedRunMs, config: async () => loadConfig(await source.readConfig(item.configPath, item.baseRef)),
+      const isCanary = canaryItem?.repositoryId === item.repositoryId;
+      const repository: RuntimeRepository = { ...item, github, retainedRunMs, config: async () => {
+        const config = loadConfig(await source.readConfig(item.configPath, item.baseRef));
+        return isCanary ? assertCanaryConfig(config) : config;
+      },
         baseSha: async () => item.baseRef ? (await api.git.getRef({ ...{ owner, repo }, ref: `heads/${item.baseRef}` })).data.object.sha : (await new CodingRepository(item.repository, token, fetch, api).base()).sha };
       repository.baseContains = async sha => containsCommit(api, { owner, repo }, await repository.baseSha(), sha);
       repository.executorWrapper = async () => {
@@ -199,6 +213,39 @@ export async function main(args = process.argv.slice(2)) {
       process.once('SIGINT', stop); process.once('SIGTERM', stop);
     });
   } finally { await connection.close(); await store.pool.end(); }
+}
+/**
+ * The deployment canary, run inside the broker container after a deployment: one task in the acceptance repository
+ * through the whole chain (software-factory#27). Prints one JSON line and returns the exit code: 0 passed or no canary
+ * configured, 1 failed (the line names the stage that did not complete).
+ */
+async function canary(release: string, timeout: string | undefined): Promise<number> {
+  const item = canaryRepository(process.env.FACTORY_CANARY_REPOSITORY);
+  if (!item) { console.log(JSON.stringify({ event: 'factory-canary', outcome: 'skipped', reason: 'FACTORY_CANARY_REPOSITORY not set' })); return 0; }
+  const api = scopedRuntimeGitHub({ appId: z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
+    privateKey: z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), installationId: item.githubInstallationId, repositoryId: item.repositoryId });
+  const github = new GitHubClient(item.repository, '', 30000, fetch, api);
+  const [owner, repo] = item.repository.split('/') as [string, string];
+  const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
+  const token = z.string().min(32).parse(process.env.FACTORY_MANAGER_TOKEN);
+  const outcome = await runCanary({
+    openCanaries: async () => (await api.paginate(api.issues.listForRepo, { owner, repo, labels: canaryLabel, state: 'open', per_page: 100 }))
+      .filter(i => !i.pull_request).map(i => i.number),
+    createIssue: (title, body, labels) => github.createIssue(title, body, labels),
+    getIssue: number => github.getIssue(number),
+    comments: number => github.comments(number),
+    close: number => github.updateIssue(number, { state: 'closed' }),
+    observations: async executionIds => {
+      const response = await fetch(`http://127.0.0.1:${port}/v1/repositories/${item.repositoryId}/observations`, { method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ executionIds }) });
+      if (!response.ok) throw new Error('CANARY_OBSERVATIONS_UNAVAILABLE');
+      return await response.json() as Awaited<ReturnType<RuntimeController['observations']>>;
+    },
+    config: async () => assertCanaryConfig(loadConfig(await github.readConfig('.github/software-factory.yml'))),
+    now: () => new Date(), sleep: ms => new Promise(done => setTimeout(done, ms)),
+  }, { release, timeoutMs: z.coerce.number().int().min(60).max(3600).parse(timeout ?? '900') * 1000 });
+  console.log(JSON.stringify({ event: 'factory-canary', outcome: outcome.ok ? 'passed' : 'failed', repositoryId: item.repositoryId, ...outcome }));
+  return outcome.ok ? 0 : 1;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(() => {
   console.error('FACTORY_RUNTIME_FAILED'); process.exitCode = 1;

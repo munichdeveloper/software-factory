@@ -136,6 +136,13 @@ export const configSchema = z.strictObject({
       timeoutSeconds: bounded(10, 900, 180)
     }).prefault({}),
     rollback: z.boolean().default(true),
+    // An end-to-end check after the release is healthy, e.g. the runtime canary (software-factory#27). A failure fails the
+    // deployment; with verify.rollback the previous release is started again, otherwise the new release keeps running.
+    verify: z.strictObject({
+      script: z.string().regex(/^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.sh$/).refine(p => !p.split('/').includes('..'), 'must not contain ..').nullable().default(null),
+      timeoutSeconds: bounded(30, 3600, 900),
+      rollback: z.boolean().default(false),
+    }).prefault({}),
     keepReleases: bounded(1, 20, 5),
     timeoutMinutes: bounded(5, 60, 30),
     githubDeployment: z.boolean().default(false)
