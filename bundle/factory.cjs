@@ -34911,6 +34911,13 @@ var configSchema = external_exports.strictObject({
       timeoutSeconds: bounded(10, 900, 180)
     }).prefault({}),
     rollback: external_exports.boolean().default(true),
+    // An end-to-end check after the release is healthy, e.g. the runtime canary (software-factory#27). A failure fails the
+    // deployment; with verify.rollback the previous release is started again, otherwise the new release keeps running.
+    verify: external_exports.strictObject({
+      script: external_exports.string().regex(/^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.sh$/).refine((p) => !p.split("/").includes(".."), "must not contain ..").nullable().default(null),
+      timeoutSeconds: bounded(30, 3600, 900),
+      rollback: external_exports.boolean().default(false)
+    }).prefault({}),
     keepReleases: bounded(1, 20, 5),
     timeoutMinutes: bounded(5, 60, 30),
     githubDeployment: external_exports.boolean().default(false)
@@ -41848,6 +41855,7 @@ echo "SF_DEPLOY_ENVIRONMENT=$sha"
 `;
 var activateScript = `set -euo pipefail
 root=$1 sha=$2 project=$3 compose_file=$4 env_file=$5 keep=$6 health_url=$7 health_timeout=$8 rollback=$9
+verify_script=\${10:-} verify_timeout=\${11:-900} verify_rollback=\${12:-0}
 release="$root/releases/$sha"
 fail() { echo "SF_DEPLOY_ERROR=$1"; exit 4; }
 command -v docker >/dev/null || fail docker-missing
@@ -41858,6 +41866,7 @@ if command -v flock >/dev/null; then
 fi
 [ -d "$release" ] || fail release-missing
 [ -f "$release/$compose_file" ] || fail compose-file-missing
+if [ -n "$verify_script" ]; then [ -f "$release/$verify_script" ] || fail verify-script-missing; fi
 if [ -n "$env_file" ]; then
   case "$env_file" in /*) env_path=$env_file ;; *) env_path="$root/$env_file" ;; esac
   [ -f "$env_path" ] || fail env-file-missing
@@ -41884,7 +41893,15 @@ healthy() {
   return 1
 }
 start() { compose "$1" up --detach --build --remove-orphans --wait --wait-timeout "$health_timeout" && healthy; }
-if start "$release"; then
+verify() {
+  [ -z "$verify_script" ] && return 0
+  local status=0
+  ( cd "$release" && SF_RELEASE_SHA=$sha SF_DEPLOY_PROJECT=$project SF_DEPLOY_COMPOSE_FILE=$compose_file SF_DEPLOY_RELEASE_DIR=$release       timeout --kill-after=10 "$verify_timeout" bash "$release/$verify_script" ) >&2 || status=$?
+  if [ "$status" = 0 ]; then echo "SF_DEPLOY_VERIFY=passed"; return 0; fi
+  echo "SF_DEPLOY_VERIFY=failed"; return 1
+}
+verified=1
+if start "$release" && { verify || { verified=0; [ "$verify_rollback" != 1 ]; }; }; then
   ln -sfn "$release" "$root/current.next"
   mv -Tf "$root/current.next" "$root/current"
   kept=1
@@ -41894,8 +41911,17 @@ if start "$release"; then
     if (( kept < keep )); then kept=$((kept + 1)); else rm -rf -- "$dir"; fi
   done < <(ls -1dt "$root"/releases/*/ 2>/dev/null)
   docker image prune --force --filter "label=com.docker.compose.project=$project" >/dev/null 2>&1 || true
+  if [ "$verified" = 0 ]; then echo "SF_DEPLOY_RESULT=verify-failed"; exit 5; fi
   echo "SF_DEPLOY_RESULT=deployed"
   exit 0
+fi
+if [ "$verified" = 0 ]; then
+  echo "Release $sha failed its verification" >&2
+  if [ -n "$previous" ] && [ -d "$previous" ] && [ "$previous" != "$release" ]; then
+    if start "$previous"; then echo "SF_DEPLOY_RESULT=rolled-back"; exit 3; fi
+    echo "SF_DEPLOY_RESULT=rollback-failed"; exit 2
+  fi
+  echo "SF_DEPLOY_RESULT=failed"; exit 2
 fi
 echo "Release $sha failed to start; recent logs:" >&2
 compose "$release" logs --no-color --tail 80 >&2 || true
@@ -42126,7 +42152,10 @@ async function executeDeploy(context) {
       String(deploy.keepReleases),
       deploy.healthcheck.url ?? "",
       String(deploy.healthcheck.timeoutSeconds),
-      deploy.rollback ? "1" : "0"
+      deploy.rollback ? "1" : "0",
+      deploy.verify.script ?? "",
+      String(deploy.verify.timeoutSeconds),
+      deploy.verify.rollback ? "1" : "0"
     ], void 0, timeoutMs);
     if (result.stderr.trim()) log(result.stderr.trim());
     const previousRelease = remoteValue(result.stdout, "SF_DEPLOY_PREVIOUS");
@@ -42137,9 +42166,10 @@ async function executeDeploy(context) {
       await status("success", `Deployed ${sha4.slice(0, 12)}`);
       return { outcome: "deployed", sha: sha4, previous, deploymentId, detail: "Release started and verified" };
     }
-    const detail = error62 ? `Precondition failed: ${error62}` : outcome === "rolled-back" ? `Release failed; previous release ${previous?.slice(0, 12)} restored` : outcome === "rollback-failed" ? "Release failed and the rollback also failed" : `Release failed (exit ${result.code})`;
+    const verifyFailed = remoteValue(result.stdout, "SF_DEPLOY_VERIFY") === "failed";
+    const detail = error62 ? `Precondition failed: ${error62}` : outcome === "verify-failed" ? "Release started but its verification failed; the release stays active" : outcome === "rolled-back" ? `Release ${verifyFailed ? "failed its verification" : "failed"}; previous release ${previous?.slice(0, 12)} restored` : outcome === "rollback-failed" ? "Release failed and the rollback also failed" : `Release failed (exit ${result.code})`;
     await status("failure", detail);
-    return { outcome: outcome === "rolled-back" ? "rolled-back" : "failed", sha: sha4, previous, deploymentId, detail };
+    return { outcome: outcome === "rolled-back" ? "rolled-back" : outcome === "verify-failed" ? "verify-failed" : "failed", sha: sha4, previous, deploymentId, detail };
   } catch (error62) {
     await status("error", error62 instanceof Error ? error62.message : "Deployment failed");
     throw error62;

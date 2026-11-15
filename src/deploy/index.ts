@@ -10,7 +10,7 @@ export type DeployEvent = { name: string; ref: string; payload: Record<string, u
 export type DeployDecision =
   | { deploy: true; sha: string; source: string }
   | { deploy: false; reason: string; sha?: string };
-export type DeployOutcome = 'deployed' | 'rolled-back' | 'failed';
+export type DeployOutcome = 'deployed' | 'rolled-back' | 'verify-failed' | 'failed';
 export type DeployReport = { outcome: DeployOutcome; sha: string; previous: string | null; deploymentId: number | null; detail: string };
 
 const SHA = /^[a-f0-9]{40}$/;
@@ -144,7 +144,8 @@ export async function executeDeploy(context: DeployContext): Promise<DeployRepor
     if (environment.empty.length) log(`Deployment environment left out (empty): ${environment.empty.join(', ')}`);
     const project = deploy.project ?? deploy.path.split('/').at(-1)!.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
     const result = await transport.run(activateScript, [deploy.path, sha, project, deploy.composeFile, deploy.envFile ?? '',
-      String(deploy.keepReleases), deploy.healthcheck.url ?? '', String(deploy.healthcheck.timeoutSeconds), deploy.rollback ? '1' : '0'], undefined, timeoutMs);
+      String(deploy.keepReleases), deploy.healthcheck.url ?? '', String(deploy.healthcheck.timeoutSeconds), deploy.rollback ? '1' : '0',
+      deploy.verify.script ?? '', String(deploy.verify.timeoutSeconds), deploy.verify.rollback ? '1' : '0'], undefined, timeoutMs);
     if (result.stderr.trim()) log(result.stderr.trim());
     const previousRelease = remoteValue(result.stdout, 'SF_DEPLOY_PREVIOUS');
     const previous = previousRelease && previousRelease !== 'none' ? previousRelease : null;
@@ -154,12 +155,14 @@ export async function executeDeploy(context: DeployContext): Promise<DeployRepor
       await status('success', `Deployed ${sha.slice(0, 12)}`);
       return { outcome: 'deployed', sha, previous, deploymentId, detail: 'Release started and verified' };
     }
+    const verifyFailed = remoteValue(result.stdout, 'SF_DEPLOY_VERIFY') === 'failed';
     const detail = error ? `Precondition failed: ${error}`
-      : outcome === 'rolled-back' ? `Release failed; previous release ${previous?.slice(0, 12)} restored`
+      : outcome === 'verify-failed' ? 'Release started but its verification failed; the release stays active'
+      : outcome === 'rolled-back' ? `Release ${verifyFailed ? 'failed its verification' : 'failed'}; previous release ${previous?.slice(0, 12)} restored`
       : outcome === 'rollback-failed' ? 'Release failed and the rollback also failed'
       : `Release failed (exit ${result.code})`;
     await status('failure', detail);
-    return { outcome: outcome === 'rolled-back' ? 'rolled-back' : 'failed', sha, previous, deploymentId, detail };
+    return { outcome: outcome === 'rolled-back' ? 'rolled-back' : outcome === 'verify-failed' ? 'verify-failed' : 'failed', sha, previous, deploymentId, detail };
   } catch (error) {
     await status('error', error instanceof Error ? error.message : 'Deployment failed');
     throw error;

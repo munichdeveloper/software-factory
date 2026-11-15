@@ -747,6 +747,35 @@
           "default": true,
           "type": "boolean"
         },
+        "verify": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "script": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9._-]+\\/)*[A-Za-z0-9._-]+\\.sh$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 900,
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 3600
+            },
+            "rollback": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
         "keepReleases": {
           "default": 5,
           "type": "integer",

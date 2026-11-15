@@ -46,11 +46,16 @@ echo "SF_DEPLOY_ENVIRONMENT=$sha"
  * volumes persist), verifies it, switches the "current" link and prunes old
  * releases. On failure the previous release is started again when enabled.
  * Compose runs with SF_RELEASE_SHA set to the commit of the release it starts.
- * Arguments: root, sha, project, composeFile, envFile, keep, healthUrl, healthTimeout, rollback.
- * Exit codes: 0 deployed, 2 failed, 3 rolled back, 4 precondition failed.
+ * A verify script of the release (path relative to it) runs once the release is healthy; it gets SF_RELEASE_SHA,
+ * SF_DEPLOY_PROJECT, SF_DEPLOY_COMPOSE_FILE and SF_DEPLOY_RELEASE_DIR. If it fails, the previous release is started
+ * again when verify rollback is enabled; otherwise the new release stays active and the deployment still fails.
+ * Arguments: root, sha, project, composeFile, envFile, keep, healthUrl, healthTimeout, rollback, verifyScript,
+ * verifyTimeout, verifyRollback.
+ * Exit codes: 0 deployed, 2 failed, 3 rolled back, 4 precondition failed, 5 verification failed (release active).
  */
 export const activateScript = `set -euo pipefail
 root=$1 sha=$2 project=$3 compose_file=$4 env_file=$5 keep=$6 health_url=$7 health_timeout=$8 rollback=$9
+verify_script=\${10:-} verify_timeout=\${11:-900} verify_rollback=\${12:-0}
 release="$root/releases/$sha"
 fail() { echo "SF_DEPLOY_ERROR=$1"; exit 4; }
 command -v docker >/dev/null || fail docker-missing
@@ -61,6 +66,7 @@ if command -v flock >/dev/null; then
 fi
 [ -d "$release" ] || fail release-missing
 [ -f "$release/$compose_file" ] || fail compose-file-missing
+if [ -n "$verify_script" ]; then [ -f "$release/$verify_script" ] || fail verify-script-missing; fi
 if [ -n "$env_file" ]; then
   case "$env_file" in /*) env_path=$env_file ;; *) env_path="$root/$env_file" ;; esac
   [ -f "$env_path" ] || fail env-file-missing
@@ -87,7 +93,16 @@ healthy() {
   return 1
 }
 start() { compose "$1" up --detach --build --remove-orphans --wait --wait-timeout "$health_timeout" && healthy; }
-if start "$release"; then
+verify() {
+  [ -z "$verify_script" ] && return 0
+  local status=0
+  ( cd "$release" && SF_RELEASE_SHA=$sha SF_DEPLOY_PROJECT=$project SF_DEPLOY_COMPOSE_FILE=$compose_file SF_DEPLOY_RELEASE_DIR=$release \
+      timeout --kill-after=10 "$verify_timeout" bash "$release/$verify_script" ) >&2 || status=$?
+  if [ "$status" = 0 ]; then echo "SF_DEPLOY_VERIFY=passed"; return 0; fi
+  echo "SF_DEPLOY_VERIFY=failed"; return 1
+}
+verified=1
+if start "$release" && { verify || { verified=0; [ "$verify_rollback" != 1 ]; }; }; then
   ln -sfn "$release" "$root/current.next"
   mv -Tf "$root/current.next" "$root/current"
   kept=1
@@ -97,8 +112,17 @@ if start "$release"; then
     if (( kept < keep )); then kept=$((kept + 1)); else rm -rf -- "$dir"; fi
   done < <(ls -1dt "$root"/releases/*/ 2>/dev/null)
   docker image prune --force --filter "label=com.docker.compose.project=$project" >/dev/null 2>&1 || true
+  if [ "$verified" = 0 ]; then echo "SF_DEPLOY_RESULT=verify-failed"; exit 5; fi
   echo "SF_DEPLOY_RESULT=deployed"
   exit 0
+fi
+if [ "$verified" = 0 ]; then
+  echo "Release $sha failed its verification" >&2
+  if [ -n "$previous" ] && [ -d "$previous" ] && [ "$previous" != "$release" ]; then
+    if start "$previous"; then echo "SF_DEPLOY_RESULT=rolled-back"; exit 3; fi
+    echo "SF_DEPLOY_RESULT=rollback-failed"; exit 2
+  fi
+  echo "SF_DEPLOY_RESULT=failed"; exit 2
 fi
 echo "Release $sha failed to start; recent logs:" >&2
 compose "$release" logs --no-color --tail 80 >&2 || true

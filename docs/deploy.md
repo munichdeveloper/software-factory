@@ -18,7 +18,12 @@ workers, merging and notifications: none of them changes behaviour.
    starts it with `SF_RELEASE_SHA` set to the release commit, so the compose file can pass it on as a
    build argument or image label. Healthchecks defined in the compose file must pass; optionally an
    additional HTTP check (`healthcheck.url`) runs on the host.
-5. Success switches the `<path>/current` link, keeps `keepReleases` releases and
+5. With `deploy.verify.script` set, that script of the release runs with bash on the host once the release is
+   healthy (`SF_RELEASE_SHA`, `SF_DEPLOY_PROJECT`, `SF_DEPLOY_COMPOSE_FILE`, `SF_DEPLOY_RELEASE_DIR`; at most
+   `verify.timeoutSeconds`). A failing script fails the deployment: with `verify.rollback: true` the previous release is
+   started again (`rolled-back`), otherwise the new release stays active (`verify-failed`). The Factory runtime uses it
+   for its end-to-end canary (`operations/temporal-runtime/canary.sh`).
+6. Success switches the `<path>/current` link, keeps `keepReleases` releases and
    prunes dangling images of the project. Failure prints recent container logs and,
    with `rollback: true`, starts the previous release again. The job then fails.
 

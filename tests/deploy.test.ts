@@ -263,6 +263,25 @@ describe('docker-ssh deployment', () => {
     expect(await deploy(broken, { rollback: false })).toMatchObject({ outcome: 'failed', detail: 'Release failed (exit 2)' });
   });
 
+  it('runs the verify script once the release is healthy, and fails the deployment when it fails', async () => {
+    const verify = '#!/usr/bin/env bash\necho "verify $SF_RELEASE_SHA $SF_DEPLOY_PROJECT $SF_DEPLOY_COMPOSE_FILE" >> "$FAKE_DOCKER_LOG"\n[ ! -f FAIL_VERIFY ]\n';
+    const good = await commit({ 'compose.yaml': 'services: {}\n', 'verify.sh': verify });
+    expect(await deploy(good, { verify: { script: 'verify.sh' } })).toMatchObject({ outcome: 'deployed' });
+    expect(await readFile(log, 'utf8')).toContain(`verify ${good} app compose.yaml`);
+    // Without verify.rollback the release that failed its verification stays active, but the deployment fails.
+    const bad = await commit({ FAIL_VERIFY: '1' });
+    const kept = await deploy(bad, { verify: { script: 'verify.sh' } });
+    expect(kept).toMatchObject({ outcome: 'verify-failed', previous: good, detail: 'Release started but its verification failed; the release stays active' });
+    expect(await readlink(join(root, 'srv', 'app', 'current'))).toContain(bad);
+    // With verify.rollback the previous release is started again.
+    const worse = await commit({ 'app.txt': 'v3' });
+    const restored = await deploy(worse, { verify: { script: 'verify.sh', rollback: true } });
+    expect(restored).toMatchObject({ outcome: 'rolled-back', previous: bad });
+    expect(restored.detail).toContain('failed its verification');
+    expect((await readFile(log, 'utf8')).trim().split('\n').at(-1)).toContain(`up ${bad}`);
+    expect(await deploy(worse, { verify: { script: 'missing.sh' } })).toMatchObject({ detail: 'Precondition failed: verify-script-missing' });
+  }, 30000);
+
   it('checks preconditions on the host before touching containers', async () => {
     const sha = await commit({ 'compose.yaml': 'services: {}\n' });
     expect(await deploy(sha, { envFile: 'missing.env' })).toMatchObject({ outcome: 'failed', detail: 'Precondition failed: env-file-missing' });
