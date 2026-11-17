@@ -159,8 +159,9 @@ export async function main(args = process.argv.slice(2)) {
       const effects = (snapshot: Parameters<ActionsCodingExecutor['poll']>[0], binding: string) => new RuntimeEffects(store, repository.repositoryId, snapshot.admission.input.executionId, binding);
       repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), async () => (await repository.config()).manager.trustedActors,
         id => store.validation(repository.repositoryId, id)),
-        publish: async (snapshot, binding, artifact, createdAt, validation) => new RuntimeCodingPublisher(api, effects(snapshot, binding),
-          () => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors).publish(snapshot, artifact, createdAt, validation) };
+        publish: async (snapshot, binding, artifact, createdAt, validation) => { const config = await repository.config();
+          return new RuntimeCodingPublisher(api, effects(snapshot, binding), () => controller.authorize(snapshot, binding), config.manager.trustedActors,
+            config.workers.coding ? config.workers.coding.agent : 'codex').publish(snapshot, artifact, createdAt, validation); } };
       // Refuse a registry rollout which would orphan any running version, including long human gates.
       await assertRetainedReleases(item.repositoryId, [item.release, ...item.retainedReleases], store, temporal);
       await repository.config(); // An unreadable or invalid configuration fails the start, not the first reconciliation.

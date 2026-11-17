@@ -16,8 +16,11 @@ on:
         required: false
         default: ''
     secrets:
+      # The key of the agent the request names (workers.coding.agent); the harness requires that one.
       OPENAI_API_KEY:
-        required: true
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
 permissions: {}
 jobs:
   validate:
@@ -127,7 +130,7 @@ jobs:
         run: |
           node node_modules/playwright/cli.js install chromium
           echo "path=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_OUTPUT"
-      - id: codex
+      - id: agent
         uses: ./.runtime/harness
         with:
           loopback: ${{ steps.sandbox.outputs.loopback }}
@@ -136,11 +139,12 @@ jobs:
           execution-id: ${{ needs.validate.outputs.execution-id }}
           workspace: ${{ github.workspace }}/target
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           trusted-bot-users: munichdeveloper-sf-manager-local[bot]
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: coding-result-${{ needs.validate.outputs.execution-id }}
-          path: ${{ steps.codex.outputs.artifact }}
+          path: ${{ steps.agent.outputs.artifact }}
           if-no-files-found: error
           retention-days: 7
   independent-validation:

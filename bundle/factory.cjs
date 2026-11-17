@@ -34826,14 +34826,27 @@ var configSchema = external_exports.strictObject({
     test: external_exports.strictObject({ enabled: external_exports.boolean().default(true), operation: external_exports.enum(["sha256", "fail", "blocked"]).default("sha256") }).prefault({}),
     coding: external_exports.union([external_exports.literal(false), external_exports.strictObject({
       enabled: external_exports.boolean(),
-      agent: external_exports.literal("codex"),
+      /** codex (OpenAI Codex CLI, OPENAI_API_KEY) or claude (Claude Code CLI, ANTHROPIC_API_KEY; Temporal engine only). */
+      agent: external_exports.enum(["codex", "claude"]),
+      /** The default is a Codex model; with agent claude name a Claude model such as claude-opus-5-5 or claude-sonnet-5-5. */
       model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/).default("gpt-6.1-sol"),
-      reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh"]).default("high"),
+      /** max is available for Claude only. */
+      reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
       validationWorkflow: external_exports.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null),
       /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
       loopback: external_exports.boolean().default(false),
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
       smallPullRequests: external_exports.boolean().default(true)
+    }).superRefine((coding, context) => {
+      if (coding.agent === "claude" && !/^claude-/.test(coding.model)) {
+        context.addIssue({ code: "custom", path: ["model"], message: "agent claude needs a Claude model, for example claude-opus-5-5" });
+      }
+      if (coding.agent === "codex" && /^claude-/.test(coding.model)) {
+        context.addIssue({ code: "custom", path: ["model"], message: "a Claude model needs agent claude" });
+      }
+      if (coding.agent === "codex" && coding.reasoningEffort === "max") {
+        context.addIssue({ code: "custom", path: ["reasoningEffort"], message: "max is available for agent claude only" });
+      }
     })]).default(false),
     review: external_exports.literal(false).default(false)
   }).prefault({}),
@@ -34941,6 +34954,10 @@ var configSchema = external_exports.strictObject({
     }).prefault({})
   }).prefault({}) }).prefault({}),
   monitoring: monitoringSchema.partial().optional()
+}).superRefine((config2, context) => {
+  if (config2.workers.coding && config2.workers.coding.agent === "claude" && config2.execution.engine !== "temporal") {
+    context.addIssue({ code: "custom", path: ["workers", "coding", "agent"], message: "agent claude requires execution.engine temporal" });
+  }
 });
 function loadConfig(source) {
   const doc = (0, import_yaml.parseDocument)(source, { uniqueKeys: true });
@@ -39797,7 +39814,7 @@ function compactContext(tasks, config2) {
   }
   return JSON.stringify({
     trustedScope: config2.factory.scope,
-    trustedWorker: config2.workers.coding && config2.workers.coding.enabled ? "Codex coding worker (edits, tests, opens a PR via SF)" : "Non-mutating digest test worker",
+    trustedWorker: config2.workers.coding && config2.workers.coding.enabled ? `${config2.workers.coding.agent === "claude" ? "Claude" : "Codex"} coding worker (edits, tests, opens a PR via SF)` : "Non-mutating digest test worker",
     ...config2.workers.coding && config2.workers.coding.enabled && config2.workers.coding.smallPullRequests ? { trustedWorkingRules: smallPullRequestRule } : {},
     untrustedTasks: selected
   });
@@ -42295,7 +42312,7 @@ var RuntimeHttpClient = class {
 var codingExecutionSchema = external_exports.strictObject({
   contractVersion: external_exports.literal("3.0"),
   executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
-  worker: external_exports.literal("codex"),
+  worker: external_exports.enum(["codex", "claude"]),
   task: external_exports.strictObject({
     id: external_exports.string().min(1).max(200),
     version: external_exports.string().regex(/^[a-f0-9]{64}$/),
@@ -42306,9 +42323,9 @@ var codingExecutionSchema = external_exports.strictObject({
   baseSha: external_exports.string().regex(/^[a-f0-9]{40}$/),
   allowedActions: external_exports.tuple([external_exports.literal("edit_workspace"), external_exports.literal("run_commands")]),
   model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
-  effort: external_exports.enum(["low", "medium", "high", "xhigh"]),
+  effort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]),
   limits: external_exports.strictObject({ timeoutMinutes: external_exports.number().int().min(1).max(30), maxFiles: external_exports.literal(100), maxPatchBytes: external_exports.literal(5e6) })
-});
+}).refine((r) => r.worker === "claude" || r.effort !== "max", { path: ["effort"] }).refine((r) => r.worker === "claude" === /^claude-/.test(r.model), { path: ["model"] });
 
 // src/runtime/validation.ts
 var import_promises3 = require("node:fs/promises");

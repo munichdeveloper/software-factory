@@ -22,7 +22,9 @@ const missing = (error: unknown) => !!error && typeof error === 'object' && 'sta
 
 /** Trusted broker only: validates artifacts and publishes API data, never executes target code. */
 export class RuntimeCodingPublisher {
-  constructor(private api: Octokit, private effects: EffectPort, private authorize: () => Promise<unknown>, private trustedActors: string[]) {}
+  constructor(private api: Octokit, private effects: EffectPort, private authorize: () => Promise<unknown>, private trustedActors: string[],
+    /** Named in the commit and title; Codex runs keep their text unchanged. */
+    private agent: 'codex' | 'claude' = 'codex') {}
   async publish(snapshot: RunSnapshot, source: unknown, createdAt: string, validation?: ValidationReport) {
     const artifact: CodingArtifact = codingArtifactSchema.parse(source), input = snapshot.admission.input;
     if (input.worker !== 'codex' || artifact.baseSha !== snapshot.baseSha || artifact.result.executionId !== input.executionId ||
@@ -80,7 +82,8 @@ export class RuntimeCodingPublisher {
       validate: objectReceipt.parse, reconcile: async () => null,
       apply: async () => ({ sha: (await this.api.git.createTree({ ...target, base_tree: parent.tree.sha, tree })).data.sha }) });
     if (newTree.sha === parent.tree.sha) throw new Error('NO_CHANGES');
-    const fingerprint = hash(artifact), message = `Implement #${input.issueNumber} with Codex\n\nSF execution: ${input.executionId}\nBinding: ${hash(snapshot)}\nArtifact: ${fingerprint}`;
+    const agentName = this.agent === 'claude' ? 'Claude' : 'Codex';
+    const fingerprint = hash(artifact), message = `Implement #${input.issueNumber} with ${agentName}\n\nSF execution: ${input.executionId}\nBinding: ${hash(snapshot)}\nArtifact: ${fingerprint}`;
     // Explicit immutable author/committer dates make retries content-addressed, even after a lost response.
     const identity = { name: 'Software Factory', email: 'software-factory@users.noreply.github.com', date: createdAt };
     const commitInput = { message, tree: newTree.sha, parents: [snapshot.baseSha], author: identity, committer: identity };
@@ -98,7 +101,7 @@ export class RuntimeCodingPublisher {
     const validationText = validation ? `\n\nOriginal model status: **${artifact.result.status}**\nIndependent automated validation: **${validation.status}**\n${validation.checks.map(c => `- ${c.name}: ${c.status}`).join('\n')}\n\nValidation run: https://github.com/${snapshot.repository}/actions/runs/${validation.workflowRunId}\nValidation digest: ${hash(validation)}\nPassing automated checks does not verify manual acceptance criteria.` : '';
     const body = `Closes #${input.issueNumber}\n\n${summary}${validationText}\n\n${marker}\n\nReview changes and required checks before merging.`;
     const review = validation && (artifact.result.status !== 'success' || validation.status !== 'passed');
-    const title = `${review ? 'Review' : 'Implement'} #${input.issueNumber} with Codex`;
+    const title = `${review ? 'Review' : 'Implement'} #${input.issueNumber} with ${agentName}`;
     const pr = await this.effects.perform({ key: 'draft-pr', payload: { baseBranch, branch, head: commit.sha, title, body, draft: true }, authorize,
       validate: prReceipt.parse, reconcile: async () => {
         const prs = await this.api.paginate(this.api.pulls.list, { ...target, state: 'all', head: `${owner}:${branch}`, base: baseBranch, per_page: 100 });

@@ -263,7 +263,10 @@
                 },
                 "agent": {
                   "type": "string",
-                  "const": "codex"
+                  "enum": [
+                    "codex",
+                    "claude"
+                  ]
                 },
                 "model": {
                   "default": "gpt-6.1-sol",
@@ -277,7 +280,8 @@
                     "low",
                     "medium",
                     "high",
-                    "xhigh"
+                    "xhigh",
+                    "max"
                   ]
                 },
                 "validationWorkflow": {

@@ -1,7 +1,10 @@
 import { z } from 'zod';
-export const codingExecutionSchema = z.strictObject({ contractVersion: z.literal('3.0'), executionId: z.string().regex(/^[a-f0-9]{32}$/), worker: z.literal('codex'),
+export const codingExecutionSchema = z.strictObject({ contractVersion: z.literal('3.0'), executionId: z.string().regex(/^[a-f0-9]{32}$/), worker: z.enum(['codex', 'claude']),
   task: z.strictObject({ id: z.string().min(1).max(200), version: z.string().regex(/^[a-f0-9]{64}$/), description: z.string().min(1).max(20000),
     acceptanceCriteria: z.string().min(1).array().min(1).max(20), contextReferences: z.string().max(1000).array().max(30) }),
   baseSha: z.string().regex(/^[a-f0-9]{40}$/), allowedActions: z.tuple([z.literal('edit_workspace'), z.literal('run_commands')]),
-  model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), effort: z.enum(['low', 'medium', 'high', 'xhigh']),
-  limits: z.strictObject({ timeoutMinutes: z.number().int().min(1).max(30), maxFiles: z.literal(100), maxPatchBytes: z.literal(5000000) }) });
+  model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']),
+  limits: z.strictObject({ timeoutMinutes: z.number().int().min(1).max(30), maxFiles: z.literal(100), maxPatchBytes: z.literal(5000000) }) })
+  // Same rules as the harness (dev-agent-harness coding request 3.0): max effort and claude- models belong to Claude only.
+  .refine(r => r.worker === 'claude' || r.effort !== 'max', { path: ['effort'] })
+  .refine(r => (r.worker === 'claude') === /^claude-/.test(r.model), { path: ['model'] });

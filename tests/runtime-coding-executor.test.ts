@@ -186,3 +186,12 @@ it('passes the repository\'s loopback opt-in to the executor and nothing by defa
   const f = fixture(); f.cfg.workers.coding = { ...(f.cfg.workers.coding as object), loopback: true } as typeof f.cfg.workers.coding;
   await f.poll(); expect(f.requests[0]!.task.contextReferences).toEqual(['sf-context sandbox loopback']);
 });
+it('names the repository\'s coding agent, model and effort in the request and passes both agent keys through the wrapper', async () => {
+  const f = fixture(); f.cfg.workers.coding = { ...(f.cfg.workers.coding as object), agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'max' } as typeof f.cfg.workers.coding;
+  await f.poll();
+  expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'max' });
+  for (const validated of [false, true]) {
+    const wrapper = executorWrapper('a'.repeat(40), 'b'.repeat(40), validated);
+    expect(wrapper).toContain('      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}\n');
+  }
+});

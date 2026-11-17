@@ -58,14 +58,28 @@ export const configSchema = z.strictObject({
   workers: z.strictObject({
     test: z.strictObject({ enabled: z.boolean().default(true), operation: z.enum(['sha256', 'fail', 'blocked']).default('sha256') })
       .prefault({}),
-    coding: z.union([z.literal(false), z.strictObject({ enabled: z.boolean(), agent: z.literal('codex'),
+    coding: z.union([z.literal(false), z.strictObject({ enabled: z.boolean(),
+      /** codex (OpenAI Codex CLI, OPENAI_API_KEY) or claude (Claude Code CLI, ANTHROPIC_API_KEY; Temporal engine only). */
+      agent: z.enum(['codex', 'claude']),
+      /** The default is a Codex model; with agent claude name a Claude model such as claude-opus-5-5 or claude-sonnet-5-5. */
       model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/).default('gpt-6.1-sol'),
-      reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).default('high'),
+      /** max is available for Claude only. */
+      reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high'),
       validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null),
       /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
       loopback: z.boolean().default(false),
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
-      smallPullRequests: z.boolean().default(true) })]).default(false),
+      smallPullRequests: z.boolean().default(true) }).superRefine((coding, context) => {
+      if (coding.agent === 'claude' && !/^claude-/.test(coding.model)) {
+        context.addIssue({ code: 'custom', path: ['model'], message: 'agent claude needs a Claude model, for example claude-opus-5-5' });
+      }
+      if (coding.agent === 'codex' && /^claude-/.test(coding.model)) {
+        context.addIssue({ code: 'custom', path: ['model'], message: 'a Claude model needs agent claude' });
+      }
+      if (coding.agent === 'codex' && coding.reasoningEffort === 'max') {
+        context.addIssue({ code: 'custom', path: ['reasoningEffort'], message: 'max is available for agent claude only' });
+      }
+    })]).default(false),
     review: z.literal(false).default(false)
   }).prefault({}),
   reporting: z.strictObject({ persistDecisions: z.boolean().default(true) }).prefault({}),
@@ -165,6 +179,11 @@ export const configSchema = z.strictObject({
     }).prefault({})
   }).prefault({}) }).prefault({}),
   monitoring: monitoringSchema.partial().optional()
+}).superRefine((config, context) => {
+  // The Claude worker exists only in the Temporal executor's harness; the legacy Actions coding workflow runs Codex.
+  if (config.workers.coding && config.workers.coding.agent === 'claude' && config.execution.engine !== 'temporal') {
+    context.addIssue({ code: 'custom', path: ['workers', 'coding', 'agent'], message: 'agent claude requires execution.engine temporal' });
+  }
 });
 export type Config = z.infer<typeof configSchema>;
 export function loadConfig(source: string): Config {
