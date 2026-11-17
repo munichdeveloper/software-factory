@@ -14,6 +14,7 @@ import type { CodingArtifact } from '../workers/coding.js';
 import type { ReadyApproval } from './contract.js';
 import { bindValidation, type ValidationPlan, type ValidationReport } from './validation-contract.js';
 import { retryOf, reworkOf } from './coding-context.js';
+import { infrastructureFailureCode, infrastructureFailureSummary } from '../state/reconstruct.js';
 
 export interface RuntimeRepository {
   repositoryId: number; repository: string; release: RuntimeRelease; retainedReleases?: RuntimeRelease[]; requireHumanGate: boolean;
@@ -300,7 +301,8 @@ export class RuntimeController implements WorkerRuntimePort {
     const outcome = await this.repo.coding.executor.poll(snapshot, binding, config);
     if (!outcome) return null;
     if ('failed' in outcome) return workerResultSchema.parse({ contractVersion: '1.0', executionId: id, issueNumber: snapshot.admission.input.issueNumber,
-      status: 'failed', summary: 'Isolated coding executor failed', error: 'Inspect the scoped executor run', artifacts: [], proposedActions: [] });
+      status: 'failed', summary: outcome.beforeAgent ? infrastructureFailureSummary : 'Isolated coding executor failed',
+      error: outcome.beforeAgent ? infrastructureFailureCode : 'Inspect the scoped executor run', artifacts: [], proposedActions: [] });
     const result = this.codingResult(snapshot, outcome.artifact, outcome.validation);
     await this.store.saveArtifact(this.repo.repositoryId, id, outcome.artifact);
     if (outcome.validation) await this.store.saveValidation(this.repo.repositoryId, id, outcome.validation);

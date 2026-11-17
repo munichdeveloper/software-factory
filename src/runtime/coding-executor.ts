@@ -39,7 +39,8 @@ export function decodeCodingArchive(bytes: Uint8Array): CodingArtifact {
 }
 export interface CodingExecutionPort {
   /** `config` is the configuration of an authorization the caller has just completed; new effects authorize again. */
-  poll(snapshot: RunSnapshot, binding: string, config: Config): Promise<{ artifact: CodingArtifact; validation?: ValidationReport } | { failed: true } | null>;
+  /** `beforeAgent`: the run failed before any coding agent started (runner or setup), so no attempt was spent. */
+  poll(snapshot: RunSnapshot, binding: string, config: Config): Promise<{ artifact: CodingArtifact; validation?: ValidationReport } | { failed: true; beforeAgent?: boolean } | null>;
   cancel(snapshot: RunSnapshot, binding: string): Promise<void>;
 }
 /** Actions supplies disposable compute only. Temporal/broker retain dispatch, gate and publication authority. */
@@ -50,6 +51,33 @@ export const legacyValidationGuidance = '\n\nFactory execution context: a separa
  * fails and costs time. Those checks run in the independent validation job, whose result decides (controla#63).
  */
 export const validationGuidance = '\n\nFactory execution context: your environment has no network access. After coding, a separate hosted validation job installs the dependencies and runs the project\'s build, tests, browser and configured Docker checks on your change; its result decides whether the change is accepted. Do not install dependencies or try to run the project\'s build, test, lint or browser commands here; acceptance criteria that name such checks are covered by that job. Offline checks such as reading code or `git diff --check` are fine. Report `success` when the implementation is complete, and say which checks you left to the validation job. Report `blocked` only when the implementation itself is incomplete or cannot be done as specified. Never claim a check you did not perform.';
+
+type Job = { name: string; conclusion: string | null; runner_id?: number | null; steps?: { name: string; conclusion: string | null }[] };
+/** The step of the code job that runs the coding harness; steps before it only prepare the runner and workspace. */
+const harnessStep = 'Run ./.runtime/harness';
+/**
+ * Whether a failed executor run ended before any coding agent started. Only positive evidence counts: a job GitHub
+ * never gave a runner or a step, a code-job step before the harness, or a harness step whose log shows a setup step
+ * failing ahead of both agent steps. Anything else, an unreadable log included, is a real attempt.
+ * `log` returns the code job's log, or null when it cannot be read within its limit.
+ */
+export async function failedBeforeAgent(jobs: Job[], log: () => Promise<string | null>): Promise<boolean> {
+  const failed = jobs.filter(j => j.conclusion === 'failure');
+  if (!failed.length) return false;
+  if (failed.some(j => !j.runner_id || !j.steps?.length)) return true;
+  const code = failed.find(j => j.name === 'code' || j.name.endsWith(' / code'));
+  if (!code || failed.length !== 1) return false;
+  const steps = code.steps!, harness = steps.findIndex(s => s.name === harnessStep), first = steps.findIndex(s => s.conclusion === 'failure');
+  if (harness < 0 || first < 0) return false;
+  if (first < harness) return true;
+  if (first > harness) return false;
+  const text = await log();
+  if (!text) return false;
+  const lines = text.split('\n');
+  const failure = lines.findIndex(l => /##\[end-action id=agent\.[^;]*;outcome=failure;/.test(l));
+  const codex = lines.findIndex(l => l.includes('##[end-action id=agent.__openai_codex-action;outcome=skipped;'));
+  return failure >= 0 && codex > failure;
+}
 
 export class ActionsCodingExecutor implements CodingExecutionPort {
   constructor(private api: Octokit, private effects: (snapshot: RunSnapshot, binding: string) => EffectPort,
@@ -65,6 +93,19 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     finally { await reader.cancel(); }
     const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
     return bytes;
+  }
+  /** A failure to inspect the run is no evidence: the run then counts as an attempt. */
+  private async beforeAgent(target: { owner: string; repo: string }, runId: number): Promise<boolean> {
+    try {
+      const jobs = (await this.api.actions.listJobsForWorkflowRun({ ...target, run_id: runId, filter: 'latest', per_page: 100 })).data.jobs as Job[];
+      return await failedBeforeAgent(jobs, async () => {
+        const code = jobs.find(j => j.conclusion === 'failure');
+        if (!code || !('id' in code)) return null;
+        const response = await this.api.actions.downloadJobLogsForWorkflowRun({ ...target, job_id: (code as Job & { id: number }).id });
+        const text = typeof response.data === 'string' ? response.data : String(response.data);
+        return text.length > 5000000 ? null : text;
+      });
+    } catch { return false; }
   }
   /**
    * Context for the worker, resolved once per execution and then fixed: the previous attempt of a rework with the
@@ -198,7 +239,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
       throw error;
     }
     if (!run || run.status !== 'completed') return null;
-    if (run.conclusion !== 'success') return { failed: true as const };
+    if (run.conclusion !== 'success') return { failed: true as const, ...(await this.beforeAgent(target, run.id) ? { beforeAgent: true } : {}) };
     const artifacts = await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: run.id, per_page: 100 });
     const matches = artifacts.filter(a => a.name === `coding-result-${input.executionId}`);
     if (matches.length !== 1 || matches[0]!.expired || matches[0]!.size_in_bytes > 8000000) throw new Error('INVALID_EXECUTOR_ARTIFACT');

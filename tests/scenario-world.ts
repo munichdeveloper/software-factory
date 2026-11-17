@@ -209,9 +209,9 @@ export class World {
    * The worker finishes and publishes through the broker. When the broker refuses the publication
    * (grant revoked, task changed, closed), the workflow ends without a committed result.
    */
-  async finish(executionId: string, status: WorkerResult['status'] = 'success') {
+  async finish(executionId: string, status: WorkerResult['status'] = 'success', error: string | null = null, summary = `Worker ${status}`) {
     const row = this.store.rows.get(executionId)!, input = row.snapshot.admission.input;
-    const result: WorkerResult = { contractVersion: '1.0', executionId, issueNumber: input.issueNumber, status, summary: `Worker ${status}`, artifacts: [], error: null, proposedActions: [] };
+    const result: WorkerResult = { contractVersion: '1.0', executionId, issueNumber: input.issueNumber, status, summary, artifacts: [], error, proposedActions: [] };
     this.log.push(`finish ${executionId} #${input.issueNumber} ${status}`);
     try {
       await this.controller.publish(row.snapshot, row.binding, result); this.workflows.set(row.workflowId, 'COMPLETED');
