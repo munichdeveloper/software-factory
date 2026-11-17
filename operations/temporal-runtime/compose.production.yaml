@@ -154,7 +154,7 @@ services:
     privileged: true
     environment: { DOCKER_TLS_CERTDIR: '' }
     command: [dockerd, --host=tcp://127.0.0.1:2375, --host=unix:///var/run/docker.sock, --tls=false]
-    volumes: [runner-docker-1:/var/lib/docker, runner-work-1:/home/runner/_work]
+    volumes: [runner-docker-1:/var/lib/docker, runner-work-1:/home/runner/work]
     networks: [runners]
     cpus: 2
     mem_limit: 5g
@@ -175,18 +175,18 @@ services:
     network_mode: service:runner-docker-1
     environment: { DOCKER_HOST: 'tcp://127.0.0.1:2375' }
     # The workspace is shared with the daemon so bind mounts of job files resolve to the same paths.
-    volumes: [runner-slot-1:/jit, runner-work-1:/home/runner/_work]
+    volumes: [runner-slot-1:/jit, runner-work-1:/home/runner/work]
     tmpfs: ['/tmp:size=2g']
     logging: { driver: json-file, options: { max-size: 10m, max-file: '3' } }
     depends_on:
       runner-docker-1: { condition: service_healthy }
   runner-docker-2:
     <<: *runner-docker
-    volumes: [runner-docker-2:/var/lib/docker, runner-work-2:/home/runner/_work]
+    volumes: [runner-docker-2:/var/lib/docker, runner-work-2:/home/runner/work]
   runner-2:
     <<: *runner
     network_mode: service:runner-docker-2
-    volumes: [runner-slot-2:/jit, runner-work-2:/home/runner/_work]
+    volumes: [runner-slot-2:/jit, runner-work-2:/home/runner/work]
     depends_on:
       runner-docker-2: { condition: service_healthy }
 networks:

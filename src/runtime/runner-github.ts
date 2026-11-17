@@ -38,6 +38,6 @@ export function runnerRepository(repositoryId: number, repository: string, actio
         runnerId: j.runner_id ?? null, steps: j.steps?.length ?? 0, startedAt: j.started_at ?? null, completedAt: j.completed_at ?? null })),
     rerunFailedJobs: async runId => { await actions.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: runId }); },
     jitConfig: async name => (await admin.request('POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig', { owner, repo, name,
-      runner_group_id: 1, labels: [runnerLabel], work_folder: '_work' })).data.encoded_jit_config,
+      runner_group_id: 1, labels: [runnerLabel], work_folder: 'work' })).data.encoded_jit_config,
   };
 }
