@@ -2,7 +2,7 @@
 # One ephemeral runner slot: waits for a just-in-time configuration in /jit, runs exactly one job, cleans up, repeats.
 # Started as root only to open the slot directory to the broker and to reset the workspace; jobs run as 'runner'.
 set -uo pipefail
-slot=/jit work=/home/runner/_work idle=${SF_RUNNER_IDLE_SECONDS:-180}
+slot=/jit work=/home/runner/work idle=${SF_RUNNER_IDLE_SECONDS:-180}
 chmod 0777 "$slot"
 rm -f "$slot/busy"
 # The workspace is a volume shared with the slot's Docker daemon; it starts out owned by root.
@@ -37,6 +37,10 @@ while true; do
   # Nothing of one job reaches the next: workspace, tool caches and home directory files are reset.
   find "$work" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
   rm -rf /home/runner/.cache /home/runner/.npm /home/runner/.m2 /home/runner/.docker /tmp/* 2>/dev/null
+  # The Factory's coding job creates its own isolated accounts (Harness); their homes hold agent state of the job.
+  for account in codex-worker claude-worker; do
+    if id "$account" >/dev/null 2>&1; then pkill -KILL -u "$account" 2>/dev/null; userdel -r -f "$account" >/dev/null 2>&1; fi
+  done
   if [[ -n "${DOCKER_HOST:-}" ]]; then
     docker system prune --all --volumes --force >/dev/null 2>&1 || true
   fi
