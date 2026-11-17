@@ -2,7 +2,7 @@
 # One ephemeral runner slot: waits for a just-in-time configuration in /jit, runs exactly one job, cleans up, repeats.
 # Started as root only to open the slot directory to the broker and to reset the workspace; jobs run as 'runner'.
 set -uo pipefail
-slot=/jit work=/home/runner/_work
+slot=/jit work=/home/runner/_work idle=${SF_RUNNER_IDLE_SECONDS:-180}
 chmod 0777 "$slot"
 rm -f "$slot/busy"
 # The workspace is a volume shared with the slot's Docker daemon; it starts out owned by root.
@@ -15,10 +15,25 @@ while true; do
   echo "sf-runner: starting one job"
   # The configuration is single-use: once this runner has connected, it cannot register another runner.
   # runuser (not sudo: root has no sudoers entry in this image) keeps the environment, so DOCKER_HOST reaches the job.
-  HOME=/home/runner runuser -u runner -- \
-    bash -c 'cd /home/runner && exec ./run.sh --jitconfig "$1"' _ "$config"
-  echo "sf-runner: job ended with $?"
+  log=$(mktemp)
+  setsid env HOME=/home/runner runuser -u runner -- \
+    bash -c 'cd /home/runner && exec ./run.sh --jitconfig "$1"' _ "$config" > >(tee "$log") 2>&1 &
+  pid=$! waited=0
   unset config
+  # A configuration is handed out for a queued job of one repository. When that job is cancelled before it starts
+  # (concurrency groups do this) and the repository has no other queued job, the runner would wait forever and keep
+  # the slot. Without a job after $idle seconds the runner is stopped and the slot freed; GitHub drops the offline
+  # just-in-time runner itself.
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= idle )) && ! grep -q 'Running job' "$log"; then
+      echo "sf-runner: no job after ${idle}s, giving the slot back"
+      kill -TERM -- "-$pid" 2>/dev/null; sleep 10; kill -KILL -- "-$pid" 2>/dev/null
+      break
+    fi
+    sleep 5; waited=$((waited + 5))
+  done
+  wait "$pid"; echo "sf-runner: job ended with $?"
+  rm -f "$log"
   # Nothing of one job reaches the next: workspace, tool caches and home directory files are reset.
   find "$work" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
   rm -rf /home/runner/.cache /home/runner/.npm /home/runner/.m2 /home/runner/.docker /tmp/* 2>/dev/null
