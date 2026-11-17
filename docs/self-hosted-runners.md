@@ -65,6 +65,7 @@ The broker checks every registered **private** repository on its reconcile inter
 | `FACTORY_RUNNER_FALLBACK`      | `on` enables switching and hand-out; anything else disables it |
 | `FACTORY_RUNNER_SLOTS_DIR`     | directory with one subdirectory per slot                       |
 | `FACTORY_RUNNER_ALERT_CHANNEL` | Slack channel for switch notices (needs `SLACK_BOT_TOKEN`)     |
+| `FACTORY_RUNNER_REPOSITORIES`  | extra private repositories outside the registry, `id:owner/name` |
 
 The GitHub App needs, in addition to its usual permissions, **Administration: write** (just-in-time runners) and
 **Variables: write** (`SF_RUNNER`). The broker requests these only in a separate token used for these two calls.

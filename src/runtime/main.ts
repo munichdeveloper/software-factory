@@ -187,6 +187,16 @@ export async function main(args = process.argv.slice(2)) {
     };
     const bindings: RuntimeBinding[] = [];
     for (const item of registry.repositories) bindings.push(await bind(item));
+    // Private repositories the runtime does not serve but whose CI should follow the fallback too (for example the
+    // SF Manager itself): "id:owner/name" pairs, reached through the App installation of the bound repositories.
+    const runnerInstallation = registry.repositories.find(item => item.githubInstallationId)?.githubInstallationId;
+    for (const entry of (process.env.FACTORY_RUNNER_REPOSITORIES ?? '').split(',').map(e => e.trim()).filter(Boolean)) {
+      const [, id, repository] = /^([0-9]+):([\w.-]+\/[\w.-]+)$/.exec(entry) ?? [];
+      if (!id || !repository || !runnerInstallation) throw new Error(`INVALID_RUNNER_REPOSITORY ${entry}`);
+      const item = { repositoryId: Number(id), repository, githubInstallationId: runnerInstallation } as Item;
+      addRunnerPort(item, scopedRuntimeGitHub({ appId: z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
+        privateKey: z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), installationId: runnerInstallation, repositoryId: item.repositoryId }));
+    }
     // Repositories the SF Manager registered (Temporal rollout): served with the PINNED worker release, the ready
     // label as grant and independent validation. A registration that cannot be bound is reported, never fatal for
     // the repositories of the static registry.

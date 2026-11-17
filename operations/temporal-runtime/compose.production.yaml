@@ -77,6 +77,8 @@ services:
       FACTORY_RUNNER_FALLBACK: 'on'
       FACTORY_RUNNER_SLOTS_DIR: /run/factory/runners
       FACTORY_RUNNER_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification
+      # Private repositories outside the registry whose own CI follows SF_RUNNER (id:owner/name).
+      FACTORY_RUNNER_REPOSITORIES: 1449777386:munichdeveloper/sf-manager,1448658563:munichdeveloper/business-os
     volumes:
       - '${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/registry.json:/run/factory/registry.json:ro'
       # One directory per runner slot: the broker writes a just-in-time configuration, the slot's runner takes it.
