@@ -22,8 +22,8 @@ name: sfm
 # runs and never unbinds a repository; the broker ends such a run after FACTORY_RETAINED_RUN_HOURS (default 2) and the
 # planner retries it on the current release (software-factory#102). It may equal WORKER_FACTORY_SHA.
 x-worker-release: &worker-release
-  WORKER_FACTORY_SHA: f4fcbbe70c7edc5d71c365ec345081b2a0732c5a
-  PREVIOUS_WORKER_FACTORY_SHA: a7be4652e5cecb8e133028762616b583b8121615
+  WORKER_FACTORY_SHA: acd9e4aa1da38c8762f1a6b0b01759047e9b8f11
+  PREVIOUS_WORKER_FACTORY_SHA: f4fcbbe70c7edc5d71c365ec345081b2a0732c5a
   WORKER_DEPLOYMENT: sf-backofficer
   WORKER_QUEUE: sf-backofficer-v1
 x-service: &service
