@@ -72,9 +72,9 @@ services:
       # Besides loopback the broker listens only on its address in runtime-api (this alias exists only there), so
       # the SF Manager's own Compose project reaches http://runtime-broker:8095 and the Temporal network does not.
       FACTORY_RUNTIME_LISTEN_ALIAS: factory-runtime-api
-      # Self-hosted runner fallback (software-factory#110, docs/self-hosted-runners.md). Turned on once the GitHub App
-      # has Administration and Variables write; until then nothing reads or changes SF_RUNNER.
-      FACTORY_RUNNER_FALLBACK: 'off'
+      # Self-hosted runner fallback (software-factory#110, docs/self-hosted-runners.md). Needs the GitHub App permissions
+      # Administration and Variables write (granted 2026-11-17).
+      FACTORY_RUNNER_FALLBACK: 'on'
       FACTORY_RUNNER_SLOTS_DIR: /run/factory/runners
       FACTORY_RUNNER_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification
     volumes:
