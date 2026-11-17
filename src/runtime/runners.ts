@@ -55,6 +55,8 @@ export interface RunnerFallbackOptions {
 export class RunnerFallback {
   private checkedRuns = new Set<number>(); private rerun = new Set<number>();
   private privateRepos = new Map<number, boolean>(); private lastScan = new Map<number, Date>();
+  /** The switched repositories as the last pass saw them: the dispenser reads them without asking GitHub again. */
+  private onPool: { at: number; repos: RunnerRepositoryPort[] } | undefined;
   private now: () => Date; private log: (line: Record<string, unknown>) => void;
   constructor(private repositories: RunnerRepositoryPort[], private options: RunnerFallbackOptions = {}) {
     this.now = options.now ?? (() => new Date());
@@ -71,13 +73,18 @@ export class RunnerFallback {
     }
     return result;
   }
-  /** The repositories currently switched to the pool. */
-  async switched(): Promise<RunnerRepositoryPort[]> {
+  /**
+   * The repositories currently switched to the pool. With maxAgeMs, the last pass's answer is reused while it is that
+   * young: the broker, the planner and the pool share one App installation's 5000 requests per hour.
+   */
+  async switched(maxAgeMs = 0): Promise<RunnerRepositoryPort[]> {
+    if (maxAgeMs && this.onPool && this.now().getTime() - this.onPool.at <= maxAgeMs) return this.onPool.repos;
     const result: RunnerRepositoryPort[] = [];
     for (const repo of await this.privateOnly()) {
       try { if ((await repo.variable())?.value === runnerLabel) result.push(repo); }
       catch (error) { this.log({ event: 'runner-fallback-failed', repositoryId: repo.repositoryId, stage: 'variable', reason: reason(error) }); }
     }
+    this.onPool = { at: this.now().getTime(), repos: result };
     return result;
   }
   /** Refused runs of one repository since its last scan; each run is inspected once. */
@@ -104,11 +111,12 @@ export class RunnerFallback {
       catch (error) { this.log({ event: 'runner-fallback-failed', repositoryId: repo.repositoryId, stage: 'variable', reason: reason(error) }); }
     }
     const onPool = repos.filter(r => state.get(r.repositoryId)?.value === runnerLabel);
+    this.onPool = { at: now.getTime(), repos: onPool };
     // A new month brings new included minutes and a new budget period: back to GitHub-hosted runners.
     const stale = onPool.filter(r => month(new Date(state.get(r.repositoryId)!.updatedAt)) !== month(now));
     if (stale.length) {
       for (const repo of stale) {
-        try { await repo.setVariable(null); }
+        try { await repo.setVariable(null); if (this.onPool) this.onPool.repos = this.onPool.repos.filter(r => r !== repo); }
         catch (error) { this.log({ event: 'runner-fallback-failed', repositoryId: repo.repositoryId, stage: 'restore', reason: reason(error) }); }
       }
       this.log({ event: 'runner-fallback-restored', repositories: stale.map(r => r.repositoryId) });
@@ -130,7 +138,7 @@ export class RunnerFallback {
     }
     const moved: RunnerRepositoryPort[] = [];
     for (const repo of hosted) {
-      try { await repo.setVariable(runnerLabel); moved.push(repo); }
+      try { await repo.setVariable(runnerLabel); moved.push(repo); this.onPool?.repos.push(repo); }
       catch (error) { this.log({ event: 'runner-fallback-failed', repositoryId: repo.repositoryId, stage: 'switch', reason: reason(error) }); }
     }
     let rerun = 0;
@@ -150,15 +158,15 @@ export class RunnerFallback {
     return moved.length ? 'switched' : 'unchanged';
   }
   /** Queued jobs waiting for the pool, per switched repository. */
-  async demand(): Promise<{ repo: RunnerRepositoryPort; jobs: number }[]> {
+  async demand(switchedMaxAgeMs = 0): Promise<{ repo: RunnerRepositoryPort; jobs: number }[]> {
     const now = this.now(), result: { repo: RunnerRepositoryPort; jobs: number }[] = [];
-    for (const repo of await this.switched()) {
+    for (const repo of await this.switched(switchedMaxAgeMs)) {
       let jobs = 0;
       try {
-        for (const status of ['queued', 'in_progress'] as const) {
-          for (const run of await repo.runs(new Date(now.getTime() - 24 * 3600000), status)) {
-            jobs += (await repo.jobs(run.id)).filter(j => j.status === 'queued' && j.labels.includes(runnerLabel)).length;
-          }
+        // One request per repository while nothing runs; jobs are read only for runs that have not ended.
+        for (const run of await repo.runs(new Date(now.getTime() - 24 * 3600000))) {
+          if (run.status === 'completed') continue;
+          jobs += (await repo.jobs(run.id)).filter(j => j.status === 'queued' && j.labels.includes(runnerLabel)).length;
         }
       } catch (error) { this.log({ event: 'runner-fallback-failed', repositoryId: repo.repositoryId, stage: 'demand', reason: reason(error) }); }
       if (jobs) result.push({ repo, jobs });
@@ -177,7 +185,9 @@ export class RunnerFallback {
  */
 export class RunnerDispenser {
   private assigned = new Map<string, number>();
-  constructor(private fallback: RunnerFallback, private slotsDir: string, private log: (line: Record<string, unknown>) => void = line => console.log(JSON.stringify(line))) {}
+  constructor(private fallback: RunnerFallback, private slotsDir: string, private log: (line: Record<string, unknown>) => void = line => console.log(JSON.stringify(line)),
+    /** How long the switched repositories of the fallback's last pass are trusted. */
+    private switchedMaxAgeMs = 600000) {}
   async slots(): Promise<string[]> {
     try { return (await readdir(this.slotsDir, { withFileTypes: true })).filter(d => d.isDirectory() && /^[a-z0-9-]{1,40}$/.test(d.name)).map(d => d.name).sort(); }
     catch { return []; }
@@ -198,7 +208,7 @@ export class RunnerDispenser {
       try { await stat(join(this.slotsDir, slot, 'jitconfig')); if (repositoryId) pending.set(repositoryId, (pending.get(repositoryId) ?? 0) + 1); } catch { /* running */ }
     }
     if (!idle.length) return 0;
-    const demand = await this.fallback.demand();
+    const demand = await this.fallback.demand(this.switchedMaxAgeMs);
     let handed = 0;
     for (const { repo, jobs } of demand) {
       let left = jobs - (pending.get(repo.repositoryId) ?? 0);
@@ -224,7 +234,9 @@ export class RunnerDispenser {
 }
 
 /** Runs the fallback check every interval and the dispenser more often while any repository is switched. */
-export function startRunnerFallback(fallback: RunnerFallback, dispenser: RunnerDispenser | null, intervalMs: number, dispenseMs = 20000) {
+// Each dispense pass with idle slots costs one request per switched repository: every 60 s keeps the pool's share of
+// the App installation's 5000 requests per hour small next to the broker's reconcile passes.
+export function startRunnerFallback(fallback: RunnerFallback, dispenser: RunnerDispenser | null, intervalMs: number, dispenseMs = 60000) {
   let stopped = false, checkTimer: NodeJS.Timeout | undefined, dispenseTimer: NodeJS.Timeout | undefined, active = false;
   const check = async () => {
     try { const outcome = await fallback.pass(); if (outcome !== 'unchanged') active = outcome === 'switched'; if (!active) active = (await fallback.switched()).length > 0; }

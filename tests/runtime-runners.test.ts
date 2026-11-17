@@ -14,9 +14,10 @@ class FakeRepo implements RunnerRepositoryPort {
   runList: RunnerRun[] = []; jobList = new Map<number, RunnerJob[]>(); queued: RunnerRun[] = [];
   constructor(public repositoryId: number, public repository: string, private privateRepo = true, private now = () => new Date()) {}
   async isPrivate() { return this.privateRepo; }
-  async variable() { return this.variableValue; }
+  async variable() { this.variableCalls++; return this.variableValue; }
   async setVariable(value: string | null) { this.sets.push(value); this.variableValue = value === null ? null : { value, updatedAt: this.now().toISOString() }; }
-  async runs(_since: Date, status?: string) { return status === 'completed' ? this.runList : status === 'queued' ? this.queued : []; }
+  variableCalls = 0; runsCalls = 0;
+  async runs(_since: Date, status?: string) { this.runsCalls++; return status === 'completed' ? this.runList : status === undefined ? [...this.queued, ...this.runList] : []; }
   async jobs(runId: number) { return this.jobList.get(runId) ?? []; }
   async rerunFailedJobs(runId: number) { this.reruns.push(runId); }
   async jitConfig(name: string) { this.configs++; return `jit:${this.repository}:${name}`; }
@@ -89,5 +90,19 @@ describe('RunnerDispenser', () => {
     expect(await dispenser.pass()).toBe(1);
     expect(await readFile(join(dir, '2', 'jitconfig'), 'utf8')).toMatch(/^jit:o\/a:sf-2-/);
     expect(a.configs).toBe(2);
+  });
+  it('asks GitHub once per switched repository while no job waits, reusing the last pass for the switch', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sf-runners-'));
+    await mkdir(join(dir, '1'));
+    const a = new FakeRepo(1, 'o/a'); a.variableValue = { value: runnerLabel, updatedAt: new Date().toISOString() };
+    a.runList = [{ id: 9, status: 'completed', conclusion: 'success', createdAt: new Date().toISOString() }];
+    const fallback = new RunnerFallback([a], quiet);
+    expect(await fallback.pass()).toBe('unchanged');
+    const before = { variable: a.variableCalls, runs: a.runsCalls };
+    const dispenser = new RunnerDispenser(fallback, dir, () => {});
+    expect(await dispenser.pass()).toBe(0);
+    expect(await dispenser.pass()).toBe(0);
+    expect(a.variableCalls).toBe(before.variable);
+    expect(a.runsCalls - before.runs).toBe(2);
   });
 });
