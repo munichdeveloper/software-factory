@@ -34949,6 +34949,8 @@ var configSchema = external_exports.strictObject({
       run_started: notificationRule.optional(),
       // A PR whose risk class is above merge.risk.autoMergeUpTo waits for `/harness approve`; optional for the same reason.
       approval_required: notificationRule.optional(),
+      // A task that waits for nothing but a person's `harness:ready` grant (ready-label repositories); optional for the same reason.
+      grant_required: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
@@ -39889,7 +39891,8 @@ var labels = {
   run_started: "SF: Factory-Lauf gestartet",
   issue_created: "SF: Issue autonom angelegt",
   pr_merged: "SF: PR durch Bot gemergt",
-  approval_required: "SF: PR wartet auf Freigabe (Risiko \xFCber Schwelle)"
+  approval_required: "SF: PR wartet auf Freigabe (Risiko \xFCber Schwelle)",
+  grant_required: "SF: Issue wartet auf Freigabe (harness:ready)"
 };
 var runStartWindowMs = 24 * 60 * 60 * 1e3;
 var NotificationRejected = class extends Error {
@@ -39962,7 +39965,7 @@ ${notification.detail ? `${notification.detail}
     }
   }
 };
-async function deliverNotifications(github, config2, snapshot, sink, correlationId, now) {
+async function deliverNotifications(github, config2, snapshot, sink, correlationId, now, grantWaits = []) {
   const settings = config2.notifications.slack;
   if (!settings.enabled || !config2.factory.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") return [];
   const errors = [];
@@ -39986,7 +39989,8 @@ async function deliverNotifications(github, config2, snapshot, sink, correlation
       number: notification.number,
       channel,
       ...notification.executionId ? { executionId: notification.executionId } : {},
-      ...notification.approvalId ? { approvalId: notification.approvalId } : {}
+      ...notification.approvalId ? { approvalId: notification.approvalId } : {},
+      ...notification.event === "grant_required" ? { after: notification.after ?? null } : {}
     });
     const deliveries = (await github.comments(journal)).flatMap((c) => {
       const e = decodeEvent(c, config2.manager.trustedActors);
@@ -40092,6 +40096,18 @@ Decision: ${intent.actionId}
       });
     }
   }
+  if (settings.events.grant_required?.enabled) for (const wait of grantWaits) {
+    await deliver(wait.number, {
+      event: "grant_required",
+      number: wait.number,
+      title: wait.title,
+      actor: "Software Factory",
+      url: `https://github.com/${github.repository}/issues/${wait.number}`,
+      repository: github.repository,
+      after: wait.after,
+      detail: wait.after ? "Ein weiterer Versuch wartet nur noch auf die Freigabe: eine berechtigte Person setzt das Label harness:ready." : "Bereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready."
+    });
+  }
   if (settings.events.pr_merged.enabled) for (const pr of snapshot.prs) {
     if (!pr.merged || pr.mergedBy?.type !== "Bot" || !afterStart(pr.mergedAt) || settings.events.pr_merged.actors.length && !settings.events.pr_merged.actors.includes(pr.mergedBy.login)) continue;
     const nativeComments = await github.comments(pr.number);
@@ -40152,13 +40168,13 @@ function blocked(task, repository, readyIsGrant, config2) {
   if (own2) state.push("", "The worker's own explanation (unverified, repeated as plain text):", `> ${own2}`);
   return { state, needs };
 }
-function statusComment(task, config2, context) {
+function statusView(task, config2, context) {
   const running = task.executions.find((e) => e.active && e.runtime?.status === "running" && e.runtime.phase !== "awaiting-approval") ?? task.executions.find((e) => e.active && e.run);
   const waiting = task.executions.some((e) => e.active && e.runtime?.phase === "awaiting-approval");
   const result = task.latest?.result;
   const links = (result?.artifacts ?? []).filter((a) => /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/.test(a));
   const grant = "An authorized person applies the label `harness:ready`. Nothing else is missing; the run starts on the next reconciliation.";
-  let state, needs = "Nothing.";
+  let state, needs = "Nothing.", awaitsGrant = false;
   const rejection = context.rejection ?? (task.refusal?.waiting ? task.refusal.code : void 0);
   if (task.issue.state === "closed") state = ["The task is closed."];
   else if (task.executions.some((e) => e.ambiguous)) state = ["A start was sent and its outcome is not known yet. The Factory keeps resolving it and starts nothing else for this task meanwhile."];
@@ -40172,6 +40188,7 @@ function statusComment(task, config2, context) {
   } else if (rejection) {
     const ready = rejection.startsWith("READY_");
     const previous = result && ["failed", "cancelled"].includes(result.status) ? `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}). ` : "";
+    awaitsGrant = ready;
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : "Ready to run. **Waiting only for the grant.**"] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
     needs = ready ? grant : rejection === "EXECUTOR_WRAPPER_RELEASE_MISMATCH" ? "Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards." : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
     if (task.refusal?.waiting) state.push("", `The next start waits for a new grant, a changed policy or configuration, or at the latest until ${task.refusal.until}.`);
@@ -40197,8 +40214,9 @@ function statusComment(task, config2, context) {
   } else if (context.readyIsGrant && !task.issue.labels.includes("harness:ready")) {
     state = ["Ready to run. **Waiting only for the grant.**"];
     needs = grant;
+    awaitsGrant = true;
   } else state = [context.queued ? "Queued: all worker slots are in use. It starts when one is free." : "Queued; starts on the next reconciliation."];
-  return [
+  return { awaitsGrant, body: [
     statusMarker,
     `**Software Factory** \xB7 \`${task.desiredStatus}\``,
     "",
@@ -40208,7 +40226,7 @@ function statusComment(task, config2, context) {
     ...links.length ? ["", `**Pull request:** ${links.join(", ")}`] : [],
     "",
     "_Kept up to date by the Factory. Editing or deleting this comment changes nothing._"
-  ].join("\n");
+  ].join("\n") };
 }
 
 // src/manager/index.ts
@@ -40236,6 +40254,8 @@ var Manager = class {
   now;
   /** Definite runtime admission rejections of the current run; reported as blockers, never as uncertain dispatches. */
   rejections = [];
+  /** Open tasks whose status comment of this run says they wait for nothing but a person's grant. */
+  grantWaits = [];
   /** What this run saw before it acted. */
   observed;
   /** The repository state the last run reconciled, for work that follows it (the broker's merge pass). */
@@ -40357,11 +40377,16 @@ var Manager = class {
       for (const task of reconstruct(snapshot, this.config, this.now())) {
         const existing = (snapshot.comments.get(task.issue.number) ?? []).filter((c) => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
         if (task.issue.state === "closed" && !existing.length) continue;
-        const body = statusComment(task, this.config, {
+        const { body, awaitsGrant } = statusView(task, this.config, {
           repository: this.github.repository,
           readyIsGrant: !!snapshot.readyIsGrant,
           rejection: this.rejections.find((r) => r.issueNumber === task.issue.number)?.code,
           queued: report.decisions.some((d) => d.action.issueNumber === task.issue.number && d.decision.reason === "Maximum parallel workers reached")
+        });
+        if (awaitsGrant && task.issue.state === "open") this.grantWaits.push({
+          number: task.issue.number,
+          title: task.issue.title,
+          after: task.latest?.input.executionId
         });
         if (existing[0]?.body !== body) await this.github.writeComment(task.issue.number, body, existing[0]?.id);
       }
@@ -40512,6 +40537,7 @@ ${marker2}`;
   async run() {
     const started = this.now();
     this.rejections = [];
+    this.grantWaits = [];
     const report = {
       correlationId: this.options.correlationId,
       startedAt: started.toISOString(),
@@ -40623,7 +40649,8 @@ ${marker2}`;
           await this.github.snapshot(this.config.manager.workflow),
           this.options.notifications,
           this.options.correlationId,
-          this.now()
+          this.now(),
+          this.grantWaits
         ));
       } catch {
         report.errors.push("Slack notification reconciliation failed; repository actions remain committed");

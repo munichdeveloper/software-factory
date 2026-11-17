@@ -45,18 +45,26 @@ function blocked(task: Task, repository: string, readyIsGrant: boolean, config: 
   return { state, needs };
 }
 
+export type StatusContext = { repository: string; readyIsGrant: boolean; rejection?: string; queued?: boolean };
 /**
  * The one readable comment of a managed task: what the Factory is doing with it, why it is not progressing and what
  * exactly it needs from a person. Lifecycle facts, fixed codes and links come from the Factory's own records. Worker
  * text appears only as an inert, marked quotation. The comment is not part of the journal and is never read back as state.
  */
-export function statusComment(task: Task, config: Config, context: { repository: string; readyIsGrant: boolean; rejection?: string; queued?: boolean }): string {
+export function statusComment(task: Task, config: Config, context: StatusContext): string {
+  return statusView(task, config, context).body;
+}
+/**
+ * The status comment together with whether the task waits for nothing but a person's `harness:ready` grant. That flag
+ * is the same fact the comment states, so a notice about the wait (software-factory#127) can never contradict it.
+ */
+export function statusView(task: Task, config: Config, context: StatusContext): { body: string; awaitsGrant: boolean } {
   const running = task.executions.find(e => e.active && e.runtime?.status === 'running' && e.runtime.phase !== 'awaiting-approval') ?? task.executions.find(e => e.active && e.run);
   const waiting = task.executions.some(e => e.active && e.runtime?.phase === 'awaiting-approval');
   const result = task.latest?.result;
   const links = (result?.artifacts ?? []).filter(a => /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/.test(a));
   const grant = 'An authorized person applies the label `harness:ready`. Nothing else is missing; the run starts on the next reconciliation.';
-  let state: string[], needs = 'Nothing.';
+  let state: string[], needs = 'Nothing.', awaitsGrant = false;
   // A refusal of this reconciliation, or one recorded earlier that still holds.
   const rejection = context.rejection ?? (task.refusal?.waiting ? task.refusal.code : undefined);
   if (task.issue.state === 'closed') state = ['The task is closed.'];
@@ -73,6 +81,7 @@ export function statusComment(task: Task, config: Config, context: { repository:
     // A retry after a failed attempt says so; "ready to run" alone hid that the previous run had failed.
     const previous = result && ['failed', 'cancelled'].includes(result.status)
       ? `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}). ` : '';
+    awaitsGrant = ready;
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : 'Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
     needs = ready ? grant : rejection === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'
       ? 'Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards.'
@@ -96,9 +105,9 @@ export function statusComment(task: Task, config: Config, context: { repository:
       : `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'}${code} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}).`];
     needs = left ? 'Nothing; the Factory retries on its own.' : 'The retry limit is reached. Revise the task text to start over.';
   } else if (task.hasOpenPR) { state = ['A pull request for this task is open.']; needs = 'Review and merge the pull request.'; }
-  else if (context.readyIsGrant && !task.issue.labels.includes('harness:ready')) { state = ['Ready to run. **Waiting only for the grant.**']; needs = grant; }
+  else if (context.readyIsGrant && !task.issue.labels.includes('harness:ready')) { state = ['Ready to run. **Waiting only for the grant.**']; needs = grant; awaitsGrant = true; }
   else state = [context.queued ? 'Queued: all worker slots are in use. It starts when one is free.' : 'Queued; starts on the next reconciliation.'];
-  return [statusMarker, `**Software Factory** · \`${task.desiredStatus}\``, '', ...state, '', `**Needed from you:** ${needs}`,
+  return { awaitsGrant, body: [statusMarker, `**Software Factory** · \`${task.desiredStatus}\``, '', ...state, '', `**Needed from you:** ${needs}`,
     ...(links.length ? ['', `**Pull request:** ${links.join(', ')}`] : []),
-    '', '_Kept up to date by the Factory. Editing or deleting this comment changes nothing._'].join('\n');
+    '', '_Kept up to date by the Factory. Editing or deleting this comment changes nothing._'].join('\n') };
 }

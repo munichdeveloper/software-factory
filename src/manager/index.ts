@@ -13,8 +13,8 @@ import { retryMarker, reworkMarker } from '../runtime/coding-context.js';
 import { untrustedEdit, untrustedEditReason } from '../state/content-trust.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
-import { deliverNotifications, type NotificationSink } from '../notifications/slack.js';
-import { statusComment, statusMarker } from './status.js';
+import { deliverNotifications, type GrantWait, type NotificationSink } from '../notifications/slack.js';
+import { statusMarker, statusView } from './status.js';
 import { admissionCode, RuntimeAdmissionRejected, type WorkerRuntimePort } from '../runtime/contract.js';
 
 export interface ManagerOptions { correlationId: string; now?: () => Date; notifications?: NotificationSink; workerRuntime?: WorkerRuntimePort }
@@ -30,6 +30,8 @@ export class Manager {
   private now: () => Date;
   /** Definite runtime admission rejections of the current run; reported as blockers, never as uncertain dispatches. */
   private rejections: { issueNumber: number; code: string; recorded: boolean }[] = [];
+  /** Open tasks whose status comment of this run says they wait for nothing but a person's grant. */
+  private grantWaits: GrantWait[] = [];
   /** What this run saw before it acted. */
   private observed?: Snapshot;
   /** The repository state the last run reconciled, for work that follows it (the broker's merge pass). */
@@ -138,9 +140,11 @@ export class Manager {
         const existing = (snapshot.comments.get(task.issue.number) ?? []).filter(c => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
         // A closed task that never had a status comment does not get one after the fact.
         if (task.issue.state === 'closed' && !existing.length) continue;
-        const body = statusComment(task, this.config, { repository: this.github.repository, readyIsGrant: !!snapshot.readyIsGrant,
+        const { body, awaitsGrant } = statusView(task, this.config, { repository: this.github.repository, readyIsGrant: !!snapshot.readyIsGrant,
           rejection: this.rejections.find(r => r.issueNumber === task.issue.number)?.code,
           queued: report.decisions.some(d => d.action.issueNumber === task.issue.number && d.decision.reason === 'Maximum parallel workers reached') });
+        if (awaitsGrant && task.issue.state === 'open') this.grantWaits.push({ number: task.issue.number, title: task.issue.title,
+          after: task.latest?.input.executionId });
         if (existing[0]?.body !== body) await this.github.writeComment(task.issue.number, body, existing[0]?.id);
       }
     } catch { report.errors.push('Status comments could not be updated; the lifecycle itself is unaffected'); }
@@ -260,7 +264,7 @@ export class Manager {
   }
   async run(): Promise<RunReport> {
     const started = this.now();
-    this.rejections = [];
+    this.rejections = []; this.grantWaits = [];
     const report: RunReport = { correlationId: this.options.correlationId, startedAt: started.toISOString(), durationMs: 0,
       outcome: 'success', tasks: 0, decisions: [], errors: [], blockers: [], nextSteps: [] };
     if (!this.config.factory.enabled) { report.outcome = 'disabled'; return report; }
@@ -338,7 +342,7 @@ export class Manager {
     }
     if (this.config.notifications.slack.enabled && !this.config.execution.dryRun && this.config.autonomy.profile !== 'advisory') {
       try { report.errors.push(...await deliverNotifications(this.github, this.config,
-        await this.github.snapshot(this.config.manager.workflow), this.options.notifications, this.options.correlationId, this.now())); }
+        await this.github.snapshot(this.config.manager.workflow), this.options.notifications, this.options.correlationId, this.now(), this.grantWaits)); }
       catch { report.errors.push('Slack notification reconciliation failed; repository actions remain committed'); }
     }
     if (report.errors.length) report.outcome = 'partial';
