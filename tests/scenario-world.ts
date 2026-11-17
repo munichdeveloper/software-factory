@@ -1,3 +1,4 @@
+import type { NotificationSink } from '../src/notifications/slack.js';
 import { Pool, type PoolClient } from 'pg';
 import type { Client } from '@temporalio/client';
 import { RuntimeController, type RuntimeRepository } from '../src/runtime/controller.js';
@@ -95,7 +96,9 @@ export type WorldOptions = { readyLabel?: boolean; humanGate?: boolean; maxParal
   /** A failed validation starts a further attempt (implies coding). */
   rework?: boolean;
   /** The broker reviews and merges validated pull requests itself, without server-side branch rules (implies coding). */
-  merging?: boolean };
+  merging?: boolean;
+  /** Slack delivery of the Manager's notifications; the configuration still decides which events are on. */
+  notifications?: NotificationSink };
 /** What GitHub knows about a published pull request beyond the snapshot: draft, head, checks, base it contains, comments. */
 type PullFacts = { draft: boolean; head: string; base: string; checks: { name: string; state: string }[]; comments: MergeFacts['comments']; mergeSha: string | null };
 export type Tick = { report?: RunReport; thrown?: string };
@@ -174,7 +177,7 @@ export class World {
   /** One Manager reconciliation. A run that cannot even take a snapshot rejects; that is recorded, not thrown. */
   async tick(): Promise<Tick> {
     try {
-      const report = await new Manager(this.github, this.cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => this.now, workerRuntime: this.controller }).run();
+      const report = await new Manager(this.github, this.cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => this.now, workerRuntime: this.controller, notifications: this.options.notifications }).run();
       this.log.push(`tick ${JSON.stringify({ errors: report.errors, blockers: report.blockers })}`); return { report };
     } catch (error) { const thrown = error instanceof Error ? error.message : String(error); this.log.push(`tick threw ${thrown}`); return { thrown }; }
   }

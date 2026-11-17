@@ -263,3 +263,47 @@ it('renders the approval notice with its detail line', async () => {
     detail: `Risiko high liegt über der Schwelle medium. Freigabe im PR: /harness approve ${key}` });
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
+
+async function grantFixture() {
+  const cfg = config(); cfg.notifications.slack.enabled = true; cfg.notifications.slack.channel = channel;
+  cfg.notifications.slack.events.grant_required = { enabled: true, channel: null };
+  const gh = new MemoryGitHub(); gh.state.issues = [{ ...issue(7), title: 'Read the newest n8n version' }];
+  const send = vi.fn<NotificationSink['send']>(async () => ({ channel, timestamp: '1.23' }));
+  const deliver = (waits: { number: number; title: string; after?: string }[]) => deliverNotifications(gh, cfg, structuredClone(gh.state), { send }, 'test', clock, waits);
+  return { cfg, gh, send, deliver };
+}
+it('announces a task waiting only for the grant once per wait (software-factory#127)', async () => {
+  const f = await grantFixture(), wait = { number: 7, title: 'Read the newest n8n version' };
+  expect(await f.deliver([wait])).toEqual([]); expect(await f.deliver([wait])).toEqual([]);
+  expect(f.send).toHaveBeenCalledTimes(1);
+  expect(f.send.mock.calls[0]![1]).toMatchObject({ event: 'grant_required', number: 7, title: 'Read the newest n8n version',
+    url: `https://github.com/${f.gh.repository}/issues/7`, repository: f.gh.repository,
+    detail: 'Bereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready.' });
+  // A further attempt after a run is a new wait and is announced again, once.
+  await f.deliver([{ ...wait, after: id }]); await f.deliver([{ ...wait, after: id }]);
+  expect(f.send).toHaveBeenCalledTimes(2);
+  expect(f.send.mock.calls[1]![1].detail).toBe('Ein weiterer Versuch wartet nur noch auf die Freigabe: eine berechtigte Person setzt das Label harness:ready.');
+});
+it.each(['absent', 'disabled', 'no-wait', 'other-channel'])('handles grant notices: %s', async condition => {
+  const f = await grantFixture();
+  if (condition === 'absent') delete f.cfg.notifications.slack.events.grant_required;
+  if (condition === 'disabled') f.cfg.notifications.slack.events.grant_required = { enabled: false, channel: null };
+  if (condition === 'other-channel') f.cfg.notifications.slack.events.grant_required = { enabled: true, channel: 'C987654321' };
+  await f.deliver(condition === 'no-wait' ? [] : [{ number: 7, title: 'Read the newest n8n version' }]);
+  if (condition === 'other-channel') expect(f.send.mock.calls[0]![0]).toBe('C987654321');
+  else expect(f.send).not.toHaveBeenCalled();
+});
+it('leaves configurations without grant notices unchanged', () => {
+  expect(config().notifications.slack.events).not.toHaveProperty('grant_required');
+});
+it('renders the grant notice with its detail line', async () => {
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    const body = JSON.parse(String(init!.body));
+    expect(body.blocks[0].text.text).toBe('SF: Issue wartet auf Freigabe (harness:ready)\nRepository: owner/target\nhttps://github.com/owner/target/issues/7\n#7: Read the newest n8n version\nBereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready.\nAkteur: Software Factory');
+    return new Response(JSON.stringify({ ok: true, channel, ts: '1.23' }));
+  });
+  await new SlackSink('fixture-token', fetcher).send(channel, { event: 'grant_required', number: 7, title: 'Read the newest n8n version', actor: 'Software Factory',
+    url: 'https://github.com/owner/target/issues/7', repository: 'owner/target',
+    detail: 'Bereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready.' });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

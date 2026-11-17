@@ -4,18 +4,25 @@ import type { Snapshot } from '../types.js';
 import { decodeEvent } from '../state/events.js';
 import { hash } from '../state/identity.js';
 
-export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged' | 'approval_required'; number: number; title: string; actor: string; url: string;
+export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged' | 'approval_required' | 'grant_required'; number: number; title: string; actor: string; url: string;
   /** Shown in the message; run starts name their repository because one channel can collect several. */
   repository?: string;
   /** A task can start several runs (retries, rework); each start is its own delivery. */
   executionId?: string;
   /** One approval request of a risk gate; a new head or base asks again and is announced again. */
   approvalId?: string;
+  /** A task waits for a grant before its first run, or again after the run named here; each wait is its own delivery. */
+  after?: string;
   /** Trusted, Factory-generated detail line (never PR or issue content). */
   detail?: string }
 const labels: Record<Notification['event'], string> = {
   run_started: 'SF: Factory-Lauf gestartet', issue_created: 'SF: Issue autonom angelegt', pr_merged: 'SF: PR durch Bot gemergt',
-  approval_required: 'SF: PR wartet auf Freigabe (Risiko über Schwelle)' };
+  approval_required: 'SF: PR wartet auf Freigabe (Risiko über Schwelle)', grant_required: 'SF: Issue wartet auf Freigabe (harness:ready)' };
+/**
+ * A task the Manager's status comment of this reconciliation describes as waiting for nothing but a person's
+ * `harness:ready` grant (ready-label repositories). `after` names the run a further attempt follows, if any.
+ */
+export interface GrantWait { number: number; title: string; after?: string }
 // A run start is news only shortly after it happened; older starts are never announced, even without `since`.
 const runStartWindowMs = 24 * 60 * 60 * 1000;
 export interface NotificationSink { send(channel: string, notification: Notification): Promise<{ channel: string; timestamp: string }> }
@@ -72,7 +79,7 @@ export class SlackSink implements NotificationSink {
 // Only native GitHub facts plus trusted SF provenance can produce notifications.
 // No planner/model field selects the channel or supplies arbitrary message payloads.
 export async function deliverNotifications(github: GitHubPort, config: Config, snapshot: Snapshot,
-  sink: NotificationSink | undefined, correlationId: string, now: Date): Promise<string[]> {
+  sink: NotificationSink | undefined, correlationId: string, now: Date, grantWaits: GrantWait[] = []): Promise<string[]> {
   const settings = config.notifications.slack;
   if (!settings.enabled || !config.factory.enabled || config.execution.dryRun || config.autonomy.profile === 'advisory') return [];
   const errors: string[] = [];
@@ -88,7 +95,8 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
     if (!channel || !sink) { errors.push(`Slack ${notification.event}: channel or connection missing`); return; }
     const deliveryId = hash({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel,
       ...(notification.executionId ? { executionId: notification.executionId } : {}),
-      ...(notification.approvalId ? { approvalId: notification.approvalId } : {}) });
+      ...(notification.approvalId ? { approvalId: notification.approvalId } : {}),
+      ...(notification.event === 'grant_required' ? { after: notification.after ?? null } : {}) });
     // Re-read to handle repeated manager runs and duplicate PR links across tasks.
     const deliveries = (await github.comments(journal)).flatMap(c => {
       const e = decodeEvent(c, config.manager.trustedActors);
@@ -159,6 +167,15 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
         url: `https://github.com/${github.repository}/pull/${pr.number}`, repository: github.repository, approvalId: e.data.approvalId,
         detail: `Risiko ${e.data.riskClass} liegt über der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}` });
     }
+  }
+  // A task that waits only for a person's `harness:ready` (software-factory#127). The wait is the Manager's own finding of
+  // this reconciliation, the same one its status comment states. Each wait is announced once: before the first run, and
+  // again only when a further attempt after a run waits for a new grant. No `since` cutoff: a wait is current by definition.
+  if (settings.events.grant_required?.enabled) for (const wait of grantWaits) {
+    await deliver(wait.number, { event: 'grant_required', number: wait.number, title: wait.title, actor: 'Software Factory',
+      url: `https://github.com/${github.repository}/issues/${wait.number}`, repository: github.repository, after: wait.after,
+      detail: wait.after ? 'Ein weiterer Versuch wartet nur noch auf die Freigabe: eine berechtigte Person setzt das Label harness:ready.'
+        : 'Bereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready.' });
   }
   if (settings.events.pr_merged.enabled) for (const pr of snapshot.prs) {
     if (!pr.merged || pr.mergedBy?.type !== 'Bot' || !afterStart(pr.mergedAt) ||

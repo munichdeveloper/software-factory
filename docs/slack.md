@@ -28,6 +28,9 @@ notifications:
       approval_required: # Optional; leave it out to keep it off.
         enabled: true
         channel: null
+      grant_required: # Optional; leave it out to keep it off.
+        enabled: true
+        channel: null
       issue_created:
         enabled: true
         channel: null # Optional override; null inherits the default channel.
@@ -64,6 +67,20 @@ authorization. Existing installations continue with notifications disabled.
   new head, base or assessment asks again and is announced again. Requests for a
   head the PR no longer has, or for a closed PR, are not announced. Like
   `run_started`, leaving it out keeps it off and the configuration hash unchanged.
+- `grant_required`: in a repository whose `harness:ready` label is a person's grant
+  (every repository the SF Manager registered with the Temporal runtime), a task waits
+  for nothing but that grant: the Manager's status comment on the Issue says
+  "Waiting only for the grant". The message names the repository, the Issue number
+  and title, links the Issue and says that an authorized person applies
+  `harness:ready`. It is the same finding the status comment states, taken from the
+  same reconciliation, so the two never disagree. Each wait is announced once: before
+  the first run, and again only when a further attempt after a run waits for a new
+  grant. A blocked task, a task with unresolved dependencies or one the runtime
+  refused for another reason (for example `EXECUTOR_WRAPPER_RELEASE_MISMATCH`) is not
+  waiting for the grant and is not announced. `since` does not apply: when the event
+  is turned on, the tasks waiting at that moment are announced once (within
+  `maxPerRun`). Leaving it out keeps it off and the configuration hash unchanged.
+  Requires Factory 0.10.2 in the repository, since older releases reject the key.
 - `issue_created`: a follow-up actually created by the SF bot, correlated with a
   mandatory trusted creation intent on the parent Issue. No notifications for
   plans, dry runs, denied actions, manually created Issues, or historical Issues

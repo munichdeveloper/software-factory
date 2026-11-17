@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { World, bot, type Tick, type WorldOptions } from './scenario-world.js';
+import type { NotificationSink } from '../src/notifications/slack.js';
 
 /**
  * Rules that must hold once the surroundings are healthy again and the Manager had time to reconcile.
@@ -110,6 +111,32 @@ describe('lifecycle scenarios', () => {
     expect(w.statusComments(1)[0]).toContain('> Worker blocked'); // the worker's reason, as a marked quotation
     expect(w.statusComments(1)[0]).toContain('remove `harness:blocked`, then apply `harness:ready`');
     await healthy(w);
+  });
+  it('announces once in Slack that a task waits only for the grant, and again for a further attempt (software-factory#127)', async () => {
+    const send = vi.fn<NotificationSink['send']>(async () => ({ channel: 'C0CGJKK3EKS', timestamp: '1.23' }));
+    const w = new World({ readyLabel: true, notifications: { send } });
+    Object.assign(w.cfg.notifications.slack, { enabled: true, channel: 'C0CGJKK3EKS' });
+    w.cfg.notifications.slack.events.grant_required = { enabled: true, channel: null };
+    w.open(1);
+    await w.tick(); await w.tick();
+    expect(w.statusComments(1)[0]).toContain('Waiting only for the grant');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![1]).toMatchObject({ event: 'grant_required', number: 1, repository: w.github.repository,
+      url: `https://github.com/${w.github.repository}/issues/1`, detail: 'Bereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready.' });
+    w.grant(1); await w.tick();
+    expect(w.status(1)).toEqual(['running']);
+    await w.finish(execution(w, 1), 'blocked'); await w.tick(); await w.tick();
+    // Blocked is not a wait for the grant: the person has to revise the task first.
+    expect(send.mock.calls.filter(c => c[1].event === 'grant_required')).toHaveLength(1);
+    await healthy(w);
+  });
+  it('announces nothing about grants where the event is off', async () => {
+    const send = vi.fn<NotificationSink['send']>(async () => ({ channel: 'C0CGJKK3EKS', timestamp: '1.23' }));
+    const w = new World({ readyLabel: true, notifications: { send } });
+    Object.assign(w.cfg.notifications.slack, { enabled: true, channel: 'C0CGJKK3EKS' });
+    w.open(1); await w.tick();
+    expect(w.statusComments(1)[0]).toContain('Waiting only for the grant');
+    expect(send).not.toHaveBeenCalled();
   });
   it('takes a task from the grant through its pull request to done', async () => {
     const w = new World({ readyLabel: true, pullRequests: 'closing' }); w.open(1); w.grant(1);
