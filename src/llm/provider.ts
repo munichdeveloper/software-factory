@@ -49,7 +49,7 @@ export function compactContext(tasks: Task[], config: Config): string {
     selected.push(item);
   }
   return JSON.stringify({ trustedScope: config.factory.scope,
-    trustedWorker: config.workers.coding && config.workers.coding.enabled ? 'Codex coding worker (edits, tests, opens a PR via SF)' : 'Non-mutating digest test worker',
+    trustedWorker: config.workers.coding && config.workers.coding.enabled ? `${config.workers.coding.agent === 'claude' ? 'Claude' : 'Codex'} coding worker (edits, tests, opens a PR via SF)` : 'Non-mutating digest test worker',
     ...(config.workers.coding && config.workers.coding.enabled && config.workers.coding.smallPullRequests ? { trustedWorkingRules: smallPullRequestRule } : {}),
     untrustedTasks: selected });
 }
