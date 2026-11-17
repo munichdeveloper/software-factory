@@ -12,7 +12,8 @@ while true; do
   config=$(cat "$slot/jitconfig"); rm -f "$slot/jitconfig"
   echo "sf-runner: starting one job"
   # The configuration is single-use: once this runner has connected, it cannot register another runner.
-  sudo -u runner --preserve-env=DOCKER_HOST,DOCKER_TLS_VERIFY,DOCKER_CERT_PATH -H \
+  # runuser (not sudo: root has no sudoers entry in this image) keeps the environment, so DOCKER_HOST reaches the job.
+  HOME=/home/runner runuser -u runner -- \
     bash -c 'cd /home/runner && exec ./run.sh --jitconfig "$1"' _ "$config"
   echo "sf-runner: job ended with $?"
   unset config
