@@ -237,6 +237,26 @@ describe('docker-ssh deployment', () => {
     expect(await readFile(log, 'utf8')).toContain('prune image prune --force --filter label=com.docker.compose.project=app');
   });
 
+  it('still deploys when an old release cannot be pruned and names it in the log', async () => {
+    const shas = [];
+    for (let i = 0; i < 2; i++) {
+      shas.push(await commit({ 'compose.yaml': 'services: {}\n', 'app.txt': `v${i}` }));
+      expect((await deploy(shas[i]!, { keepReleases: 1 })).outcome).toBe('deployed');
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    // An rm on the PATH that refuses releases marked STUCK, like files owned by another user on the target.
+    await writeFile(join(bin, 'rm'), '#!/usr/bin/env bash\nfor a in "$@"; do [ -e "$a/STUCK" ] && { echo "rm: cannot remove $a: Permission denied" >&2; exit 1; }; done\nexec /bin/rm "$@"\n');
+    await chmod(join(bin, 'rm'), 0o755);
+    await writeFile(join(root, 'srv', 'app', 'releases', shas[1]!, 'STUCK'), '');
+    const next = await commit({ 'app.txt': 'v2' });
+    const lines: string[] = [];
+    const report = await executeDeploy({ config: config({ path: join(root, 'srv', 'app'), project: 'app', healthcheck: { timeoutSeconds: 10 }, keepReleases: 1 }),
+      sha: next, sourceDir: repo, transport: new LocalTransport(env), port: new FakePort(), log: line => lines.push(line) });
+    expect(report.outcome).toBe('deployed');
+    expect(await readlink(join(root, 'srv', 'app', 'current'))).toBe(join(root, 'srv', 'app', 'releases', next));
+    expect(lines).toContain(`Warning: old releases could not be removed (check their owner on the target): ${shas[1]}`);
+  });
+
   it('restores the previous release when the new one fails to start', async () => {
     const good = await commit({ 'compose.yaml': 'services: {}\n' });
     await deploy(good);

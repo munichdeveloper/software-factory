@@ -147,6 +147,8 @@ export async function executeDeploy(context: DeployContext): Promise<DeployRepor
       String(deploy.keepReleases), deploy.healthcheck.url ?? '', String(deploy.healthcheck.timeoutSeconds), deploy.rollback ? '1' : '0',
       deploy.verify.script ?? '', String(deploy.verify.timeoutSeconds), deploy.verify.rollback ? '1' : '0'], undefined, timeoutMs);
     if (result.stderr.trim()) log(result.stderr.trim());
+    const unpruned = [...result.stdout.matchAll(/^SF_DEPLOY_PRUNE_FAILED=(.*)$/gm)].map(match => match[1]!.trim());
+    if (unpruned.length) log(`Warning: old releases could not be removed (check their owner on the target): ${unpruned.join(', ')}`);
     const previousRelease = remoteValue(result.stdout, 'SF_DEPLOY_PREVIOUS');
     const previous = previousRelease && previousRelease !== 'none' ? previousRelease : null;
     const error = remoteValue(result.stdout, 'SF_DEPLOY_ERROR');
