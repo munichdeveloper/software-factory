@@ -122,4 +122,12 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" .github/workflows/*.yml templates/factory-manager*.yml templates/factory-deploy.yml
-      - run: npm audit --audit-level=moderate
+      # GHSA-fc5q-39xc-vjpf (picomatch ReDoS) has no patched release yet and only reaches dev tooling (vitest, eslint);
+      # Johannes let exactly this advisory through on 2026-11-17. Remove the exception once picomatch publishes a fix.
+      - name: npm audit
+        run: |
+          npm audit --json > "$RUNNER_TEMP/audit.json" || true
+          jq -e '[.vulnerabilities[] | select(.severity != "low" and .severity != "info")
+            | .via[] | if type == "object" then .url else empty end
+            | select(. != "https://github.com/advisories/GHSA-fc5q-39xc-vjpf")] | length == 0' "$RUNNER_TEMP/audit.json" \
+            || { npm audit --audit-level=moderate; exit 1; }
