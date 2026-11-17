@@ -5,6 +5,8 @@ set -uo pipefail
 slot=/jit work=/home/runner/_work
 chmod 0777 "$slot"
 rm -f "$slot/busy"
+# The workspace is a volume shared with the slot's Docker daemon; it starts out owned by root.
+chown runner:runner "$work"
 while true; do
   if [[ ! -s "$slot/jitconfig" ]]; then sleep 5; continue; fi
   # 'busy' first, so the broker never sees the slot idle between taking the file and the end of the job.
