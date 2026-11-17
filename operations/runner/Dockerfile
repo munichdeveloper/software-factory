@@ -4,7 +4,9 @@
 FROM ghcr.io/actions/actions-runner:2.338.1@sha256:e275409999c37162649aa050ca573f03eab2eabcb3a1e7fcc47548de6b4f9690
 USER root
 # The tools hosted Ubuntu runners have and the Factory's workflows use (jq, zip, git and docker are in the base image).
+# Fonts: tests that draw text onto images (canvas, browsers) render nothing without a system font.
 RUN apt-get update && apt-get install -y --no-install-recommends jq zip unzip xz-utils ca-certificates curl \
+  fontconfig fonts-dejavu-core fonts-liberation \
   && rm -rf /var/lib/apt/lists/*
 # The runner image's docker CLI has no plugins; compose and buildx come from the same Docker release as the slot daemons.
 COPY --from=docker:29.9.3-dind@sha256:7bf70dcb85c822e3fa6f2d332143e474b99147b9d7b39102b0cfe8b04a7dd61b \
