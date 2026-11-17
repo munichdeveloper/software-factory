@@ -24,7 +24,9 @@ workers, merging and notifications: none of them changes behaviour.
    started again (`rolled-back`), otherwise the new release stays active (`verify-failed`). The Factory runtime uses it
    for its end-to-end canary (`operations/temporal-runtime/canary.sh`).
 6. Success switches the `<path>/current` link, keeps `keepReleases` releases and
-   prunes dangling images of the project. Failure prints recent container logs and,
+   prunes dangling images of the project. Pruning is best effort: a release the deploy user cannot remove (for
+   example files owned by another user) stays in place, is named as a warning in the job log and does not fail the
+   deployment. Failure prints recent container logs and,
    with `rollback: true`, starts the previous release again. The job then fails.
 
 Deployments are serialized (wrapper concurrency plus a `flock` on the host). The

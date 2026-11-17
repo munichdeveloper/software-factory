@@ -41925,7 +41925,10 @@ if start "$release" && { verify || { verified=0; [ "$verify_rollback" != 1 ]; };
   while IFS= read -r dir; do
     dir=\${dir%/}
     [ "$dir" = "$release" ] && continue
-    if (( kept < keep )); then kept=$((kept + 1)); else rm -rf -- "$dir"; fi
+    if (( kept < keep )); then kept=$((kept + 1)); continue; fi
+    # Pruning is housekeeping: a release the deploy user cannot remove (e.g. files owned by another user)
+    # must not fail a deployment whose new release is already active.
+    rm -rf -- "$dir" 2>/dev/null || echo "SF_DEPLOY_PRUNE_FAILED=$(basename "$dir")"
   done < <(ls -1dt "$root"/releases/*/ 2>/dev/null)
   docker image prune --force --filter "label=com.docker.compose.project=$project" >/dev/null 2>&1 || true
   if [ "$verified" = 0 ]; then echo "SF_DEPLOY_RESULT=verify-failed"; exit 5; fi
@@ -42175,6 +42178,8 @@ async function executeDeploy(context) {
       deploy.verify.rollback ? "1" : "0"
     ], void 0, timeoutMs);
     if (result.stderr.trim()) log(result.stderr.trim());
+    const unpruned = [...result.stdout.matchAll(/^SF_DEPLOY_PRUNE_FAILED=(.*)$/gm)].map((match) => match[1].trim());
+    if (unpruned.length) log(`Warning: old releases could not be removed (check their owner on the target): ${unpruned.join(", ")}`);
     const previousRelease = remoteValue(result.stdout, "SF_DEPLOY_PREVIOUS");
     const previous = previousRelease && previousRelease !== "none" ? previousRelease : null;
     const error62 = remoteValue(result.stdout, "SF_DEPLOY_ERROR");
