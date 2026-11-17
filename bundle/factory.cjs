@@ -39623,6 +39623,8 @@ function evaluate(action, ctx) {
 
 // src/state/reconstruct.ts
 var admissionRejectedSummary = "Runtime admission rejected before start";
+var infrastructureFailureCode = "EXECUTOR_INFRASTRUCTURE_FAILURE";
+var freeInfrastructureFailures = 3;
 var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
 var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
 function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
@@ -39685,8 +39687,12 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     }
     const currentExecutions = executions.filter((e) => e.input.taskVersion === version2);
     currentExecutions.sort((a, b) => a.attempt - b.attempt);
+    currentExecutions.filter((e) => !e.rejected && e.result?.status === "failed" && e.result.error === infrastructureFailureCode).slice(0, freeInfrastructureFailures).forEach((e) => {
+      e.infrastructure = true;
+    });
     const real = currentExecutions.filter((e) => !e.rejected);
     const latest = real.at(-1);
+    const attemptsUsed = real.filter((e) => !e.infrastructure).length;
     const nextAttempt = (currentExecutions.at(-1)?.attempt ?? -1) + 1;
     const refused = currentExecutions.filter((e) => e.rejected && (!latest || e.attempt > latest.attempt));
     const lastRefused = refused.at(-1);
@@ -39710,7 +39716,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
     const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
     const failedValidation = latest?.runtime?.validation;
-    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" && real.length <= config2.execution.maxRetries;
+    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" && attemptsUsed <= config2.execution.maxRetries;
     let desiredStatus = issueStatus(issue2) ?? "backlog";
     if (issue2.state === "closed") desiredStatus = "done";
     else if (explicitBlock) desiredStatus = "blocked";
@@ -39719,7 +39725,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     else if (hasClosingMerge) desiredStatus = "done";
     else if (blockReason) desiredStatus = "blocked";
     else if (reworkable) desiredStatus = "failed";
-    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && real.length <= config2.execution.maxRetries) desiredStatus = "ready";
+    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed <= config2.execution.maxRetries) desiredStatus = "ready";
     else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
     else if (hasOpenPR) desiredStatus = "awaiting-pr";
     else if (snapshot.readyIsGrant) {
@@ -39734,7 +39740,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       events,
       executions,
       latest,
-      attemptsUsed: real.length,
+      attemptsUsed,
       nextAttempt,
       ...refusal ? { refusal } : {},
       openFollowups,
@@ -40183,7 +40189,7 @@ function statusComment(task, config2, context) {
     needs = `Read the worker's request: ${quoted(result.summary)}`;
   } else if (result) {
     const left = task.attemptsUsed <= config2.execution.maxRetries, code = result.error && /^[A-Z_]{1,60}$/.test(result.error) ? ` (\`${result.error}\`)` : "";
-    state = [`The last run ${result.status === "cancelled" ? "was cancelled" : "failed"}${code} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}).`];
+    state = [task.latest.infrastructure ? `The last run failed before the agent started${code}, while setting up the runner or workspace. Nothing of the task ran, so this costs no attempt (${task.attemptsUsed} of ${config2.execution.maxRetries + 1} used).` : `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"}${code} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}).`];
     needs = left ? "Nothing; the Factory retries on its own." : "The retry limit is reached. Revise the task text to start over.";
   } else if (task.hasOpenPR) {
     state = ["A pull request for this task is open."];

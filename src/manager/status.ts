@@ -91,7 +91,9 @@ export function statusComment(task: Task, config: Config, context: { repository:
   else if (result?.status === 'needs_approval') { state = ['The last run asks for an approval before it continues.']; needs = `Read the worker's request: ${quoted(result.summary)}`; }
   else if (result) {
     const left = task.attemptsUsed <= config.execution.maxRetries, code = result.error && /^[A-Z_]{1,60}$/.test(result.error) ? ` (\`${result.error}\`)` : '';
-    state = [`The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'}${code} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}).`];
+    state = [task.latest!.infrastructure
+      ? `The last run failed before the agent started${code}, while setting up the runner or workspace. Nothing of the task ran, so this costs no attempt (${task.attemptsUsed} of ${config.execution.maxRetries + 1} used).`
+      : `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'}${code} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}).`];
     needs = left ? 'Nothing; the Factory retries on its own.' : 'The retry limit is reached. Revise the task text to start over.';
   } else if (task.hasOpenPR) { state = ['A pull request for this task is open.']; needs = 'Review and merge the pull request.'; }
   else if (context.readyIsGrant && !task.issue.labels.includes('harness:ready')) { state = ['Ready to run. **Waiting only for the grant.**']; needs = grant; }
