@@ -26,7 +26,7 @@ jobs:
       (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == github.event.repository.default_branch)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SF_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 75
     # Protection rules and environment secrets of this GitHub environment apply to every deployment.
     environment: DEPLOY_ENVIRONMENT
