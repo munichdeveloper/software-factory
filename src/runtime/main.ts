@@ -24,6 +24,8 @@ import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
 import { scopedRuntimeGitHub } from './github-app.js';
+import { RunnerDispenser, RunnerFallback, startRunnerFallback, type RunnerRepositoryPort } from './runners.js';
+import { runnerRepository } from './runner-github.js';
 import { ActionsCodingExecutor, codingWorkflow } from './coding-executor.js';
 import { RuntimeEffects } from './effects.js';
 import { RuntimeCodingPublisher, containsCommit } from './publisher.js';
@@ -122,6 +124,15 @@ export async function main(args = process.argv.slice(2)) {
   try {
     await store.migrate();
     type Item = z.infer<typeof registrySchema>['repositories'][number];
+    // Self-hosted runner fallback (software-factory#110): every App-bound repository; public ones are skipped by the
+    // fallback itself. The admin token is limited to this repository and to runners and variables.
+    const runnerPorts: RunnerRepositoryPort[] = [];
+    const addRunnerPort = (item: Item, actions: Octokit) => {
+      if (!item.githubInstallationId || runnerPorts.some(p => p.repositoryId === item.repositoryId)) return;
+      runnerPorts.push(runnerRepository(item.repositoryId, item.repository, actions, scopedRuntimeGitHub({ appId: process.env.GITHUB_APP_ID ?? '',
+        privateKey: process.env.GITHUB_APP_PRIVATE_KEY ?? '', installationId: item.githubInstallationId, repositoryId: item.repositoryId,
+        permissions: { administration: 'write', actions_variables: 'write' } })));
+    };
     const bind = async (item: Item): Promise<RuntimeBinding> => {
       if (item.githubInstallationId && !(process.env.GITHUB_ALLOWED_INSTALLATION_IDS ?? '').split(',').includes(String(item.githubInstallationId))) throw new Error('INSTALLATION_NOT_ALLOWLISTED');
       const token = item.githubTokenEnv ? z.string().min(1).parse(process.env[item.githubTokenEnv]) : '';
@@ -131,6 +142,7 @@ export async function main(args = process.argv.slice(2)) {
       const github = item.issueNumbers ? new IssueScopedGitHub(source, item.issueNumbers) : source;
       const [owner, repo] = item.repository.split('/') as [string, string];
       if ((await api.repos.get({ owner, repo })).data.id !== item.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
+      addRunnerPort(item, api);
       const isCanary = canaryItem?.repositoryId === item.repositoryId;
       const repository: RuntimeRepository = { ...item, github, retainedRunMs, config: async () => {
         const config = loadConfig(await source.readConfig(item.configPath, item.baseRef));
@@ -176,6 +188,16 @@ export async function main(args = process.argv.slice(2)) {
     };
     const bindings: RuntimeBinding[] = [];
     for (const item of registry.repositories) bindings.push(await bind(item));
+    // Private repositories the runtime does not serve but whose CI should follow the fallback too (for example the
+    // SF Manager itself): "id:owner/name" pairs, reached through the App installation of the bound repositories.
+    const runnerInstallation = registry.repositories.find(item => item.githubInstallationId)?.githubInstallationId;
+    for (const entry of (process.env.FACTORY_RUNNER_REPOSITORIES ?? '').split(',').map(e => e.trim()).filter(Boolean)) {
+      const [, id, repository] = /^([0-9]+):([\w.-]+\/[\w.-]+)$/.exec(entry) ?? [];
+      if (!id || !repository || !runnerInstallation) throw new Error(`INVALID_RUNNER_REPOSITORY ${entry}`);
+      const item = { repositoryId: Number(id), repository, githubInstallationId: runnerInstallation } as Item;
+      addRunnerPort(item, scopedRuntimeGitHub({ appId: z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
+        privateKey: z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), installationId: runnerInstallation, repositoryId: item.repositoryId }));
+    }
     // Repositories the SF Manager registered (Temporal rollout): served with the PINNED worker release, the ready
     // label as grant and independent validation. A registration that cannot be bound is reported, never fatal for
     // the repositories of the static registry.
@@ -208,9 +230,16 @@ export async function main(args = process.argv.slice(2)) {
     // installation's 5000 requests per hour.
     const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '180');
     const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
+    // Off unless the deployment turns it on: the App needs Administration and Variables write for it.
+    const stopRunners = process.env.FACTORY_RUNNER_FALLBACK === 'on' ? (() => {
+      const channel = process.env.FACTORY_RUNNER_ALERT_CHANNEL, slack = process.env.SLACK_BOT_TOKEN && channel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;
+      const fallback = new RunnerFallback(runnerPorts, slack ? { alerts: { post: text => slack.post(channel!, text) } } : {});
+      const slots = process.env.FACTORY_RUNNER_SLOTS_DIR;
+      return startRunnerFallback(fallback, slots ? new RunnerDispenser(fallback, slots) : null, Math.max(interval, 60) * 1000);
+    })() : () => {};
     console.log(JSON.stringify({ service: 'factory-runtime', port, addresses, reconcileIntervalSeconds: interval, repositories: bindings.map(b => b.repository.repositoryId) }));
     await new Promise<void>(resolve => {
-      const stop = () => { void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
+      const stop = () => { stopRunners(); void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
       process.once('SIGINT', stop); process.once('SIGTERM', stop);
     });
   } finally { await connection.close(); await store.pool.end(); }

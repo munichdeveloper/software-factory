@@ -25,3 +25,53 @@ A repository's own CI workflows (for example `test.yml`) need the same `runs-on`
 | ---------------- | ----------------------------------------------- |
 | unset or empty   | GitHub-hosted `ubuntu-latest`                   |
 | `sf-self-hosted` | the Factory's runner pool on the runtime host   |
+
+## Runner pool
+
+The runtime host (`operations/temporal-runtime/compose.production.yaml`) runs two runner slots. Each slot is a
+runner container (`operations/runner/Dockerfile`, the official `actions-runner` image) and its own Docker daemon
+(`docker:dind`) sharing one network namespace, so jobs can use `docker`, `docker compose` and services on
+`localhost` as on a hosted runner. Per slot the daemon is limited to 2 CPUs and 5 GB memory. The host has 4 CPUs and
+16 GB; the runtime itself needs well under 4 GB. Two slots means at most two jobs at a time; further jobs wait in
+GitHub's queue until a slot is free.
+
+Runners are ephemeral just-in-time runners: each takes exactly one job and is then removed by GitHub. Between jobs
+the slot wipes its workspace, temporary files and everything in its Docker daemon.
+
+### Hand-out
+
+The runners hold no credentials. The broker, which has a GitHub App token per repository, writes a just-in-time
+configuration (`generate-jitconfig`, label `sf-self-hosted`) into an idle slot's volume when a job with that label
+waits in a switched repository. A slot is idle when it has neither a `jitconfig` nor a `busy` file. The runner marks
+itself `busy`, reads and deletes the configuration, runs the job and clears `busy` again. Configurations already
+handed out count against waiting jobs, so a job never gets two runners.
+
+### Switching
+
+The broker checks every registered **private** repository on its reconcile interval (`src/runtime/runners.ts`):
+
+- **To the pool:** a job GitHub never started (completed with failure, no runner, no steps, within 30 seconds, not
+  on `sf-self-hosted`) is how a used-up budget shows. The budget is account-wide, so the broker sets
+  `SF_RUNNER=sf-self-hosted` in every private repository that does not have it, re-runs each refused run once and
+  posts to Slack.
+- **Back:** once a new UTC month has started since the variable was set, the broker deletes it again and posts to
+  Slack. If the budget is still used up, the next refusal switches again.
+- A value a person set to anything other than `sf-self-hosted` is never touched.
+
+### Configuration
+
+| Broker environment             | Meaning                                                        |
+| ------------------------------ | -------------------------------------------------------------- |
+| `FACTORY_RUNNER_FALLBACK`      | `on` enables switching and hand-out; anything else disables it |
+| `FACTORY_RUNNER_SLOTS_DIR`     | directory with one subdirectory per slot                       |
+| `FACTORY_RUNNER_ALERT_CHANNEL` | Slack channel for switch notices (needs `SLACK_BOT_TOKEN`)     |
+| `FACTORY_RUNNER_REPOSITORIES`  | extra private repositories outside the registry, `id:owner/name` |
+
+The GitHub App needs, in addition to its usual permissions, **Administration: write** (just-in-time runners) and
+**Variables: write** (`SF_RUNNER`). The broker requests these only in a separate token used for these two calls.
+
+### Security
+
+The Docker daemons run privileged: a job can take over the runtime host. The pool therefore only serves the
+account's own private repositories, never public ones or forks. The runner network is separate from the runtime
+networks; the slot volume is the only thing the broker and runners share and it only carries one-job configurations.

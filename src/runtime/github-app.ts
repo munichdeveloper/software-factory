@@ -30,7 +30,10 @@ export class GitHubUsage {
 const usage = new GitHubUsage();
 setInterval(() => { const summary = usage.flush(); if (summary) console.log(JSON.stringify(summary)); }, 60000).unref();
 /** The App key stays in the broker; EVERY installation token is limited to one numeric repository. */
-export function scopedRuntimeGitHub(options: { appId: string; privateKey: string; installationId: number; repositoryId: number }, fetcher: typeof fetch = fetch): Octokit {
+/** What the broker's coding, publishing and merge paths ask for. Other uses name their own, narrower permissions. */
+export const runtimePermissions = { contents: 'write', issues: 'write', pull_requests: 'write', actions: 'write' } as const;
+export function scopedRuntimeGitHub(options: { appId: string; privateKey: string; installationId: number; repositoryId: number;
+  permissions?: Record<string, 'read' | 'write'> }, fetcher: typeof fetch = fetch): Octokit {
   if (!Number.isSafeInteger(options.installationId) || options.installationId <= 0 || !Number.isSafeInteger(options.repositoryId) || options.repositoryId <= 0) throw new Error('INVALID_APP_SCOPE');
   const silent = { debug() {}, info() {}, warn() {}, error() {} };
   const app = new Octokit({ authStrategy: createAppAuth, auth: { appId: options.appId, privateKey: options.privateKey.replaceAll('\\n', '\n') }, request: { timeout: 20000, fetch: fetcher }, log: silent });
@@ -38,7 +41,7 @@ export function scopedRuntimeGitHub(options: { appId: string; privateKey: string
   scoped.hook.wrap('request', async (request, parameters) => {
     const authentication = z.object({ token: z.string().min(1) }).parse(await app.auth({
       type: 'installation', installationId: options.installationId, repositoryIds: [options.repositoryId],
-      permissions: { contents: 'write', issues: 'write', pull_requests: 'write', actions: 'write' },
+      permissions: options.permissions ?? runtimePermissions,
     }));
     // Hooks share the original options object; inner hooks may ignore a replacement object.
     parameters.headers.authorization = `token ${authentication.token}`;
