@@ -18,13 +18,17 @@ export async function containsCommit(api: Octokit, target: { owner: string; repo
   const { data } = await api.repos.compareCommits({ ...target, base: ancestor, head, per_page: 1 });
   return data.status === 'ahead' && data.merge_base_commit.sha === ancestor;
 }
+/** The author of commits published before the App identity was used; an interrupted publication keeps it. */
+export const legacyCommitIdentity = { name: 'Software Factory', email: 'software-factory@users.noreply.github.com' };
 const missing = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && error.status === 404;
 
 /** Trusted broker only: validates artifacts and publishes API data, never executes target code. */
 export class RuntimeCodingPublisher {
   constructor(private api: Octokit, private effects: EffectPort, private authorize: () => Promise<unknown>, private trustedActors: string[],
     /** Named in the commit and title; Codex runs keep their text unchanged. */
-    private agent: 'codex' | 'claude' = 'codex') {}
+    private agent: 'codex' | 'claude' = 'codex',
+    /** Author and committer of the published commit: the App's bot user where the broker resolved it. */
+    private identity: { name: string; email: string } = legacyCommitIdentity) {}
   async publish(snapshot: RunSnapshot, source: unknown, createdAt: string, validation?: ValidationReport) {
     const artifact: CodingArtifact = codingArtifactSchema.parse(source), input = snapshot.admission.input;
     if (input.worker !== 'codex' || artifact.baseSha !== snapshot.baseSha || artifact.result.executionId !== input.executionId ||
@@ -85,11 +89,18 @@ export class RuntimeCodingPublisher {
     const agentName = this.agent === 'claude' ? 'Claude' : 'Codex';
     const fingerprint = hash(artifact), message = `Implement #${input.issueNumber} with ${agentName}\n\nSF execution: ${input.executionId}\nBinding: ${hash(snapshot)}\nArtifact: ${fingerprint}`;
     // Explicit immutable author/committer dates make retries content-addressed, even after a lost response.
-    const identity = { name: 'Software Factory', email: 'software-factory@users.noreply.github.com', date: createdAt };
-    const commitInput = { message, tree: newTree.sha, parents: [snapshot.baseSha], author: identity, committer: identity };
-    const commit = await this.effects.perform({ key: 'commit', payload: commitInput, authorize: objects, contentAddressed: true,
-      validate: objectReceipt.parse, reconcile: async () => null,
-      apply: async () => ({ sha: (await this.api.git.createCommit({ ...target, ...commitInput })).data.sha }) });
+    const commitWith = (who: { name: string; email: string }) => {
+      const identity = { ...who, date: createdAt };
+      const commitInput = { message, tree: newTree.sha, parents: [snapshot.baseSha], author: identity, committer: identity };
+      return this.effects.perform({ key: 'commit', payload: commitInput, authorize: objects, contentAddressed: true,
+        validate: objectReceipt.parse, reconcile: async () => null,
+        apply: async () => ({ sha: (await this.api.git.createCommit({ ...target, ...commitInput })).data.sha }) });
+    };
+    // A publication that recorded its commit under the earlier identity before a broker update finishes with that one.
+    const commit = await commitWith(this.identity).catch(error => {
+      if (error instanceof Error && error.message === 'EFFECT_PAYLOAD_CONFLICT' && this.identity !== legacyCommitIdentity) return commitWith(legacyCommitIdentity);
+      throw error;
+    });
     await this.effects.perform({ key: 'branch', payload: { branch, sha: commit.sha }, authorize, validate: objectReceipt.parse,
       reconcile: async () => { try { const existing = (await this.api.git.getRef({ ...target, ref: `heads/${branch}` })).data;
         if (existing.object.sha !== commit.sha) throw new Error('EXECUTION_BRANCH_CONFLICT'); return { sha: existing.object.sha };

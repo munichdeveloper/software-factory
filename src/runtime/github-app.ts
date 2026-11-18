@@ -85,3 +85,23 @@ export function scopedRuntimeGitHub(options: { appId: string; privateKey: string
   });
   return scoped;
 }
+
+/**
+ * The commit identity GitHub attributes to this App's bot user (`<id>+<slug>[bot]@users.noreply.github.com`), resolved
+ * once per process: the slug from the App itself, the bot user's id from the public user record. A Factory commit
+ * then shows the App as its author, not a stranger's account that happens to own a guessed noreply address.
+ */
+let commitIdentity: Promise<{ name: string; email: string }> | undefined;
+export function appCommitIdentity(appId: string, privateKey: string, api: Octokit, fetcher: typeof fetch = fetch) {
+  commitIdentity ??= (async () => {
+    const silent = { debug() {}, info() {}, warn() {}, error() {} };
+    const app = new Octokit({ authStrategy: createAppAuth, auth: { appId, privateKey: privateKey.replaceAll('\\n', '\n') }, request: { timeout: 20000, fetch: fetcher }, log: silent });
+    const { slug } = z.object({ slug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,99}$/) }).parse((await app.request('GET /app')).data);
+    const login = `${slug}[bot]`;
+    const { id } = z.object({ id: z.number().int().positive() }).parse((await api.users.getByUsername({ username: login })).data);
+    return { name: login, email: `${id}+${login}@users.noreply.github.com` };
+  })();
+  // A failed lookup is tried again on the next publication.
+  commitIdentity.catch(() => { commitIdentity = undefined; });
+  return commitIdentity;
+}

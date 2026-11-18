@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contextCommits, namedRefs, outputEntries, refEntry, reworkEntry, reworkMarker, reworkOf, unavailableEntry } from '../src/runtime/coding-context.js';
+import { contextCommits, namedRefs, outputEntries, refEntry, reviewEntries, reworkEntry, reworkMarker, reworkOf, unavailableEntry } from '../src/runtime/coding-context.js';
 
 describe('context the broker adds to a coding request', () => {
   it('takes only explicit candidates from task text', () => {
@@ -33,5 +33,18 @@ describe('context the broker adds to a coding request', () => {
     expect(entries.join('')).not.toContain('start');
     expect(outputEntries('browser', ' \n ')).toEqual([]);
     expect(outputEntries('not a check', 'text')).toEqual([]);
+  });
+});
+
+describe('review findings for a rework', () => {
+  it('puts blocking findings first, keeps every entry inert and bounded', () => {
+    const entries = reviewEntries({ reason: 'Bitte\nändern.\u0007', findings: [
+      { severity: 'warning', path: 'src/b.ts', explanation: 'Hinweis.' },
+      { severity: 'blocking', path: 'src/a b.ts', explanation: 'x'.repeat(2000) }] });
+    expect(entries[0]).toBe('sf-context review-changes: Bitte ändern.');
+    expect(entries[1]!.startsWith('sf-context review-finding blocking src/ab.ts: xxx')).toBe(true);
+    expect(entries[1]).toHaveLength(1000);
+    expect(entries[2]).toBe('sf-context review-finding warning src/b.ts: Hinweis.');
+    expect(reviewEntries({ reason: 'r', findings: Array.from({ length: 15 }, () => ({ severity: 'warning', path: 'p', explanation: 'e' })) })).toHaveLength(9);
   });
 });

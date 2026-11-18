@@ -115,9 +115,11 @@ export async function classifyRisk(changes: ReviewInput['changes'], risk: Config
         testsChanged: changes.some(c => /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[a-z]+$/i.test(c.path)) }
     }));
     return { ...base, class: highest([assessment.class, rules.floor]), source: 'ai', aiClass: assessment.class, reason: assessment.reason, factors: assessment.factors };
-  } catch {
+  } catch (error) {
+    // Only a fixed code of the cause, never provider text: it is shown in the pull request.
+    const status = error && typeof error === 'object' && 'status' in error && /^[0-9]{3}$/.test(String(error.status)) ? ` Ursache: HTTP ${String(error.status)} des Bewertungsanbieters.` : '';
     return { ...base, class: 'critical', source: 'error', aiClass: null, factors: [],
-      reason: 'Die Risikobewertung konnte nicht vollständig durchgeführt werden; sie gilt deshalb als kritisch.' };
+      reason: `Die Risikobewertung konnte nicht vollständig durchgeführt werden; sie gilt deshalb als kritisch.${status}` };
   }
 }
 
@@ -179,14 +181,31 @@ export class FallbackRiskAssessor implements RiskAssessor {
 /** Whether a merge of this class needs a person under the configured threshold. */
 export const aboveThreshold = (cls: RiskClass, risk: Config['merge']['risk']) => cls === 'critical' || riskRank(cls) > riskRank(risk.autoMergeUpTo);
 
+/** Class the change size alone gives: the floor the line limits set under every other source. */
+export const sizeClass = (lines: number, risk: Config['merge']['risk']): RiskClass =>
+  lines > risk.maxMediumRiskLines ? 'high' : lines > risk.maxLowRiskLines ? 'medium' : 'low';
+
+/**
+ * The readable risk verdict. It names separately what decided the class, what the change size contributes and how the
+ * class compares with the auto-merge limit, so the size can never be read as the reason for a class it did not raise.
+ */
 export function describeRisk(record: RiskRecord, risk: Config['merge']['risk']): string {
-  const origin = { builtin: 'eingebaute kritische Pfade', areas: 'konfigurierte Bereiche', ai: 'KI-Bewertung', error: 'Bewertung fehlgeschlagen' }[record.source];
-  const details = [
-    record.aiClass && record.aiClass !== record.class ? `KI: ${record.aiClass}` : '',
-    record.matchedAreas.length ? `Bereiche: ${record.matchedAreas.join(', ')}` : '',
-    `${record.lines} geänderte Zeilen`
-  ].filter(Boolean).join('; ');
-  const decision = aboveThreshold(record.class, risk) ? `über der Schwelle \`${risk.autoMergeUpTo}\`` : `innerhalb der Schwelle \`${risk.autoMergeUpTo}\``;
-  return `**Risiko: ${record.class}** (${origin}; ${details}), ${decision}${risk.mode === 'observe' ? ', nur beobachtet' : ''}.\n\n${record.reason}` +
+  const above = aboveThreshold(record.class, risk), size = sizeClass(record.lines, risk);
+  const verdict = risk.mode === 'observe'
+    ? `${above ? 'Liegt über' : 'Liegt innerhalb'} der Grenze für automatisches Mergen (\`${risk.autoMergeUpTo}\`); nur beobachtet, ohne Wirkung auf den Merge.`
+    : above ? `Liegt über der Grenze für automatisches Mergen (\`${risk.autoMergeUpTo}\`)${record.class === 'critical' ? '; critical wird nie automatisch gemergt' : ''}. Die Factory mergt nicht selbst, ein Mensch muss freigeben.`
+      : `Liegt innerhalb der Grenze für automatisches Mergen (\`${risk.autoMergeUpTo}\`).`;
+  const cause = {
+    builtin: 'Grund: Der PR ändert eingebaute kritische Pfade der Factory.',
+    areas: `Grund: Alle Dateien liegen in konfigurierten Bereichen (${record.matchedAreas.join(', ')}).`,
+    ai: `Grund: KI-Bewertung \`${record.aiClass ?? record.class}\`${record.matchedAreas.length ? `; berührte Bereiche: ${record.matchedAreas.join(', ')}` : ''}.`,
+    error: 'Grund: Die Risikobewertung ist fehlgeschlagen. Ohne Bewertung gilt jeder PR als critical, unabhängig von seiner Größe.'
+  }[record.source];
+  const limits = `Grenzen: bis ${risk.maxLowRiskLines} Zeilen low, bis ${risk.maxMediumRiskLines} medium, darüber high`;
+  const raised = record.source !== 'builtin' && record.source !== 'error' && size === record.class && riskRank(size) > riskRank(
+    record.source === 'ai' ? record.aiClass ?? 'low' : highest(risk.areas.filter(a => record.matchedAreas.includes(a.name)).map(a => a.class)));
+  const sizeLine = `Umfang: ${record.lines} geänderte Zeilen. Allein nach Größe wäre das \`${size}\` (${limits}); ` +
+    (raised ? `die Größe hat die Klasse auf \`${size}\` angehoben.` : 'die Größe hat die Klasse nicht bestimmt.');
+  return `**Risikoklasse: ${record.class}.** ${verdict}\n\n- ${cause}\n- ${sizeLine}\n\n${record.reason}` +
     (record.factors.length ? `\n\n${record.factors.map(f => `- ${f.factor}: ${f.path} – ${f.explanation}`).join('\n')}` : '');
 }

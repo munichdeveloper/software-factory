@@ -54,6 +54,22 @@ allowed attempt, the task ends `blocked` with the original statuses, as before.
 - The new attempt is published as its own draft pull request; the broker then closes the draft of the attempt it
   continues, so a task has one open Factory draft. A pull request by anyone else for the task stops the rework.
 
+## Rework after the merge review asked for changes
+
+The same switch covers a validated attempt whose pull request the broker's independent merge review refuses
+(`request_changes`, or any `blocking` finding). Before, such a pull request stayed open with nothing scheduled.
+
+- The merge pass journals `merge_changes_requested` on the task (once per review), naming the pull request, its head,
+  the attempt that published it and the review. Its readable part says whether a rework follows.
+- With `execution.rework: true`, while `maxRetries` allows it and the pull request is still open, the Manager proposes
+  `retry_worker` as a rework of that attempt. The broker accepts it only for an attempt of the same task version that
+  ended `success` without a failed validation and for which that journal entry exists (`REWORK_SOURCE_INVALID`
+  otherwise). The grant rules above apply unchanged.
+- The worker receives the previous branch head as above, plus the review's reason and up to eight findings (blocking
+  first) as `sf-context review-changes: …` and `sf-context review-finding <severity> <path>: …`, each at most 1,000
+  characters, control characters removed. They are model text, not instructions of the broker.
+- Without the switch, or after the last allowed attempt, the pull request waits for a person as before.
+
 ## Task context
 
 Before the first dispatch of an execution the broker resolves, once, the refs of the target repository that the task

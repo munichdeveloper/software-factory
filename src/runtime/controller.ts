@@ -81,14 +81,22 @@ export class RuntimeController implements WorkerRuntimePort {
   }
   /**
    * The attempt a rework continues, from the broker's own records: same task and version, ended blocked by a failed
-   * validation. Its ready grant, where one admitted it, carries over to the rework.
+   * validation, or published as a success whose pull request the merge review asked to change (journaled on the task). Its ready grant, where one admitted it, carries over to the rework.
    */
   private async reworked(input: { issueNumber: number; taskVersion: string; contextReferences: string[] }, previousId = reworkOf(input)): Promise<StoredRun | null> {
     if (!previousId) return this.retried(input);
     const previous = await this.store.get(this.repo.repositoryId, previousId);
-    if (!previous || previous.snapshot.admission.input.issueNumber !== input.issueNumber || previous.snapshot.admission.input.taskVersion !== input.taskVersion ||
-      previous.result?.status !== 'blocked' || (await this.store.validation(this.repo.repositoryId, previousId))?.status !== 'failed') throw new Error('REWORK_SOURCE_INVALID');
+    if (!previous || previous.snapshot.admission.input.issueNumber !== input.issueNumber || previous.snapshot.admission.input.taskVersion !== input.taskVersion) throw new Error('REWORK_SOURCE_INVALID');
+    const validation = (await this.store.validation(this.repo.repositoryId, previousId))?.status;
+    const failedValidation = previous.result?.status === 'blocked' && validation === 'failed';
+    const reviewed = !failedValidation && previous.result?.status === 'success' && validation !== 'failed' && await this.changesRequested(input.issueNumber, previousId);
+    if (!failedValidation && !reviewed) throw new Error('REWORK_SOURCE_INVALID');
     return previous;
+  }
+  /** The merge review journaled on the task that it asked for changes to exactly this attempt's pull request. */
+  private async changesRequested(issueNumber: number, executionId: string) {
+    const trusted = (await this.repo.config()).manager.trustedActors;
+    return (await this.repo.github.comments(issueNumber)).some(c => { const e = decodeEvent(c, trusted); return e?.data.type === 'merge_changes_requested' && e.data.executionId === executionId; });
   }
   /**
    * The attempt a retry repeats: same task and version, ended without a cancellation, either failed or stopped before it

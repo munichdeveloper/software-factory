@@ -38099,9 +38099,9 @@ var require_codegen = __commonJS({
       }
     };
     var Label = class extends Node {
-      constructor(label) {
+      constructor(label2) {
         super();
-        this.label = label;
+        this.label = label2;
         this.names = {};
       }
       render({ _n }) {
@@ -38109,14 +38109,14 @@ var require_codegen = __commonJS({
       }
     };
     var Break = class extends Node {
-      constructor(label) {
+      constructor(label2) {
         super();
-        this.label = label;
+        this.label = label2;
         this.names = {};
       }
       render({ _n }) {
-        const label = this.label ? ` ${this.label}` : "";
-        return `break${label};` + _n;
+        const label2 = this.label ? ` ${this.label}` : "";
+        return `break${label2};` + _n;
       }
     };
     var Throw = class extends Node {
@@ -38528,12 +38528,12 @@ var require_codegen = __commonJS({
         return this._endBlockNode(For);
       }
       // `label` statement
-      label(label) {
-        return this._leafNode(new Label(label));
+      label(label2) {
+        return this._leafNode(new Label(label2));
       }
       // `break` statement
-      break(label) {
-        return this._leafNode(new Break(label));
+      break(label2) {
+        return this._leafNode(new Break(label2));
       }
       // `return` statement
       return(value) {
@@ -58387,9 +58387,9 @@ function codePointLengthVar(doc, ctx, accessor, inDoubt) {
   doc.write(`const ${v} = typeof ${accessor} === "string" && ${inDoubt} ? ${cpLen}(${accessor}) : ${accessor}.length;`);
   return v;
 }
-function numericOperand(value, label) {
+function numericOperand(value, label2) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new ZodCompileUnsupportedError(`${label} bound of type ${typeof value}`);
+    throw new ZodCompileUnsupportedError(`${label2} bound of type ${typeof value}`);
   }
   return `${value}`;
 }
@@ -65007,14 +65007,15 @@ async function classifyRisk(changes, risk, assessor) {
       }
     }));
     return { ...base, class: highest([assessment.class, rules.floor]), source: "ai", aiClass: assessment.class, reason: assessment.reason, factors: assessment.factors };
-  } catch {
+  } catch (error62) {
+    const status = error62 && typeof error62 === "object" && "status" in error62 && /^[0-9]{3}$/.test(String(error62.status)) ? ` Ursache: HTTP ${String(error62.status)} des Bewertungsanbieters.` : "";
     return {
       ...base,
       class: "critical",
       source: "error",
       aiClass: null,
       factors: [],
-      reason: "Die Risikobewertung konnte nicht vollst\xE4ndig durchgef\xFChrt werden; sie gilt deshalb als kritisch."
+      reason: `Die Risikobewertung konnte nicht vollst\xE4ndig durchgef\xFChrt werden; sie gilt deshalb als kritisch.${status}`
     };
   }
 }
@@ -65061,15 +65062,25 @@ var OpenAIRiskAssessor = class {
   }
 };
 var aboveThreshold = (cls, risk) => cls === "critical" || riskRank(cls) > riskRank(risk.autoMergeUpTo);
+var sizeClass = (lines, risk) => lines > risk.maxMediumRiskLines ? "high" : lines > risk.maxLowRiskLines ? "medium" : "low";
 function describeRisk(record2, risk) {
-  const origin = { builtin: "eingebaute kritische Pfade", areas: "konfigurierte Bereiche", ai: "KI-Bewertung", error: "Bewertung fehlgeschlagen" }[record2.source];
-  const details = [
-    record2.aiClass && record2.aiClass !== record2.class ? `KI: ${record2.aiClass}` : "",
-    record2.matchedAreas.length ? `Bereiche: ${record2.matchedAreas.join(", ")}` : "",
-    `${record2.lines} ge\xE4nderte Zeilen`
-  ].filter(Boolean).join("; ");
-  const decision = aboveThreshold(record2.class, risk) ? `\xFCber der Schwelle \`${risk.autoMergeUpTo}\`` : `innerhalb der Schwelle \`${risk.autoMergeUpTo}\``;
-  return `**Risiko: ${record2.class}** (${origin}; ${details}), ${decision}${risk.mode === "observe" ? ", nur beobachtet" : ""}.
+  const above = aboveThreshold(record2.class, risk), size = sizeClass(record2.lines, risk);
+  const verdict = risk.mode === "observe" ? `${above ? "Liegt \xFCber" : "Liegt innerhalb"} der Grenze f\xFCr automatisches Mergen (\`${risk.autoMergeUpTo}\`); nur beobachtet, ohne Wirkung auf den Merge.` : above ? `Liegt \xFCber der Grenze f\xFCr automatisches Mergen (\`${risk.autoMergeUpTo}\`)${record2.class === "critical" ? "; critical wird nie automatisch gemergt" : ""}. Die Factory mergt nicht selbst, ein Mensch muss freigeben.` : `Liegt innerhalb der Grenze f\xFCr automatisches Mergen (\`${risk.autoMergeUpTo}\`).`;
+  const cause = {
+    builtin: "Grund: Der PR \xE4ndert eingebaute kritische Pfade der Factory.",
+    areas: `Grund: Alle Dateien liegen in konfigurierten Bereichen (${record2.matchedAreas.join(", ")}).`,
+    ai: `Grund: KI-Bewertung \`${record2.aiClass ?? record2.class}\`${record2.matchedAreas.length ? `; ber\xFChrte Bereiche: ${record2.matchedAreas.join(", ")}` : ""}.`,
+    error: "Grund: Die Risikobewertung ist fehlgeschlagen. Ohne Bewertung gilt jeder PR als critical, unabh\xE4ngig von seiner Gr\xF6\xDFe."
+  }[record2.source];
+  const limits = `Grenzen: bis ${risk.maxLowRiskLines} Zeilen low, bis ${risk.maxMediumRiskLines} medium, dar\xFCber high`;
+  const raised = record2.source !== "builtin" && record2.source !== "error" && size === record2.class && riskRank(size) > riskRank(
+    record2.source === "ai" ? record2.aiClass ?? "low" : highest(risk.areas.filter((a) => record2.matchedAreas.includes(a.name)).map((a) => a.class))
+  );
+  const sizeLine = `Umfang: ${record2.lines} ge\xE4nderte Zeilen. Allein nach Gr\xF6\xDFe w\xE4re das \`${size}\` (${limits}); ` + (raised ? `die Gr\xF6\xDFe hat die Klasse auf \`${size}\` angehoben.` : "die Gr\xF6\xDFe hat die Klasse nicht bestimmt.");
+  return `**Risikoklasse: ${record2.class}.** ${verdict}
+
+- ${cause}
+- ${sizeLine}
 
 ${record2.reason}` + (record2.factors.length ? `
 
@@ -69641,6 +69652,15 @@ var eventSchema = external_exports.strictObject({
       riskClass: riskClassSchema,
       autoMergeUpTo: riskClassSchema
     }),
+    // Written on the task when the independent review asked for changes to a Factory pull request: the rework source.
+    external_exports.strictObject({
+      type: external_exports.literal("merge_changes_requested"),
+      prNumber: external_exports.number().int().positive(),
+      head: external_exports.string().length(40),
+      executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+      reviewKey: external_exports.string().length(64),
+      review: mergeReviewSchema
+    }),
     external_exports.strictObject({ type: external_exports.literal("merge_status"), head: external_exports.string().length(40), base: external_exports.string().length(40), reason: external_exports.string().max(3e3) }),
     external_exports.strictObject({ type: external_exports.literal("decision"), action: external_exports.string().max(3e4), outcome: external_exports.enum(["allow", "deny", "approval", "executed"]), reason: external_exports.string().max(2e3) })
   ])
@@ -70196,7 +70216,10 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
     const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
     const failedValidation = latest?.runtime?.validation;
-    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" && attemptsUsed <= config2.execution.maxRetries;
+    const requested = latest?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === latest.input.executionId ? [e.data.review] : []).at(-1) : void 0;
+    const repairable = latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" || !!requested;
+    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && repairable && attemptsUsed <= config2.execution.maxRetries;
+    const reworkReview = reworkable && latest?.result?.status === "success" ? requested : void 0;
     let desiredStatus = issueStatus(issue2) ?? "backlog";
     if (issue2.state === "closed") desiredStatus = "done";
     else if (explicitBlock) desiredStatus = "blocked";
@@ -70230,7 +70253,8 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       hasOpenPR,
       hasClosingMerge,
       criteria,
-      reworkable
+      reworkable,
+      ...reworkReview ? { reworkReview } : {}
     };
   });
 }
@@ -70238,6 +70262,12 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
 // src/runtime/coding-context.ts
 var reworkMarker = (previousExecutionId) => `urn:sf-rework:${previousExecutionId}`;
 var retryMarker = (previousExecutionId) => `urn:sf-retry:${previousExecutionId}`;
+var label = (value) => value.replace(/[^A-Za-z0-9._/#-]/g, "").slice(0, 200);
+function reviewEntries(review, limit3 = 8) {
+  const inert = (s) => [...s].filter((c) => c === "\n" || c >= " " && c !== String.fromCharCode(127)).join("").replace(/\s+/g, " ").trim();
+  const findings = [...review.findings].sort((a, b) => Number(b.severity === "blocking") - Number(a.severity === "blocking")).slice(0, limit3);
+  return [`sf-context review-changes: ${inert(review.reason)}`, ...findings.map((f) => `sf-context review-finding ${f.severity === "blocking" ? "blocking" : "warning"} ${label(f.path) || "-"}: ${inert(f.explanation)}`)].map((entry) => entry.slice(0, 1e3));
+}
 
 // src/manager/plan.ts
 function reconciliationPlan(tasks, config2) {
@@ -70250,7 +70280,7 @@ function reconciliationPlan(tasks, config2) {
     } else if (!t.issue.labels.includes(`harness:${t.desiredStatus}`) || t.issue.labels.filter((l) => lifecycleLabels.includes(l)).length !== 1 || t.executions.some((e) => e.result && !t.events.some((event) => event.data.type === "result" && event.data.result.executionId === e.input.executionId))) {
       actions.push(proposal(t, "transition", "Reconcile lifecycle with GitHub facts", { status: t.desiredStatus }));
     }
-    if (t.reworkable) actions.push(proposal(t, "retry_worker", "Rework after a failed independent validation, within the configured limit"));
+    if (t.reworkable) actions.push(proposal(t, "retry_worker", t.reworkReview ? "Rework after the independent merge review asked for changes, within the configured limit" : "Rework after a failed independent validation, within the configured limit"));
     else if (t.issue.state === "open" && !t.blocked && !t.hasClosingMerge && !t.hasOpenPR && t.latest?.result && ["failed", "cancelled"].includes(t.latest.result.status) && !t.executions.some((e) => e.active) && t.attemptsUsed <= config2.execution.maxRetries && !t.refusal?.waiting) {
       actions.push(proposal(t, "retry_worker", "Retry failed execution within configured limit"));
     }
@@ -70604,6 +70634,13 @@ function statusView(task, config2, context2) {
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : "Ready to run. **Waiting only for the grant.**"] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
     needs = ready ? grant : rejection === "EXECUTOR_WRAPPER_RELEASE_MISMATCH" ? "Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards." : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
     if (task.refusal?.waiting) state.push("", `The next start waits for a new grant, a changed policy or configuration, or at the latest until ${task.refusal.until}.`);
+  } else if (result?.status === "success" && task.reworkReview) {
+    state = [
+      "Implemented and independently validated, but the independent merge review asked for changes.",
+      "",
+      `Attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}. A further attempt starts on its own; it continues these changes and receives the review findings.`
+    ];
+    needs = "Nothing; the Factory reworks the review findings on its own.";
   } else if (result?.status === "success") {
     state = ["Implemented and independently validated."];
     needs = "Review and merge the pull request. The Factory does not merge on its own in this installation.";
@@ -70850,9 +70887,9 @@ var Manager = class {
         return true;
       }
       case "prioritize": {
-        const label = `harness:priority-${action.priority}`;
-        if (live.labels.includes(label) && live.labels.filter((l) => priorityLabels.includes(l)).length === 1) return false;
-        await this.github.updateIssue(live.number, { labels: [...live.labels.filter((l) => !priorityLabels.includes(l)), label] });
+        const label2 = `harness:priority-${action.priority}`;
+        if (live.labels.includes(label2) && live.labels.filter((l) => priorityLabels.includes(l)).length === 1) return false;
+        await this.github.updateIssue(live.number, { labels: [...live.labels.filter((l) => !priorityLabels.includes(l)), label2] });
         return true;
       }
       case "create_followup": {
@@ -70905,7 +70942,12 @@ ${marker2}`;
           taskVersion: action.taskVersion,
           description: live.body,
           acceptanceCriteria: task.criteria,
-          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : []],
+          contextReferences: [
+            `https://github.com/${this.github.repository}/issues/${live.number}`,
+            ...previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : [],
+            // A rework after a merge review hands the worker what the review asked to change.
+            ...rework && task.reworkReview ? reviewEntries(task.reworkReview) : []
+          ],
           executionId: id,
           allowedActions: ["publish_result"],
           limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16e3 },
@@ -71816,14 +71858,14 @@ var GitHubMergePort = class {
     }
     return count;
   }
-  async riskLabel(number4, label) {
+  async riskLabel(number4, label2) {
     const { data: labels2 } = await this.api.issues.listLabelsOnIssue({ ...this.target, issue_number: number4, per_page: 100 });
-    for (const stale of labels2.map((l) => l.name).filter((name) => name.startsWith("sf:risk-") && name !== label)) {
+    for (const stale of labels2.map((l) => l.name).filter((name) => name.startsWith("sf:risk-") && name !== label2)) {
       await this.api.issues.removeLabel({ ...this.target, issue_number: number4, name: stale }).catch((error62) => {
         if (!(error62 && typeof error62 === "object" && "status" in error62 && error62.status === 404)) throw error62;
       });
     }
-    if (!labels2.some((l) => l.name === label)) await this.api.issues.addLabels({ ...this.target, issue_number: number4, labels: [label] });
+    if (!labels2.some((l) => l.name === label2)) await this.api.issues.addLabels({ ...this.target, issue_number: number4, labels: [label2] });
   }
   async canApprove(login) {
     try {
@@ -71960,6 +72002,30 @@ ${safe(text)}`) : Buffer.alloc(0);
 
 Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
     );
+  }
+  /**
+   * The review asked for changes to a pull request the Factory published for a task: journal that on the task, once per
+   * review. It is the source a rework answers (with execution.rework), so the pull request does not wait for nobody.
+   */
+  async changesRequested(f, task, snapshot, reviewKey, review) {
+    const executionId2 = f.headBranch.match(/^sf\/issue-\d+\/([a-f0-9]{32})$/)?.[1];
+    if (!executionId2) return;
+    const key = `merge-changes-requested:${reviewKey}`;
+    if ((snapshot.comments.get(task.number) ?? []).some((c) => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) return;
+    const journal = encodeEvent({
+      version: 1,
+      key,
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      correlationId: this.correlationId,
+      data: { type: "merge_changes_requested", prNumber: f.number, head: f.head, executionId: executionId2, reviewKey, review }
+    });
+    const next = this.config.execution.rework ? "Die Factory startet selbst einen weiteren Versuch, der die \xC4nderungen des PR fortsetzt und die Befunde des Reviews erh\xE4lt (bis zur Grenze von `execution.maxRetries`)." : "Automatische Nacharbeit ist in diesem Repository aus (`execution.rework`); bitte selbst nacharbeiten oder entscheiden.";
+    const summary2 = Buffer.from(`
+
+### Software Factory \u2013 Review verlangt \xC4nderungen
+
+${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${next}`)}`);
+    await this.api.comment(task.number, journal + summary2.subarray(0, Math.max(0, 6e4 - Buffer.byteLength(journal) - 4)).toString("utf8"));
   }
   ownership(f, snapshot) {
     const url2 = `https://github.com/${this.api.repository}/pull/${f.number}`;
@@ -72116,15 +72182,19 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
 
 Head: \`${f.head}\`; Basis: \`${f.base}\`.`
           );
-          const label = `sf:risk-${riskRecord.class}`;
-          if (this.api.riskLabel && (!f.labels.includes(label) || f.labels.some((l) => l.startsWith("sf:risk-") && l !== label))) {
+          const label2 = `sf:risk-${riskRecord.class}`;
+          if (this.api.riskLabel && (!f.labels.includes(label2) || f.labels.some((l) => l.startsWith("sf:risk-") && l !== label2))) {
             phase = "Risiko-Label setzen";
-            await this.api.riskLabel(number4, label);
+            await this.api.riskLabel(number4, label2);
           }
         }
         if (f.checks.some((c) => c.state === "action_required")) {
           await this.explain(f, mergeGate(f, this.config));
           continue;
+        }
+        if (owner && !adopted && (review.decision === "request_changes" || review.findings.some((x) => x.severity === "blocking"))) {
+          phase = "Nacharbeit an der Aufgabe vermerken";
+          await this.changesRequested(f, owner, snapshot, reviewKey, review);
         }
         if (review.findings.some((x) => x.severity === "blocking") || ["request_changes", "defer"].includes(review.decision)) continue;
         const live = await this.api.facts(number4);

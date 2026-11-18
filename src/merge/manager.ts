@@ -58,6 +58,22 @@ export class MergeManager {
     await this.event(f, `merge-status:${hash({ head: f.head, base: f.base, reason })}`,
       { type: 'merge_status', head: f.head, base: f.base, reason }, `${f.mergeSha ? '**Merge bestätigt – Nacharbeit offen.**' : '**Noch kein Merge.**'} ${reason}\n\nGeprüfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
   }
+  /**
+   * The review asked for changes to a pull request the Factory published for a task: journal that on the task, once per
+   * review. It is the source a rework answers (with execution.rework), so the pull request does not wait for nobody.
+   */
+  private async changesRequested(f: MergeFacts, task: Snapshot['issues'][number], snapshot: Snapshot, reviewKey: string, review: MergeReview) {
+    const executionId = f.headBranch.match(/^sf\/issue-\d+\/([a-f0-9]{32})$/)?.[1];
+    if (!executionId) return;
+    const key = `merge-changes-requested:${reviewKey}`;
+    if ((snapshot.comments.get(task.number) ?? []).some(c => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) return;
+    const journal = encodeEvent({ version: 1, key, at: new Date().toISOString(), correlationId: this.correlationId,
+      data: { type: 'merge_changes_requested', prNumber: f.number, head: f.head, executionId, reviewKey, review } });
+    const next = this.config.execution.rework ? 'Die Factory startet selbst einen weiteren Versuch, der die Änderungen des PR fortsetzt und die Befunde des Reviews erhält (bis zur Grenze von `execution.maxRetries`).'
+      : 'Automatische Nacharbeit ist in diesem Repository aus (`execution.rework`); bitte selbst nacharbeiten oder entscheiden.';
+    const summary = Buffer.from(`\n\n### Software Factory – Review verlangt Änderungen\n\n${safe(`Das unabhängige KI-Review von #${f.number} verlangt Änderungen. ${next}`)}`);
+    await this.api.comment(task.number, journal + summary.subarray(0, Math.max(0, 60000 - Buffer.byteLength(journal) - 4)).toString('utf8'));
+  }
   private ownership(f: MergeFacts, snapshot: Snapshot): Ownership | undefined {
     const url = `https://github.com/${this.api.repository}/pull/${f.number}`;
     for (const task of snapshot.issues) {
@@ -187,6 +203,10 @@ export class MergeManager {
           }
         }
         if (f.checks.some(c => c.state === 'action_required')) { await this.explain(f, mergeGate(f, this.config)!); continue; }
+        if (owner && !adopted && (review.decision === 'request_changes' || review.findings.some(x => x.severity === 'blocking'))) {
+          phase = 'Nacharbeit an der Aufgabe vermerken';
+          await this.changesRequested(f, owner, snapshot, reviewKey, review);
+        }
         if (review.findings.some(x => x.severity === 'blocking') || ['request_changes', 'defer'].includes(review.decision)) continue;
         const live = await this.api.facts(number);
         if (hash(factsKey(live)) !== hash(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== 'open' || live.draft || !live.sameRepository ||
