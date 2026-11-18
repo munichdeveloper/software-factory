@@ -1,3 +1,4 @@
+import type { NotificationSink } from '../src/notifications/slack.js';
 import { Pool, type PoolClient } from 'pg';
 import type { Client } from '@temporalio/client';
 import { RuntimeController, type RuntimeRepository } from '../src/runtime/controller.js';
@@ -95,7 +96,9 @@ export type WorldOptions = { readyLabel?: boolean; humanGate?: boolean; maxParal
   /** A failed validation starts a further attempt (implies coding). */
   rework?: boolean;
   /** The broker reviews and merges validated pull requests itself, without server-side branch rules (implies coding). */
-  merging?: boolean };
+  merging?: boolean;
+  /** Slack delivery of the Manager's notifications; the configuration still decides which events are on. */
+  notifications?: NotificationSink };
 /** What GitHub knows about a published pull request beyond the snapshot: draft, head, checks, base it contains, comments. */
 type PullFacts = { draft: boolean; head: string; base: string; checks: { name: string; state: string }[]; comments: MergeFacts['comments']; mergeSha: string | null };
 export type Tick = { report?: RunReport; thrown?: string };
@@ -116,6 +119,8 @@ export class World {
   /** Every merge the Factory performed: pull request, merged head and the head its review covered. */
   readonly factoryMerges: { pr: number; head: string; reviewed: boolean }[] = [];
   private reviewedHeads = new Set<string>();
+  /** Heads the independent review asks to change instead of approving. */
+  readonly refusedHeads = new Set<string>();
   readonly log: string[] = [];
   constructor(readonly options: WorldOptions = {}) {
     this.cfg.execution.engine = 'temporal';
@@ -174,7 +179,7 @@ export class World {
   /** One Manager reconciliation. A run that cannot even take a snapshot rejects; that is recorded, not thrown. */
   async tick(): Promise<Tick> {
     try {
-      const report = await new Manager(this.github, this.cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => this.now, workerRuntime: this.controller }).run();
+      const report = await new Manager(this.github, this.cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => this.now, workerRuntime: this.controller, notifications: this.options.notifications }).run();
       this.log.push(`tick ${JSON.stringify({ errors: report.errors, blockers: report.blockers })}`); return { report };
     } catch (error) { const thrown = error instanceof Error ? error.message : String(error); this.log.push(`tick threw ${thrown}`); return { thrown }; }
   }
@@ -209,9 +214,9 @@ export class World {
    * The worker finishes and publishes through the broker. When the broker refuses the publication
    * (grant revoked, task changed, closed), the workflow ends without a committed result.
    */
-  async finish(executionId: string, status: WorkerResult['status'] = 'success') {
+  async finish(executionId: string, status: WorkerResult['status'] = 'success', error: string | null = null, summary = `Worker ${status}`) {
     const row = this.store.rows.get(executionId)!, input = row.snapshot.admission.input;
-    const result: WorkerResult = { contractVersion: '1.0', executionId, issueNumber: input.issueNumber, status, summary: `Worker ${status}`, artifacts: [], error: null, proposedActions: [] };
+    const result: WorkerResult = { contractVersion: '1.0', executionId, issueNumber: input.issueNumber, status, summary, artifacts: [], error, proposedActions: [] };
     this.log.push(`finish ${executionId} #${input.issueNumber} ${status}`);
     try {
       await this.controller.publish(row.snapshot, row.binding, result); this.workflows.set(row.workflowId, 'COMPLETED');
@@ -256,7 +261,13 @@ export class World {
           behindBy: f.base === this.base ? 0 : 1 };
       },
       context: async facts => ({ facts, trustedScope: 'Test', trustedInstructions: '', changes: [{ path: 'src/change.txt', status: 'modified', patch: '+x', content: 'x' }] }),
-      comment: async (number, body) => { const f = this.pulls.get(number)!; f.comments.push({ id: f.comments.length + 1, author: bot, body, createdAt: this.now.toISOString() }); },
+      // GitHub's issue comment endpoint serves pull requests and issues alike.
+      comment: async (number, body) => {
+        const f = this.pulls.get(number);
+        if (f) { f.comments.push({ id: f.comments.length + 1, author: bot, body, createdAt: this.now.toISOString() }); return; }
+        const rows = this.github.state.comments.get(number) ?? [];
+        rows.push({ id: rows.length + 1, author: bot, body, createdAt: this.now.toISOString() }); this.github.state.comments.set(number, rows);
+      },
       update: async (number, head) => {
         const f = this.pulls.get(number)!; if (f.head !== head) throw new Error('head moved');
         Object.assign(f, { head: hash({ head, base: this.base }).slice(0, 40), base: this.base, checks: [{ name: 'test', state: 'in_progress' }] }); this.log.push(`PR ${number} updated`); return f.head;
@@ -276,6 +287,8 @@ export class World {
     // A reviewer that approves acceptable code and asks for an update when the branch is behind.
     const reviewer = { review: async (input: { facts: MergeFacts }) => {
       this.reviewedHeads.add(`${input.facts.number}:${input.facts.head}`);
+      if (this.refusedHeads.has(input.facts.head)) return { decision: 'request_changes' as const, reason: 'Ungeprüfte Rechtsaussage.',
+        findings: [{ path: 'src/change.txt', severity: 'blocking' as const, explanation: 'AVV-Angabe ohne Quelle.' }] };
       return { decision: input.facts.behindBy ? 'update_branch' as const : 'merge' as const, reason: 'Geprüft.', findings: [] };
     } };
     try { await new MergeManager(port, this.cfg, reviewer, 'merge', this.github, { ownedOnly: true }).run(await this.github.snapshot()); }

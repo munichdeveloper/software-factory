@@ -2,8 +2,9 @@ import type { Octokit } from '@octokit/rest';
 import { unzipSync } from 'fflate';
 import { z } from 'zod';
 import { codingExecutionSchema } from './coding-contract.js';
+import { agentSelectionSchema, type AgentSelection } from './agent-selection.js';
 import { codingArtifactSchema, smallPullRequestGuidance, validateChanges, type CodingArtifact } from '../workers/coding.js';
-import type { Config } from '../config/index.js';
+import { codingAgents, type Config } from '../config/index.js';
 import type { RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
@@ -13,8 +14,27 @@ import { failedChecksEntry, loopbackEntry, maxContextRefs, namedRefs, outputEntr
 export const codingWorkflow = 'factory-temporal-executor.yml';
 export function executorWrapper(factorySha: string, harnessSha: string, validated = false) {
   for (const sha of [factorySha, harnessSha]) if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('INVALID_EXECUTOR_RELEASE');
-  if (!validated) return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\npermissions:\n  contents: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n`;
-  return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\n      validation:\n        type: string\n        required: true\npermissions:\n  contents: read\n  actions: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n      actions: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n      validation: \${{ inputs.validation }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n`;
+  if (!validated) return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\npermissions:\n  contents: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}\n`;
+  return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\n      validation:\n        type: string\n        required: true\npermissions:\n  contents: read\n  actions: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n      actions: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n      validation: \${{ inputs.validation }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}\n`;
+}
+/**
+ * The executor's agent choice of one execution, stored once as an effect: the first call reads it (a completed run's
+ * coding-agent artifact), later calls, the publication's included, return the stored value. Null when there was none.
+ */
+export async function storedSelection(effects: EffectPort, executionId: string, authorize: () => Promise<unknown>, read: () => Promise<AgentSelection | null> = async () => null) {
+  return (await effects.perform({ key: 'coding-agent', payload: { executionId }, authorize, contentAddressed: true,
+    validate: z.strictObject({ selection: agentSelectionSchema.nullable() }).parse, reconcile: async () => null,
+    apply: async () => ({ selection: await read() }) })).selection;
+}
+/** A ZIP of Actions that holds exactly the one named small JSON file. */
+export function decodeSingleJson(bytes: Uint8Array, name: string): unknown {
+  let count = 0;
+  const files = unzipSync(bytes, { filter: entry => {
+    if (++count !== 1 || entry.name !== name || entry.originalSize > 60000 || entry.originalSize < 2) throw new Error('UNEXPECTED_ARCHIVE_ENTRY');
+    return true;
+  } });
+  if (count !== 1 || !files[name]) throw new Error('MISSING_ARCHIVE_ENTRY');
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(files[name]));
 }
 export function decodeValidationArchive(bytes: Uint8Array): ValidationReport {
   if (bytes.length > 100000) throw new Error('VALIDATION_ARCHIVE_LIMIT');
@@ -39,7 +59,8 @@ export function decodeCodingArchive(bytes: Uint8Array): CodingArtifact {
 }
 export interface CodingExecutionPort {
   /** `config` is the configuration of an authorization the caller has just completed; new effects authorize again. */
-  poll(snapshot: RunSnapshot, binding: string, config: Config): Promise<{ artifact: CodingArtifact; validation?: ValidationReport } | { failed: true } | null>;
+  /** `beforeAgent`: the run failed before any coding agent started (runner or setup), so no attempt was spent. */
+  poll(snapshot: RunSnapshot, binding: string, config: Config): Promise<{ artifact: CodingArtifact; validation?: ValidationReport } | { failed: true; beforeAgent?: boolean } | null>;
   cancel(snapshot: RunSnapshot, binding: string): Promise<void>;
 }
 /** Actions supplies disposable compute only. Temporal/broker retain dispatch, gate and publication authority. */
@@ -51,13 +72,42 @@ export const legacyValidationGuidance = '\n\nFactory execution context: a separa
  */
 export const validationGuidance = '\n\nFactory execution context: your environment has no network access. After coding, a separate hosted validation job installs the dependencies and runs the project\'s build, tests, browser and configured Docker checks on your change; its result decides whether the change is accepted. Do not install dependencies or try to run the project\'s build, test, lint or browser commands here; acceptance criteria that name such checks are covered by that job. Offline checks such as reading code or `git diff --check` are fine. Report `success` when the implementation is complete, and say which checks you left to the validation job. Report `blocked` only when the implementation itself is incomplete or cannot be done as specified. Never claim a check you did not perform.';
 
+type Job = { name: string; conclusion: string | null; runner_id?: number | null; steps?: { name: string; conclusion: string | null }[] };
+/** The step of the code job that runs the coding harness; steps before it only prepare the runner and workspace. */
+const harnessStep = 'Run ./.runtime/harness';
+/**
+ * Whether a failed executor run ended before any coding agent started. Only positive evidence counts: a job GitHub
+ * never gave a runner or a step, a code-job step before the harness, or a harness step whose log shows a setup step
+ * failing ahead of both agent steps. Anything else, an unreadable log included, is a real attempt.
+ * `log` returns the code job's log, or null when it cannot be read within its limit.
+ */
+export async function failedBeforeAgent(jobs: Job[], log: () => Promise<string | null>): Promise<boolean> {
+  const failed = jobs.filter(j => j.conclusion === 'failure');
+  if (!failed.length) return false;
+  if (failed.some(j => !j.runner_id || !j.steps?.length)) return true;
+  const code = failed.find(j => j.name === 'code' || j.name.endsWith(' / code'));
+  if (!code || failed.length !== 1) return false;
+  const steps = code.steps!, harness = steps.findIndex(s => s.name === harnessStep), first = steps.findIndex(s => s.conclusion === 'failure');
+  if (harness < 0 || first < 0) return false;
+  if (first < harness) return true;
+  if (first > harness) return false;
+  const text = await log();
+  if (!text) return false;
+  const lines = text.split('\n');
+  const failure = lines.findIndex(l => /##\[end-action id=agent\.[^;]*;outcome=failure;/.test(l));
+  const codex = lines.findIndex(l => l.includes('##[end-action id=agent.__openai_codex-action;outcome=skipped;'));
+  return failure >= 0 && codex > failure;
+}
+
 export class ActionsCodingExecutor implements CodingExecutionPort {
   constructor(private api: Octokit, private effects: (snapshot: RunSnapshot, binding: string) => EffectPort,
     private authorize: (snapshot: RunSnapshot, binding: string) => Promise<unknown>,
     /** A list fixed at construction, or a provider read at use so a repository's current configuration applies. */
     private trustedActors: string[] | (() => Promise<string[]>),
     /** The bound validation report of an earlier attempt of the same repository, from the broker's own store. */
-    private previousValidation: (executionId: string) => Promise<ValidationReport | null> = async () => null) {}
+    private previousValidation: (executionId: string) => Promise<ValidationReport | null> = async () => null,
+    /** Called with each execution's stored agent choice, e.g. for the used-up credit alert; must not throw. */
+    private onSelection?: (snapshot: RunSnapshot, selection: AgentSelection) => Promise<void>) {}
   private async download(target: { owner: string; repo: string }, artifactId: number, limit: number, error: string) {
     const response = await this.api.actions.downloadArtifact({ ...target, artifact_id: artifactId, archive_format: 'zip', request: { parseSuccessResponseBody: false } });
     const reader = (response.data as ReadableStream<Uint8Array>).getReader(); const chunks: Uint8Array[] = []; let size = 0;
@@ -65,6 +115,19 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     finally { await reader.cancel(); }
     const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
     return bytes;
+  }
+  /** A failure to inspect the run is no evidence: the run then counts as an attempt. */
+  private async beforeAgent(target: { owner: string; repo: string }, runId: number): Promise<boolean> {
+    try {
+      const jobs = (await this.api.actions.listJobsForWorkflowRun({ ...target, run_id: runId, filter: 'latest', per_page: 100 })).data.jobs as Job[];
+      return await failedBeforeAgent(jobs, async () => {
+        const code = jobs.find(j => j.conclusion === 'failure');
+        if (!code || !('id' in code)) return null;
+        const response = await this.api.actions.downloadJobLogsForWorkflowRun({ ...target, job_id: (code as Job & { id: number }).id });
+        const text = typeof response.data === 'string' ? response.data : String(response.data);
+        return text.length > 5000000 ? null : text;
+      });
+    } catch { return false; }
   }
   /**
    * Context for the worker, resolved once per execution and then fixed: the previous attempt of a rework with the
@@ -75,15 +138,16 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     const input = snapshot.admission.input, entries: string[] = loopback ? [loopbackEntry] : [], seen = new Set([snapshot.baseSha]);
     const missing = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && [404, 422].includes(error.status as number);
     const previousId = reworkOf(input), report = previousId ? await this.previousValidation(previousId) : null;
-    if (previousId && report) {
+    // A rework always continues the previous attempt's branch; a failed validation adds its checks and their output.
+    if (previousId) {
       const branch = `sf/issue-${input.issueNumber}/${previousId}`;
       try {
         const head = (await this.api.git.getRef({ ...target, ref: `heads/${branch}` })).data.object.sha;
         entries.push(reworkEntry(head, previousId)); seen.add(head);
       } catch (error) { if (!missing(error)) throw error; entries.push(unavailableEntry('branch', branch)); }
-      const failed = report.checks.filter(c => c.status === 'failed');
-      if (failed.length) entries.push(failedChecksEntry(report));
-      try {
+      const failed = report?.checks.filter(c => c.status === 'failed') ?? [];
+      if (report && failed.length) entries.push(failedChecksEntry(report));
+      if (report && failed.length) try {
         const logs = (await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: report.workflowRunId, per_page: 100 }))
           .filter(a => a.name === `coding-validation-logs-${previousId}` && !a.expired && a.size_in_bytes <= 2000000);
         if (logs.length === 1) {
@@ -129,6 +193,23 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     try { await this.api.actions.cancelWorkflowRun({ ...target, run_id: run.id }); }
     catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 409)) throw error; }
   }
+  /**
+   * The executor's agent choice (coding-agent-<id>), read once per execution and stored, so the publication names the
+   * agent that ran and the broker alerts once about agents skipped for used-up credit. Absent or unreadable: null.
+   */
+  private async selection(snapshot: RunSnapshot, binding: string, target: { owner: string; repo: string }, artifacts: { id: number; name: string; size_in_bytes: number; expired: boolean }[]) {
+    const id = snapshot.admission.input.executionId;
+    const selection = await storedSelection(this.effects(snapshot, binding), id, () => this.authorize(snapshot, binding), async () => {
+      const match = artifacts.filter(a => a.name === `coding-agent-${id}`);
+      if (match.length !== 1 || match[0]!.expired || match[0]!.size_in_bytes > 100000) return null;
+      try {
+        const value = agentSelectionSchema.parse(decodeSingleJson(await this.download(target, match[0]!.id, 100000, 'AGENT_ARCHIVE_LIMIT'), 'coding-agent.json'));
+        return value.executionId === id ? value : null;
+      } catch { return null; }
+    });
+    if (selection && this.onSelection) await this.onSelection(snapshot, selection);
+    return selection;
+  }
   async poll(snapshot: RunSnapshot, binding: string, config: Config) {
     const input = snapshot.admission.input, coding = config.workers.coding, workflow = snapshot.executorWorkflow ?? codingWorkflow;
     if (input.worker !== 'codex' || !coding || !coding.enabled || binding !== hash(snapshot)) throw new Error('CODING_NOT_AUTHORIZED');
@@ -166,11 +247,15 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
         catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
         return { entries: await this.context(snapshot, target, snapshot.baseRef ?? metadata.default_branch, coding.loopback) };
       } });
-    const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: 'codex',
+    // The admission's worker "codex" names the isolated coding worker; which agent runs comes from workers.coding: the
+    // first agent of the list, with the others as fallbacks the executor tries when a provider reports used-up credit.
+    const [first, ...others] = codingAgents(coding);
+    const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: first!.agent,
       task: { id: `github:${snapshot.repository}#${input.issueNumber}`, version: input.taskVersion, description,
         acceptanceCriteria: input.acceptanceCriteria, contextReferences: [...input.contextReferences, ...extra.entries] }, baseSha: snapshot.baseSha,
-      allowedActions: ['edit_workspace', 'run_commands'], model: coding.model, effort: coding.reasoningEffort,
-      limits: { timeoutMinutes: input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5000000 } });
+      allowedActions: ['edit_workspace', 'run_commands'], model: first!.model, effort: first!.reasoningEffort,
+      limits: { timeoutMinutes: input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5000000 },
+      ...(others.length ? { fallbacks: others.map(a => ({ worker: a.agent, model: a.model, effort: a.reasoningEffort })) } : {}) });
     const serialized = JSON.stringify(request); if (Buffer.byteLength(serialized) > 60000) throw new Error('EXECUTOR_REQUEST_LIMIT');
     const ref = `sf-temporal-executor/${input.executionId}`, name = `SF Temporal ${input.executionId} ${binding}`;
     await effects.perform({ key: 'executor-ref', payload: { ref, sha: snapshot.baseSha }, authorize,
@@ -197,8 +282,13 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
       throw error;
     }
     if (!run || run.status !== 'completed') return null;
-    if (run.conclusion !== 'success') return { failed: true as const };
-    const artifacts = await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: run.id, per_page: 100 });
+    const artifacts = run.conclusion === 'success' || request.fallbacks ? await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: run.id, per_page: 100 }) : [];
+    const selection = request.fallbacks ? await this.selection(snapshot, binding, target, artifacts) : null;
+    if (run.conclusion !== 'success') {
+      // No agent could run because every provider reported used-up credit: nothing started, so no attempt is spent.
+      const noAgent = !!selection && !selection.selected;
+      return { failed: true as const, ...(noAgent || await this.beforeAgent(target, run.id) ? { beforeAgent: true } : {}) };
+    }
     const matches = artifacts.filter(a => a.name === `coding-result-${input.executionId}`);
     if (matches.length !== 1 || matches[0]!.expired || matches[0]!.size_in_bytes > 8000000) throw new Error('INVALID_EXECUTOR_ARTIFACT');
     const artifact = decodeCodingArchive(await this.download(target, matches[0]!.id, 8000000, 'ARTIFACT_ARCHIVE_LIMIT'));

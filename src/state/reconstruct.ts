@@ -6,10 +6,19 @@ import { currentAutomaticBlock } from './blocks.js';
 import { acceptanceCriteria, dependencies, issueStatus } from './lifecycle.js';
 import { taskVersion } from './identity.js';
 import { policyVersion } from '../policies/engine.js';
+import type { MergeReview } from '../merge/contract.js';
 
 /** Summary of the cancelled result the Manager writes when the runtime definitely refused a start. */
 export const admissionRejectedSummary = 'Runtime admission rejected before start';
 /** A refused start is offered again at the latest after this wait, doubling per refusal in a row (software-factory#53). */
+/** Error code and summary of a coding run that failed before any agent started (runner or workspace setup). */
+export const infrastructureFailureCode = 'EXECUTOR_INFRASTRUCTURE_FAILURE';
+export const infrastructureFailureSummary = 'The coding run failed before the agent started';
+/**
+ * Such failures cost no attempt, up to this many per task version: a setup step that fails every time (a broken
+ * lockfile, say) must still reach the retry limit instead of retrying without end.
+ */
+export const freeInfrastructureFailures = 3;
 export const admissionBackoffMinutes = (refusals: number) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
 
 export interface Execution { input: WorkerInput; attempt: number; actionId: string; at: string; run?: WorkflowRun; runtime?: import('../runtime/contract.js').RuntimeObservation; result?: WorkerResult; active: boolean; ambiguous: boolean; timedOut: boolean;
@@ -18,7 +27,9 @@ export interface Execution { input: WorkerInput; attempt: number; actionId: stri
   /** The runtime refused to start this execution (its code). Nothing ran, so it is not an attempt. */
   rejected?: string;
   /** The policy version the refusal happened under, where the journal records it. */
-  rejectedPolicy?: string }
+  rejectedPolicy?: string;
+  /** The run failed before any agent started and is within the free allowance: it is no attempt. */
+  infrastructure?: boolean }
 /** The last start of the current task version was refused by the runtime, and no real attempt followed. */
 export interface AdmissionRefusal { code: string; at: string; refusals: number;
   /** The refusal still holds: neither grant, policy nor configuration changed and the backoff has not run out. */
@@ -28,15 +39,20 @@ export interface Task {
   executions: Execution[];
   /** The latest real attempt of the current task version; a start the runtime refused is none. */
   latest?: Execution;
-  /** Real attempts of the current task version (refused starts excluded): what counts against execution.maxRetries. */
+  /** Real attempts of the current task version (refused starts and free infrastructure failures excluded): what counts against execution.maxRetries. */
   attemptsUsed: number;
   /** The attempt number of the next intent; refused starts keep their numbers, so execution IDs stay unique. */
   nextAttempt: number;
   refusal?: AdmissionRefusal;
   blocked: boolean; blockReason?: string;
   hasOpenPR: boolean; hasClosingMerge: boolean; criteria: string[];
-  /** The latest attempt failed only its independent validation and a further attempt is allowed to repair it. */
+  /**
+   * The latest attempt failed only its independent validation, or the independent merge review asked for changes to its
+   * pull request, and a further attempt is allowed to repair it.
+   */
   reworkable: boolean;
+  /** The merge review a rework answers, when the review (not the validation) is what it repairs. */
+  reworkReview?: MergeReview;
   automaticBlockCause?: BlockCause;
   /** Open follow-up issues the Factory created from this task (`Origin: #n`). */
   openFollowups: number[];
@@ -81,8 +97,11 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     }
     const currentExecutions = executions.filter(e => e.input.taskVersion === version);
     currentExecutions.sort((a, b) => a.attempt - b.attempt);
+    currentExecutions.filter(e => !e.rejected && e.result?.status === 'failed' && e.result.error === infrastructureFailureCode)
+      .slice(0, freeInfrastructureFailures).forEach(e => { e.infrastructure = true; });
     const real = currentExecutions.filter(e => !e.rejected);
     const latest = real.at(-1);
+    const attemptsUsed = real.filter(e => !e.infrastructure).length;
     const nextAttempt = (currentExecutions.at(-1)?.attempt ?? -1) + 1;
     // Refused starts after the latest real attempt: the next start waits for a changed condition or the backoff.
     const refused = currentExecutions.filter(e => e.rejected && (!latest || e.attempt > latest.attempt));
@@ -114,8 +133,13 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     // The only open pull requests are the ones the Factory published for this task's own attempts: a rework replaces them.
     const ownPRsOnly = linked.filter(p => p.state === 'open').every(p => executions.some(e => p.headRefName === `sf/issue-${issue.number}/${e.input.executionId}`));
     const failedValidation = latest?.runtime?.validation;
+    // The broker's merge review asked for changes to the pull request this very attempt published (and it is still open).
+    const requested = latest?.result?.status === 'success' && hasOpenPR ? events.flatMap(e => e.data.type === 'merge_changes_requested' &&
+      e.data.executionId === latest.input.executionId ? [e.data.review] : []).at(-1) : undefined;
+    const repairable = latest?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' || !!requested;
     const reworkable = config.execution.rework && issue.state === 'open' && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some(e => e.active) &&
-      latest?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' && real.length <= config.execution.maxRetries;
+      repairable && attemptsUsed <= config.execution.maxRetries;
+    const reworkReview = reworkable && latest?.result?.status === 'success' ? requested : undefined;
     let desiredStatus: Status = issueStatus(issue) ?? 'backlog';
     if (issue.state === 'closed') desiredStatus = 'done';
     else if (explicitBlock) desiredStatus = 'blocked';
@@ -128,7 +152,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     // The Manager must leave that label alone until the retry has started; replacing it with `failed` would
     // consume the grant it is waiting for.
     else if (snapshot.readyIsGrant && issue.labels.includes('harness:ready') && !hasOpenPR && latest?.result &&
-      ['failed', 'cancelled'].includes(latest.result.status) && real.length <= config.execution.maxRetries) desiredStatus = 'ready';
+      ['failed', 'cancelled'].includes(latest.result.status) && attemptsUsed <= config.execution.maxRetries) desiredStatus = 'ready';
     else if (latest?.result) desiredStatus = ({ success: 'awaiting-pr', failed: 'failed', cancelled: 'failed', blocked: 'blocked', needs_approval: 'awaiting-approval' } as const)[latest.result.status];
     else if (hasOpenPR) desiredStatus = 'awaiting-pr';
     // A runnable task rests in ready. Where ready is a person's grant, the Manager leaves the label to that
@@ -136,8 +160,9 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     else if (snapshot.readyIsGrant) { if (['backlog', 'ready', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = issue.labels.includes('harness:ready') ? 'ready' : 'backlog'; }
     else if (['backlog', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = 'ready';
     const openFollowups = snapshot.issues.filter(i => i.state === 'open' && followupOrigin(i.body) === issue.number).map(i => i.number);
-    return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, attemptsUsed: real.length, nextAttempt,
+    return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, attemptsUsed, nextAttempt,
       ...(refusal ? { refusal } : {}), openFollowups,
-      blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable };
+      blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable,
+      ...(reworkReview ? { reworkReview } : {}) };
   });
 }

@@ -1,6 +1,6 @@
 import type { Config } from '../config/index.js';
 import type { GitHubPort } from '../github/port.js';
-import type { Planner } from '../llm/provider.js';
+import { planningCode, type Planner } from '../llm/provider.js';
 import { actionSchema, planSchema, type Action, type Snapshot } from '../types.js';
 import { actionId, executionId, hash, taskVersion } from '../state/identity.js';
 import { decodeEvent, type HarnessEvent } from '../state/events.js';
@@ -9,12 +9,12 @@ import { lastBlockLabelEventId } from '../state/blocks.js';
 import { managedLabel, priorityLabels, withStatus } from '../state/lifecycle.js';
 import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
 import { workerInputSchema, type WorkerInput } from '../workers/contract.js';
-import { retryMarker, reworkMarker } from '../runtime/coding-context.js';
+import { retryMarker, reviewEntries, reworkMarker } from '../runtime/coding-context.js';
 import { untrustedEdit, untrustedEditReason } from '../state/content-trust.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
-import { deliverNotifications, type NotificationSink } from '../notifications/slack.js';
-import { statusComment, statusMarker } from './status.js';
+import { deliverNotifications, type GrantWait, type NotificationSink } from '../notifications/slack.js';
+import { statusMarker, statusView } from './status.js';
 import { admissionCode, RuntimeAdmissionRejected, type WorkerRuntimePort } from '../runtime/contract.js';
 
 export interface ManagerOptions { correlationId: string; now?: () => Date; notifications?: NotificationSink; workerRuntime?: WorkerRuntimePort }
@@ -30,10 +30,17 @@ export class Manager {
   private now: () => Date;
   /** Definite runtime admission rejections of the current run; reported as blockers, never as uncertain dispatches. */
   private rejections: { issueNumber: number; code: string; recorded: boolean }[] = [];
+  /** Open tasks whose status comment of this run says they wait for nothing but a person's grant. */
+  private grantWaits: GrantWait[] = [];
   /** What this run saw before it acted. */
   private observed?: Snapshot;
   /** The repository state the last run reconciled, for work that follows it (the broker's merge pass). */
   get lastSnapshot(): Snapshot | undefined { return this.observed; }
+  /** The state after the last run acted, as its status comments describe it; the observed state where it took no second look. */
+  private settled?: Snapshot;
+  get settledSnapshot(): Snapshot | undefined { return this.settled ?? this.observed; }
+  /** Definite admission refusals of the last run, by issue: their codes. */
+  get lastRejections(): ReadonlyMap<number, string> { return new Map(this.rejections.map(r => [r.issueNumber, r.code])); }
   private async snapshot(): Promise<Snapshot> {
     const snapshot = await this.github.snapshot(this.config.execution.engine === 'temporal' ? null : this.config.manager.workflow);
     if (this.config.execution.engine === 'temporal') {
@@ -133,14 +140,17 @@ export class Manager {
     // A run that changed nothing saw the state the comments describe; only a run that acted needs a second look.
     const unchanged = this.observed && !report.decisions.some(d => d.executed) && !this.rejections.length;
     try { snapshot = unchanged ? this.observed! : await this.snapshot(); } catch { return; }
+    this.settled = snapshot;
     try {
       for (const task of reconstruct(snapshot, this.config, this.now())) {
         const existing = (snapshot.comments.get(task.issue.number) ?? []).filter(c => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
         // A closed task that never had a status comment does not get one after the fact.
         if (task.issue.state === 'closed' && !existing.length) continue;
-        const body = statusComment(task, this.config, { repository: this.github.repository, readyIsGrant: !!snapshot.readyIsGrant,
+        const { body, awaitsGrant } = statusView(task, this.config, { repository: this.github.repository, readyIsGrant: !!snapshot.readyIsGrant,
           rejection: this.rejections.find(r => r.issueNumber === task.issue.number)?.code,
           queued: report.decisions.some(d => d.action.issueNumber === task.issue.number && d.decision.reason === 'Maximum parallel workers reached') });
+        if (awaitsGrant && task.issue.state === 'open') this.grantWaits.push({ number: task.issue.number, title: task.issue.title,
+          after: task.latest?.input.executionId });
         if (existing[0]?.body !== body) await this.github.writeComment(task.issue.number, body, existing[0]?.id);
       }
     } catch { report.errors.push('Status comments could not be updated; the lifecycle itself is unaffected'); }
@@ -220,7 +230,9 @@ export class Manager {
         // Intent first. If dispatch or subsequent writes fail, a future run observes this intent AND actual runs.
         const input = workerInputSchema.parse({ contractVersion: '1.0', repository: this.github.repository,
           issueNumber: live.number, taskVersion: action.taskVersion, description: live.body, acceptanceCriteria: task.criteria,
-          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : [])], executionId: id,
+          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : []),
+            // A rework after a merge review hands the worker what the review asked to change.
+            ...(rework && task.reworkReview ? reviewEntries(task.reworkReview) : [])], executionId: id,
           allowedActions: ['publish_result'], limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16000 },
           operation: this.config.workers.test.operation,
           worker: this.config.workers.coding && this.config.workers.coding.enabled ? 'codex' : 'test' });
@@ -260,7 +272,7 @@ export class Manager {
   }
   async run(): Promise<RunReport> {
     const started = this.now();
-    this.rejections = [];
+    this.rejections = []; this.grantWaits = []; this.settled = undefined;
     const report: RunReport = { correlationId: this.options.correlationId, startedAt: started.toISOString(), durationMs: 0,
       outcome: 'success', tasks: 0, decisions: [], errors: [], blockers: [], nextSteps: [] };
     if (!this.config.factory.enabled) { report.outcome = 'disabled'; return report; }
@@ -286,7 +298,7 @@ export class Manager {
     const eligible = tasks.filter(t => t.issue.state === 'open' && !t.blocked && !t.hasClosingMerge && !t.executions.some(e => e.active));
     if (eligible.length && this.config.llm.maxCalls > 0) {
       try { entries.push(...planSchema.parse(await this.planner.plan(eligible, this.config)).actions.map(action => ({ action: ownFields(action), source: 'planner' as const }))); }
-      catch { report.errors.push('LLM planning failed; deterministic reconciliation remains available (no unvalidated actions executed)'); }
+      catch (error) { report.errors.push(`LLM planning failed (${planningCode(error)}); deterministic reconciliation remains available (no unvalidated actions executed)`); }
     }
     for (const t of tasks) {
       if (t.latest?.result) entries.push(...t.latest.result.proposedActions.map(action => ({ action, source: 'worker' as const })));
@@ -338,7 +350,7 @@ export class Manager {
     }
     if (this.config.notifications.slack.enabled && !this.config.execution.dryRun && this.config.autonomy.profile !== 'advisory') {
       try { report.errors.push(...await deliverNotifications(this.github, this.config,
-        await this.github.snapshot(this.config.manager.workflow), this.options.notifications, this.options.correlationId, this.now())); }
+        await this.github.snapshot(this.config.manager.workflow), this.options.notifications, this.options.correlationId, this.now(), this.grantWaits)); }
       catch { report.errors.push('Slack notification reconciliation failed; repository actions remain committed'); }
     }
     if (report.errors.length) report.outcome = 'partial';

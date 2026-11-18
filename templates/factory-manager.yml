@@ -29,7 +29,7 @@ concurrency:
 jobs:
   factory:
     if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SF_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     permissions:
       contents: read
@@ -48,7 +48,7 @@ jobs:
   merge:
     needs: factory
     if: ${{ !cancelled() && inputs.mode != 'worker' && inputs.mode != 'check-slack' && inputs.mode != 'notify' && inputs.mode != 'bootstrap' && (needs.factory.result == 'success' || (needs.factory.result == 'failure' && (github.event_name == 'push' || github.event_name == 'workflow_run' || inputs.mode == 'merge'))) }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SF_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: write
@@ -66,7 +66,7 @@ jobs:
   merge-notifications:
     needs: merge
     if: always() && needs.merge.result != 'skipped'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SF_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read

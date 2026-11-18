@@ -23,7 +23,7 @@ Generated JSON schemas share the executable Zod source.
 | `execution.maxNewIssues` | `3` | Follow-ups created/run, 0–20 |
 | `execution.workerTimeoutMinutes` | `30` | Worker cap, 1–30; overdue active runs cancelled before retry |
 | `execution.dispatchGraceMinutes` | `10` | Actions visibility grace, 1–60; expiry quarantines uncertain intents |
-| `execution.rework` | `false` | Temporal coding with independent validation only: a failed validation starts a further attempt within `maxRetries` instead of waiting for a person. Enable only after the executor release that fetches task context is rolled out |
+| `execution.rework` | `false` | Temporal coding with independent validation only: a failed validation, or a merge review that asks for changes to a validated pull request, starts a further attempt within `maxRetries` instead of waiting for a person. Enable only after the executor release that fetches task context is rolled out |
 | `workers.coding.loopback` | `false` | Temporal executor only: the worker's commands may bind and connect on a private loopback interface (local server, browser tests) and get the locked Playwright browser; all other network stays closed. Needs the executor release that supports it |
 | `monitoring.enabled` | `true` | Temporal: the broker's sanity check of this repository's runs after each reconciliation (no extra GitHub requests). The whole `monitoring` section is optional and leaves the configuration hash unchanged while absent |
 | `monitoring.stuckRunMinutes` | `60` | A run still active this many minutes after its worker timeout is reported as stuck, 5–1440 |
@@ -41,7 +41,7 @@ Generated JSON schemas share the executable Zod source.
 | `llm.maxCalls` | `1` | Total calls incl. retries, 0–3; zero disables semantic planning only |
 | `workers.test.enabled` | `true` | Bundled non-code-changing worker |
 | `workers.test.operation` | `sha256` | Digest, deterministic `fail`, or deterministic `blocked` |
-| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper |
+| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY`. `agents` (instead of `agent`, Temporal engine only) is a priority list of up to three agents, each `{agent, model, reasoningEffort}`: see [Agent priority list](#agent-priority-list) |
 | `workers.review` | `false` | Must be false; not implemented |
 | `merge.risk.enabled` | `false` | Risk-based auto-merge, see [merging](merging.md#risk-based-auto-merge); requires `merge.enabled` |
 | `merge.risk.mode` | `enforce` | `enforce` gates merges by risk class; `observe` only classifies and shows |
@@ -62,6 +62,7 @@ Generated JSON schemas share the executable Zod source.
 | `deploy.healthcheck.url`/`timeoutSeconds` | `null`/`180` | Optional HTTP check on the host; wait timeout 10–900 |
 | `deploy.rollback`/`keepReleases`/`timeoutMinutes` | `true`/`5`/`30` | Restart previous release on failure; releases kept 1–20; per-step timeout 5–60 |
 | `deploy.githubDeployment` | `false` | Additional GitHub deployment record with outcome |
+| `deploy.secrets` | `{}` | Application secrets from GitHub: `NAME: SECRET_NAME`; the SF Manager renders them into the wrapper's `deploy-env` (0.12.0, see [deploy](deploy.md#declared-in-the-configuration-deploysecrets-0120)) |
 | `reporting.persistDecisions` | `true` | Deduplicated decision comments; execution intents/results and automatic block provenance always durable |
 
 ## Policy defaults
@@ -104,3 +105,34 @@ autonomy:
 Priority labels are `harness:priority-high`, `harness:priority-normal`,
 `harness:priority-low`. Mock planning orders priority then issue number; OpenAI
 may recommend a new priority or a necessary follow-up under the same policy.
+
+## Agent priority list
+
+```yaml
+workers:
+  coding:
+    enabled: true
+    agents:
+      - agent: claude
+        model: claude-opus-5-5
+        reasoningEffort: high
+      - agent: codex
+        model: gpt-6.1-sol
+        reasoningEffort: high
+```
+
+Neither Anthropic nor OpenAI publishes the remaining prepaid credit of an API key. Before each coding run the
+executor's `validate` job therefore sends each agent's provider a minimal request (a few tokens, a fraction of a cent)
+with the repository's key and the agent's model, in list order, and runs the first agent that can be used:
+
+| Provider answer | Result |
+| --- | --- |
+| success, rate limit, overload, network error | the agent runs (a transient failure is the agent's to retry) |
+| Anthropic `credit balance is too low`, HTTP 402, or the spend cap `enforced_spend_limit_reached`; OpenAI `insufficient_quota` | used-up credit: the next agent is tried |
+| no key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` missing) or a refused key (401/403) | the next agent is tried |
+
+The choice is uploaded as the artifact `coding-agent-<executionId>`; the broker names the agent that ran in the commit
+and PR title. When no agent can run the run fails without spending an attempt. With `FACTORY_CREDIT_ALERT_CHANNEL`
+set, the broker posts a Slack message for each agent skipped for used-up credit, at most three times per agent; once
+that agent has run again, a later shortage is announced anew. Each repository needs the secret of every agent in its
+list. A single `agent` keeps the earlier behaviour without any check.

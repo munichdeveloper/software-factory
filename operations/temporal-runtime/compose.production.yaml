@@ -22,8 +22,8 @@ name: sfm
 # runs and never unbinds a repository; the broker ends such a run after FACTORY_RETAINED_RUN_HOURS (default 2) and the
 # planner retries it on the current release (software-factory#102). It may equal WORKER_FACTORY_SHA.
 x-worker-release: &worker-release
-  WORKER_FACTORY_SHA: f4fcbbe70c7edc5d71c365ec345081b2a0732c5a
-  PREVIOUS_WORKER_FACTORY_SHA: a7be4652e5cecb8e133028762616b583b8121615
+  WORKER_FACTORY_SHA: d1bd2e5c425014aae9955d8480ba8821d344d5b6
+  PREVIOUS_WORKER_FACTORY_SHA: 04b9847c2518def79dcd7fc48499b62ba74ea597
   WORKER_DEPLOYMENT: sf-backofficer
   WORKER_QUEUE: sf-backofficer-v1
 x-service: &service
@@ -75,7 +75,19 @@ services:
       # Acceptance repository of the deployment canary (deploy.verify, software-factory#27): test worker only, no
       # code changes. Its App installation is looked up by the broker and must be in GITHUB_ALLOWED_INSTALLATION_IDS.
       FACTORY_CANARY_REPOSITORY: '{"repositoryId":1450715381,"repository":"munichdeveloper/sf-temporal-acceptance-a-20261108"}'
-    volumes: ['${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/registry.json:/run/factory/registry.json:ro']
+      # Self-hosted runner fallback (software-factory#110, docs/self-hosted-runners.md). Needs the GitHub App permissions
+      # Administration and Variables write (granted 2026-11-17).
+      FACTORY_RUNNER_FALLBACK: 'on'
+      FACTORY_RUNNER_SLOTS_DIR: /run/factory/runners
+      FACTORY_RUNNER_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification
+      FACTORY_CREDIT_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification: agent credit used up (workers.coding.agents)
+      # Private repositories outside the registry whose own CI follows SF_RUNNER (id:owner/name).
+      FACTORY_RUNNER_REPOSITORIES: 1449777386:munichdeveloper/sf-manager,1448658563:munichdeveloper/business-os
+    volumes:
+      - '${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/registry.json:/run/factory/registry.json:ro'
+      # One directory per runner slot: the broker writes a just-in-time configuration, the slot's runner takes it.
+      - runner-slot-1:/run/factory/runners/1
+      - runner-slot-2:/run/factory/runners/2
     tmpfs: [/tmp]
     networks:
       private: {}
@@ -134,6 +146,59 @@ services:
     mem_limit: 1g
     depends_on:
       runtime-broker: { condition: service_healthy }
+  # Self-hosted runner pool (software-factory#110): two slots, each a runner and its own Docker daemon sharing one
+  # network namespace, so a job's containers are reachable on localhost as on a hosted runner. The broker hands out
+  # work only while the Actions budget is used up and only for private repositories; otherwise the runners idle.
+  # Limits keep the pool next to the runtime: per slot 2 CPUs and 5 GB for the job and its containers together.
+  # The daemons are privileged (decision of 2026-11-17): a job could take over the host. Nothing of the broker is
+  # mounted or reachable here: no network to it, no token; the slot volume only carries one-job configurations.
+  runner-docker-1: &runner-docker
+    image: docker:29.9.3-dind@sha256:7bf70dcb85c822e3fa6f2d332143e474b99147b9d7b39102b0cfe8b04a7dd61b
+    restart: unless-stopped
+    privileged: true
+    environment: { DOCKER_TLS_CERTDIR: '' }
+    command: [dockerd, --host=tcp://127.0.0.1:2375, --host=unix:///var/run/docker.sock, --tls=false]
+    volumes: [runner-docker-1:/var/lib/docker, runner-work-1:/home/runner/work]
+    networks: [runners]
+    cpus: 2
+    mem_limit: 5g
+    pids_limit: 4096
+    logging: { driver: json-file, options: { max-size: 10m, max-file: '3' } }
+    healthcheck:
+      test: [CMD, docker, --host=tcp://127.0.0.1:2375, info]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+  runner-1: &runner
+    build:
+      context: .
+      dockerfile: operations/runner/Dockerfile
+    restart: unless-stopped
+    user: root
+    # The Factory's coding job (Harness) bind-mounts its browser cache into the coding account's home and limits that
+    # account's egress with iptables, both with sudo as on a hosted runner. The mount needs SYS_ADMIN and no AppArmor
+    # profile (Docker's default profile denies mount), the rules need NET_ADMIN; without them the job failed at the
+    # mount (Backofficer #62, 2026-11-18). A job can already do more through its slot's privileged daemon.
+    cap_add: [SYS_ADMIN, NET_ADMIN]
+    security_opt: [apparmor:unconfined]
+    network_mode: service:runner-docker-1
+    environment: { DOCKER_HOST: 'tcp://127.0.0.1:2375' }
+    # The workspace is shared with the daemon so bind mounts of job files resolve to the same paths.
+    volumes: [runner-slot-1:/jit, runner-work-1:/home/runner/work]
+    tmpfs: ['/tmp:size=2g']
+    logging: { driver: json-file, options: { max-size: 10m, max-file: '3' } }
+    depends_on:
+      runner-docker-1: { condition: service_healthy }
+  runner-docker-2:
+    <<: *runner-docker
+    volumes: [runner-docker-2:/var/lib/docker, runner-work-2:/home/runner/work]
+  runner-2:
+    <<: *runner
+    network_mode: service:runner-docker-2
+    volumes: [runner-slot-2:/jit, runner-work-2:/home/runner/work]
+    depends_on:
+      runner-docker-2: { condition: service_healthy }
 networks:
   private: { internal: true }
   # Shared with the SF Manager's own deployment (munichdeveloper/sf-manager, operations/image/compose.yaml): only
@@ -143,6 +208,14 @@ networks:
   # joins it as sfm_front. Declared with its existing name so it stays stable.
   front: { name: sfm_front }
   temporal: { external: true, name: sf-temporal_access }
+  # The runner pool's own network with internet access; nothing of the runtime is attached to it.
+  runners: {}
 # The Manager database and its volume sfm_manager-data belong to the SF Manager's own stack (external volume there).
 volumes:
   runtime-data: {}
+  runner-slot-1: {}
+  runner-slot-2: {}
+  runner-docker-1: {}
+  runner-docker-2: {}
+  runner-work-1: {}
+  runner-work-2: {}

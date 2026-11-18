@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { configSchema, loadConfig, type Config } from '../src/config/index.js';
-import { executeDeploy, parseDeployEnvironment, planDeploy, readEvent, renderDeployEnvironment, deploySummary, type DeployEvent } from '../src/deploy/index.js';
+import { executeDeploy, missingDeploySecrets, parseDeployEnvironment, planDeploy, readEvent, renderDeployEnvironment, deploySummary, type DeployEvent } from '../src/deploy/index.js';
 import type { CheckRun, DeployPort, DeploymentState } from '../src/deploy/github.js';
 import { bashCommand, remoteValue, shellQuote } from '../src/deploy/remote.js';
 import { runProcess, SshTransport, type Transport } from '../src/deploy/transport.js';
@@ -237,6 +237,26 @@ describe('docker-ssh deployment', () => {
     expect(await readFile(log, 'utf8')).toContain('prune image prune --force --filter label=com.docker.compose.project=app');
   });
 
+  it('still deploys when an old release cannot be pruned and names it in the log', async () => {
+    const shas = [];
+    for (let i = 0; i < 2; i++) {
+      shas.push(await commit({ 'compose.yaml': 'services: {}\n', 'app.txt': `v${i}` }));
+      expect((await deploy(shas[i]!, { keepReleases: 1 })).outcome).toBe('deployed');
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    // An rm on the PATH that refuses releases marked STUCK, like files owned by another user on the target.
+    await writeFile(join(bin, 'rm'), '#!/usr/bin/env bash\nfor a in "$@"; do [ -e "$a/STUCK" ] && { echo "rm: cannot remove $a: Permission denied" >&2; exit 1; }; done\nexec /bin/rm "$@"\n');
+    await chmod(join(bin, 'rm'), 0o755);
+    await writeFile(join(root, 'srv', 'app', 'releases', shas[1]!, 'STUCK'), '');
+    const next = await commit({ 'app.txt': 'v2' });
+    const lines: string[] = [];
+    const report = await executeDeploy({ config: config({ path: join(root, 'srv', 'app'), project: 'app', healthcheck: { timeoutSeconds: 10 }, keepReleases: 1 }),
+      sha: next, sourceDir: repo, transport: new LocalTransport(env), port: new FakePort(), log: line => lines.push(line) });
+    expect(report.outcome).toBe('deployed');
+    expect(await readlink(join(root, 'srv', 'app', 'current'))).toBe(join(root, 'srv', 'app', 'releases', next));
+    expect(lines).toContain(`Warning: old releases could not be removed (check their owner on the target): ${shas[1]}`);
+  });
+
   it('restores the previous release when the new one fails to start', async () => {
     const good = await commit({ 'compose.yaml': 'services: {}\n' });
     await deploy(good);
@@ -339,5 +359,23 @@ exec sh -c "\${@: -1}"
     expect(deploySummary(null, { deploy: false, reason: 'checks-pending', sha: HEAD }, 'production')).toContain('checks-pending (aaaaaaaaaaaa)');
     expect(deploySummary({ outcome: 'deployed', sha: HEAD, previous: null, deploymentId: null, detail: 'ok' }, { deploy: true, sha: HEAD, source: 'push' }, 'prod|x'))
       .toContain('| Environment | prodx |');
+  });
+});
+
+describe('deploy.secrets', () => {
+  it('maps variable names to GitHub secret names and refuses deployment credentials', () => {
+    const parse = (secrets: unknown) => configSchema.safeParse({ version: 1, factory: { scope: 'x' }, deploy: { secrets } });
+    expect(parse({ FACTORY_MONITOR_TOKEN: 'MONITOR_FACTORY_TOKEN' }).success).toBe(true);
+    expect(configSchema.parse({ version: 1, factory: { scope: 'x' } }).deploy.secrets).toEqual({});
+    expect(parse({ KEY: 'DEPLOY_SSH_KEY' }).success).toBe(false);
+    expect(parse({ KEY: 'github_token' }).success).toBe(false);
+    expect(parse({ 'BAD-NAME': 'X' }).success).toBe(false);
+    expect(parse({ KEY: 'X}}' }).success).toBe(false);
+    expect(parse(Object.fromEntries(Array.from({ length: 31 }, (_, i) => [`K${i}`, `S${i}`]))).success).toBe(false);
+  });
+  it('names declared secrets the wrapper did not pass', () => {
+    const environment = parseDeployEnvironment('A=1\nB=\n');
+    expect(missingDeploySecrets({ A: 'SA', B: 'SB', C: 'SC' }, environment)).toEqual(['C']);
+    expect(missingDeploySecrets({}, environment)).toEqual([]);
   });
 });

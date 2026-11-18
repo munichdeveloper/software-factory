@@ -8,23 +8,28 @@ import { Pool } from 'pg';
 import { Connection, Client } from '@temporalio/client';
 import { bundleWorkflowCode } from '@temporalio/worker';
 import { Octokit } from '@octokit/rest';
-import { loadConfig } from '../config/index.js';
+import { codingAgents, loadConfig, type Config } from '../config/index.js';
 import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
-import { MockPlanner, OpenAIPlanner } from '../llm/provider.js';
+import { ClaudePlanner, FallbackPlanner, MockPlanner, OpenAIPlanner } from '../llm/provider.js';
+import { claudeModels, claudeStructured } from '../llm/claude.js';
 import { assertRetainedReleases } from './retention.js';
 import { hash } from '../state/identity.js';
 import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract.js';
 import { RuntimeStore, type Registration } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { startReconcileSchedule } from './schedule.js';
+import { QueueBoard } from './queue.js';
 import { SanityMonitor } from './sanity.js';
 import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
+import { CreditAlerts } from './credit-alerts.js';
 import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
-import { appInstallationId, scopedRuntimeGitHub } from './github-app.js';
-import { ActionsCodingExecutor, codingWorkflow } from './coding-executor.js';
+import { appCommitIdentity, appInstallationId, scopedRuntimeGitHub } from './github-app.js';
+import { RunnerDispenser, RunnerFallback, startRunnerFallback, type RunnerRepositoryPort } from './runners.js';
+import { runnerRepository } from './runner-github.js';
+import { ActionsCodingExecutor, codingWorkflow, storedSelection } from './coding-executor.js';
 import { RuntimeEffects } from './effects.js';
 import { RuntimeCodingPublisher, containsCommit } from './publisher.js';
 import { IssueScopedGitHub } from './issue-scope.js';
@@ -34,8 +39,8 @@ import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
 import { assertCanaryConfig, bindCanaryRepository, canaryLabel, canaryRepository, runCanary } from './canary.js';
-import { OpenAIMergeReviewer } from '../merge/reviewer.js';
-import { OpenAIRiskAssessor } from '../merge/risk.js';
+import { ClaudeMergeReviewer, FallbackMergeReviewer, OpenAIMergeReviewer } from '../merge/reviewer.js';
+import { ClaudeRiskAssessor, FallbackRiskAssessor, OpenAIRiskAssessor } from '../merge/risk.js';
 
 const registrySchema = z.strictObject({
   namespace: z.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
@@ -123,9 +128,23 @@ export async function main(args = process.argv.slice(2)) {
   const store = new RuntimeStore(new Pool({ connectionString: process.env.FACTORY_RUNTIME_DATABASE_URL, max: 8, connectionTimeoutMillis: 5000 }));
   const connection = await Connection.connect({ address: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233', connectTimeout: '5 seconds' });
   const temporal = new Client({ connection, namespace: registry.namespace });
+  // Used-up agent credit (workers.coding.agents) goes to this channel, at most three times per agent.
+  // The broker's own Anthropic key (deploy secret BROKER_ANTHROPIC_API_KEY): planner, merge review and risk ask Claude first.
+  const claude = process.env.ANTHROPIC_API_KEY ? claudeStructured(process.env.ANTHROPIC_API_KEY) : undefined, models = claudeModels(process.env);
+  const creditChannel = process.env.FACTORY_CREDIT_ALERT_CHANNEL;
+  const creditAlerts = process.env.SLACK_BOT_TOKEN && creditChannel ? new CreditAlerts(store, new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN), creditChannel) : undefined;
   try {
     await store.migrate();
     type Item = z.infer<typeof registrySchema>['repositories'][number];
+    // Self-hosted runner fallback (software-factory#110): every App-bound repository; public ones are skipped by the
+    // fallback itself. The admin token is limited to this repository and to runners and variables.
+    const runnerPorts: RunnerRepositoryPort[] = [];
+    const addRunnerPort = (item: Item, actions: Octokit) => {
+      if (!item.githubInstallationId || runnerPorts.some(p => p.repositoryId === item.repositoryId)) return;
+      runnerPorts.push(runnerRepository(item.repositoryId, item.repository, actions, scopedRuntimeGitHub({ appId: process.env.GITHUB_APP_ID ?? '',
+        privateKey: process.env.GITHUB_APP_PRIVATE_KEY ?? '', installationId: item.githubInstallationId, repositoryId: item.repositoryId,
+        permissions: { administration: 'write', actions_variables: 'write' } })));
+    };
     const bind = async (item: Item): Promise<RuntimeBinding> => {
       if (item.githubInstallationId && !(process.env.GITHUB_ALLOWED_INSTALLATION_IDS ?? '').split(',').includes(String(item.githubInstallationId))) throw new Error('INSTALLATION_NOT_ALLOWLISTED');
       const token = item.githubTokenEnv ? z.string().min(1).parse(process.env[item.githubTokenEnv]) : '';
@@ -135,6 +154,7 @@ export async function main(args = process.argv.slice(2)) {
       const github = item.issueNumbers ? new IssueScopedGitHub(source, item.issueNumbers) : source;
       const [owner, repo] = item.repository.split('/') as [string, string];
       if ((await api.repos.get({ owner, repo })).data.id !== item.repositoryId) throw new Error('REPOSITORY_ID_MISMATCH');
+      addRunnerPort(item, api);
       const isCanary = canaryItem?.repositoryId === item.repositoryId;
       const repository: RuntimeRepository = { ...item, github, retainedRunMs, config: async () => {
         const config = loadConfig(await source.readConfig(item.configPath, item.baseRef));
@@ -162,23 +182,50 @@ export async function main(args = process.argv.slice(2)) {
       };
       const effects = (snapshot: Parameters<ActionsCodingExecutor['poll']>[0], binding: string) => new RuntimeEffects(store, repository.repositoryId, snapshot.admission.input.executionId, binding);
       repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), async () => (await repository.config()).manager.trustedActors,
-        id => store.validation(repository.repositoryId, id)),
-        publish: async (snapshot, binding, artifact, createdAt, validation) => new RuntimeCodingPublisher(api, effects(snapshot, binding),
-          () => controller.authorize(snapshot, binding), (await repository.config()).manager.trustedActors).publish(snapshot, artifact, createdAt, validation) };
+        id => store.validation(repository.repositoryId, id),
+        async (_snapshot, selection) => { try { await creditAlerts?.observe(item.repository, selection); } catch { /* an alert never fails a run */ } }),
+        publish: async (snapshot, binding, artifact, createdAt, validation) => { const config = await repository.config();
+          // The agent that ran: the executor's stored choice for a priority list, otherwise the configured agent.
+          const chosen = await storedSelection(effects(snapshot, binding), snapshot.admission.input.executionId, () => controller.authorize(snapshot, binding));
+          const agent = chosen?.selected?.worker ?? (config.workers.coding ? codingAgents(config.workers.coding)[0]!.agent : 'codex');
+          // Commits show the App's bot user as author; without it Vercel and GitHub see a stranger's noreply account.
+          const identity = item.githubInstallationId ? await appCommitIdentity(z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
+            z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), api).catch(error => {
+            console.log(JSON.stringify({ event: 'factory-commit-identity', outcome: 'legacy', reason: error instanceof Error ? error.message.slice(0, 200) : 'unknown' }));
+            return undefined;
+          }) : undefined;
+          return new RuntimeCodingPublisher(api, effects(snapshot, binding), () => controller.authorize(snapshot, binding), config.manager.trustedActors,
+            agent, identity).publish(snapshot, artifact, createdAt, validation); } };
       // Refuse a registry rollout which would orphan any running version, including long human gates.
       await assertRetainedReleases(item.repositoryId, [item.release, ...item.retainedReleases], store, temporal);
       await repository.config(); // An unreadable or invalid configuration fails the start, not the first reconciliation.
       // Chosen per reconciliation: a configuration change in the repository applies without restarting the broker.
-      const mock = new MockPlanner(), openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
+      // Claude first, OpenAI second (as for the coding agents), when the broker has an Anthropic key.
+      const openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? ''), mock = new MockPlanner();
+      const planner = claude ? new FallbackPlanner(new ClaudePlanner(claude, models.planner), openai) : openai;
+      const reviewer = (config: Config) => { const plain = new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config);
+        return claude ? new FallbackMergeReviewer(new ClaudeMergeReviewer(claude, models.review, config), plain) : plain; };
+      const assessor = (config: Config) => { const plain = new OpenAIRiskAssessor(process.env.OPENAI_API_KEY ?? '', config);
+        return claude ? new FallbackRiskAssessor(new ClaudeRiskAssessor(claude, models.risk, config), plain) : plain; };
       // Only pull requests the Factory published for its tasks in an issue-scoped registry entry; closed ones while a merge's follow-up may be open.
       const merge = new RuntimeMerge(item.repositoryId, (config, snapshot) => new MergeManager(
         new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
-        config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), `temporal-merge:${item.repositoryId}`, github,
-        { ownedOnly: !!item.issueNumbers, assessor: new OpenAIRiskAssessor(process.env.OPENAI_API_KEY ?? '', config) }).run(snapshot));
-      return { repository, controller, planner: config => config.llm.provider === 'mock' ? mock : openai, merge };
+        config, reviewer(config), `temporal-merge:${item.repositoryId}`, github,
+        { ownedOnly: !!item.issueNumbers, assessor: assessor(config) }).run(snapshot));
+      return { repository, controller, planner: config => config.llm.provider === 'mock' ? mock : planner, merge };
     };
     const bindings: RuntimeBinding[] = [];
     for (const item of registry.repositories) bindings.push(await bind(item));
+    // Private repositories the runtime does not serve but whose CI should follow the fallback too (for example the
+    // SF Manager itself): "id:owner/name" pairs, reached through the App installation of the bound repositories.
+    const runnerInstallation = registry.repositories.find(item => item.githubInstallationId)?.githubInstallationId;
+    for (const entry of (process.env.FACTORY_RUNNER_REPOSITORIES ?? '').split(',').map(e => e.trim()).filter(Boolean)) {
+      const [, id, repository] = /^([0-9]+):([\w.-]+\/[\w.-]+)$/.exec(entry) ?? [];
+      if (!id || !repository || !runnerInstallation) throw new Error(`INVALID_RUNNER_REPOSITORY ${entry}`);
+      const item = { repositoryId: Number(id), repository, githubInstallationId: runnerInstallation } as Item;
+      addRunnerPort(item, scopedRuntimeGitHub({ appId: z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
+        privateKey: z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), installationId: runnerInstallation, repositoryId: item.repositoryId }));
+    }
     // Repositories the SF Manager registered (Temporal rollout): served with the PINNED worker release, the ready
     // label as grant and independent validation. A registration that cannot be bound is reported, never fatal for
     // the repositories of the static registry.
@@ -199,21 +246,30 @@ export async function main(args = process.argv.slice(2)) {
     };
     const notifications = process.env.SLACK_BOT_TOKEN ? new SlackSink(process.env.SLACK_BOT_TOKEN) : undefined;
     const monitor = new SanityMonitor(store, undefined, process.env.SLACK_BOT_TOKEN ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined);
-    const serverOptions = { monitor, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
-      ...(notifications ? { notifications } : {}) };
+    // The broker reconciles its repositories itself; 0 leaves it to external callers (the SF Manager) as before.
+    // 180 s like the Manager did: one pass costs about 150 GitHub requests, once a minute already exceeds an App
+    // installation's 5000 requests per hour.
+    const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '180');
+    // The job queue view for software-factory-monitor; FACTORY_MONITOR_TOKEN opens it read-only (unset: manager token only).
+    const queue = new QueueBoard(undefined, interval || null);
+    const serverOptions = { monitor, queue, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
+      monitorToken: process.env.FACTORY_MONITOR_TOKEN ?? '', ...(notifications ? { notifications } : {}) };
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     const addresses = await listenAddresses(process.env.FACTORY_RUNTIME_LISTEN_ALIAS);
     // One server per address; they share the options, so a registration through either is served by both.
     const servers = addresses.map(() => runtimeServer(serverOptions));
     await Promise.all(servers.map((server, i) => new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, addresses[i], resolve); })));
-    // The broker reconciles its repositories itself; 0 leaves it to external callers (the SF Manager) as before.
-    // 180 s like the Manager did: one pass costs about 150 GitHub requests, once a minute already exceeds an App
-    // installation's 5000 requests per hour.
-    const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '180');
-    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
+    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, queue, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
+    // Off unless the deployment turns it on: the App needs Administration and Variables write for it.
+    const stopRunners = process.env.FACTORY_RUNNER_FALLBACK === 'on' ? (() => {
+      const channel = process.env.FACTORY_RUNNER_ALERT_CHANNEL, slack = process.env.SLACK_BOT_TOKEN && channel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;
+      const fallback = new RunnerFallback(runnerPorts, slack ? { alerts: { post: text => slack.post(channel!, text) } } : {});
+      const slots = process.env.FACTORY_RUNNER_SLOTS_DIR;
+      return startRunnerFallback(fallback, slots ? new RunnerDispenser(fallback, slots) : null, Math.max(interval, 60) * 1000);
+    })() : () => {};
     console.log(JSON.stringify({ service: 'factory-runtime', port, addresses, reconcileIntervalSeconds: interval, repositories: bindings.map(b => b.repository.repositoryId) }));
     await new Promise<void>(resolve => {
-      const stop = () => { void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
+      const stop = () => { stopRunners(); void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
       process.once('SIGINT', stop); process.once('SIGTERM', stop);
     });
   } finally { await connection.close(); await store.pool.end(); }

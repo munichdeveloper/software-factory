@@ -22,7 +22,7 @@ The broker reads `.github/software-factory.validation.json` at the target base a
 }
 ```
 
-Supported profiles require a committed npm lockfile and `test`/`build` scripts. Checks run `npm ci --ignore-scripts`, `npm test`, `npm run build`, and `npm run test:e2e` when available. Playwright Chromium is prepared when the project includes its CLI. The `npm-docker` profile additionally requires `compose.yaml` and `tests/docker-smoke.mjs`; it checks Compose, starts a uniquely named disposable project, runs the smoke test and always attempts volume/container cleanup with a separate cleanup budget. The `maven` profile requires a `pom.xml` at the repository root and runs `mvn validate`, `mvn -DskipTests package` and `mvn verify` in batch mode, using an executable `mvnw` when the repository has one and the runner's Maven otherwise. Modules such as a frontend built through a Maven plugin are part of these checks. `javaVersion` (`17`, `21` or `25`, maven only) makes the validator install that Temurin JDK; without it the runner's default JDK is used. The validation account gets Docker access on its disposable hosted VM for Testcontainers. Missing project support is `unsupported`, never a passing check. The prefix must end in `-ci`, `-test` or `-validation`.
+Supported profiles require a committed npm lockfile and `test`/`build` scripts. Checks run `npm ci --ignore-scripts`, `npm test`, `npm run build`, and `npm run test:e2e` when available. Playwright Chromium is prepared when the project includes its CLI. The `npm-docker` profile additionally requires `compose.yaml` and `tests/docker-smoke.mjs`; it checks Compose, starts a uniquely named disposable project, runs the smoke test and always attempts volume/container cleanup with a separate cleanup budget. The `maven` profile requires a `pom.xml` at the repository root and runs `mvn validate`, `mvn -DskipTests package` and `mvn verify` in batch mode, using an executable `mvnw` when the repository has one and the runner's Maven otherwise. Modules such as a frontend built through a Maven plugin are part of these checks. `javaVersion` (`17`, `21` or `25`, maven only) makes the validator install that Temurin JDK; without it the runner's default JDK is used. The validation account gets Docker access on its disposable hosted VM for Testcontainers. On a slot of the Factory's runner pool there is no Docker socket; the account is handed the runner's `DOCKER_HOST` when it names the slot's daemon on loopback (`tcp://127.0.0.1:<port>`), and nothing else from the runner's environment. Browser tests find Google Chrome on both kinds of runner. Missing project support is `unsupported`, never a passing check. The prefix must end in `-ci`, `-test` or `-validation`.
 
 ## Boundaries and evidence
 
@@ -53,6 +53,22 @@ allowed attempt, the task ends `blocked` with the original statuses, as before.
   does not apply cleanly the workspace stays at the base and the commit remains available for inspection.
 - The new attempt is published as its own draft pull request; the broker then closes the draft of the attempt it
   continues, so a task has one open Factory draft. A pull request by anyone else for the task stops the rework.
+
+## Rework after the merge review asked for changes
+
+The same switch covers a validated attempt whose pull request the broker's independent merge review refuses
+(`request_changes`, or any `blocking` finding). Before, such a pull request stayed open with nothing scheduled.
+
+- The merge pass journals `merge_changes_requested` on the task (once per review), naming the pull request, its head,
+  the attempt that published it and the review. Its readable part says whether a rework follows.
+- With `execution.rework: true`, while `maxRetries` allows it and the pull request is still open, the Manager proposes
+  `retry_worker` as a rework of that attempt. The broker accepts it only for an attempt of the same task version that
+  ended `success` without a failed validation and for which that journal entry exists (`REWORK_SOURCE_INVALID`
+  otherwise). The grant rules above apply unchanged.
+- The worker receives the previous branch head as above, plus the review's reason and up to eight findings (blocking
+  first) as `sf-context review-changes: …` and `sf-context review-finding <severity> <path>: …`, each at most 1,000
+  characters, control characters removed. They are model text, not instructions of the broker.
+- Without the switch, or after the last allowed attempt, the pull request waits for a person as before.
 
 ## Task context
 

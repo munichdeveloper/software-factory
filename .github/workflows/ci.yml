@@ -5,6 +5,22 @@ on:
     branches: [main, 'feat/**']
 permissions: {}
 jobs:
+  runner-pool:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      # The deployment builds this image on the runtime host; a failing build would only show there.
+      - name: Build the runner pool image with what the Factory's jobs expect in it
+        run: |
+          docker build -f operations/runner/Dockerfile -t sf-runner:ci .
+          docker run --rm --network none --entrypoint bash sf-runner:ci -ec '
+            google-chrome --version; iptables --version; ip6tables --version; docker compose version; docker buildx version
+            jq --version; ssh -V; fc-match sans; test -r /etc/sf-runner-pool; bash -n /usr/local/bin/sf-runner'
   temporal-package:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -22,8 +38,8 @@ jobs:
         env:
           FACTORY_SHA: ${{ github.sha }}
         run: |
-          docker run --rm --network none --entrypoint node sf-temporal-package:ci -e 'const a=require("node:assert/strict"),p=require("./package.json"),m=require("./temporal-runtime.json");a.equal(p.version,m.factoryVersion);a.equal(m.harness.ref,"7d571cb233db55075f7f26178c97a870142092f1");a.equal(m.experimental,true)'
-          docker run --rm --network none sf-temporal-package:ci pack --output /tmp/worker-package --factory-sha "$FACTORY_SHA" --harness-sha 7d571cb233db55075f7f26178c97a870142092f1 --harness /app/.runtime/harness/dist/cli.js --deployment sf-rc-package --build "$FACTORY_SHA" --queue sf-rc-package
+          docker run --rm --network none --entrypoint node sf-temporal-package:ci -e 'const a=require("node:assert/strict"),p=require("./package.json"),m=require("./temporal-runtime.json");a.equal(p.version,m.factoryVersion);a.equal(m.harness.ref,"b9b05462d83774011438ba66936b9cd1df441e3d");a.equal(m.experimental,true)'
+          docker run --rm --network none sf-temporal-package:ci pack --output /tmp/worker-package --factory-sha "$FACTORY_SHA" --harness-sha b9b05462d83774011438ba66936b9cd1df441e3d --harness /app/.runtime/harness/dist/cli.js --deployment sf-rc-package --build "$FACTORY_SHA" --queue sf-rc-package
       # The production stack builds these two targets on the host: the pinned worker with its package baked in,
       # and the broker that takes its release from that package.
       - name: Build the pinned worker and the broker bound to it
@@ -57,7 +73,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: munichdeveloper/dev-agent-harness
-          ref: 7d571cb233db55075f7f26178c97a870142092f1
+          ref: b9b05462d83774011438ba66936b9cd1df441e3d
           path: .runtime/harness
           persist-credentials: false
       - name: Fresh Temporal cluster, real Harness, worker crash and approval recovery
@@ -113,7 +129,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           repository: munichdeveloper/dev-agent-harness
-          ref: 7d571cb233db55075f7f26178c97a870142092f1
+          ref: b9b05462d83774011438ba66936b9cd1df441e3d
           path: .runtime/harness
           persist-credentials: false
       - name: Validate Actions syntax with pinned actionlint
@@ -122,4 +138,12 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" .github/workflows/*.yml templates/factory-manager*.yml templates/factory-deploy.yml
-      - run: npm audit --audit-level=moderate
+      # GHSA-fc5q-39xc-vjpf (picomatch ReDoS) has no patched release yet and only reaches dev tooling (vitest, eslint);
+      # Johannes let exactly this advisory through on 2026-11-17. Remove the exception once picomatch publishes a fix.
+      - name: npm audit
+        run: |
+          npm audit --json > "$RUNNER_TEMP/audit.json" || true
+          jq -e '[.vulnerabilities[] | select(.severity != "low" and .severity != "info")
+            | .via[] | if type == "object" then .url else empty end
+            | select(. != "https://github.com/advisories/GHSA-fc5q-39xc-vjpf")] | length == 0' "$RUNNER_TEMP/audit.json" \
+            || { npm audit --audit-level=moderate; exit 1; }

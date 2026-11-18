@@ -98,3 +98,4 @@ deploy:
   keepReleases: 5
   timeoutMinutes: 30
   githubDeployment: false # The wrapper's GitHub environment already records each deployment.
+  secrets: {} # NAME: GITHUB_SECRET_NAME; the SF Manager passes them to the host through the wrapper's deploy-env.

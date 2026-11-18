@@ -28,6 +28,24 @@ export const monitoringSchema = z.strictObject({
   channel: slackChannel.nullable().default(null)
 });
 export type MonitoringSettings = z.infer<typeof monitoringSchema>;
+const codingAgentName = z.enum(['codex', 'claude']);
+const codingModel = z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/);
+const codingEffort = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
+function agentRules(entry: { agent: 'codex' | 'claude'; model: string; reasoningEffort: string }, context: z.RefinementCtx) {
+  if (entry.agent === 'claude' && !/^claude-/.test(entry.model)) {
+    context.addIssue({ code: 'custom', path: ['model'], message: 'agent claude needs a Claude model, for example claude-opus-5-5' });
+  }
+  if (entry.agent === 'codex' && /^claude-/.test(entry.model)) {
+    context.addIssue({ code: 'custom', path: ['model'], message: 'a Claude model needs agent claude' });
+  }
+  if (entry.agent === 'codex' && entry.reasoningEffort === 'max') {
+    context.addIssue({ code: 'custom', path: ['reasoningEffort'], message: 'max is available for agent claude only' });
+  }
+}
+/** One entry of workers.coding.agents. */
+const codingAgentSchema = z.strictObject({ agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort.default('high') })
+  .superRefine((entry, context) => agentRules(entry, context));
+export type CodingAgent = z.infer<typeof codingAgentSchema>;
 export const configSchema = z.strictObject({
   version: z.literal(1),
   factory: z.strictObject({ enabled: z.boolean().default(true), scope: z.string().min(1).max(4000) }),
@@ -58,14 +76,39 @@ export const configSchema = z.strictObject({
   workers: z.strictObject({
     test: z.strictObject({ enabled: z.boolean().default(true), operation: z.enum(['sha256', 'fail', 'blocked']).default('sha256') })
       .prefault({}),
-    coding: z.union([z.literal(false), z.strictObject({ enabled: z.boolean(), agent: z.literal('codex'),
-      model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/).default('gpt-6.1-sol'),
-      reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).default('high'),
+    coding: z.union([z.literal(false), z.strictObject({ enabled: z.boolean(),
+      /**
+       * codex (OpenAI Codex CLI, OPENAI_API_KEY) or claude (Claude Code CLI, ANTHROPIC_API_KEY; Temporal engine only).
+       * Name either agent (one agent, with model and reasoningEffort below) or agents (a priority list).
+       */
+      agent: codingAgentName.optional(),
+      /**
+       * Priority list, Temporal engine only: before each run the executor asks each agent's provider, in this order,
+       * whether its credit is used up, and runs the first one that still has credit. Optional without a default, so
+       * configurations that leave it out keep their hash and in-flight runs stay current.
+       */
+      agents: z.array(codingAgentSchema).min(1).max(3).optional(),
+      /** The default is a Codex model; with agent claude name a Claude model such as claude-opus-5-5 or claude-sonnet-5-5. */
+      model: codingModel.default('gpt-6.1-sol'),
+      /** max is available for Claude only. */
+      reasoningEffort: codingEffort.default('high'),
       validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default(null),
       /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
       loopback: z.boolean().default(false),
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
-      smallPullRequests: z.boolean().default(true) })]).default(false),
+      smallPullRequests: z.boolean().default(true) }).superRefine((coding, context) => {
+      if (coding.agents) {
+        if (coding.agent) context.addIssue({ code: 'custom', path: ['agent'], message: 'name either agent or agents, not both' });
+        const seen = new Set<string>();
+        coding.agents.forEach((entry, index) => {
+          if (seen.has(entry.agent)) context.addIssue({ code: 'custom', path: ['agents', index, 'agent'], message: 'each agent may appear once' });
+          seen.add(entry.agent);
+        });
+        return;
+      }
+      if (!coding.agent) { context.addIssue({ code: 'custom', path: ['agent'], message: 'name agent or agents' }); return; }
+      agentRules({ agent: coding.agent, model: coding.model, reasoningEffort: coding.reasoningEffort }, context);
+    })]).default(false),
     review: z.literal(false).default(false)
   }).prefault({}),
   reporting: z.strictObject({ persistDecisions: z.boolean().default(true) }).prefault({}),
@@ -145,7 +188,13 @@ export const configSchema = z.strictObject({
     }).prefault({}),
     keepReleases: bounded(1, 20, 5),
     timeoutMinutes: bounded(5, 60, 30),
-    githubDeployment: z.boolean().default(false)
+    githubDeployment: z.boolean().default(false),
+    // Application secrets from the deploy environment's GitHub secrets: variable name -> secret name. The SF Manager
+    // writes them into the wrapper's deploy-env (NAME=${{ secrets.SECRET }}); the values never enter this file.
+    // The deployment's own credentials (DEPLOY_*) and GitHub's reserved names cannot be passed on.
+    secrets: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/),
+      z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,99}$/).refine(s => !/^(?:GITHUB_|DEPLOY_)/i.test(s), 'must not name a GITHUB_ or DEPLOY_ secret'))
+      .refine(s => Object.keys(s).length <= 30, 'at most 30 secrets').default({})
   }).superRefine((deploy, context) => {
     if (deploy.enabled && deploy.trigger === 'checks' && !deploy.workflows.length) {
       context.addIssue({ code: 'custom', path: ['workflows'], message: 'trigger checks requires at least one workflow name' });
@@ -160,13 +209,25 @@ export const configSchema = z.strictObject({
       run_started: notificationRule.optional(),
       // A PR whose risk class is above merge.risk.autoMergeUpTo waits for `/harness approve`; optional for the same reason.
       approval_required: notificationRule.optional(),
+      // A task that waits for nothing but a person's `harness:ready` grant (ready-label repositories); optional for the same reason.
+      grant_required: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
   }).prefault({}) }).prefault({}),
   monitoring: monitoringSchema.partial().optional()
+}).superRefine((config, context) => {
+  // The Claude worker and the agent priority list exist only in the Temporal executor; the legacy Actions coding workflow runs Codex.
+  if (config.workers.coding && config.execution.engine !== 'temporal') {
+    if (config.workers.coding.agents) context.addIssue({ code: 'custom', path: ['workers', 'coding', 'agents'], message: 'agents requires execution.engine temporal' });
+    else if (config.workers.coding.agent === 'claude') context.addIssue({ code: 'custom', path: ['workers', 'coding', 'agent'], message: 'agent claude requires execution.engine temporal' });
+  }
 });
 export type Config = z.infer<typeof configSchema>;
+/** The repository's coding agents in priority order: agents, or the single agent with model and reasoningEffort. */
+export function codingAgents(coding: Exclude<Config['workers']['coding'], false>): CodingAgent[] {
+  return coding.agents ?? [{ agent: coding.agent ?? 'codex', model: coding.model, reasoningEffort: coding.reasoningEffort }];
+}
 export function loadConfig(source: string): Config {
   const doc = parseDocument(source, { uniqueKeys: true });
   if (doc.errors.length) throw new Error(`Invalid YAML: ${doc.errors.map(e => e.message).join('; ')}`);

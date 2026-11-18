@@ -3,21 +3,73 @@ import type { GitHubPort } from '../github/port.js';
 import type { Snapshot } from '../types.js';
 import { decodeEvent } from '../state/events.js';
 import { hash } from '../state/identity.js';
+import { infrastructureFailureSummary } from '../state/reconstruct.js';
 
-export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged' | 'approval_required'; number: number; title: string; actor: string; url: string;
+export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged' | 'approval_required' | 'grant_required'; number: number; title: string; actor: string; url: string;
   /** Shown in the message; run starts name their repository because one channel can collect several. */
   repository?: string;
   /** A task can start several runs (retries, rework); each start is its own delivery. */
   executionId?: string;
   /** One approval request of a risk gate; a new head or base asks again and is announced again. */
   approvalId?: string;
+  /** A task waits for a grant before its first run, or again after the run named here; each wait is its own delivery. */
+  after?: string;
   /** Trusted, Factory-generated detail line (never PR or issue content). */
   detail?: string }
 const labels: Record<Notification['event'], string> = {
   run_started: 'SF: Factory-Lauf gestartet', issue_created: 'SF: Issue autonom angelegt', pr_merged: 'SF: PR durch Bot gemergt',
-  approval_required: 'SF: PR wartet auf Freigabe (Risiko über Schwelle)' };
+  approval_required: 'SF: PR wartet auf Freigabe (Risiko über Schwelle)', grant_required: 'SF: Issue wartet auf Freigabe (harness:ready)' };
+/**
+ * A task the Manager's status comment of this reconciliation describes as waiting for nothing but a person's
+ * `harness:ready` grant (ready-label repositories). `after` names the run a further attempt follows, if any.
+ */
+export interface GrantWait { number: number; title: string; after?: string }
 // A run start is news only shortly after it happened; older starts are never announced, even without `since`.
 const runStartWindowMs = 24 * 60 * 60 * 1000;
+// A start this much older than the pass that announces it is a catch-up (first pass after enabling, broker downtime).
+const lateStartMs = 10 * 60 * 1000;
+type TrustedEvent = NonNullable<ReturnType<typeof decodeEvent>>;
+const failureCode = /^[A-Z][A-Z0-9_]{1,79}$/;
+const ago = (ms: number) => {
+  const minutes = Math.max(1, Math.round(ms / 60000)), hours = Math.floor(minutes / 60);
+  return hours ? `${hours} Std.${minutes % 60 ? ` ${minutes % 60} Min.` : ''}` : `${minutes} Min.`;
+};
+/** How the run before ended, from the Factory's own fields only: status, fixed summaries and fixed error codes (never worker text). */
+function previousOutcome(event: TrustedEvent): string {
+  if (event.data.type === 'admission_rejected') return `der vorige Start von der Runtime abgelehnt wurde (${event.data.code})`;
+  if (event.data.type !== 'result') return 'der vorige Lauf endete';
+  const { status, summary, error } = event.data.result;
+  const code = error && failureCode.test(error) ? ` (${error})` : '';
+  if (summary === infrastructureFailureSummary) return `der vorige Lauf vor dem Start des Agenten scheiterte${code}`;
+  if (status === 'failed' && summary.startsWith('Temporal execution ended without a committed worker result')) return 'der vorige Lauf ohne Ergebnis endete';
+  return {
+    failed: `der vorige Lauf gescheitert ist${code}`, blocked: `der vorige Lauf blockiert war${code}`, cancelled: 'der vorige Lauf abgebrochen wurde',
+    needs_approval: 'der vorige Lauf auf eine Freigabe wartete', success: 'der vorige Lauf ein Ergebnis lieferte, das nachgebessert wird'
+  }[status];
+}
+/**
+ * Why this run started and whether the message comes late, from trusted journal events of the task only. The detail does
+ * not enter the delivery id, so starts announced before this line existed are not announced again.
+ */
+export function runStartDetail(journal: TrustedEvent[], executionId: string, startedAt: string, now: Date, maxRetries: number): string | undefined {
+  const intentOf = (id: string) => journal.find(e => e.data.type === 'intent' && e.data.input.executionId === id);
+  const intent = intentOf(executionId), started = Date.parse(startedAt);
+  const previous = journal.filter(e => Date.parse(e.at) <= started &&
+    ((e.data.type === 'result' && e.data.result.executionId !== executionId) || (e.data.type === 'admission_rejected' && e.data.executionId !== executionId))).at(-1);
+  const lines: string[] = [];
+  if (intent?.data.type === 'intent') {
+    const attempt = intent.data.attempt, version = intent.data.input.taskVersion;
+    const previousId = previous?.data.type === 'result' ? previous.data.result.executionId : previous?.data.type === 'admission_rejected' ? previous.data.executionId : undefined;
+    const before = previousId ? intentOf(previousId) : undefined;
+    const beforeIntent = before?.data.type === 'intent' ? before.data : undefined;
+    if (!previous) lines.push('Grund: erster Lauf dieser Aufgabe.');
+    else if (beforeIntent && beforeIntent.input.taskVersion !== version) lines.push(`Grund: neuer Lauf für die geänderte Aufgabe, nachdem ${previousOutcome(previous)}.`);
+    else if (attempt > 0 && (!beforeIntent || beforeIntent.attempt < attempt)) lines.push(`Grund: Versuch ${attempt + 1} von ${maxRetries + 1}, weil ${previousOutcome(previous)}.`);
+    else lines.push(`Grund: neuer Start, weil ${previousOutcome(previous)}${beforeIntent && beforeIntent.attempt === attempt ? ' (zählt nicht als Versuch)' : ''}.`);
+  }
+  if (now.getTime() - started > lateStartMs) lines.push(`Nachmeldung: Der Lauf startete bereits vor ${ago(now.getTime() - started)}`);
+  return lines.length ? lines.join('\n') : undefined;
+}
 export interface NotificationSink { send(channel: string, notification: Notification): Promise<{ channel: string; timestamp: string }> }
 // Only a definite rejection permits automatic retry. Transport/response failures are ambiguous.
 export class NotificationRejected extends Error {}
@@ -72,7 +124,7 @@ export class SlackSink implements NotificationSink {
 // Only native GitHub facts plus trusted SF provenance can produce notifications.
 // No planner/model field selects the channel or supplies arbitrary message payloads.
 export async function deliverNotifications(github: GitHubPort, config: Config, snapshot: Snapshot,
-  sink: NotificationSink | undefined, correlationId: string, now: Date): Promise<string[]> {
+  sink: NotificationSink | undefined, correlationId: string, now: Date, grantWaits: GrantWait[] = []): Promise<string[]> {
   const settings = config.notifications.slack;
   if (!settings.enabled || !config.factory.enabled || config.execution.dryRun || config.autonomy.profile === 'advisory') return [];
   const errors: string[] = [];
@@ -88,7 +140,8 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
     if (!channel || !sink) { errors.push(`Slack ${notification.event}: channel or connection missing`); return; }
     const deliveryId = hash({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel,
       ...(notification.executionId ? { executionId: notification.executionId } : {}),
-      ...(notification.approvalId ? { approvalId: notification.approvalId } : {}) });
+      ...(notification.approvalId ? { approvalId: notification.approvalId } : {}),
+      ...(notification.event === 'grant_required' ? { after: notification.after ?? null } : {}) });
     // Re-read to handle repeated manager runs and duplicate PR links across tasks.
     const deliveries = (await github.comments(journal)).flatMap(c => {
       const e = decodeEvent(c, config.manager.trustedActors);
@@ -129,7 +182,8 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
     if ((event.data.type !== 'temporal_receipt' && event.data.type !== 'receipt') || !afterStart(event.at) ||
       now.getTime() - Date.parse(event.at) > runStartWindowMs) continue;
     await deliver(task.number, { event: 'run_started', number: task.number, title: task.title, actor: 'Software Factory',
-      url: `https://github.com/${github.repository}/issues/${task.number}`, repository: github.repository, executionId: event.data.executionId });
+      url: `https://github.com/${github.repository}/issues/${task.number}`, repository: github.repository, executionId: event.data.executionId,
+      detail: runStartDetail(events(task.number), event.data.executionId, event.at, now, config.execution.maxRetries) });
   }
   for (const parent of snapshot.issues) {
     const trusted = events(parent.number);
@@ -159,6 +213,15 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
         url: `https://github.com/${github.repository}/pull/${pr.number}`, repository: github.repository, approvalId: e.data.approvalId,
         detail: `Risiko ${e.data.riskClass} liegt über der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}` });
     }
+  }
+  // A task that waits only for a person's `harness:ready` (software-factory#127). The wait is the Manager's own finding of
+  // this reconciliation, the same one its status comment states. Each wait is announced once: before the first run, and
+  // again only when a further attempt after a run waits for a new grant. No `since` cutoff: a wait is current by definition.
+  if (settings.events.grant_required?.enabled) for (const wait of grantWaits) {
+    await deliver(wait.number, { event: 'grant_required', number: wait.number, title: wait.title, actor: 'Software Factory',
+      url: `https://github.com/${github.repository}/issues/${wait.number}`, repository: github.repository, after: wait.after,
+      detail: wait.after ? 'Ein weiterer Versuch wartet nur noch auf die Freigabe: eine berechtigte Person setzt das Label harness:ready.'
+        : 'Bereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready.' });
   }
   if (settings.events.pr_merged.enabled) for (const pr of snapshot.prs) {
     if (!pr.merged || pr.mergedBy?.type !== 'Bot' || !afterStart(pr.mergedAt) ||

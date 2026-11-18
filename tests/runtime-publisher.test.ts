@@ -4,7 +4,7 @@ import { Pool, type PoolClient } from 'pg';
 import { expect, it, vi } from 'vitest';
 import { RuntimeEffects } from '../src/runtime/effects.js';
 import { RuntimeStore } from '../src/runtime/store.js';
-import { RuntimeCodingPublisher } from '../src/runtime/publisher.js';
+import { legacyCommitIdentity, RuntimeCodingPublisher } from '../src/runtime/publisher.js';
 import { snapshotSchema } from '../src/runtime/contract.js';
 import { hash } from '../src/state/identity.js';
 import type { CodingArtifact } from '../src/workers/coding.js';
@@ -41,7 +41,7 @@ const artifact = (): CodingArtifact => ({ contractVersion: '3.0', baseSha: snaps
     status: 'success', summary: 'Implemented and tested; @nobody <untrusted>', artifacts: [], error: null },
   changes: [{ path: 'result.txt', content: Buffer.from('verified').toString('base64'), mode: '100644' }] });
 const previousAttempt = '7'.repeat(32);
-function fixture(selectedSnapshot = snapshot) {
+function fixture(selectedSnapshot = snapshot, agent: 'codex' | 'claude' = 'codex') {
   const store = new Store(), writes: { kind: string; body: Record<string, unknown> }[] = [];
   const blobs = new Map<string, string>();
   let branch: string | null = null, pr: Record<string, unknown> | null = null, comment: Record<string, unknown> | null = null;
@@ -81,9 +81,10 @@ function fixture(selectedSnapshot = snapshot) {
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
   const authorize = vi.fn(async () => {});
-  const publisher = () => new RuntimeCodingPublisher(api, new RuntimeEffects(store, 42, snapshot.admission.input.executionId, hash(selectedSnapshot)), authorize, ['factory[bot]']);
+  const publisher = (identity?: { name: string; email: string }) => new RuntimeCodingPublisher(api, new RuntimeEffects(store, 42, snapshot.admission.input.executionId, hash(selectedSnapshot)), authorize, ['factory[bot]'], agent, identity);
   const publish = (source = artifact(), validation?: ValidationReport) => publisher().publish(selectedSnapshot, source, '2026-11-09T13:00:00.000Z', validation);
-  return { store, writes, publish, authorize, lose: (key: string) => { lost = key; }, failBefore: (key: string) => { before = key; }, collide: () => { collision = true; }, duplicate: () => { duplicate = true; }, move: (how: 'forward' | 'rewritten' = 'rewritten') => { moved = how; } };
+  const publishAs = (identity: { name: string; email: string }) => publisher(identity).publish(selectedSnapshot, artifact(), '2026-11-09T13:00:00.000Z');
+  return { store, writes, publish, publishAs, authorize, lose: (key: string) => { lost = key; }, failBefore: (key: string) => { before = key; }, collide: () => { collision = true; }, duplicate: () => { duplicate = true; }, move: (how: 'forward' | 'rewritten' = 'rewritten') => { moved = how; } };
 }
 it('serializes concurrent publishers, creates exactly one draft and reuses durable receipts', async () => {
   const f = fixture(); const [a, b] = await Promise.all([f.publish(), f.publish()]); expect(a).toEqual(b);
@@ -163,4 +164,23 @@ it('authorizes refs, pull requests and comments, not every content-addressed obj
   expect(f.writes.filter(w => w.kind === 'blob')).toHaveLength(30);
   expect(f.authorize.mock.calls.length).toBe(few);
   expect(few).toBeLessThanOrEqual(6);
+});
+it('names the agent that wrote the change in commit and title, and keeps the Codex text', async () => {
+  const codex = fixture(); await codex.publish();
+  expect(codex.writes.find(w => w.kind === 'draft-pr')!.body.title).toBe('Implement #2 with Codex');
+  const claude = fixture(snapshot, 'claude'); await claude.publish();
+  expect(claude.writes.find(w => w.kind === 'draft-pr')!.body.title).toBe('Implement #2 with Claude');
+  expect(claude.writes.find(w => w.kind === 'commit')!.body.message).toMatch(/^Implement #2 with Claude\n/);
+});
+
+it('commits as the App bot user, and finishes a publication begun under the earlier identity with that one', async () => {
+  const bot = { name: 'factory[bot]', email: '354123657+factory[bot]@users.noreply.github.com' };
+  const fresh = fixture(); await fresh.publishAs(bot);
+  expect(fresh.writes.find(w => w.kind === 'commit')!.body).toMatchObject({ author: { ...bot, date: '2026-11-09T13:00:00.000Z' }, committer: bot });
+  const begun = fixture(); begun.lose('commit');
+  await expect(begun.publish()).rejects.toThrow('Response lost after acceptance');
+  await begun.publishAs(bot);
+  const commits = begun.writes.filter(w => w.kind === 'commit');
+  expect(commits.map(w => (w.body.author as { email: string }).email)).toEqual([legacyCommitIdentity.email, legacyCommitIdentity.email]);
+  expect(begun.writes.filter(w => w.kind === 'draft-pr')).toHaveLength(1);
 });

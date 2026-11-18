@@ -90,6 +90,12 @@ export function parseDeployEnvironment(text: string): DeployEnvironment {
   return { values, empty };
 }
 
+/** Names deploy.secrets declares that the wrapper's deploy-env neither passed nor left empty: the wrapper is out of date. */
+export function missingDeploySecrets(secrets: Record<string, string>, environment: DeployEnvironment): string[] {
+  const passed = new Set([...environment.values.map(([name]) => name), ...environment.empty]);
+  return Object.keys(secrets).filter(name => !passed.has(name)).sort();
+}
+
 /** Env file content for Docker Compose; single-quoted values are taken literally. */
 export function renderDeployEnvironment(environment: DeployEnvironment): string {
   return environment.values.map(([name, value]) => `${name}='${value}'\n`).join('');
@@ -147,6 +153,8 @@ export async function executeDeploy(context: DeployContext): Promise<DeployRepor
       String(deploy.keepReleases), deploy.healthcheck.url ?? '', String(deploy.healthcheck.timeoutSeconds), deploy.rollback ? '1' : '0',
       deploy.verify.script ?? '', String(deploy.verify.timeoutSeconds), deploy.verify.rollback ? '1' : '0'], undefined, timeoutMs);
     if (result.stderr.trim()) log(result.stderr.trim());
+    const unpruned = [...result.stdout.matchAll(/^SF_DEPLOY_PRUNE_FAILED=(.*)$/gm)].map(match => match[1]!.trim());
+    if (unpruned.length) log(`Warning: old releases could not be removed (check their owner on the target): ${unpruned.join(', ')}`);
     const previousRelease = remoteValue(result.stdout, 'SF_DEPLOY_PREVIOUS');
     const previous = previousRelease && previousRelease !== 'none' ? previousRelease : null;
     const error = remoteValue(result.stdout, 'SF_DEPLOY_ERROR');

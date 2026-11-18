@@ -3,7 +3,7 @@ import { config, clock, MemoryGitHub } from './helpers.js';
 import { configSchema } from '../src/config/index.js';
 import { MergeManager } from '../src/merge/manager.js';
 import type { MergeFacts, MergePort, MergeReview, ReviewInput } from '../src/merge/contract.js';
-import { classifyRisk, globToRegExp, OpenAIRiskAssessor, riskRules, type RiskAssessment, type RiskInput } from '../src/merge/risk.js';
+import { classifyRisk, describeRisk, globToRegExp, OpenAIRiskAssessor, riskRules, type RiskAssessment, type RiskInput } from '../src/merge/risk.js';
 import { decodeEvent } from '../src/state/events.js';
 
 const change = (path: string, lines = 2) => ({ path, status: 'modified', content: 'x',
@@ -97,7 +97,7 @@ describe('risk gate in the merge pass', () => {
     expect((await x.run()).merged).toBe(1);
     expect(x.risks()).toMatchObject([{ risk: { class: 'medium', source: 'ai' } }]);
     expect(x.api.riskLabel).toHaveBeenCalledWith(52, 'sf:risk-medium');
-    expect(x.f.comments.some(c => c.body.includes('**Risiko: medium**'))).toBe(true);
+    expect(x.f.comments.some(c => c.body.includes('**Risikoklasse: medium.**'))).toBe(true);
   });
   it('never shows the assessor the pull request text, comments or task', async () => {
     const x = fixture(); await x.run();
@@ -161,7 +161,7 @@ describe('risk gate in the merge pass', () => {
   it('treats a failed assessment as critical without journaling it, and assesses again in the next pass', async () => {
     const x = fixture(); x.assessor.assess.mockRejectedValueOnce(new Error('provider down'));
     await x.run(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.risks()).toHaveLength(0);
-    expect(x.f.comments.some(c => c.body.includes('**Risiko: critical**'))).toBe(true);
+    expect(x.f.comments.some(c => c.body.includes('**Risikoklasse: critical.**'))).toBe(true);
     await x.run(); expect(x.api.merge).toHaveBeenCalledTimes(1); expect(x.assessor.assess).toHaveBeenCalledTimes(2);
   });
   it('fails closed without an assessor', async () => {
@@ -194,5 +194,25 @@ describe('OpenAI risk assessor', () => {
     cfg.llm.provider = 'openai';
     await expect(new OpenAIRiskAssessor('', cfg, fetcher as unknown as typeof fetch).assess(input)).rejects.toThrow('real OpenAI');
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('readable verdict', () => {
+  const r = () => config().merge.risk;
+  it('names a failed assessment as the cause and keeps the size apart from it', async () => {
+    const record = await classifyRisk([change('src/a.ts', 416)], r(), { assess: async () => { throw Object.assign(new Error('rate limited'), { status: 429 }); } });
+    const text = describeRisk(record, r());
+    expect(text).toContain('**Risikoklasse: critical.** Liegt über der Grenze für automatisches Mergen (`medium`); critical wird nie automatisch gemergt.');
+    expect(text).toContain('Grund: Die Risikobewertung ist fehlgeschlagen. Ohne Bewertung gilt jeder PR als critical, unabhängig von seiner Größe.');
+    expect(text).toContain('Umfang: 416 geänderte Zeilen. Allein nach Größe wäre das `medium` (Grenzen: bis 300 Zeilen low, bis 800 medium, darüber high); die Größe hat die Klasse nicht bestimmt.');
+    expect(text).toContain('Ursache: HTTP 429 des Bewertungsanbieters.');
+    expect(text).not.toContain('rate limited');
+  });
+  it('says when the size, not the model, raised the class', async () => {
+    const record = await classifyRisk([change('src/a.ts', 900)], r(), { assess: async () => ({ class: 'low', reason: 'Klein.', factors: [] }) });
+    expect(record.class).toBe('high');
+    const text = describeRisk(record, r());
+    expect(text).toContain('Grund: KI-Bewertung `low`.');
+    expect(text).toContain('die Größe hat die Klasse auf `high` angehoben.');
   });
 });

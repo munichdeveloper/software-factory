@@ -17,11 +17,12 @@ import { OpenAIMergeReviewer } from './merge/reviewer.js';
 import { OpenAIRiskAssessor } from './merge/risk.js';
 import { MergeManager } from './merge/manager.js';
 import { GitHubDeployPort } from './deploy/github.js';
-import { deploySummary, executeDeploy, parseDeployEnvironment, planDeploy, readEvent } from './deploy/index.js';
+import { deploySummary, executeDeploy, missingDeploySecrets, parseDeployEnvironment, planDeploy, readEvent } from './deploy/index.js';
 import { resolveTarget } from './deploy/target.js';
 import { SshTransport } from './deploy/transport.js';
 import { RuntimeHttpClient } from './runtime/client.js';
 import { codingExecutionSchema } from './runtime/coding-contract.js';
+import { providerProbe, selectAgent } from './runtime/agent-selection.js';
 import { validationPlanSchema } from './runtime/validation-contract.js';
 import { hostedValidationCommand, materializeCodingArtifact, runCodingValidation } from './runtime/validation.js';
 import { mkdir, stat } from 'node:fs/promises';
@@ -37,14 +38,23 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   } });
   const command = positionals[0] ?? 'manager';
   if (command === 'validate-coding-execution') {
-    const request = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ''));
+    let request = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ''));
+    if (Buffer.byteLength(JSON.stringify(request)) > 60000 || !process.env.GITHUB_OUTPUT) throw new Error('Invalid coding executor request');
+    // workers.coding.agents: the first agent whose provider still has credit runs; the Harness gets a plain request.
+    if (request.fallbacks) {
+      const chosen = await selectAgent(request, providerProbe(process.env));
+      await writeFile(values.output ?? 'coding-agent.json', JSON.stringify(chosen.selection));
+      for (const skipped of chosen.selection.skipped) console.log(`Skipped ${skipped.worker} (${skipped.model}): ${skipped.reason}`);
+      if (!chosen.request) throw new Error('No coding agent can run: every provider reported used-up credit or refused the key');
+      console.log(`Selected ${chosen.request.worker} (${chosen.request.model})`);
+      request = chosen.request;
+    }
     const text = JSON.stringify(request);
-    if (Buffer.byteLength(text) > 60000 || !process.env.GITHUB_OUTPUT) throw new Error('Invalid coding executor request');
     const validation = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN || '{}'));
     await appendFile(process.env.GITHUB_OUTPUT, `request=${text}\nexecution-id=${request.executionId}\nbase-sha=${request.baseSha}\nvalidation=${JSON.stringify(validation)}\n`); return;
   }
   if (command === 'validate-coding-artifact') {
-    if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || process.env.GITHUB_RUN_ATTEMPT !== '1') throw new Error('Validation requires a fresh hosted job');
+    if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true' || !(await isFreshValidationRunner()) || process.env.GITHUB_RUN_ATTEMPT !== '1') throw new Error('Validation requires a fresh hosted job');
     if (!/^[1-9][0-9]{0,15}$/.test(process.env.GITHUB_RUN_ID ?? '') || !/^[1-9][0-9]{0,15}$/.test(process.env.SF_SOURCE_RUN_ID ?? '')) throw new Error('Invalid validation run identity');
     for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AI_API_KEY', 'GITHUB_APP_PRIVATE_KEY', 'FACTORY_MANAGER_TOKEN']) if (process.env[key]) throw new Error('Validation secret boundary violation');
     if (!values.file || !values.source || !values.output || (await stat(values.file)).size > 7000000) throw new Error('Invalid validation files');
@@ -105,6 +115,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       }
       const environment = parseDeployEnvironment(process.env.DEPLOY_ENV ?? '');
       if (environment.empty.length) console.log(`::warning title=Software Factory deploy::deploy-env without value (secret not set?): ${environment.empty.join(', ')}`);
+      const missing = missingDeploySecrets(config.deploy.secrets, environment);
+      if (missing.length) console.log(`::warning title=Software Factory deploy::deploy.secrets not passed by the wrapper (roll the configuration out through the SF Manager): ${missing.join(', ')}`);
       const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID
         ? `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined;
       const report = await executeDeploy({ config, sha: decision.sha, sourceDir: values.source ?? '.', transport: new SshTransport(target),
@@ -189,10 +201,24 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     if (report.errors.length) process.exitCode = 1;
   } finally { clearTimeout(timer); }
 }
+/** Marker baked into the image of the Factory's own ephemeral runner pool (operations/runner/Dockerfile, #110). */
+export const runnerPoolMarker = '/etc/sf-runner-pool';
+export const runnerPoolMarkerContent = 'software-factory ephemeral runner pool\n';
+/**
+ * Independent validation needs a runner that starts clean for this one job: a GitHub-hosted runner, or a runner of the
+ * Factory's own pool, which runs exactly one job per just-in-time registration and resets workspace, homes and Docker
+ * state afterwards (operations/runner/entrypoint.sh). Any other self-hosted runner stays refused (#131).
+ */
+export async function isFreshValidationRunner(env: NodeJS.ProcessEnv = process.env,
+  readMarker: () => Promise<string> = () => readFile(runnerPoolMarker, 'utf8')): Promise<boolean> {
+  if (env.RUNNER_ENVIRONMENT === 'github-hosted') return true;
+  if (env.RUNNER_ENVIRONMENT !== 'self-hosted') return false;
+  return readMarker().then(content => content === runnerPoolMarkerContent, () => false);
+}
 export async function handleError(error: unknown): Promise<void> {
   // Config errors are safe; API/request objects are deliberately never printed.
   const message = error instanceof Error ? error.message : '';
-  const safe = /^(Deployment|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message)
+  const safe = /^(Deployment|Validation requires|Invalid validation|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must|Protected or invalid artifact path|Duplicate artifact path|Invalid artifact encoding|Artifact exceeds publication limit|UNRELATED_CODING_ARTIFACT|VALIDATION_BASE_MISMATCH|NON_REGULAR_VALIDATION_PATH)/.test(message)
     ? message : 'Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.';
   const httpStatus = error instanceof Error && 'status' in error && typeof error.status === 'number' ? error.status : null;
   const category = error instanceof Error ? error.name.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) : 'UnknownError';

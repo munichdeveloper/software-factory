@@ -44,7 +44,8 @@ echo "SF_DEPLOY_ENVIRONMENT=$sha"
 /**
  * Starts a release with Docker Compose under a stable project name (so named
  * volumes persist), verifies it, switches the "current" link and prunes old
- * releases. On failure the previous release is started again when enabled.
+ * releases (best effort: a release that cannot be removed is reported as SF_DEPLOY_PRUNE_FAILED and kept).
+ * On failure the previous release is started again when enabled.
  * Compose runs with SF_RELEASE_SHA set to the commit of the release it starts.
  * A verify script of the release (path relative to it) runs once the release is healthy; it gets SF_RELEASE_SHA,
  * SF_DEPLOY_PROJECT, SF_DEPLOY_COMPOSE_FILE and SF_DEPLOY_RELEASE_DIR. If it fails, the previous release is started
@@ -109,7 +110,10 @@ if start "$release" && { verify || { verified=0; [ "$verify_rollback" != 1 ]; };
   while IFS= read -r dir; do
     dir=\${dir%/}
     [ "$dir" = "$release" ] && continue
-    if (( kept < keep )); then kept=$((kept + 1)); else rm -rf -- "$dir"; fi
+    if (( kept < keep )); then kept=$((kept + 1)); continue; fi
+    # Pruning is housekeeping: a release the deploy user cannot remove (e.g. files owned by another user)
+    # must not fail a deployment whose new release is already active.
+    rm -rf -- "$dir" 2>/dev/null || echo "SF_DEPLOY_PRUNE_FAILED=$(basename "$dir")"
   done < <(ls -1dt "$root"/releases/*/ 2>/dev/null)
   docker image prune --force --filter "label=com.docker.compose.project=$project" >/dev/null 2>&1 || true
   if [ "$verified" = 0 ]; then echo "SF_DEPLOY_RESULT=verify-failed"; exit 5; fi

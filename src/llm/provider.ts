@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import type { Config } from '../config/index.js';
+import { codingAgents, type Config } from '../config/index.js';
 import { planSchema, type Action, type Plan } from '../types.js';
 import type { Task } from '../state/reconstruct.js';
+import { claudeCode, claudeEffort, type ClaudeCall } from './claude.js';
 
 export interface Planner { plan(tasks: Task[], config: Config): Promise<Plan> }
 export const proposal = (task: Task, kind: Action['kind'], reason: string, values: Partial<Action> = {}): Action => ({
@@ -49,14 +50,26 @@ export function compactContext(tasks: Task[], config: Config): string {
     selected.push(item);
   }
   return JSON.stringify({ trustedScope: config.factory.scope,
-    trustedWorker: config.workers.coding && config.workers.coding.enabled ? 'Codex coding worker (edits, tests, opens a PR via SF)' : 'Non-mutating digest test worker',
+    trustedWorker: config.workers.coding && config.workers.coding.enabled ? `${codingAgents(config.workers.coding).map(a => a.agent === 'claude' ? 'Claude' : 'Codex').join(' or ')} coding worker (edits, tests, opens a PR via SF)` : 'Non-mutating digest test worker',
     ...(config.workers.coding && config.workers.coding.enabled && config.workers.coding.smallPullRequests ? { trustedWorkingRules: smallPullRequestRule } : {}),
     untrustedTasks: selected });
 }
+/** Fixed codes for why planning failed; the provider's own text never leaves the planner. */
+export class PlanningError extends Error {
+  constructor(message: string, readonly code: string) { super(message); }
+}
+const planningCodeOf = (reason: string) => {
+  const http = reason.match(/^OpenAI HTTP (\d{3})$/);
+  if (http) return `LLM_HTTP_${http[1]}`;
+  return ({ 'Invalid structured plan': 'LLM_INVALID_PLAN', 'Invalid JSON plan': 'LLM_INVALID_JSON', 'OpenAI response incomplete or refused': 'LLM_INCOMPLETE',
+    'OpenAI response too large': 'LLM_TOO_LARGE', 'No LLM calls permitted': 'LLM_NO_CALLS' } as Record<string, string>)[reason] ?? 'LLM_TRANSPORT';
+};
+/** The fixed code of a planning failure, for reports and logs. */
+export const planningCode = (error: unknown) => error instanceof PlanningError ? error.code : 'LLM_FAILED';
 export class OpenAIPlanner implements Planner {
   constructor(private key: string, private fetcher: typeof fetch = fetch) {}
   async plan(tasks: Task[], config: Config): Promise<Plan> {
-    if (!this.key) throw new Error('OPENAI_API_KEY is required for llm.provider=openai');
+    if (!this.key) throw new PlanningError('OPENAI_API_KEY is required for llm.provider=openai', 'LLM_KEY_MISSING');
     let last = 'No LLM calls permitted';
     for (let attempt = 0; attempt < config.llm.maxCalls; attempt++) {
       try {
@@ -81,6 +94,29 @@ export class OpenAIPlanner implements Planner {
         last = error instanceof z.ZodError ? 'Invalid structured plan' : error instanceof SyntaxError ? 'Invalid JSON plan' : error instanceof Error && /^OpenAI /.test(error.message) ? error.message : 'LLM transport failure';
       }
     }
-    throw new Error(`LLM planning failed after ${config.llm.maxCalls} calls: ${last}`);
+    throw new PlanningError(`LLM planning failed after ${config.llm.maxCalls} calls: ${last}`, planningCodeOf(last));
+  }
+}
+/** Claude with the same instructions, context and schema as the OpenAI planner. */
+export class ClaudePlanner implements Planner {
+  constructor(private call: ClaudeCall, private model: string) {}
+  async plan(tasks: Task[], config: Config): Promise<Plan> {
+    try {
+      return planSchema.parse(await this.call({ model: this.model, effort: claudeEffort(config.llm.reasoningEffort), maxTokens: Math.max(config.llm.maxOutputTokens, 4000),
+        timeoutMs: config.llm.timeoutSeconds * 1000, system: systemPrompt, input: compactContext(tasks, config), schema: planSchema }));
+    } catch (error) {
+      throw new PlanningError('LLM planning with Claude failed', error instanceof z.ZodError ? 'CLAUDE_INVALID_OUTPUT' : claudeCode(error));
+    }
+  }
+}
+/** Asks the planners in order; the first plan wins. When all fail, the last failure is reported. */
+export class FallbackPlanner implements Planner {
+  constructor(private primary: Planner, private secondary: Planner) {}
+  async plan(tasks: Task[], config: Config): Promise<Plan> {
+    try { return await this.primary.plan(tasks, config); }
+    catch (error) {
+      console.warn(JSON.stringify({ event: 'factory-llm-fallback', role: 'planner', from: 'claude', to: 'openai', code: planningCode(error) }));
+      return this.secondary.plan(tasks, config);
+    }
   }
 }

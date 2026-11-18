@@ -263,7 +263,47 @@
                 },
                 "agent": {
                   "type": "string",
-                  "const": "codex"
+                  "enum": [
+                    "codex",
+                    "claude"
+                  ]
+                },
+                "agents": {
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "agent": {
+                        "type": "string",
+                        "enum": [
+                          "codex",
+                          "claude"
+                        ]
+                      },
+                      "model": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9._-]{1,100}$"
+                      },
+                      "reasoningEffort": {
+                        "default": "high",
+                        "type": "string",
+                        "enum": [
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "agent",
+                      "model"
+                    ],
+                    "additionalProperties": false
+                  }
                 },
                 "model": {
                   "default": "gpt-6.1-sol",
@@ -277,7 +317,8 @@
                     "low",
                     "medium",
                     "high",
-                    "xhigh"
+                    "xhigh",
+                    "max"
                   ]
                 },
                 "validationWorkflow": {
@@ -302,8 +343,7 @@
                 }
               },
               "required": [
-                "enabled",
-                "agent"
+                "enabled"
               ],
               "additionalProperties": false
             }
@@ -791,6 +831,18 @@
         "githubDeployment": {
           "default": false,
           "type": "boolean"
+        },
+        "secrets": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,99}$"
+          }
         }
       },
       "additionalProperties": false
@@ -865,6 +917,28 @@
                   "additionalProperties": false
                 },
                 "approval_required": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "channel": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^(?:[CG][A-Z0-9]{8,}|#[a-z0-9_-]{1,80})$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "grant_required": {
                   "type": "object",
                   "properties": {
                     "enabled": {

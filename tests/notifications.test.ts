@@ -189,6 +189,38 @@ it('announces each confirmed run start once, naming the repository and the task'
   // A retry or rework of the same task is a new run and is announced again.
   await f.receipt('e'.repeat(32)); await f.deliver(); expect(f.send).toHaveBeenCalledTimes(2);
 });
+it('says why a run started and when the message comes late', async () => {
+  const f = await runStartFixture(); const version = 'f'.repeat(64);
+  const input = (executionId: string, taskVersion = version) => ({ contractVersion: '1.0' as const, repository: f.gh.repository, issueNumber: 4, taskVersion,
+    description: 'Do it', acceptanceCriteria: ['done'], contextReferences: [], executionId, allowedActions: ['publish_result' as const],
+    limits: { timeoutMinutes: 30, maxOutputBytes: 16000 as const }, operation: 'sha256' as const, worker: 'codex' as const });
+  const at = (minutesAgo: number) => new Date(clock.getTime() - minutesAgo * 60000).toISOString();
+  const intent = (executionId: string, attempt: number, when: string, taskVersion = version) => f.gh.writeEvent(4, { version: 1, key: `intent:${executionId}`, at: when,
+    correlationId: 'test', data: { type: 'intent', input: input(executionId, taskVersion), actionId: 'c'.repeat(64), attempt } });
+  const result = (executionId: string, when: string, summary: string, error: string | null) => f.gh.writeEvent(4, { version: 1, key: `result:${executionId}`, at: when,
+    correlationId: 'test', data: { type: 'result', result: { contractVersion: '1.0', executionId, issueNumber: 4, status: 'failed', summary, artifacts: [], error, proposedActions: [] } } });
+  const [a, b, c, d] = ['1', '2', '3', '4'].map(n => n.repeat(32)) as [string, string, string, string];
+  await intent(a, 0, at(300)); await f.receipt(a, at(300));
+  await result(a, at(290), 'Temporal execution ended without a committed worker result', 'failed');
+  await intent(b, 1, at(200)); await f.receipt(b, at(200));
+  await result(b, at(190), 'The coding run failed before the agent started', 'EXECUTOR_INFRASTRUCTURE_FAILURE');
+  await intent(c, 1, at(100)); await f.receipt(c, at(100));
+  await result(c, at(90), 'Agent wrote <!channel> something', 'free text from the worker');
+  await intent(d, 0, at(2), 'e'.repeat(64)); await f.receipt(d, at(2));
+  await f.deliver();
+  expect(f.send.mock.calls.map(call => call[1].detail)).toEqual([
+    'Grund: erster Lauf dieser Aufgabe.\nNachmeldung: Der Lauf startete bereits vor 5 Std.',
+    'Grund: Versuch 2 von 3, weil der vorige Lauf ohne Ergebnis endete.\nNachmeldung: Der Lauf startete bereits vor 3 Std. 20 Min.',
+    'Grund: neuer Start, weil der vorige Lauf vor dem Start des Agenten scheiterte (EXECUTOR_INFRASTRUCTURE_FAILURE) (zählt nicht als Versuch).\nNachmeldung: Der Lauf startete bereits vor 1 Std. 40 Min.',
+    'Grund: neuer Lauf für die geänderte Aufgabe, nachdem der vorige Lauf gescheitert ist.'
+  ]);
+});
+it('keeps the delivery of a run start independent of its detail line', async () => {
+  const f = await runStartFixture(new Date(clock.getTime() - 3600000).toISOString()); await f.receipt(id);
+  const before = await f.deliver(); expect(before).toEqual([]);
+  expect(f.send.mock.calls[0]![1].detail).toBe('Nachmeldung: Der Lauf startete bereits vor 1 Std.');
+  await f.deliver(); expect(f.send).toHaveBeenCalledTimes(1);
+});
 it('routes run starts to their own channel', async () => {
   const f = await runStartFixture(); f.cfg.notifications.slack.events.run_started = { enabled: true, channel: 'C987654321' };
   await f.receipt(id); await f.deliver(); expect(f.send.mock.calls[0]![0]).toBe('C987654321');
@@ -261,5 +293,49 @@ it('renders the approval notice with its detail line', async () => {
   await new SlackSink('fixture-token', fetcher).send(channel, { event: 'approval_required', number: 52, title: 'Rework billing', actor: 'Software Factory',
     url: 'https://github.com/owner/target/pull/52', repository: 'owner/target', approvalId: key,
     detail: `Risiko high liegt über der Schwelle medium. Freigabe im PR: /harness approve ${key}` });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+async function grantFixture() {
+  const cfg = config(); cfg.notifications.slack.enabled = true; cfg.notifications.slack.channel = channel;
+  cfg.notifications.slack.events.grant_required = { enabled: true, channel: null };
+  const gh = new MemoryGitHub(); gh.state.issues = [{ ...issue(7), title: 'Read the newest n8n version' }];
+  const send = vi.fn<NotificationSink['send']>(async () => ({ channel, timestamp: '1.23' }));
+  const deliver = (waits: { number: number; title: string; after?: string }[]) => deliverNotifications(gh, cfg, structuredClone(gh.state), { send }, 'test', clock, waits);
+  return { cfg, gh, send, deliver };
+}
+it('announces a task waiting only for the grant once per wait (software-factory#127)', async () => {
+  const f = await grantFixture(), wait = { number: 7, title: 'Read the newest n8n version' };
+  expect(await f.deliver([wait])).toEqual([]); expect(await f.deliver([wait])).toEqual([]);
+  expect(f.send).toHaveBeenCalledTimes(1);
+  expect(f.send.mock.calls[0]![1]).toMatchObject({ event: 'grant_required', number: 7, title: 'Read the newest n8n version',
+    url: `https://github.com/${f.gh.repository}/issues/7`, repository: f.gh.repository,
+    detail: 'Bereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready.' });
+  // A further attempt after a run is a new wait and is announced again, once.
+  await f.deliver([{ ...wait, after: id }]); await f.deliver([{ ...wait, after: id }]);
+  expect(f.send).toHaveBeenCalledTimes(2);
+  expect(f.send.mock.calls[1]![1].detail).toBe('Ein weiterer Versuch wartet nur noch auf die Freigabe: eine berechtigte Person setzt das Label harness:ready.');
+});
+it.each(['absent', 'disabled', 'no-wait', 'other-channel'])('handles grant notices: %s', async condition => {
+  const f = await grantFixture();
+  if (condition === 'absent') delete f.cfg.notifications.slack.events.grant_required;
+  if (condition === 'disabled') f.cfg.notifications.slack.events.grant_required = { enabled: false, channel: null };
+  if (condition === 'other-channel') f.cfg.notifications.slack.events.grant_required = { enabled: true, channel: 'C987654321' };
+  await f.deliver(condition === 'no-wait' ? [] : [{ number: 7, title: 'Read the newest n8n version' }]);
+  if (condition === 'other-channel') expect(f.send.mock.calls[0]![0]).toBe('C987654321');
+  else expect(f.send).not.toHaveBeenCalled();
+});
+it('leaves configurations without grant notices unchanged', () => {
+  expect(config().notifications.slack.events).not.toHaveProperty('grant_required');
+});
+it('renders the grant notice with its detail line', async () => {
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    const body = JSON.parse(String(init!.body));
+    expect(body.blocks[0].text.text).toBe('SF: Issue wartet auf Freigabe (harness:ready)\nRepository: owner/target\nhttps://github.com/owner/target/issues/7\n#7: Read the newest n8n version\nBereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready.\nAkteur: Software Factory');
+    return new Response(JSON.stringify({ ok: true, channel, ts: '1.23' }));
+  });
+  await new SlackSink('fixture-token', fetcher).send(channel, { event: 'grant_required', number: 7, title: 'Read the newest n8n version', actor: 'Software Factory',
+    url: 'https://github.com/owner/target/issues/7', repository: 'owner/target',
+    detail: 'Bereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready.' });
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
