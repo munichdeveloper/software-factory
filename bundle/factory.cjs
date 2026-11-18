@@ -71586,12 +71586,14 @@ var codingArtifactSchema = external_exports.strictObject({
     mode: external_exports.enum(["100644", "100755"])
   })).max(100)
 });
+var protectedPathSegment = /^(\.git.*|\.codex|\.agents|\.squad|\.copilot|\.claude|agents\.md|codeowners)$/i;
+var allowedGitFile = /^\.git(ignore|attributes)$/i;
 function validateChanges(artifact) {
   const seen = /* @__PURE__ */ new Set();
   let total = 0;
   for (const change of artifact.changes) {
     const parts = change.path.split("/");
-    if (change.path.includes("\\") || change.path.includes(":") || [...change.path].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) || parts.some((p) => !p || p === "." || p === ".." || p.endsWith(".") || p.endsWith(" ") || /^(\.git.*|\.codex|\.agents|\.squad|\.copilot|\.claude|agents\.md|codeowners)$/i.test(p))) throw new Error("Protected or invalid artifact path");
+    if (change.path.includes("\\") || change.path.includes(":") || [...change.path].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) || parts.some((p) => !p || p === "." || p === ".." || p.endsWith(".") || p.endsWith(" ") || protectedPathSegment.test(p) && !allowedGitFile.test(p))) throw new Error(`Protected or invalid artifact path: ${JSON.stringify(change.path)}`);
     const key = change.path.toLowerCase();
     if (seen.has(key)) throw new Error("Duplicate artifact path");
     seen.add(key);
@@ -73416,7 +73418,7 @@ async function isFreshValidationRunner(env = process.env, readMarker = () => (0,
 }
 async function handleError(error62) {
   const message = error62 instanceof Error ? error62.message : "";
-  const safe2 = /^(Deployment|Validation requires|Invalid validation|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message) ? message : "Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.";
+  const safe2 = /^(Deployment|Validation requires|Invalid validation|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must|Protected or invalid artifact path|Duplicate artifact path|Invalid artifact encoding|Artifact exceeds publication limit|UNRELATED_CODING_ARTIFACT|VALIDATION_BASE_MISMATCH|NON_REGULAR_VALIDATION_PATH)/.test(message) ? message : "Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.";
   const httpStatus2 = error62 instanceof Error && "status" in error62 && typeof error62.status === "number" ? error62.status : null;
   const category = error62 instanceof Error ? error62.name.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UnknownError";
   console.error(JSON.stringify({ error: safe2, category, httpStatus: httpStatus2 }));
