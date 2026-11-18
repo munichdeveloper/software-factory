@@ -42597,7 +42597,7 @@ validation=${JSON.stringify(validation)}
     return;
   }
   if (command === "validate-coding-artifact") {
-    if (process.platform !== "linux" || process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted" || process.env.GITHUB_RUN_ATTEMPT !== "1") throw new Error("Validation requires a fresh hosted job");
+    if (process.platform !== "linux" || process.env.GITHUB_ACTIONS !== "true" || !await isFreshValidationRunner() || process.env.GITHUB_RUN_ATTEMPT !== "1") throw new Error("Validation requires a fresh hosted job");
     if (!/^[1-9][0-9]{0,15}$/.test(process.env.GITHUB_RUN_ID ?? "") || !/^[1-9][0-9]{0,15}$/.test(process.env.SF_SOURCE_RUN_ID ?? "")) throw new Error("Invalid validation run identity");
     for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AI_API_KEY", "GITHUB_APP_PRIVATE_KEY", "FACTORY_MANAGER_TOKEN"]) if (process.env[key]) throw new Error("Validation secret boundary violation");
     if (!values.file || !values.source || !values.output || (await (0, import_promises5.stat)(values.file)).size > 7e6) throw new Error("Invalid validation files");
@@ -42835,9 +42835,16 @@ base-branch=${prepared.base.branch}
     clearTimeout(timer);
   }
 }
+var runnerPoolMarker = "/etc/sf-runner-pool";
+var runnerPoolMarkerContent = "software-factory ephemeral runner pool\n";
+async function isFreshValidationRunner(env = process.env, readMarker = () => (0, import_promises4.readFile)(runnerPoolMarker, "utf8")) {
+  if (env.RUNNER_ENVIRONMENT === "github-hosted") return true;
+  if (env.RUNNER_ENVIRONMENT !== "self-hosted") return false;
+  return readMarker().then((content) => content === runnerPoolMarkerContent, () => false);
+}
 async function handleError(error62) {
   const message = error62 instanceof Error ? error62.message : "";
-  const safe2 = /^(Deployment|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message) ? message : "Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.";
+  const safe2 = /^(Deployment|Validation requires|Invalid validation|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message) ? message : "Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.";
   const httpStatus2 = error62 instanceof Error && "status" in error62 && typeof error62.status === "number" ? error62.status : null;
   const category = error62 instanceof Error ? error62.name.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UnknownError";
   console.error(JSON.stringify({ error: safe2, category, httpStatus: httpStatus2 }));

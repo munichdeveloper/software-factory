@@ -44,7 +44,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     await appendFile(process.env.GITHUB_OUTPUT, `request=${text}\nexecution-id=${request.executionId}\nbase-sha=${request.baseSha}\nvalidation=${JSON.stringify(validation)}\n`); return;
   }
   if (command === 'validate-coding-artifact') {
-    if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || process.env.GITHUB_RUN_ATTEMPT !== '1') throw new Error('Validation requires a fresh hosted job');
+    if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true' || !(await isFreshValidationRunner()) || process.env.GITHUB_RUN_ATTEMPT !== '1') throw new Error('Validation requires a fresh hosted job');
     if (!/^[1-9][0-9]{0,15}$/.test(process.env.GITHUB_RUN_ID ?? '') || !/^[1-9][0-9]{0,15}$/.test(process.env.SF_SOURCE_RUN_ID ?? '')) throw new Error('Invalid validation run identity');
     for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AI_API_KEY', 'GITHUB_APP_PRIVATE_KEY', 'FACTORY_MANAGER_TOKEN']) if (process.env[key]) throw new Error('Validation secret boundary violation');
     if (!values.file || !values.source || !values.output || (await stat(values.file)).size > 7000000) throw new Error('Invalid validation files');
@@ -189,10 +189,24 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     if (report.errors.length) process.exitCode = 1;
   } finally { clearTimeout(timer); }
 }
+/** Marker baked into the image of the Factory's own ephemeral runner pool (operations/runner/Dockerfile, #110). */
+export const runnerPoolMarker = '/etc/sf-runner-pool';
+export const runnerPoolMarkerContent = 'software-factory ephemeral runner pool\n';
+/**
+ * Independent validation needs a runner that starts clean for this one job: a GitHub-hosted runner, or a runner of the
+ * Factory's own pool, which runs exactly one job per just-in-time registration and resets workspace, homes and Docker
+ * state afterwards (operations/runner/entrypoint.sh). Any other self-hosted runner stays refused (#131).
+ */
+export async function isFreshValidationRunner(env: NodeJS.ProcessEnv = process.env,
+  readMarker: () => Promise<string> = () => readFile(runnerPoolMarker, 'utf8')): Promise<boolean> {
+  if (env.RUNNER_ENVIRONMENT === 'github-hosted') return true;
+  if (env.RUNNER_ENVIRONMENT !== 'self-hosted') return false;
+  return readMarker().then(content => content === runnerPoolMarkerContent, () => false);
+}
 export async function handleError(error: unknown): Promise<void> {
   // Config errors are safe; API/request objects are deliberately never printed.
   const message = error instanceof Error ? error.message : '';
-  const safe = /^(Deployment|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message)
+  const safe = /^(Deployment|Validation requires|Invalid validation|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message)
     ? message : 'Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.';
   const httpStatus = error instanceof Error && 'status' in error && typeof error.status === 'number' ? error.status : null;
   const category = error instanceof Error ? error.name.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) : 'UnknownError';
