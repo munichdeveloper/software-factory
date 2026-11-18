@@ -69976,6 +69976,7 @@ function evaluate(action, ctx) {
 // src/state/reconstruct.ts
 var admissionRejectedSummary = "Runtime admission rejected before start";
 var infrastructureFailureCode = "EXECUTOR_INFRASTRUCTURE_FAILURE";
+var infrastructureFailureSummary = "The coding run failed before the agent started";
 var freeInfrastructureFailures = 3;
 var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
 var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
@@ -70245,6 +70246,45 @@ var labels = {
   grant_required: "SF: Issue wartet auf Freigabe (harness:ready)"
 };
 var runStartWindowMs = 24 * 60 * 60 * 1e3;
+var lateStartMs = 10 * 60 * 1e3;
+var failureCode = /^[A-Z][A-Z0-9_]{1,79}$/;
+var ago = (ms) => {
+  const minutes = Math.max(1, Math.round(ms / 6e4)), hours = Math.floor(minutes / 60);
+  return hours ? `${hours} Std.${minutes % 60 ? ` ${minutes % 60} Min.` : ""}` : `${minutes} Min.`;
+};
+function previousOutcome(event) {
+  if (event.data.type === "admission_rejected") return `der vorige Start von der Runtime abgelehnt wurde (${event.data.code})`;
+  if (event.data.type !== "result") return "der vorige Lauf endete";
+  const { status, summary: summary2, error: error62 } = event.data.result;
+  const code = error62 && failureCode.test(error62) ? ` (${error62})` : "";
+  if (summary2 === infrastructureFailureSummary) return `der vorige Lauf vor dem Start des Agenten scheiterte${code}`;
+  if (status === "failed" && summary2.startsWith("Temporal execution ended without a committed worker result")) return "der vorige Lauf ohne Ergebnis endete";
+  return {
+    failed: `der vorige Lauf gescheitert ist${code}`,
+    blocked: `der vorige Lauf blockiert war${code}`,
+    cancelled: "der vorige Lauf abgebrochen wurde",
+    needs_approval: "der vorige Lauf auf eine Freigabe wartete",
+    success: "der vorige Lauf ein Ergebnis lieferte, das nachgebessert wird"
+  }[status];
+}
+function runStartDetail(journal, executionId2, startedAt, now, maxRetries) {
+  const intentOf = (id) => journal.find((e) => e.data.type === "intent" && e.data.input.executionId === id);
+  const intent = intentOf(executionId2), started = Date.parse(startedAt);
+  const previous = journal.filter((e) => Date.parse(e.at) <= started && (e.data.type === "result" && e.data.result.executionId !== executionId2 || e.data.type === "admission_rejected" && e.data.executionId !== executionId2)).at(-1);
+  const lines = [];
+  if (intent?.data.type === "intent") {
+    const attempt = intent.data.attempt, version2 = intent.data.input.taskVersion;
+    const previousId = previous?.data.type === "result" ? previous.data.result.executionId : previous?.data.type === "admission_rejected" ? previous.data.executionId : void 0;
+    const before = previousId ? intentOf(previousId) : void 0;
+    const beforeIntent = before?.data.type === "intent" ? before.data : void 0;
+    if (!previous) lines.push("Grund: erster Lauf dieser Aufgabe.");
+    else if (beforeIntent && beforeIntent.input.taskVersion !== version2) lines.push(`Grund: neuer Lauf f\xFCr die ge\xE4nderte Aufgabe, nachdem ${previousOutcome(previous)}.`);
+    else if (attempt > 0 && (!beforeIntent || beforeIntent.attempt < attempt)) lines.push(`Grund: Versuch ${attempt + 1} von ${maxRetries + 1}, weil ${previousOutcome(previous)}.`);
+    else lines.push(`Grund: neuer Start, weil ${previousOutcome(previous)}${beforeIntent && beforeIntent.attempt === attempt ? " (z\xE4hlt nicht als Versuch)" : ""}.`);
+  }
+  if (now.getTime() - started > lateStartMs) lines.push(`Nachmeldung: Der Lauf startete bereits vor ${ago(now.getTime() - started)}`);
+  return lines.length ? lines.join("\n") : void 0;
+}
 var NotificationRejected = class extends Error {
 };
 var httpStatus = (error62) => {
@@ -70402,7 +70442,8 @@ async function deliverNotifications(github, config2, snapshot, sink, correlation
       actor: "Software Factory",
       url: `https://github.com/${github.repository}/issues/${task.number}`,
       repository: github.repository,
-      executionId: event.data.executionId
+      executionId: event.data.executionId,
+      detail: runStartDetail(events(task.number), event.data.executionId, event.at, now, config2.execution.maxRetries)
     });
   }
   for (const parent of snapshot.issues) {
