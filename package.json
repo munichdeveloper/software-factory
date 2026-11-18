@@ -1,6 +1,6 @@
 {
   "name": "software-factory",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -23,6 +23,7 @@
     "test:runtime": "python3 scripts/test-runtime.py"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.5.0",
     "@octokit/auth-app": "8.3.1",
     "@octokit/rest": "^22.0.0",
     "@temporalio/activity": "1.25.0",

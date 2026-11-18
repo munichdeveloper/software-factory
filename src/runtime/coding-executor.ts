@@ -2,8 +2,9 @@ import type { Octokit } from '@octokit/rest';
 import { unzipSync } from 'fflate';
 import { z } from 'zod';
 import { codingExecutionSchema } from './coding-contract.js';
+import { agentSelectionSchema, type AgentSelection } from './agent-selection.js';
 import { codingArtifactSchema, smallPullRequestGuidance, validateChanges, type CodingArtifact } from '../workers/coding.js';
-import type { Config } from '../config/index.js';
+import { codingAgents, type Config } from '../config/index.js';
 import type { RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
@@ -15,6 +16,25 @@ export function executorWrapper(factorySha: string, harnessSha: string, validate
   for (const sha of [factorySha, harnessSha]) if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('INVALID_EXECUTOR_RELEASE');
   if (!validated) return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\npermissions:\n  contents: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}\n`;
   return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\n      validation:\n        type: string\n        required: true\npermissions:\n  contents: read\n  actions: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n      actions: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n      validation: \${{ inputs.validation }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}\n`;
+}
+/**
+ * The executor's agent choice of one execution, stored once as an effect: the first call reads it (a completed run's
+ * coding-agent artifact), later calls, the publication's included, return the stored value. Null when there was none.
+ */
+export async function storedSelection(effects: EffectPort, executionId: string, authorize: () => Promise<unknown>, read: () => Promise<AgentSelection | null> = async () => null) {
+  return (await effects.perform({ key: 'coding-agent', payload: { executionId }, authorize, contentAddressed: true,
+    validate: z.strictObject({ selection: agentSelectionSchema.nullable() }).parse, reconcile: async () => null,
+    apply: async () => ({ selection: await read() }) })).selection;
+}
+/** A ZIP of Actions that holds exactly the one named small JSON file. */
+export function decodeSingleJson(bytes: Uint8Array, name: string): unknown {
+  let count = 0;
+  const files = unzipSync(bytes, { filter: entry => {
+    if (++count !== 1 || entry.name !== name || entry.originalSize > 60000 || entry.originalSize < 2) throw new Error('UNEXPECTED_ARCHIVE_ENTRY');
+    return true;
+  } });
+  if (count !== 1 || !files[name]) throw new Error('MISSING_ARCHIVE_ENTRY');
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(files[name]));
 }
 export function decodeValidationArchive(bytes: Uint8Array): ValidationReport {
   if (bytes.length > 100000) throw new Error('VALIDATION_ARCHIVE_LIMIT');
@@ -85,7 +105,9 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     /** A list fixed at construction, or a provider read at use so a repository's current configuration applies. */
     private trustedActors: string[] | (() => Promise<string[]>),
     /** The bound validation report of an earlier attempt of the same repository, from the broker's own store. */
-    private previousValidation: (executionId: string) => Promise<ValidationReport | null> = async () => null) {}
+    private previousValidation: (executionId: string) => Promise<ValidationReport | null> = async () => null,
+    /** Called with each execution's stored agent choice, e.g. for the used-up credit alert; must not throw. */
+    private onSelection?: (snapshot: RunSnapshot, selection: AgentSelection) => Promise<void>) {}
   private async download(target: { owner: string; repo: string }, artifactId: number, limit: number, error: string) {
     const response = await this.api.actions.downloadArtifact({ ...target, artifact_id: artifactId, archive_format: 'zip', request: { parseSuccessResponseBody: false } });
     const reader = (response.data as ReadableStream<Uint8Array>).getReader(); const chunks: Uint8Array[] = []; let size = 0;
@@ -170,6 +192,23 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     try { await this.api.actions.cancelWorkflowRun({ ...target, run_id: run.id }); }
     catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 409)) throw error; }
   }
+  /**
+   * The executor's agent choice (coding-agent-<id>), read once per execution and stored, so the publication names the
+   * agent that ran and the broker alerts once about agents skipped for used-up credit. Absent or unreadable: null.
+   */
+  private async selection(snapshot: RunSnapshot, binding: string, target: { owner: string; repo: string }, artifacts: { id: number; name: string; size_in_bytes: number; expired: boolean }[]) {
+    const id = snapshot.admission.input.executionId;
+    const selection = await storedSelection(this.effects(snapshot, binding), id, () => this.authorize(snapshot, binding), async () => {
+      const match = artifacts.filter(a => a.name === `coding-agent-${id}`);
+      if (match.length !== 1 || match[0]!.expired || match[0]!.size_in_bytes > 100000) return null;
+      try {
+        const value = agentSelectionSchema.parse(decodeSingleJson(await this.download(target, match[0]!.id, 100000, 'AGENT_ARCHIVE_LIMIT'), 'coding-agent.json'));
+        return value.executionId === id ? value : null;
+      } catch { return null; }
+    });
+    if (selection && this.onSelection) await this.onSelection(snapshot, selection);
+    return selection;
+  }
   async poll(snapshot: RunSnapshot, binding: string, config: Config) {
     const input = snapshot.admission.input, coding = config.workers.coding, workflow = snapshot.executorWorkflow ?? codingWorkflow;
     if (input.worker !== 'codex' || !coding || !coding.enabled || binding !== hash(snapshot)) throw new Error('CODING_NOT_AUTHORIZED');
@@ -207,12 +246,15 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
         catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
         return { entries: await this.context(snapshot, target, snapshot.baseRef ?? metadata.default_branch, coding.loopback) };
       } });
-    // The admission's worker "codex" names the isolated coding worker; which agent runs comes from workers.coding.agent.
-    const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: coding.agent,
+    // The admission's worker "codex" names the isolated coding worker; which agent runs comes from workers.coding: the
+    // first agent of the list, with the others as fallbacks the executor tries when a provider reports used-up credit.
+    const [first, ...others] = codingAgents(coding);
+    const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: first!.agent,
       task: { id: `github:${snapshot.repository}#${input.issueNumber}`, version: input.taskVersion, description,
         acceptanceCriteria: input.acceptanceCriteria, contextReferences: [...input.contextReferences, ...extra.entries] }, baseSha: snapshot.baseSha,
-      allowedActions: ['edit_workspace', 'run_commands'], model: coding.model, effort: coding.reasoningEffort,
-      limits: { timeoutMinutes: input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5000000 } });
+      allowedActions: ['edit_workspace', 'run_commands'], model: first!.model, effort: first!.reasoningEffort,
+      limits: { timeoutMinutes: input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5000000 },
+      ...(others.length ? { fallbacks: others.map(a => ({ worker: a.agent, model: a.model, effort: a.reasoningEffort })) } : {}) });
     const serialized = JSON.stringify(request); if (Buffer.byteLength(serialized) > 60000) throw new Error('EXECUTOR_REQUEST_LIMIT');
     const ref = `sf-temporal-executor/${input.executionId}`, name = `SF Temporal ${input.executionId} ${binding}`;
     await effects.perform({ key: 'executor-ref', payload: { ref, sha: snapshot.baseSha }, authorize,
@@ -239,8 +281,13 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
       throw error;
     }
     if (!run || run.status !== 'completed') return null;
-    if (run.conclusion !== 'success') return { failed: true as const, ...(await this.beforeAgent(target, run.id) ? { beforeAgent: true } : {}) };
-    const artifacts = await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: run.id, per_page: 100 });
+    const artifacts = run.conclusion === 'success' || request.fallbacks ? await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: run.id, per_page: 100 }) : [];
+    const selection = request.fallbacks ? await this.selection(snapshot, binding, target, artifacts) : null;
+    if (run.conclusion !== 'success') {
+      // No agent could run because every provider reported used-up credit: nothing started, so no attempt is spent.
+      const noAgent = !!selection && !selection.selected;
+      return { failed: true as const, ...(noAgent || await this.beforeAgent(target, run.id) ? { beforeAgent: true } : {}) };
+    }
     const matches = artifacts.filter(a => a.name === `coding-result-${input.executionId}`);
     if (matches.length !== 1 || matches[0]!.expired || matches[0]!.size_in_bytes > 8000000) throw new Error('INVALID_EXECUTOR_ARTIFACT');
     const artifact = decodeCodingArchive(await this.download(target, matches[0]!.id, 8000000, 'ARTIFACT_ARCHIVE_LIMIT'));

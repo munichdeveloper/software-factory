@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Config } from '../config/index.js';
+import { codingAgents, type Config } from '../config/index.js';
 import { planSchema, type Action, type Plan } from '../types.js';
 import type { Task } from '../state/reconstruct.js';
 
@@ -49,7 +49,7 @@ export function compactContext(tasks: Task[], config: Config): string {
     selected.push(item);
   }
   return JSON.stringify({ trustedScope: config.factory.scope,
-    trustedWorker: config.workers.coding && config.workers.coding.enabled ? `${config.workers.coding.agent === 'claude' ? 'Claude' : 'Codex'} coding worker (edits, tests, opens a PR via SF)` : 'Non-mutating digest test worker',
+    trustedWorker: config.workers.coding && config.workers.coding.enabled ? `${codingAgents(config.workers.coding).map(a => a.agent === 'claude' ? 'Claude' : 'Codex').join(' or ')} coding worker (edits, tests, opens a PR via SF)` : 'Non-mutating digest test worker',
     ...(config.workers.coding && config.workers.coding.enabled && config.workers.coding.smallPullRequests ? { trustedWorkingRules: smallPullRequestRule } : {}),
     untrustedTasks: selected });
 }

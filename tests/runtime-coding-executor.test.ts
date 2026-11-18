@@ -1,11 +1,12 @@
 import { Octokit } from '@octokit/rest';
 import { zipSync, strToU8 } from 'fflate';
-import { expect, it, vi } from 'vitest';
-import { ActionsCodingExecutor, decodeCodingArchive, executorWrapper, legacyValidationGuidance, validationGuidance } from '../src/runtime/coding-executor.js';
+import { describe, expect, it, vi } from 'vitest';
+import { ActionsCodingExecutor, decodeCodingArchive, executorWrapper, legacyValidationGuidance, storedSelection, validationGuidance } from '../src/runtime/coding-executor.js';
+import type { AgentSelection } from '../src/runtime/agent-selection.js';
 import { smallPullRequestGuidance } from '../src/workers/coding.js';
 import { codingExecutionSchema } from '../src/runtime/coding-contract.js';
 import type { EffectPort, EffectRequest } from '../src/runtime/effects.js';
-import { snapshotSchema } from '../src/runtime/contract.js';
+import { snapshotSchema, type RunSnapshot } from '../src/runtime/contract.js';
 import { hash } from '../src/state/identity.js';
 import { config } from './helpers.js';
 import type { CodingArtifact } from '../src/workers/coding.js';
@@ -33,7 +34,7 @@ class Effects implements EffectPort {
     const receipt = evidence ?? await r.apply(); claim.receipt = receipt; return r.validate(receipt);
   }
 }
-function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>) {
+function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>, onSelection?: (s: RunSnapshot, selection: AgentSelection) => Promise<void>) {
   const requests: { task: { description: string; contextReferences: string[] } }[] = [], calls: string[] = [];
   const cfg = config(); cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false, smallPullRequests: true };
   let ref = false, dispatches = 0, lost = false, before = false, complete = false, wrongHead = false, duplicate = false, badWrapper = false;
@@ -66,8 +67,8 @@ function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, 
     const response = status === 204 ? new Response(null, { status }) : Response.json(data, { status }); Object.defineProperty(response, 'url', { value: String(input) }); return response;
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
-  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation);
-  return { cfg, requests, calls, poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
+  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation, onSelection);
+  return { effects, cfg, requests, calls, poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
     lose: () => { lost = true; }, before: () => { before = true; }, wrong: () => { wrongHead = true; }, duplicate: () => { duplicate = true; },
     badWrapper: () => { badWrapper = true; }, unrelated: () => { source = { ...source, baseSha: '9'.repeat(40) }; },missingValidation:()=>{missingValidation=true;},forgeValidation:()=>{forgedValidation=true;},blocked:()=>{source.result.status='blocked';} };
 }
@@ -194,4 +195,41 @@ it('names the repository\'s coding agent, model and effort in the request and pa
     const wrapper = executorWrapper('a'.repeat(40), 'b'.repeat(40), validated);
     expect(wrapper).toContain('      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}\n');
   }
+});
+it('sends a priority list as the first agent with fallbacks and keeps a single agent\'s request unchanged', async () => {
+  const f = fixture(); f.cfg.workers.coding = { ...(f.cfg.workers.coding as object), agent: undefined,
+    agents: [{ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' }, { agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'xhigh' }] } as typeof f.cfg.workers.coding;
+  await f.poll();
+  expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'high', fallbacks: [{ worker: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' }] });
+  const single = fixture(); await single.poll(); expect(single.requests[0]).not.toHaveProperty('fallbacks');
+});
+describe('the executor\'s agent choice', () => {
+  const id = snapshot.admission.input.executionId;
+  const choice = (selected: boolean): AgentSelection => ({ version: 1, executionId: id, selected: selected ? { worker: 'codex', model: 'gpt-6.1-sol', effort: 'high' } : null,
+    skipped: [{ worker: 'claude', model: 'claude-opus-5-5', effort: 'high', reason: 'exhausted' }] });
+  const setup = (selection: AgentSelection, conclusion: 'success' | 'failure') => {
+    const seen: AgentSelection[] = [];
+    const runs = { total_count: 1, workflow_runs: [{ id: 12, display_title: `SF Temporal ${id} ${hash(snapshot)}`, head_sha: snapshot.baseSha, actor: { login: 'factory[bot]' },
+      run_attempt: 1, event: 'workflow_dispatch', status: 'completed', conclusion }] };
+    const f = fixture(snapshot, path => path.endsWith('/runs') ? runs
+      : path === '/actions/runs/12/artifacts' ? { total_count: 2, artifacts: [...conclusion === 'success' ? [{ id: 15, name: `coding-result-${id}`, size_in_bytes: 1000, expired: false }] : [],
+        { id: 17, name: `coding-agent-${id}`, size_in_bytes: 300, expired: false }] }
+      : path === '/actions/artifacts/17/zip' ? new Response(zipSync({ 'coding-agent.json': strToU8(JSON.stringify(selection)) }) as BodyInit) : undefined,
+      undefined, async (_s, value) => { seen.push(value); });
+    f.cfg.workers.coding = { ...(f.cfg.workers.coding as object), agent: undefined,
+      agents: [{ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' }, { agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' }] } as typeof f.cfg.workers.coding;
+    return { f, seen };
+  };
+  it('stores the choice once, reports it, and lets the publication read it back', async () => {
+    const { f, seen } = setup(choice(true), 'success');
+    expect(await f.poll()).toEqual({ artifact: artifact() });
+    expect(seen).toEqual([choice(true)]);
+    expect(await storedSelection(f.effects, id, async () => {}, async () => { throw new Error('read again'); })).toEqual(choice(true));
+    expect(await storedSelection(new Effects(), id, async () => {})).toBeNull();
+  });
+  it('spends no attempt when no agent of the list had credit', async () => {
+    const { f, seen } = setup(choice(false), 'failure');
+    expect(await f.poll()).toEqual({ failed: true, beforeAgent: true });
+    expect(seen).toEqual([choice(false)]);
+  });
 });

@@ -16,7 +16,8 @@ on:
         required: false
         default: ''
     secrets:
-      # The key of the agent the request names (workers.coding.agent); the harness requires that one.
+      # The key of the agent the request names (workers.coding.agent); the harness requires that one. With
+      # workers.coding.agents the validate job also uses both keys for a minimal credit check per agent.
       OPENAI_API_KEY:
         required: false
       ANTHROPIC_API_KEY:
@@ -50,11 +51,22 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '22'
+      # With a priority list the first agent whose provider still has credit is chosen here; the keys stay in this step.
       - id: request
         env:
           SF_CODING_REQUEST: ${{ inputs.request }}
           SF_VALIDATION_PLAN: ${{ inputs.validation }}
-        run: node bundle/factory.cjs validate-coding-execution
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node bundle/factory.cjs validate-coding-execution --output coding-agent.json
+      # The broker reads the choice to name the agent and to alert on used-up credit, also when no agent could run.
+      - if: ${{ always() && hashFiles('coding-agent.json') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coding-agent-${{ fromJSON(inputs.request).executionId }}
+          path: coding-agent.json
+          if-no-files-found: ignore
+          retention-days: 7
   code:
     needs: validate
     runs-on: ${{ vars.SF_RUNNER || 'ubuntu-latest' }}

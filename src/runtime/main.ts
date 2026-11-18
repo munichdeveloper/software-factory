@@ -8,7 +8,7 @@ import { Pool } from 'pg';
 import { Connection, Client } from '@temporalio/client';
 import { bundleWorkflowCode } from '@temporalio/worker';
 import { Octokit } from '@octokit/rest';
-import { loadConfig } from '../config/index.js';
+import { codingAgents, loadConfig } from '../config/index.js';
 import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
 import { MockPlanner, OpenAIPlanner } from '../llm/provider.js';
@@ -20,13 +20,14 @@ import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { startReconcileSchedule } from './schedule.js';
 import { SanityMonitor } from './sanity.js';
 import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
+import { CreditAlerts } from './credit-alerts.js';
 import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
 import { scopedRuntimeGitHub } from './github-app.js';
 import { RunnerDispenser, RunnerFallback, startRunnerFallback, type RunnerRepositoryPort } from './runners.js';
 import { runnerRepository } from './runner-github.js';
-import { ActionsCodingExecutor, codingWorkflow } from './coding-executor.js';
+import { ActionsCodingExecutor, codingWorkflow, storedSelection } from './coding-executor.js';
 import { RuntimeEffects } from './effects.js';
 import { RuntimeCodingPublisher, containsCommit } from './publisher.js';
 import { IssueScopedGitHub } from './issue-scope.js';
@@ -121,6 +122,9 @@ export async function main(args = process.argv.slice(2)) {
   const store = new RuntimeStore(new Pool({ connectionString: process.env.FACTORY_RUNTIME_DATABASE_URL, max: 8, connectionTimeoutMillis: 5000 }));
   const connection = await Connection.connect({ address: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233', connectTimeout: '5 seconds' });
   const temporal = new Client({ connection, namespace: registry.namespace });
+  // Used-up agent credit (workers.coding.agents) goes to this channel, at most three times per agent.
+  const creditChannel = process.env.FACTORY_CREDIT_ALERT_CHANNEL;
+  const creditAlerts = process.env.SLACK_BOT_TOKEN && creditChannel ? new CreditAlerts(store, new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN), creditChannel) : undefined;
   try {
     await store.migrate();
     type Item = z.infer<typeof registrySchema>['repositories'][number];
@@ -170,10 +174,14 @@ export async function main(args = process.argv.slice(2)) {
       };
       const effects = (snapshot: Parameters<ActionsCodingExecutor['poll']>[0], binding: string) => new RuntimeEffects(store, repository.repositoryId, snapshot.admission.input.executionId, binding);
       repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), async () => (await repository.config()).manager.trustedActors,
-        id => store.validation(repository.repositoryId, id)),
+        id => store.validation(repository.repositoryId, id),
+        async (_snapshot, selection) => { try { await creditAlerts?.observe(item.repository, selection); } catch { /* an alert never fails a run */ } }),
         publish: async (snapshot, binding, artifact, createdAt, validation) => { const config = await repository.config();
+          // The agent that ran: the executor's stored choice for a priority list, otherwise the configured agent.
+          const chosen = await storedSelection(effects(snapshot, binding), snapshot.admission.input.executionId, () => controller.authorize(snapshot, binding));
+          const agent = chosen?.selected?.worker ?? (config.workers.coding ? codingAgents(config.workers.coding)[0]!.agent : 'codex');
           return new RuntimeCodingPublisher(api, effects(snapshot, binding), () => controller.authorize(snapshot, binding), config.manager.trustedActors,
-            config.workers.coding ? config.workers.coding.agent : 'codex').publish(snapshot, artifact, createdAt, validation); } };
+            agent).publish(snapshot, artifact, createdAt, validation); } };
       // Refuse a registry rollout which would orphan any running version, including long human gates.
       await assertRetainedReleases(item.repositoryId, [item.release, ...item.retainedReleases], store, temporal);
       await repository.config(); // An unreadable or invalid configuration fails the start, not the first reconciliation.
