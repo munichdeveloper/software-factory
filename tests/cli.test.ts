@@ -30,3 +30,22 @@ it('normal local bootstrap requires the write opt-in', async () => {
   await expect(main(['bootstrap', '--repository', 'owner/target'])).rejects.toThrow('Local mutations require');
   expect(github.bootstrap).not.toHaveBeenCalled();
 });
+
+it.each([
+  ['github-hosted', undefined, true],
+  ['self-hosted', 'software-factory ephemeral runner pool\n', true],
+  ['self-hosted', 'something else\n', false],
+  ['self-hosted', null, false],
+  [undefined, 'software-factory ephemeral runner pool\n', false]
+])('validation runner %s with pool marker %j is accepted=%s', async (environment, marker, accepted) => {
+  const { isFreshValidationRunner } = await import('../src/cli.js');
+  const read = () => marker === null || marker === undefined ? Promise.reject(new Error('ENOENT')) : Promise.resolve(marker);
+  await expect(isFreshValidationRunner({ RUNNER_ENVIRONMENT: environment }, read)).resolves.toBe(accepted);
+});
+it('reports a refused validation runner by name instead of the generic permissions hint', async () => {
+  const { handleError } = await import('../src/cli.js');
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  await handleError(new Error('Validation requires a fresh hosted job'));
+  expect(error).toHaveBeenCalledWith(expect.stringContaining('Validation requires a fresh hosted job'));
+  process.exitCode = 0;
+});
