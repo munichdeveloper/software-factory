@@ -38,6 +38,13 @@ GitHub's queue until a slot is free.
 Runners are ephemeral just-in-time runners: each takes exactly one job and is then removed by GitHub. Between jobs
 the slot wipes its workspace, temporary files and everything in its Docker daemon.
 
+The Factory's coding job sets up its isolated coding account with `sudo` as on a hosted runner (Harness): it
+bind-mounts the job's browser cache into the account's home and limits the account's egress with `iptables` owner
+rules. The runner containers therefore have the capabilities `SYS_ADMIN` and `NET_ADMIN`, no AppArmor profile
+(Docker's default profile denies `mount`) and `iptables` in their image. Between jobs the slot also removes the coding
+accounts, what the job mounted into their homes and their egress rules; the rules live in the network namespace of
+the slot's Docker daemon, which outlives the job.
+
 ### Hand-out
 
 The runners hold no credentials. The broker, which has a GitHub App token per repository, writes a just-in-time
@@ -72,6 +79,7 @@ The GitHub App needs, in addition to its usual permissions, **Administration: wr
 
 ### Security
 
-The Docker daemons run privileged: a job can take over the runtime host. The pool therefore only serves the
-account's own private repositories, never public ones or forks. The runner network is separate from the runtime
-networks; the slot volume is the only thing the broker and runners share and it only carries one-job configurations.
+The Docker daemons run privileged and the runners can mount and change packet filter rules: a job can take over the
+runtime host. The pool therefore only serves the account's own private repositories, never public ones or forks. The
+runner network is separate from the runtime networks; the slot volume is the only thing the broker and runners share
+and it only carries one-job configurations.
