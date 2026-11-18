@@ -77,6 +77,14 @@ it.each(['../escape', '/absolute', 'a//b', 'a\\b', 'a/./b', 'a/../b', 'a:stream'
   const f = await fixture(); f.artifact.changes[0]!.path = path;
   expect(() => validateChanges(f.artifact)).toThrow('path');
 });
+it.each(['.gitignore', 'frontend/.gitignore', '.gitattributes'])('accepts ignore and attribute file %j', async path => {
+  const f = await fixture(); f.artifact.changes[0]!.path = path;
+  expect(() => validateChanges(f.artifact)).not.toThrow();
+});
+it.each(['.gitmodules', '.github/workflows/a.yml', '.git/info/exclude'])('keeps rejecting git path %j', async path => {
+  const f = await fixture(); f.artifact.changes[0]!.path = path;
+  expect(() => validateChanges(f.artifact)).toThrow(`Protected or invalid artifact path: ${JSON.stringify(path)}`);
+});
 it('rejects duplicate/case-colliding paths, invalid base64 and excessive byte count', async () => {
   const f = await fixture();
   f.artifact.changes.push({ ...f.artifact.changes[0]!, path: 'DOCS/EXAMPLE.MD' });

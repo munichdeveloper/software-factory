@@ -216,7 +216,7 @@ export async function isFreshValidationRunner(env: NodeJS.ProcessEnv = process.e
 export async function handleError(error: unknown): Promise<void> {
   // Config errors are safe; API/request objects are deliberately never printed.
   const message = error instanceof Error ? error.message : '';
-  const safe = /^(Deployment|Validation requires|Invalid validation|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must)/.test(message)
+  const safe = /^(Deployment|Validation requires|Invalid validation|Slack connection failed: check SLACK_BOT_TOKEN and Slack app installation$|Invalid factory configuration|Invalid YAML|Supported commands|validate requires|Local mutations|Invalid worker|OPENAI_API_KEY|GITHUB_TOKEN|Repository must|Configuration must|Protected or invalid artifact path|Duplicate artifact path|Invalid artifact encoding|Artifact exceeds publication limit|UNRELATED_CODING_ARTIFACT|VALIDATION_BASE_MISMATCH|NON_REGULAR_VALIDATION_PATH)/.test(message)
     ? message : 'Harness failed. Check repository access, contents:read, issues:write, pull-requests:read and actions:write permissions and installed default-branch workflow.';
   const httpStatus = error instanceof Error && 'status' in error && typeof error.status === 'number' ? error.status : null;
   const category = error instanceof Error ? error.name.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) : 'UnknownError';

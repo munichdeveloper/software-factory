@@ -47,5 +47,7 @@ it('reports a refused validation runner by name instead of the generic permissio
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
   await handleError(new Error('Validation requires a fresh hosted job'));
   expect(error).toHaveBeenCalledWith(expect.stringContaining('Validation requires a fresh hosted job'));
+  await handleError(new Error('Protected or invalid artifact path: ".github/workflows/a.yml"'));
+  expect(error).toHaveBeenCalledWith(expect.stringContaining('Protected or invalid artifact path'));
   process.exitCode = 0;
 });

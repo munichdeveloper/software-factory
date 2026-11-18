@@ -20,6 +20,9 @@ export interface CodingRepositoryPort {
   base(): Promise<CodingBase>;
   publish(base: CodingBase, artifact: CodingArtifact, issue: number, validationWorkflow?: string | null): Promise<string>;
 }
+const protectedPathSegment = /^(\.git.*|\.codex|\.agents|\.squad|\.copilot|\.claude|agents\.md|codeowners)$/i;
+/** Plain ignore and attribute files are ordinary project files; `.git/`, `.github/`, `.gitmodules` and the rest stay protected (controla#124). */
+const allowedGitFile = /^\.git(ignore|attributes)$/i;
 export function validateChanges(artifact: CodingArtifact): void {
   const seen = new Set<string>();
   let total = 0;
@@ -27,7 +30,7 @@ export function validateChanges(artifact: CodingArtifact): void {
     const parts = change.path.split('/');
     if (change.path.includes('\\') || change.path.includes(':') || [...change.path].some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) ||
       parts.some(p => !p || p === '.' || p === '..' || p.endsWith('.') || p.endsWith(' ') ||
-        /^(\.git.*|\.codex|\.agents|\.squad|\.copilot|\.claude|agents\.md|codeowners)$/i.test(p))) throw new Error('Protected or invalid artifact path');
+        (protectedPathSegment.test(p) && !allowedGitFile.test(p)))) throw new Error(`Protected or invalid artifact path: ${JSON.stringify(change.path)}`);
     const key = change.path.toLowerCase();
     if (seen.has(key)) throw new Error('Duplicate artifact path');
     seen.add(key);
