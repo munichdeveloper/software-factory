@@ -65292,7 +65292,14 @@ var configSchema = external_exports.strictObject({
     }).prefault({}),
     keepReleases: bounded(1, 20, 5),
     timeoutMinutes: bounded(5, 60, 30),
-    githubDeployment: external_exports.boolean().default(false)
+    githubDeployment: external_exports.boolean().default(false),
+    // Application secrets from the deploy environment's GitHub secrets: variable name -> secret name. The SF Manager
+    // writes them into the wrapper's deploy-env (NAME=${{ secrets.SECRET }}); the values never enter this file.
+    // The deployment's own credentials (DEPLOY_*) and GitHub's reserved names cannot be passed on.
+    secrets: external_exports.record(
+      external_exports.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/),
+      external_exports.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,99}$/).refine((s) => !/^(?:GITHUB_|DEPLOY_)/i.test(s), "must not name a GITHUB_ or DEPLOY_ secret")
+    ).refine((s) => Object.keys(s).length <= 30, "at most 30 secrets").default({})
   }).superRefine((deploy, context2) => {
     if (deploy.enabled && deploy.trigger === "checks" && !deploy.workflows.length) {
       context2.addIssue({ code: "custom", path: ["workflows"], message: "trigger checks requires at least one workflow name" });
@@ -72660,6 +72667,10 @@ function parseDeployEnvironment(text) {
   });
   return { values, empty };
 }
+function missingDeploySecrets(secrets, environment) {
+  const passed = /* @__PURE__ */ new Set([...environment.values.map(([name]) => name), ...environment.empty]);
+  return Object.keys(secrets).filter((name) => !passed.has(name)).sort();
+}
 function renderDeployEnvironment(environment) {
   return environment.values.map(([name, value]) => `${name}='${value}'
 `).join("");
@@ -73286,6 +73297,8 @@ sha=${decision.deploy ? decision.sha : ""}
       }
       const environment = parseDeployEnvironment(process.env.DEPLOY_ENV ?? "");
       if (environment.empty.length) console.log(`::warning title=Software Factory deploy::deploy-env without value (secret not set?): ${environment.empty.join(", ")}`);
+      const missing = missingDeploySecrets(config2.deploy.secrets, environment);
+      if (missing.length) console.log(`::warning title=Software Factory deploy::deploy.secrets not passed by the wrapper (roll the configuration out through the SF Manager): ${missing.join(", ")}`);
       const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}` : void 0;
       const report2 = await executeDeploy({
         config: config2,

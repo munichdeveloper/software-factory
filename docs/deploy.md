@@ -111,6 +111,8 @@ deploy:
   keepReleases: 5
   timeoutMinutes: 30       # per upload and per activation
   githubDeployment: false  # extra deployment record; the wrapper's environment already records one
+  secrets:                 # application secrets from GitHub, see "Secrets from GitHub" below
+    FACTORY_MONITOR_TOKEN: MONITOR_FACTORY_TOKEN   # variable on the host: GitHub secret name
 ```
 
 `factory.enabled: false`, `execution.dryRun` and the `advisory` profile stop
@@ -155,6 +157,23 @@ empty, is left out and is reported as a warning. Rotating a secret is a redeploy
 (`workflow_dispatch`). A rollback restarts the previous release with the values it was
 deployed with. Only the deploy job receives these secrets, and only the services that
 list the file see them.
+
+### Declared in the configuration (`deploy.secrets`, 0.12.0)
+
+Instead of editing the wrapper by hand, declare the secrets in `.github/software-factory.yml`:
+
+```yaml
+deploy:
+  secrets:
+    FACTORY_MONITOR_TOKEN: MONITOR_FACTORY_TOKEN   # NAME on the host: GitHub secret
+    GITHUB_OAUTH_CLIENT_SECRET: MONITOR_OAUTH_SECRET
+```
+
+The SF Manager renders this map into the wrapper's `deploy-env` (`NAME=${{ secrets.SECRET }}`, sorted by name) in
+the same pull request as the configuration change, and on every rollout. The map holds only names, never values;
+set the secrets in the GitHub environment named by `deploy.environment` (default `production`). Secret names starting
+with `GITHUB_` or `DEPLOY_` are refused, so the deployment's SSH credentials can never reach the application. At most
+30 entries. A deployment whose wrapper does not pass a declared name warns that the wrapper is out of date.
 
 ## Recovery
 

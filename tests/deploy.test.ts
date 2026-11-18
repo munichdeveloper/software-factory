@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { configSchema, loadConfig, type Config } from '../src/config/index.js';
-import { executeDeploy, parseDeployEnvironment, planDeploy, readEvent, renderDeployEnvironment, deploySummary, type DeployEvent } from '../src/deploy/index.js';
+import { executeDeploy, missingDeploySecrets, parseDeployEnvironment, planDeploy, readEvent, renderDeployEnvironment, deploySummary, type DeployEvent } from '../src/deploy/index.js';
 import type { CheckRun, DeployPort, DeploymentState } from '../src/deploy/github.js';
 import { bashCommand, remoteValue, shellQuote } from '../src/deploy/remote.js';
 import { runProcess, SshTransport, type Transport } from '../src/deploy/transport.js';
@@ -359,5 +359,23 @@ exec sh -c "\${@: -1}"
     expect(deploySummary(null, { deploy: false, reason: 'checks-pending', sha: HEAD }, 'production')).toContain('checks-pending (aaaaaaaaaaaa)');
     expect(deploySummary({ outcome: 'deployed', sha: HEAD, previous: null, deploymentId: null, detail: 'ok' }, { deploy: true, sha: HEAD, source: 'push' }, 'prod|x'))
       .toContain('| Environment | prodx |');
+  });
+});
+
+describe('deploy.secrets', () => {
+  it('maps variable names to GitHub secret names and refuses deployment credentials', () => {
+    const parse = (secrets: unknown) => configSchema.safeParse({ version: 1, factory: { scope: 'x' }, deploy: { secrets } });
+    expect(parse({ FACTORY_MONITOR_TOKEN: 'MONITOR_FACTORY_TOKEN' }).success).toBe(true);
+    expect(configSchema.parse({ version: 1, factory: { scope: 'x' } }).deploy.secrets).toEqual({});
+    expect(parse({ KEY: 'DEPLOY_SSH_KEY' }).success).toBe(false);
+    expect(parse({ KEY: 'github_token' }).success).toBe(false);
+    expect(parse({ 'BAD-NAME': 'X' }).success).toBe(false);
+    expect(parse({ KEY: 'X}}' }).success).toBe(false);
+    expect(parse(Object.fromEntries(Array.from({ length: 31 }, (_, i) => [`K${i}`, `S${i}`]))).success).toBe(false);
+  });
+  it('names declared secrets the wrapper did not pass', () => {
+    const environment = parseDeployEnvironment('A=1\nB=\n');
+    expect(missingDeploySecrets({ A: 'SA', B: 'SB', C: 'SC' }, environment)).toEqual(['C']);
+    expect(missingDeploySecrets({}, environment)).toEqual([]);
   });
 });
