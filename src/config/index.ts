@@ -57,7 +57,13 @@ export const configSchema = z.strictObject({
   }).prefault({}),
   autonomy: z.strictObject({
     profile: z.enum(['advisory', 'supervised', 'autonomous']).default('supervised'),
-    overrides: z.partialRecord(z.enum(actionKinds), permissionSchema).default({})
+    overrides: z.partialRecord(z.enum(actionKinds), permissionSchema).default({}),
+    /**
+     * What admits a run in a repository the SF Manager registered with the ready label as grant. `ready-label`: only
+     * `harness:ready` applied by a person with write access. `none`: no grant; every managed, runnable task starts
+     * within the autonomy policy and the execution limits.
+     */
+    startGrant: z.enum(['ready-label', 'none']).default('ready-label')
   }).prefault({}),
   execution: z.strictObject({
     engine: z.enum(['github-actions', 'temporal']).default('github-actions'),

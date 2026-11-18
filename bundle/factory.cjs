@@ -65146,7 +65146,13 @@ var configSchema = external_exports.strictObject({
   }).prefault({}),
   autonomy: external_exports.strictObject({
     profile: external_exports.enum(["advisory", "supervised", "autonomous"]).default("supervised"),
-    overrides: external_exports.partialRecord(external_exports.enum(actionKinds), permissionSchema).default({})
+    overrides: external_exports.partialRecord(external_exports.enum(actionKinds), permissionSchema).default({}),
+    /**
+     * What admits a run in a repository the SF Manager registered with the ready label as grant. `ready-label`: only
+     * `harness:ready` applied by a person with write access. `none`: no grant; every managed, runnable task starts
+     * within the autonomy policy and the execution limits.
+     */
+    startGrant: external_exports.enum(["ready-label", "none"]).default("ready-label")
   }).prefault({}),
   execution: external_exports.strictObject({
     engine: external_exports.enum(["github-actions", "temporal"]).default("github-actions"),
@@ -70087,6 +70093,7 @@ function evaluate(action, ctx) {
     if (ctx.source !== "reconcile" && (["running", "done", "failed", "awaiting-pr"].includes(action.status) || task.executions.some((e) => e.active))) return deny("Planner cannot assert execution or completion facts");
     if (ctx.source === "reconcile" && action.status !== task.desiredStatus) return deny("Transition does not match reconstructed facts");
     if (action.status === "ready" && task.blocked) return deny("Task has unresolved dependencies or missing acceptance criteria");
+    if (action.status === "ready" && ctx.readyIsGrant && !task.issue.labels.includes("harness:ready")) return deny("harness:ready is a person's grant in this repository; only an authorized person applies it");
   }
   if (action.kind === "close_issue" && (ctx.source !== "reconcile" || !task.hasClosingMerge || task.executions.some((e) => e.active))) return deny("Closing requires a verified native closing link to a merged PR and no active execution");
   if (["start_worker", "retry_worker"].includes(action.kind)) {
@@ -70648,7 +70655,8 @@ function statusView(task, config2, context2) {
     awaitsGrant = ready;
     stage = ready ? "awaiting-grant" : "refused";
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : "Ready to run. **Waiting only for the grant.**"] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
-    needs = ready ? grant : rejection === "EXECUTOR_WRAPPER_RELEASE_MISMATCH" ? "Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards." : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
+    if (rejection === "READY_ACTOR_NOT_AUTHORIZED" && task.issue.labels.includes("harness:ready")) state.push("", "The label `harness:ready` on this issue was applied by an account that cannot grant a run, for example the Factory's own App. It does not count as a grant.");
+    needs = rejection === "READY_ACTOR_NOT_AUTHORIZED" && task.issue.labels.includes("harness:ready") ? "An authorized person removes the label `harness:ready` and applies it again. Nothing else is missing; the run starts on the next reconciliation." : ready ? grant : rejection === "EXECUTOR_WRAPPER_RELEASE_MISMATCH" ? "Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards." : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
     if (task.refusal?.waiting) state.push("", `The next start waits for a new grant, a changed policy or configuration, or at the latest until ${task.refusal.until}.`);
   } else if (result?.status === "success" && task.reworkReview) {
     stage = "retry";
@@ -70753,7 +70761,7 @@ var Manager = class {
         return event?.data.type === "intent" ? [event.data.input.executionId] : [];
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
-      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant;
+      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant !== "none";
     }
     return snapshot;
   }
@@ -70895,6 +70903,7 @@ var Manager = class {
             journaled = true;
           }
         }
+        if (action.status === "ready" && snapshot.readyIsGrant && !live.labels.includes("harness:ready")) return journaled;
         const labels2 = withStatus(live, action.status);
         if ([...live.labels].sort().join("\0") === [...labels2].sort().join("\0")) return journaled;
         if (action.status === "blocked" && !live.labels.includes("harness:blocked")) {
@@ -71103,7 +71112,14 @@ ${marker2}`;
           continue;
         }
         budget.activeWorkers = tasks.reduce((n, t) => n + t.executions.filter((e) => e.active).length, 0);
-        const decision = evaluate(action, { config: this.config, task, budget, source: entry.source, approved: await this.hasApproval(action.issueNumber, id) });
+        const decision = evaluate(action, {
+          config: this.config,
+          task,
+          budget,
+          source: entry.source,
+          readyIsGrant: !!snapshot.readyIsGrant,
+          approved: await this.hasApproval(action.issueNumber, id)
+        });
         const record2 = { action, decision, executed: false };
         report.decisions.push(record2);
         await this.audit(action, decision.outcome, decision.reason);

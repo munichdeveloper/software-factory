@@ -83,3 +83,14 @@ describe('status comment of other waiting tasks', () => {
     expect(w.statusComments(1)[0]).toContain('Add a section `## Acceptance criteria` with at least one list item');
   });
 });
+describe('status comment of a harness:ready that is no grant (software-factory#109)', () => {
+  it('says that the label is there but does not count, and that a person applies it again', async () => {
+    const w = new World({ readyLabel: true }); w.open(1); w.grant(1, 'factory-app[bot]'); await w.tick();
+    expect(w.running()).toHaveLength(0);
+    const text = w.statusComments(1).at(-1)!;
+    expect(text).toContain('was applied by an account that cannot grant a run');
+    expect(text).toContain('**Needed from you:** An authorized person removes the label `harness:ready` and applies it again.');
+    w.grant(1); await w.tick();
+    expect(w.running()).toHaveLength(1);
+  });
+});

@@ -89,7 +89,11 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
       ? `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}). ` : '';
     awaitsGrant = ready; stage = ready ? 'awaiting-grant' : 'refused';
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : 'Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
-    needs = ready ? grant : rejection === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'
+    // The label is there but was applied by an account that cannot grant, typically the Factory's own App (software-factory#109).
+    if (rejection === 'READY_ACTOR_NOT_AUTHORIZED' && task.issue.labels.includes('harness:ready')) state.push('', 'The label `harness:ready` on this issue was applied by an account that cannot grant a run, for example the Factory\'s own App. It does not count as a grant.');
+    needs = rejection === 'READY_ACTOR_NOT_AUTHORIZED' && task.issue.labels.includes('harness:ready')
+      ? 'An authorized person removes the label `harness:ready` and applies it again. Nothing else is missing; the run starts on the next reconciliation.'
+      : ready ? grant : rejection === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'
       ? 'Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards.'
       : 'Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.';
     // A refusal that still holds is not offered again on every reconciliation (software-factory#53).

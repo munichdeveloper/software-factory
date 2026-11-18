@@ -115,9 +115,10 @@ export class RuntimeController implements WorkerRuntimePort {
   private async current(snapshot: RunSnapshot) {
     const config = await this.repo.config();
     if (snapshot.validationPlan && !this.repo.validationPlan) throw new Error('VALIDATION_MODE_CHANGED');
-    if (Boolean(this.repo.readyApproval) !== Boolean(snapshot.readyApproval)) throw new Error('APPROVAL_MODE_CHANGED');
+    const ready = await this.readyGrant(config);
+    if (Boolean(ready) !== Boolean(snapshot.readyApproval)) throw new Error('APPROVAL_MODE_CHANGED');
     if (snapshot.readyApproval) {
-      if (snapshot.requireHumanGate || !this.repo.readyApproval || hash(await this.repo.readyApproval(snapshot.admission.input.issueNumber, snapshot.readyApproval, (await this.reworked(snapshot.admission.input))?.snapshot.readyApproval)) !== hash(snapshot.readyApproval)) throw new Error('READY_APPROVAL_CHANGED');
+      if (snapshot.requireHumanGate || !ready || hash(await ready(snapshot.admission.input.issueNumber, snapshot.readyApproval, (await this.reworked(snapshot.admission.input))?.snapshot.readyApproval)) !== hash(snapshot.readyApproval)) throw new Error('READY_APPROVAL_CHANGED');
     }
     if (this.repo.repositoryId !== snapshot.repositoryId || this.repo.repository !== snapshot.repository || this.repo.baseRef !== snapshot.baseRef || this.repo.executorWorkflow !== snapshot.executorWorkflow || hash(this.repo.allowedPaths ?? null) !== hash(snapshot.allowedPaths ?? null) ||
       ![this.repo.release, ...(this.repo.retainedReleases ?? [])].some(r => hash(r) === hash(snapshot.release)) || config.execution.engine !== 'temporal' ||
@@ -134,6 +135,11 @@ export class RuntimeController implements WorkerRuntimePort {
     return !snapshot.baseRef && !!this.repo.baseContains && await this.repo.baseContains(snapshot.baseSha);
   }
   get readyIsGrant() { return !!this.repo.readyApproval; }
+  /** The ready-label check, where this repository is registered with one and its configuration still asks for it. */
+  private async readyGrant(config?: Config) {
+    if (!this.repo.readyApproval || (config ?? await this.repo.config()).autonomy.startGrant === 'none') return undefined;
+    return this.repo.readyApproval.bind(this.repo);
+  }
   async preflight(issueNumber: number, previousExecutionId?: string): Promise<void> {
     try {
       this.scope(issueNumber);
@@ -142,9 +148,10 @@ export class RuntimeController implements WorkerRuntimePort {
       const coding = this.repo.coding && this.repo.executorWrapper ? (await this.repo.config()).workers.coding : false;
       if (coding && coding.enabled && this.repo.executorWrapper &&
         await this.repo.executorWrapper() !== executorWrapper(this.repo.release.factorySha, this.repo.release.harnessSha, !!this.repo.validationPlan)) throw new Error('EXECUTOR_WRAPPER_RELEASE_MISMATCH');
-      if (this.repo.readyApproval) {
+      const ready = await this.readyGrant();
+      if (ready) {
         const previous = previousExecutionId ? await this.store.get(this.repo.repositoryId, previousExecutionId) : null;
-        await this.repo.readyApproval(issueNumber, undefined, previous?.snapshot.admission.input.issueNumber === issueNumber ? previous.snapshot.readyApproval : undefined);
+        await ready(issueNumber, undefined, previous?.snapshot.admission.input.issueNumber === issueNumber ? previous.snapshot.readyApproval : undefined);
       }
     } catch (error) { const code = admissionCode(error); throw code ? new RuntimeAdmissionRejected(code) : error; }
   }
@@ -159,6 +166,7 @@ export class RuntimeController implements WorkerRuntimePort {
       } else try {
         const config = await this.repo.config();
         if (policyVersion(config) !== admission.policyHash || config.execution.engine !== 'temporal') throw new Error('POLICY_MISMATCH');
+        const ready = await this.readyGrant(config);
         const comments = await this.repo.github.comments(admission.input.issueNumber);
         const intent = comments.map(c => decodeEvent(c, config.manager.trustedActors)).find(e => e?.data.type === 'intent' && e.data.input.executionId === id);
         if (intent?.data.type !== 'intent' || intent.data.actionId !== admission.actionId) throw new Error('NO_MATCHING_INTENT');
@@ -167,7 +175,7 @@ export class RuntimeController implements WorkerRuntimePort {
           release: this.repo.release, admission, baseSha: await this.repo.baseSha(), specHash: admission.input.taskVersion,
           ...(this.repo.baseRef ? { baseRef: this.repo.baseRef } : {}), ...(this.repo.executorWorkflow ? { executorWorkflow: this.repo.executorWorkflow } : {}),
           ...(this.repo.allowedPaths ? { allowedPaths: this.repo.allowedPaths } : {}),
-          ...(this.repo.readyApproval ? { readyApproval: await this.repo.readyApproval(admission.input.issueNumber, undefined, (await this.reworked(admission.input))?.snapshot.readyApproval) } : {}),
+          ...(ready ? { readyApproval: await ready(admission.input.issueNumber, undefined, (await this.reworked(admission.input))?.snapshot.readyApproval) } : {}),
           ...(admission.input.worker === 'codex' && this.repo.validationPlan ? { validationPlan: await this.repo.validationPlan() } : {}),
           configHash: hash(config), requireHumanGate: this.repo.requireHumanGate });
         await this.current(snapshot);

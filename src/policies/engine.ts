@@ -18,7 +18,9 @@ export function permission(config: Config, kind: Action['kind']): Permission {
 export interface Budget { actions: number; newIssues: number; activeWorkers: number;
   /** Tasks that received a follow-up in this run: a split into several follow-ups is one response. */
   followupOrigins?: number[] }
-export interface PolicyContext { config: Config; task: Task; budget: Budget; approved: boolean; source: 'reconcile' | 'planner' | 'worker' }
+export interface PolicyContext { config: Config; task: Task; budget: Budget; approved: boolean; source: 'reconcile' | 'planner' | 'worker';
+  /** harness:ready is a person's grant in this repository (approvalMode ready-label). */
+  readyIsGrant?: boolean }
 export function evaluate(action: Action, ctx: PolicyContext): Decision {
   const { config, task, budget } = ctx;
   const id = actionId(action, policyVersion(config));
@@ -43,6 +45,8 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
     if (ctx.source !== 'reconcile' && (['running', 'done', 'failed', 'awaiting-pr'].includes(action.status) || task.executions.some(e => e.active))) return deny('Planner cannot assert execution or completion facts');
     if (ctx.source === 'reconcile' && action.status !== task.desiredStatus) return deny('Transition does not match reconstructed facts');
     if (action.status === 'ready' && task.blocked) return deny('Task has unresolved dependencies or missing acceptance criteria');
+    // The label would carry the Factory's own identity, which the runtime refuses as a grant (READY_ACTOR_NOT_AUTHORIZED, software-factory#109).
+    if (action.status === 'ready' && ctx.readyIsGrant && !task.issue.labels.includes('harness:ready')) return deny('harness:ready is a person\'s grant in this repository; only an authorized person applies it');
   }
   if (action.kind === 'close_issue' && (ctx.source !== 'reconcile' || !task.hasClosingMerge || task.executions.some(e => e.active))) return deny('Closing requires a verified native closing link to a merged PR and no active execution');
   if (['start_worker', 'retry_worker'].includes(action.kind)) {

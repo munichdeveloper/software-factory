@@ -50,7 +50,7 @@ export class Manager {
         return event?.data.type === 'intent' ? [event.data.input.executionId] : [];
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
-      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant;
+      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant !== 'none';
     }
     return snapshot;
   }
@@ -174,6 +174,8 @@ export class Manager {
             journaled = true;
           }
         }
+        // Where the label is a person's grant, the Factory never applies it itself (software-factory#109).
+        if (action.status === 'ready' && snapshot.readyIsGrant && !live.labels.includes('harness:ready')) return journaled;
         const labels = withStatus(live, action.status!);
         if ([...live.labels].sort().join('\0') === [...labels].sort().join('\0')) return journaled;
         if (action.status === 'blocked' && !live.labels.includes('harness:blocked')) {
@@ -320,7 +322,8 @@ export class Manager {
         const task = tasks.find(t => t.issue.number === action.issueNumber);
         if (!task) { report.errors.push(`Proposal references unmanaged issue #${action.issueNumber}`); continue; }
         budget.activeWorkers = tasks.reduce((n, t) => n + t.executions.filter(e => e.active).length, 0);
-        const decision = evaluate(action, { config: this.config, task, budget, source: entry.source, approved: await this.hasApproval(action.issueNumber, id) });
+        const decision = evaluate(action, { config: this.config, task, budget, source: entry.source, readyIsGrant: !!snapshot.readyIsGrant,
+          approved: await this.hasApproval(action.issueNumber, id) });
         const record = { action, decision, executed: false };
         report.decisions.push(record);
         await this.audit(action, decision.outcome, decision.reason);
