@@ -94,6 +94,11 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
       : 'Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.';
     // A refusal that still holds is not offered again on every reconciliation (software-factory#53).
     if (task.refusal?.waiting) state.push('', `The next start waits for a new grant, a changed policy or configuration, or at the latest until ${task.refusal.until}.`);
+  } else if (result?.status === 'success' && task.reworkReview) {
+    stage = 'retry';
+    state = ['Implemented and independently validated, but the independent merge review asked for changes.',
+      '', `Attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}. A further attempt starts on its own; it continues these changes and receives the review findings.`];
+    needs = 'Nothing; the Factory reworks the review findings on its own.';
   } else if (result?.status === 'success') { stage = 'awaiting-pr'; state = ['Implemented and independently validated.']; needs = 'Review and merge the pull request. The Factory does not merge on its own in this installation.'; }
   else if (result?.status === 'blocked') {
     ({ state, needs } = blocked(task, context.repository, context.readyIsGrant, config)); stage = 'blocked';

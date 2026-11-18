@@ -26,7 +26,7 @@ import { CreditAlerts } from './credit-alerts.js';
 import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
-import { scopedRuntimeGitHub } from './github-app.js';
+import { appCommitIdentity, scopedRuntimeGitHub } from './github-app.js';
 import { RunnerDispenser, RunnerFallback, startRunnerFallback, type RunnerRepositoryPort } from './runners.js';
 import { runnerRepository } from './runner-github.js';
 import { ActionsCodingExecutor, codingWorkflow, storedSelection } from './coding-executor.js';
@@ -184,8 +184,14 @@ export async function main(args = process.argv.slice(2)) {
           // The agent that ran: the executor's stored choice for a priority list, otherwise the configured agent.
           const chosen = await storedSelection(effects(snapshot, binding), snapshot.admission.input.executionId, () => controller.authorize(snapshot, binding));
           const agent = chosen?.selected?.worker ?? (config.workers.coding ? codingAgents(config.workers.coding)[0]!.agent : 'codex');
+          // Commits show the App's bot user as author; without it Vercel and GitHub see a stranger's noreply account.
+          const identity = item.githubInstallationId ? await appCommitIdentity(z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
+            z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), api).catch(error => {
+            console.log(JSON.stringify({ event: 'factory-commit-identity', outcome: 'legacy', reason: error instanceof Error ? error.message.slice(0, 200) : 'unknown' }));
+            return undefined;
+          }) : undefined;
           return new RuntimeCodingPublisher(api, effects(snapshot, binding), () => controller.authorize(snapshot, binding), config.manager.trustedActors,
-            agent).publish(snapshot, artifact, createdAt, validation); } };
+            agent, identity).publish(snapshot, artifact, createdAt, validation); } };
       // Refuse a registry rollout which would orphan any running version, including long human gates.
       await assertRetainedReleases(item.repositoryId, [item.release, ...item.retainedReleases], store, temporal);
       await repository.config(); // An unreadable or invalid configuration fails the start, not the first reconciliation.

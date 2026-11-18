@@ -9,7 +9,7 @@ import { lastBlockLabelEventId } from '../state/blocks.js';
 import { managedLabel, priorityLabels, withStatus } from '../state/lifecycle.js';
 import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
 import { workerInputSchema, type WorkerInput } from '../workers/contract.js';
-import { retryMarker, reworkMarker } from '../runtime/coding-context.js';
+import { retryMarker, reviewEntries, reworkMarker } from '../runtime/coding-context.js';
 import { untrustedEdit, untrustedEditReason } from '../state/content-trust.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
@@ -230,7 +230,9 @@ export class Manager {
         // Intent first. If dispatch or subsequent writes fail, a future run observes this intent AND actual runs.
         const input = workerInputSchema.parse({ contractVersion: '1.0', repository: this.github.repository,
           issueNumber: live.number, taskVersion: action.taskVersion, description: live.body, acceptanceCriteria: task.criteria,
-          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : [])], executionId: id,
+          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : []),
+            // A rework after a merge review hands the worker what the review asked to change.
+            ...(rework && task.reworkReview ? reviewEntries(task.reworkReview) : [])], executionId: id,
           allowedActions: ['publish_result'], limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16000 },
           operation: this.config.workers.test.operation,
           worker: this.config.workers.coding && this.config.workers.coding.enabled ? 'codex' : 'test' });

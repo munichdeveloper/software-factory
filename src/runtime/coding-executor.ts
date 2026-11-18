@@ -138,15 +138,16 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     const input = snapshot.admission.input, entries: string[] = loopback ? [loopbackEntry] : [], seen = new Set([snapshot.baseSha]);
     const missing = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && [404, 422].includes(error.status as number);
     const previousId = reworkOf(input), report = previousId ? await this.previousValidation(previousId) : null;
-    if (previousId && report) {
+    // A rework always continues the previous attempt's branch; a failed validation adds its checks and their output.
+    if (previousId) {
       const branch = `sf/issue-${input.issueNumber}/${previousId}`;
       try {
         const head = (await this.api.git.getRef({ ...target, ref: `heads/${branch}` })).data.object.sha;
         entries.push(reworkEntry(head, previousId)); seen.add(head);
       } catch (error) { if (!missing(error)) throw error; entries.push(unavailableEntry('branch', branch)); }
-      const failed = report.checks.filter(c => c.status === 'failed');
-      if (failed.length) entries.push(failedChecksEntry(report));
-      try {
+      const failed = report?.checks.filter(c => c.status === 'failed') ?? [];
+      if (report && failed.length) entries.push(failedChecksEntry(report));
+      if (report && failed.length) try {
         const logs = (await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: report.workflowRunId, per_page: 100 }))
           .filter(a => a.name === `coding-validation-logs-${previousId}` && !a.expired && a.size_in_bytes <= 2000000);
         if (logs.length === 1) {
