@@ -73018,9 +73018,13 @@ async function runCodingValidation(options) {
   }
   return validationReportSchema.parse(report);
 }
+function runnerDockerHost(env = process.env) {
+  return /^tcp:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(env.DOCKER_HOST ?? "") ? env.DOCKER_HOST : void 0;
+}
 function hostedValidationCommand(target, logs) {
   return async (name, args, seconds, values) => {
     await (0, import_promises3.mkdir)(logs, { recursive: true });
+    const docker = runnerDockerHost();
     const tool = (value) => value && /^\/[\w./-]+$/.test(value) && !value.includes("..") ? value : void 0;
     const java = tool(process.env.JAVA_HOME), maven = tool(process.env.SF_MAVEN_HOME);
     const path4 = [java && `${java}/bin`, maven && `${maven}/bin`, (0, import_node_path3.dirname)(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].filter(Boolean).join(":");
@@ -73038,6 +73042,7 @@ function hostedValidationCommand(target, logs) {
           `PATH=${path4}`,
           ...java ? [`JAVA_HOME=${java}`] : [],
           ...Object.entries(values).map(([key, value]) => `${key}=${value}`),
+          ...docker ? [`DOCKER_HOST=${docker}`] : [],
           "timeout",
           "--kill-after=5s",
           `${seconds}s`,
