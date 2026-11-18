@@ -3,8 +3,9 @@ import { Pool, type PoolClient } from 'pg';
 import type { Client } from '@temporalio/client';
 import { RuntimeController, type RuntimeRepository } from '../src/runtime/controller.js';
 import { RuntimeStore, type StoredRun } from '../src/runtime/store.js';
-import type { RuntimeRelease } from '../src/runtime/contract.js';
-import { authorizeReadyLabel } from '../src/runtime/ready-approval.js';
+import type { ReadyApproval, RuntimeRelease } from '../src/runtime/contract.js';
+import { authorizeManagedLabel, authorizeReadyLabel } from '../src/runtime/ready-approval.js';
+import { followupOrigin } from '../src/state/reconstruct.js';
 import { Manager } from '../src/manager/index.js';
 import type { RunReport } from '../src/manager/report.js';
 import { MockPlanner } from '../src/llm/provider.js';
@@ -33,10 +34,22 @@ export class TimelineGitHub extends MemoryGitHub {
   /** Number of upcoming writes that fail with a transport error before reaching GitHub. */
   failWrites = 0;
   readyFor(number: number) { let events = this.readyBy.get(number); if (!events) this.readyBy.set(number, events = []); return events; }
+  private managedBy = new Map<number, BlockLabelEvent[]>();
+  /** The native timeline of harness:managed: who applied or removed it. */
+  managedFor(number: number) { let events = this.managedBy.get(number); if (!events) this.managedBy.set(number, events = []); return events; }
   private task(number: number) { return this.state.issues.find(i => i.number === number)!; }
   private record(number: number, labels: string[], actor: string) {
     const before = this.task(number).labels.includes('harness:ready'), after = labels.includes('harness:ready');
     if (before !== after) this.readyFor(number).push({ id: this.nextReady++, event: after ? 'labeled' : 'unlabeled', actor, createdAt: this.now.toISOString() });
+    const wasManaged = this.task(number).labels.includes('harness:managed'), managed = labels.includes('harness:managed');
+    if (wasManaged !== managed) this.managedFor(number).push({ id: this.nextReady++, event: managed ? 'labeled' : 'unlabeled', actor, createdAt: this.now.toISOString() });
+  }
+  /** The Factory creates a follow-up with its labels: the label events carry the Factory's own identity. */
+  override async createIssue(title: string, body: string, labels: string[]) {
+    this.write();
+    const created = await super.createIssue(title, body, labels);
+    if (labels.includes('harness:managed')) this.managedFor(created.number).push({ id: this.nextReady++, event: 'labeled', actor: bot, createdAt: this.now.toISOString() });
+    return created;
   }
   private write() { if (this.failWrites > 0) { this.failWrites--; throw transport('GitHub'); } }
   /** How often the readable status comment of any task was created or edited. */
@@ -144,6 +157,14 @@ export class World {
       if (this.timelineDown) throw transport('GitHub timeline');
       return authorizeReadyLabel(await this.github.getIssue(number), this.github.readyFor(number), actor => this.github.canApprove(actor), this.cfg.manager.trustedActors, expected, rework);
     };
+    if (options.readyLabel) this.repo.managedApproval = async number => {
+      const managed = async (n: number, depth: number): Promise<ReadyApproval> => {
+        const task = await this.github.getIssue(n), origin = followupOrigin(task.body);
+        return authorizeManagedLabel(task, this.github.managedFor(n), actor => this.github.canApprove(actor), this.cfg.manager.trustedActors,
+          origin && depth < 3 ? () => managed(origin, depth + 1) : undefined);
+      };
+      return managed(number, 0);
+    };
     if (options.merging) { Object.assign(this.cfg.merge, { enabled: true, protection: 'factory', requiredChecks: ['test'], updateBranch: true }); this.cfg.autonomy.overrides.merge_pr = 'allow'; }
     if (options.coding || options.rework || options.merging) {
       this.cfg.execution.rework = !!options.rework;
@@ -185,7 +206,11 @@ export class World {
   }
 
   // People.
-  open(number: number, labels = ['harness:managed']) { this.github.state.issues.push(issue(number, labels)); this.log.push(`open #${number}`); }
+  open(number: number, labels = ['harness:managed'], actor = 'maintainer') {
+    this.github.state.issues.push(issue(number, labels));
+    if (labels.includes('harness:managed')) this.github.managedFor(number).push({ id: 500 + this.github.managedFor(number).length + number * 10, event: 'labeled', actor, createdAt: this.now.toISOString() });
+    this.log.push(`open #${number}`);
+  }
   /** The grant: an authorized person applies harness:ready (removing it first if it is already there). */
   grant(number: number, actor = 'maintainer') {
     const rest = this.issue(number).labels.filter(l => !lifecycleLabels.includes(l));

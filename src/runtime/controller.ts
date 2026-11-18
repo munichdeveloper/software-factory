@@ -22,6 +22,8 @@ export interface RuntimeRepository {
   retainedRunMs?: number;
   baseRef?: string; executorWorkflow?: string; issueNumbers?: number[]; allowedPaths?: string[];
   readyApproval?(issueNumber: number, expected?: ReadyApproval, rework?: ReadyApproval): Promise<ReadyApproval>;
+  /** The `managed-label` grant of a task (autonomy.startGrant); used instead of readyApproval where configured. */
+  managedApproval?(issueNumber: number): Promise<ReadyApproval>;
   validationPlan?(): Promise<ValidationPlan>;
   github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
   /** The executor workflow file at the current base, or null where it is missing. */
@@ -135,9 +137,16 @@ export class RuntimeController implements WorkerRuntimePort {
     return !snapshot.baseRef && !!this.repo.baseContains && await this.repo.baseContains(snapshot.baseSha);
   }
   get readyIsGrant() { return !!this.repo.readyApproval; }
-  /** The ready-label check, where this repository is registered with one and its configuration still asks for it. */
+  /** The grant check, where this repository is registered with the ready label as grant: per its configuration the ready label, the managed label or none. */
   private async readyGrant(config?: Config) {
-    if (!this.repo.readyApproval || (config ?? await this.repo.config()).autonomy.startGrant === 'none') return undefined;
+    if (!this.repo.readyApproval) return undefined;
+    const mode = (config ?? await this.repo.config()).autonomy.startGrant;
+    if (mode === 'none') return undefined;
+    if (mode === 'managed-label') {
+      const managed = this.repo.managedApproval;
+      if (!managed) throw new Error('MANAGED_GRANT_UNSUPPORTED');
+      return (issueNumber: number) => managed.call(this.repo, issueNumber);
+    }
     return this.repo.readyApproval.bind(this.repo);
   }
   async preflight(issueNumber: number, previousExecutionId?: string): Promise<void> {

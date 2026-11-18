@@ -116,6 +116,7 @@
           "type": "string",
           "enum": [
             "ready-label",
+            "managed-label",
             "none"
           ]
         }

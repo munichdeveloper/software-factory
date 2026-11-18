@@ -165,7 +165,10 @@ export async function main(args = process.argv.slice(2)) {
         } catch (error) { if (error && typeof error === 'object' && 'status' in error && error.status === 404) return null; throw error; }
       };
       const controller = new RuntimeController(repository, store, temporal);
-      if (item.approvalMode === 'ready-label') repository.readyApproval = async (number, expected, rework) => source.readyApproval(number, (await repository.config()).manager.trustedActors, expected, rework);
+      if (item.approvalMode === 'ready-label') {
+        repository.readyApproval = async (number, expected, rework) => source.readyApproval(number, (await repository.config()).manager.trustedActors, expected, rework);
+        repository.managedApproval = async number => source.managedApproval(number, (await repository.config()).manager.trustedActors);
+      }
       if (item.validateCoding) repository.validationPlan = async () => {
         try {
           const data = (await api.repos.getContent({ owner, repo, path: '.github/software-factory.validation.json', ref: await repository.baseSha() })).data;

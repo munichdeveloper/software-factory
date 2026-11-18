@@ -50,7 +50,7 @@ export class Manager {
         return event?.data.type === 'intent' ? [event.data.input.executionId] : [];
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
-      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant !== 'none';
+      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant === 'ready-label';
     }
     return snapshot;
   }

@@ -91,7 +91,10 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : 'Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
     // The label is there but was applied by an account that cannot grant, typically the Factory's own App (software-factory#109).
     if (rejection === 'READY_ACTOR_NOT_AUTHORIZED' && task.issue.labels.includes('harness:ready')) state.push('', 'The label `harness:ready` on this issue was applied by an account that cannot grant a run, for example the Factory\'s own App. It does not count as a grant.');
-    needs = rejection === 'READY_ACTOR_NOT_AUTHORIZED' && task.issue.labels.includes('harness:ready')
+    if (rejection === 'MANAGED_ACTOR_NOT_AUTHORIZED') state.push('', 'In this repository a person\'s `harness:managed` is the grant; this one was applied by an account that cannot grant a run.');
+    needs = rejection.startsWith('MANAGED_') && rejection !== 'MANAGED_GRANT_UNSUPPORTED'
+      ? 'A person with write access removes the label `harness:managed` and applies it again. Nothing else is missing; the run starts on the next reconciliation.'
+      : rejection === 'READY_ACTOR_NOT_AUTHORIZED' && task.issue.labels.includes('harness:ready')
       ? 'An authorized person removes the label `harness:ready` and applies it again. Nothing else is missing; the run starts on the next reconciliation.'
       : ready ? grant : rejection === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'
       ? 'Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards.'

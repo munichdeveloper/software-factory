@@ -110,7 +110,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     if (lastRefused) {
       const at = (events.find(e => e.data.type === 'result' && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
       const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 60000).toISOString();
-      const changed = (!!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config)) || (!!issue.readyAt && issue.readyAt > at);
+      const changed = (!!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config)) || (!!issue.readyAt && issue.readyAt > at) || (!!issue.managedAt && issue.managedAt > at);
       refusal = { code: lastRefused.rejected!, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
     }
     const criteria = acceptanceCriteria(issue.body);

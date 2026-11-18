@@ -65149,10 +65149,11 @@ var configSchema = external_exports.strictObject({
     overrides: external_exports.partialRecord(external_exports.enum(actionKinds), permissionSchema).default({}),
     /**
      * What admits a run in a repository the SF Manager registered with the ready label as grant. `ready-label`: only
-     * `harness:ready` applied by a person with write access. `none`: no grant; every managed, runnable task starts
+     * `harness:ready` applied by a person with write access. `managed-label`: `harness:managed` applied by a person
+     * with write access is the grant, and the Factory's own follow-ups inherit it. `none`: no grant; every managed, runnable task starts
      * within the autonomy policy and the execution limits.
      */
-    startGrant: external_exports.enum(["ready-label", "none"]).default("ready-label")
+    startGrant: external_exports.enum(["ready-label", "managed-label", "none"]).default("ready-label")
   }).prefault({}),
   execution: external_exports.strictObject({
     engine: external_exports.enum(["github-actions", "temporal"]).default("github-actions"),
@@ -69586,35 +69587,18 @@ async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, ex
   if (later.length && !consumed && !carried || !issue2.labels.includes("harness:ready") && !consumed && !carried) throw new Error("READY_APPROVAL_REVOKED");
   return proof;
 }
-
-// src/state/lifecycle.ts
-var managedLabel = "harness:managed";
-var lifecycleLabels = statuses.map((s) => `harness:${s}`);
-var priorityLabels = ["harness:priority-high", "harness:priority-normal", "harness:priority-low"];
-var allLabels = [managedLabel, ...lifecycleLabels, ...priorityLabels, "sf:automerge", "sf:blocked"];
-var transitions = {
-  backlog: ["ready", "running", "failed", "awaiting-pr", "blocked", "awaiting-approval", "done"],
-  ready: ["running", "failed", "blocked", "awaiting-approval", "awaiting-pr", "done", "backlog"],
-  running: ["awaiting-pr", "failed", "blocked", "awaiting-approval", "done"],
-  "awaiting-pr": ["running", "failed", "blocked", "done", "backlog", "ready", "awaiting-approval"],
-  "awaiting-approval": ["ready", "running", "blocked", "backlog", "done", "awaiting-pr", "failed"],
-  blocked: ["ready", "running", "backlog", "awaiting-approval", "failed", "done", "awaiting-pr"],
-  failed: ["running", "ready", "blocked", "awaiting-approval", "done", "awaiting-pr"],
-  done: ["backlog"]
-};
-var issueStatus = (issue2) => statuses.find((s) => issue2.labels.includes(`harness:${s}`));
-var canTransition = (from, to) => from === void 0 || from === to || transitions[from].includes(to);
-function withStatus(issue2, to) {
-  if (!canTransition(issueStatus(issue2), to)) throw new Error(`Invalid lifecycle transition ${issueStatus(issue2)} -> ${to}`);
-  return [...issue2.labels.filter((l) => !lifecycleLabels.includes(l)), `harness:${to}`];
-}
-function dependencies(body) {
-  const lines = body.match(/^Depends on:\s*.+$/gim) ?? [];
-  return [...new Set(lines.flatMap((line) => [...line.matchAll(/#(\d+)/g)].map((m) => Number(m[1]))))];
-}
-function acceptanceCriteria(body) {
-  const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien|Abnahmekriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
-  return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
+async function authorizeManagedLabel(issue2, events, canApprove, trustedActors, origin) {
+  if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("MANAGED_GRANT_REQUIRED");
+  const grant = [...events].sort((a, b) => a.id - b.id).filter((e) => e.event === "labeled").at(-1);
+  if (!grant) throw new Error("MANAGED_GRANT_REQUIRED");
+  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (parsed.success && await canApprove(parsed.data.actor)) {
+    if (untrustedEdit(issue2) || untrustedEdit(issue2, parsed.data.createdAt)) throw new Error("MANAGED_CONTENT_CHANGED");
+    return parsed.data;
+  }
+  if (!origin || !trustedActors.includes(grant.actor)) throw new Error("MANAGED_ACTOR_NOT_AUTHORIZED");
+  if (untrustedEdit(issue2)) throw new Error("MANAGED_CONTENT_CHANGED");
+  return origin();
 }
 
 // src/merge/contract.ts
@@ -69701,6 +69685,269 @@ function decodeEvent(comment, trustedActors) {
   } catch {
     return;
   }
+}
+
+// src/state/blocks.ts
+var lastBlockLabelEventId = (issue2) => issue2.blockedLabelEvents?.at(-1)?.id ?? 0;
+function currentAutomaticBlock(issue2, events, trustedActors) {
+  if (!issue2.labels.includes("harness:blocked")) return;
+  const changes = issue2.blockedLabelEvents ?? [];
+  const current = changes.at(-1);
+  if (!current || current.event !== "labeled" || !trustedActors.includes(current.actor)) return;
+  for (const event of [...events].reverse()) {
+    if (event.data.type !== "block_intent") continue;
+    const floor = event.data.afterLabelEventId;
+    const boundary = floor === 0 ? -1 : changes.findIndex((change) => change.id === floor);
+    if (floor !== 0 && boundary === -1) continue;
+    const applied = changes[boundary + 1];
+    if (applied?.id === current.id) return event.data;
+  }
+}
+
+// src/state/lifecycle.ts
+var managedLabel = "harness:managed";
+var lifecycleLabels = statuses.map((s) => `harness:${s}`);
+var priorityLabels = ["harness:priority-high", "harness:priority-normal", "harness:priority-low"];
+var allLabels = [managedLabel, ...lifecycleLabels, ...priorityLabels, "sf:automerge", "sf:blocked"];
+var transitions = {
+  backlog: ["ready", "running", "failed", "awaiting-pr", "blocked", "awaiting-approval", "done"],
+  ready: ["running", "failed", "blocked", "awaiting-approval", "awaiting-pr", "done", "backlog"],
+  running: ["awaiting-pr", "failed", "blocked", "awaiting-approval", "done"],
+  "awaiting-pr": ["running", "failed", "blocked", "done", "backlog", "ready", "awaiting-approval"],
+  "awaiting-approval": ["ready", "running", "blocked", "backlog", "done", "awaiting-pr", "failed"],
+  blocked: ["ready", "running", "backlog", "awaiting-approval", "failed", "done", "awaiting-pr"],
+  failed: ["running", "ready", "blocked", "awaiting-approval", "done", "awaiting-pr"],
+  done: ["backlog"]
+};
+var issueStatus = (issue2) => statuses.find((s) => issue2.labels.includes(`harness:${s}`));
+var canTransition = (from, to) => from === void 0 || from === to || transitions[from].includes(to);
+function withStatus(issue2, to) {
+  if (!canTransition(issueStatus(issue2), to)) throw new Error(`Invalid lifecycle transition ${issueStatus(issue2)} -> ${to}`);
+  return [...issue2.labels.filter((l) => !lifecycleLabels.includes(l)), `harness:${to}`];
+}
+function dependencies(body) {
+  const lines = body.match(/^Depends on:\s*.+$/gim) ?? [];
+  return [...new Set(lines.flatMap((line) => [...line.matchAll(/#(\d+)/g)].map((m) => Number(m[1]))))];
+}
+function acceptanceCriteria(body) {
+  const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien|Abnahmekriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
+  return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
+}
+
+// src/policies/engine.ts
+var defaults2 = {
+  advisory: { transition: "deny", close_issue: "deny", create_followup: "deny", prioritize: "deny", approve_task: "deny", start_worker: "deny", retry_worker: "deny", cancel_worker: "deny", expand_scope: "deny", merge_pr: "deny" },
+  supervised: { transition: "allow", close_issue: "allow", create_followup: "approval", prioritize: "allow", approve_task: "approval", start_worker: "approval", retry_worker: "approval", cancel_worker: "allow", expand_scope: "approval", merge_pr: "deny" },
+  autonomous: { transition: "allow", close_issue: "allow", create_followup: "allow", prioritize: "allow", approve_task: "allow", start_worker: "allow", retry_worker: "allow", cancel_worker: "allow", expand_scope: "deny", merge_pr: "deny" }
+};
+var policyVersion = (config2) => {
+  const { notifications: _notifications, merge: _merge, ...policy } = config2;
+  void _notifications;
+  void _merge;
+  return hash2(policy);
+};
+function permission(config2, kind) {
+  return config2.autonomy.overrides[kind] ?? defaults2[config2.autonomy.profile][kind];
+}
+function evaluate(action, ctx) {
+  const { config: config2, task, budget } = ctx;
+  const id = actionId(action, policyVersion(config2));
+  const decide = (outcome, reason) => ({ outcome, reason, actionId: id });
+  const deny = (reason) => decide("deny", reason);
+  if (!config2.factory.enabled) return deny("Harness globally disabled");
+  if (action.kind !== "transition" && action.status !== null || action.kind !== "prioritize" && action.priority !== null || action.kind !== "create_followup" && action.followup !== null || !["start_worker", "retry_worker"].includes(action.kind) && action.attempt !== null) return deny("Action contains fields belonging to a different operation");
+  if (config2.autonomy.profile === "advisory") return deny("Advisory profile prohibits repository changes");
+  if (action.kind === "merge_pr") return deny("Merge requires the dedicated PR workflow with a commit-bound AI review");
+  if (action.kind === "expand_scope") return deny("Standalone scope changes are unsupported; permission applies to follow-ups");
+  if (!task.issue.labels.includes("harness:managed")) return deny("Issue is not explicitly managed");
+  const edit = action.kind === "cancel_worker" ? void 0 : untrustedEdit(task.issue);
+  if (edit) return deny(untrustedEditReason(edit));
+  if (action.taskVersion !== task.version) return deny("Task changed since proposal or approval");
+  if (budget.actions >= config2.manager.maxActions) return deny("Maximum actions per run reached");
+  if (task.issue.state === "closed" && !(action.kind === "transition" && action.status === "done") && action.kind !== "cancel_worker") return deny("Issue is already closed");
+  if (action.kind === "transition") {
+    if (!action.status || !canTransition(task.status, action.status)) return deny("Invalid lifecycle transition");
+    if (ctx.source !== "reconcile" && (["running", "done", "failed", "awaiting-pr"].includes(action.status) || task.executions.some((e) => e.active))) return deny("Planner cannot assert execution or completion facts");
+    if (ctx.source === "reconcile" && action.status !== task.desiredStatus) return deny("Transition does not match reconstructed facts");
+    if (action.status === "ready" && task.blocked) return deny("Task has unresolved dependencies or missing acceptance criteria");
+    if (action.status === "ready" && ctx.readyIsGrant && !task.issue.labels.includes("harness:ready")) return deny("harness:ready is a person's grant in this repository; only an authorized person applies it");
+  }
+  if (action.kind === "close_issue" && (ctx.source !== "reconcile" || !task.hasClosingMerge || task.executions.some((e) => e.active))) return deny("Closing requires a verified native closing link to a merged PR and no active execution");
+  if (["start_worker", "retry_worker"].includes(action.kind)) {
+    if (!config2.workers.test.enabled && !(config2.workers.coding && config2.workers.coding.enabled)) return deny("All workers disabled");
+    if (task.blocked || task.issue.body.length > 2e4) return deny("Task is blocked or exceeds worker input limit");
+    if (task.executions.some((e) => e.active)) return deny("Task already has an active or uncertain execution");
+    const rework = action.kind === "retry_worker" && task.reworkable;
+    if (task.hasClosingMerge || task.hasOpenPR && !rework) return deny("Task already has implementation PRs");
+    if (budget.activeWorkers >= config2.execution.maxParallelWorkers) return deny("Maximum parallel workers reached");
+    if (task.refusal?.waiting) return deny(`Runtime refused the last start (${task.refusal.code}); waiting for a new grant, a policy or configuration change, or until ${task.refusal.until}`);
+    if (action.kind === "retry_worker") {
+      if (!task.latest?.result || !rework && !["failed", "cancelled"].includes(task.latest.result.status)) return deny("No failed execution to retry");
+      if (task.attemptsUsed > config2.execution.maxRetries) return deny("Maximum retries reached");
+      if (action.attempt !== task.nextAttempt) return deny("Retry proposal is not bound to the next concrete attempt");
+    } else {
+      if (task.latest) return deny("Current task version already executed; use retry for failures or revise the task");
+      if (action.attempt !== task.nextAttempt) return deny("Initial execution must use the next free attempt number");
+    }
+  }
+  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.orphaned || e.active && e.timedOut && (e.run || e.runtime))) return deny("No timed out or orphaned workflow to cancel");
+  if (action.kind === "create_followup") {
+    if (!action.followup) return deny("Follow-up details are required");
+    if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
+    if (!task.latest?.result || !["blocked", "success"].includes(task.latest.result.status)) return deny("Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself");
+    if (task.hasOpenPR) return deny("Task has an open pull request; follow-ups wait until it is merged or closed");
+    if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map((n) => `#${n}`).join(", ")}`);
+    if (action.followup.expandsScope) {
+      const scope = permission(config2, "expand_scope");
+      if (scope === "deny") return deny("Scope expansion forbidden");
+      if (scope === "approval" && !ctx.approved) return decide("approval", "Scope expansion needs approval for this action");
+    }
+  }
+  if (action.kind === "prioritize" && !action.priority) return deny("Priority is required");
+  if (action.kind === "approve_task" && (task.blocked || task.hasOpenPR || task.hasClosingMerge || task.latest?.result?.status === "success" || task.executions.some((e) => e.active))) return deny("Task cannot be made ready");
+  const rule = permission(config2, action.kind);
+  if (rule === "deny") return deny(`Policy forbids ${action.kind}`);
+  if (rule === "approval" && !ctx.approved) return decide("approval", "Maintainer approval required for this exact action and task version");
+  return decide("allow", ctx.approved ? "Concrete action approved by a repository maintainer" : "Permitted by configured autonomy policy");
+}
+
+// src/state/reconstruct.ts
+var admissionRejectedSummary = "Runtime admission rejected before start";
+var infrastructureFailureCode = "EXECUTOR_INFRASTRUCTURE_FAILURE";
+var infrastructureFailureSummary = "The coding run failed before the agent started";
+var freeInfrastructureFailures = 3;
+var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
+var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
+function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
+  return snapshot.issues.map((issue2) => {
+    const version2 = taskVersion(issue2);
+    const events = (snapshot.comments.get(issue2.number) ?? []).flatMap((c) => {
+      const event = decodeEvent(c, config2.manager.trustedActors);
+      return event ? [event] : [];
+    });
+    const executions = [];
+    for (const event of events) {
+      if (event.data.type !== "intent" || executions.some((e) => e.input.executionId === (event.data.type === "intent" ? event.data.input.executionId : ""))) continue;
+      const { input: input2, attempt, actionId: actionId2 } = event.data;
+      if (input2.issueNumber !== issue2.number) continue;
+      const matching = snapshot.runs.filter((r) => [`Factory worker ${input2.executionId}`, `Harness worker ${input2.executionId}`].includes(r.title));
+      const run = matching.find((r) => r.status !== "completed") ?? matching[0];
+      const runtime = snapshot.runtimeExecutions?.find((r) => r.executionId === input2.executionId);
+      const found = events.find((e) => e.data.type === "result" && e.data.result.executionId === input2.executionId && e.data.result.issueNumber === issue2.number);
+      let result = runtime?.result ?? (found?.data.type === "result" ? found.data.result : void 0);
+      if (!result && runtime && !["running"].includes(runtime.status)) result = {
+        contractVersion: "1.0",
+        executionId: input2.executionId,
+        issueNumber: issue2.number,
+        status: runtime.status === "cancelled" ? "cancelled" : "failed",
+        summary: "Temporal execution ended without a committed worker result",
+        artifacts: [],
+        error: runtime.status,
+        proposedActions: []
+      };
+      if (!result && run?.status === "completed") {
+        result = {
+          contractVersion: "1.0",
+          executionId: input2.executionId,
+          issueNumber: issue2.number,
+          status: run.conclusion === "cancelled" ? "cancelled" : "failed",
+          summary: "Workflow ended without a valid durable worker result",
+          artifacts: [run.url],
+          error: `Workflow conclusion: ${run.conclusion}`,
+          proposedActions: []
+        };
+      }
+      const elapsed = now.getTime() - new Date(runtime?.createdAt ?? run?.createdAt ?? event.at).getTime();
+      const active = runtime ? runtime.status === "running" : run ? run.status !== "completed" : !result;
+      const rejection = events.find((e) => e.data.type === "admission_rejected" && e.data.executionId === input2.executionId);
+      const rejected = result?.status === "cancelled" && !runtime && !run && result.summary.startsWith(admissionRejectedSummary) ? result.error ?? "UNKNOWN" : void 0;
+      executions.push({
+        input: input2,
+        attempt,
+        actionId: actionId2,
+        at: event.at,
+        run,
+        runtime,
+        result,
+        active,
+        ...rejected ? { rejected, ...rejection?.data.type === "admission_rejected" ? { rejectedPolicy: rejection.data.policyHash } : {} } : {},
+        orphaned: active && !!runtime && (issue2.state === "closed" || input2.taskVersion !== version2),
+        ambiguous: !runtime && !run && !result && elapsed > config2.execution.dispatchGraceMinutes * 6e4,
+        timedOut: runtime?.phase !== "awaiting-approval" && !!(run || runtime) && active && elapsed > input2.limits.timeoutMinutes * 6e4
+      });
+    }
+    const currentExecutions = executions.filter((e) => e.input.taskVersion === version2);
+    currentExecutions.sort((a, b) => a.attempt - b.attempt);
+    currentExecutions.filter((e) => !e.rejected && e.result?.status === "failed" && e.result.error === infrastructureFailureCode).slice(0, freeInfrastructureFailures).forEach((e) => {
+      e.infrastructure = true;
+    });
+    const real = currentExecutions.filter((e) => !e.rejected);
+    const latest = real.at(-1);
+    const attemptsUsed = real.filter((e) => !e.infrastructure).length;
+    const nextAttempt = (currentExecutions.at(-1)?.attempt ?? -1) + 1;
+    const refused = currentExecutions.filter((e) => e.rejected && (!latest || e.attempt > latest.attempt));
+    const lastRefused = refused.at(-1);
+    let refusal;
+    if (lastRefused) {
+      const at = (events.find((e) => e.data.type === "result" && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
+      const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 6e4).toISOString();
+      const changed = !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at || !!issue2.managedAt && issue2.managedAt > at;
+      refusal = { code: lastRefused.rejected, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
+    }
+    const criteria = acceptanceCriteria(issue2.body);
+    const deps = dependencies(issue2.body);
+    const unresolved = deps.filter((n) => snapshot.dependencyStates.get(n) !== true);
+    const automaticBlock = currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
+    const explicitBlock = issue2.labels.includes("harness:blocked") && !automaticBlock;
+    const semanticBlock = automaticBlock?.cause === "planner" && automaticBlock.taskVersion === version2;
+    const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map((n) => `#${n}`).join(", ")}` : !criteria.length ? "Missing Acceptance criteria section" : explicitBlock ? "Issue explicitly marked blocked; clear the blocked label to resume" : semanticBlock ? "Planner marked task blocked; revise the task or clear the blocked label" : void 0;
+    const automaticBlockCause = executions.some((e) => e.ambiguous) ? "dispatch" : unresolved.length ? "dependencies" : !criteria.length ? "specification" : semanticBlock ? "planner" : latest?.result?.status === "blocked" ? "worker" : void 0;
+    const linked = snapshot.prs.filter((p) => p.closingIssues.includes(issue2.number) || p.referencedIssues.includes(issue2.number));
+    const hasOpenPR = linked.some((p) => p.state === "open");
+    const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
+    const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
+    const failedValidation = latest?.runtime?.validation;
+    const requested = latest?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === latest.input.executionId ? [e.data.review] : []).at(-1) : void 0;
+    const repairable = latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" || !!requested;
+    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && repairable && attemptsUsed <= config2.execution.maxRetries;
+    const reworkReview = reworkable && latest?.result?.status === "success" ? requested : void 0;
+    let desiredStatus = issueStatus(issue2) ?? "backlog";
+    if (issue2.state === "closed") desiredStatus = "done";
+    else if (explicitBlock) desiredStatus = "blocked";
+    else if (issueStatus(issue2) === "done") desiredStatus = "backlog";
+    else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : executions.some((e) => e.runtime?.phase === "awaiting-approval") ? "awaiting-approval" : "running";
+    else if (hasClosingMerge) desiredStatus = "done";
+    else if (blockReason) desiredStatus = "blocked";
+    else if (reworkable) desiredStatus = "failed";
+    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed <= config2.execution.maxRetries) desiredStatus = "ready";
+    else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
+    else if (hasOpenPR) desiredStatus = "awaiting-pr";
+    else if (snapshot.readyIsGrant) {
+      if (["backlog", "ready", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = issue2.labels.includes("harness:ready") ? "ready" : "backlog";
+    } else if (["backlog", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = "ready";
+    const openFollowups = snapshot.issues.filter((i) => i.state === "open" && followupOrigin(i.body) === issue2.number).map((i) => i.number);
+    return {
+      issue: issue2,
+      version: version2,
+      status: issueStatus(issue2) ?? "backlog",
+      desiredStatus,
+      events,
+      executions,
+      latest,
+      attemptsUsed,
+      nextAttempt,
+      ...refusal ? { refusal } : {},
+      openFollowups,
+      blocked: !!blockReason,
+      blockReason,
+      automaticBlockCause: reworkable && automaticBlockCause === "worker" ? void 0 : automaticBlockCause,
+      hasOpenPR,
+      hasClosingMerge,
+      criteria,
+      reworkable,
+      ...reworkReview ? { reworkReview } : {}
+    };
+  });
 }
 
 // src/github/client.ts
@@ -69801,6 +70048,23 @@ var GitHubClient = class {
       return [{ id: e.id, event: e.event, actor: "actor" in e ? e.actor?.login ?? "" : "", createdAt: e.created_at }];
     });
     return authorizeReadyLabel(issue2, events, (actor) => this.canApprove(actor), trustedActors, expected, rework);
+  }
+  /** The `managed-label` grant: who applied `harness:managed`; Factory follow-ups inherit their origin's, at most three levels deep. */
+  async managedApproval(number4, trustedActors, depth = 0) {
+    const issue2 = await this.getIssue(number4);
+    const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number4, per_page: 100 });
+    const events = timeline.flatMap((e) => {
+      if (e.event !== "labeled" && e.event !== "unlabeled" || !("label" in e) || e.label?.name !== managedLabel || !("id" in e) || typeof e.id !== "number" || !("created_at" in e) || typeof e.created_at !== "string") return [];
+      return [{ id: e.id, event: e.event, actor: "actor" in e ? e.actor?.login ?? "" : "", createdAt: e.created_at }];
+    });
+    const origin = followupOrigin(issue2.body);
+    return authorizeManagedLabel(
+      issue2,
+      events,
+      (actor) => this.canApprove(actor),
+      trustedActors,
+      origin && origin !== number4 && depth < 3 ? () => this.managedApproval(origin, trustedActors, depth + 1) : void 0
+    );
   }
   async runs(workflow) {
     const rows = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...this.target, workflow_id: workflow, event: "workflow_dispatch", per_page: 100 });
@@ -70039,239 +70303,6 @@ var OpenAIPlanner = class {
     throw new PlanningError(`LLM planning failed after ${config2.llm.maxCalls} calls: ${last}`, planningCodeOf(last));
   }
 };
-
-// src/state/blocks.ts
-var lastBlockLabelEventId = (issue2) => issue2.blockedLabelEvents?.at(-1)?.id ?? 0;
-function currentAutomaticBlock(issue2, events, trustedActors) {
-  if (!issue2.labels.includes("harness:blocked")) return;
-  const changes = issue2.blockedLabelEvents ?? [];
-  const current = changes.at(-1);
-  if (!current || current.event !== "labeled" || !trustedActors.includes(current.actor)) return;
-  for (const event of [...events].reverse()) {
-    if (event.data.type !== "block_intent") continue;
-    const floor = event.data.afterLabelEventId;
-    const boundary = floor === 0 ? -1 : changes.findIndex((change) => change.id === floor);
-    if (floor !== 0 && boundary === -1) continue;
-    const applied = changes[boundary + 1];
-    if (applied?.id === current.id) return event.data;
-  }
-}
-
-// src/policies/engine.ts
-var defaults2 = {
-  advisory: { transition: "deny", close_issue: "deny", create_followup: "deny", prioritize: "deny", approve_task: "deny", start_worker: "deny", retry_worker: "deny", cancel_worker: "deny", expand_scope: "deny", merge_pr: "deny" },
-  supervised: { transition: "allow", close_issue: "allow", create_followup: "approval", prioritize: "allow", approve_task: "approval", start_worker: "approval", retry_worker: "approval", cancel_worker: "allow", expand_scope: "approval", merge_pr: "deny" },
-  autonomous: { transition: "allow", close_issue: "allow", create_followup: "allow", prioritize: "allow", approve_task: "allow", start_worker: "allow", retry_worker: "allow", cancel_worker: "allow", expand_scope: "deny", merge_pr: "deny" }
-};
-var policyVersion = (config2) => {
-  const { notifications: _notifications, merge: _merge, ...policy } = config2;
-  void _notifications;
-  void _merge;
-  return hash2(policy);
-};
-function permission(config2, kind) {
-  return config2.autonomy.overrides[kind] ?? defaults2[config2.autonomy.profile][kind];
-}
-function evaluate(action, ctx) {
-  const { config: config2, task, budget } = ctx;
-  const id = actionId(action, policyVersion(config2));
-  const decide = (outcome, reason) => ({ outcome, reason, actionId: id });
-  const deny = (reason) => decide("deny", reason);
-  if (!config2.factory.enabled) return deny("Harness globally disabled");
-  if (action.kind !== "transition" && action.status !== null || action.kind !== "prioritize" && action.priority !== null || action.kind !== "create_followup" && action.followup !== null || !["start_worker", "retry_worker"].includes(action.kind) && action.attempt !== null) return deny("Action contains fields belonging to a different operation");
-  if (config2.autonomy.profile === "advisory") return deny("Advisory profile prohibits repository changes");
-  if (action.kind === "merge_pr") return deny("Merge requires the dedicated PR workflow with a commit-bound AI review");
-  if (action.kind === "expand_scope") return deny("Standalone scope changes are unsupported; permission applies to follow-ups");
-  if (!task.issue.labels.includes("harness:managed")) return deny("Issue is not explicitly managed");
-  const edit = action.kind === "cancel_worker" ? void 0 : untrustedEdit(task.issue);
-  if (edit) return deny(untrustedEditReason(edit));
-  if (action.taskVersion !== task.version) return deny("Task changed since proposal or approval");
-  if (budget.actions >= config2.manager.maxActions) return deny("Maximum actions per run reached");
-  if (task.issue.state === "closed" && !(action.kind === "transition" && action.status === "done") && action.kind !== "cancel_worker") return deny("Issue is already closed");
-  if (action.kind === "transition") {
-    if (!action.status || !canTransition(task.status, action.status)) return deny("Invalid lifecycle transition");
-    if (ctx.source !== "reconcile" && (["running", "done", "failed", "awaiting-pr"].includes(action.status) || task.executions.some((e) => e.active))) return deny("Planner cannot assert execution or completion facts");
-    if (ctx.source === "reconcile" && action.status !== task.desiredStatus) return deny("Transition does not match reconstructed facts");
-    if (action.status === "ready" && task.blocked) return deny("Task has unresolved dependencies or missing acceptance criteria");
-    if (action.status === "ready" && ctx.readyIsGrant && !task.issue.labels.includes("harness:ready")) return deny("harness:ready is a person's grant in this repository; only an authorized person applies it");
-  }
-  if (action.kind === "close_issue" && (ctx.source !== "reconcile" || !task.hasClosingMerge || task.executions.some((e) => e.active))) return deny("Closing requires a verified native closing link to a merged PR and no active execution");
-  if (["start_worker", "retry_worker"].includes(action.kind)) {
-    if (!config2.workers.test.enabled && !(config2.workers.coding && config2.workers.coding.enabled)) return deny("All workers disabled");
-    if (task.blocked || task.issue.body.length > 2e4) return deny("Task is blocked or exceeds worker input limit");
-    if (task.executions.some((e) => e.active)) return deny("Task already has an active or uncertain execution");
-    const rework = action.kind === "retry_worker" && task.reworkable;
-    if (task.hasClosingMerge || task.hasOpenPR && !rework) return deny("Task already has implementation PRs");
-    if (budget.activeWorkers >= config2.execution.maxParallelWorkers) return deny("Maximum parallel workers reached");
-    if (task.refusal?.waiting) return deny(`Runtime refused the last start (${task.refusal.code}); waiting for a new grant, a policy or configuration change, or until ${task.refusal.until}`);
-    if (action.kind === "retry_worker") {
-      if (!task.latest?.result || !rework && !["failed", "cancelled"].includes(task.latest.result.status)) return deny("No failed execution to retry");
-      if (task.attemptsUsed > config2.execution.maxRetries) return deny("Maximum retries reached");
-      if (action.attempt !== task.nextAttempt) return deny("Retry proposal is not bound to the next concrete attempt");
-    } else {
-      if (task.latest) return deny("Current task version already executed; use retry for failures or revise the task");
-      if (action.attempt !== task.nextAttempt) return deny("Initial execution must use the next free attempt number");
-    }
-  }
-  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.orphaned || e.active && e.timedOut && (e.run || e.runtime))) return deny("No timed out or orphaned workflow to cancel");
-  if (action.kind === "create_followup") {
-    if (!action.followup) return deny("Follow-up details are required");
-    if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
-    if (!task.latest?.result || !["blocked", "success"].includes(task.latest.result.status)) return deny("Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself");
-    if (task.hasOpenPR) return deny("Task has an open pull request; follow-ups wait until it is merged or closed");
-    if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map((n) => `#${n}`).join(", ")}`);
-    if (action.followup.expandsScope) {
-      const scope = permission(config2, "expand_scope");
-      if (scope === "deny") return deny("Scope expansion forbidden");
-      if (scope === "approval" && !ctx.approved) return decide("approval", "Scope expansion needs approval for this action");
-    }
-  }
-  if (action.kind === "prioritize" && !action.priority) return deny("Priority is required");
-  if (action.kind === "approve_task" && (task.blocked || task.hasOpenPR || task.hasClosingMerge || task.latest?.result?.status === "success" || task.executions.some((e) => e.active))) return deny("Task cannot be made ready");
-  const rule = permission(config2, action.kind);
-  if (rule === "deny") return deny(`Policy forbids ${action.kind}`);
-  if (rule === "approval" && !ctx.approved) return decide("approval", "Maintainer approval required for this exact action and task version");
-  return decide("allow", ctx.approved ? "Concrete action approved by a repository maintainer" : "Permitted by configured autonomy policy");
-}
-
-// src/state/reconstruct.ts
-var admissionRejectedSummary = "Runtime admission rejected before start";
-var infrastructureFailureCode = "EXECUTOR_INFRASTRUCTURE_FAILURE";
-var infrastructureFailureSummary = "The coding run failed before the agent started";
-var freeInfrastructureFailures = 3;
-var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
-var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
-function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
-  return snapshot.issues.map((issue2) => {
-    const version2 = taskVersion(issue2);
-    const events = (snapshot.comments.get(issue2.number) ?? []).flatMap((c) => {
-      const event = decodeEvent(c, config2.manager.trustedActors);
-      return event ? [event] : [];
-    });
-    const executions = [];
-    for (const event of events) {
-      if (event.data.type !== "intent" || executions.some((e) => e.input.executionId === (event.data.type === "intent" ? event.data.input.executionId : ""))) continue;
-      const { input: input2, attempt, actionId: actionId2 } = event.data;
-      if (input2.issueNumber !== issue2.number) continue;
-      const matching = snapshot.runs.filter((r) => [`Factory worker ${input2.executionId}`, `Harness worker ${input2.executionId}`].includes(r.title));
-      const run = matching.find((r) => r.status !== "completed") ?? matching[0];
-      const runtime = snapshot.runtimeExecutions?.find((r) => r.executionId === input2.executionId);
-      const found = events.find((e) => e.data.type === "result" && e.data.result.executionId === input2.executionId && e.data.result.issueNumber === issue2.number);
-      let result = runtime?.result ?? (found?.data.type === "result" ? found.data.result : void 0);
-      if (!result && runtime && !["running"].includes(runtime.status)) result = {
-        contractVersion: "1.0",
-        executionId: input2.executionId,
-        issueNumber: issue2.number,
-        status: runtime.status === "cancelled" ? "cancelled" : "failed",
-        summary: "Temporal execution ended without a committed worker result",
-        artifacts: [],
-        error: runtime.status,
-        proposedActions: []
-      };
-      if (!result && run?.status === "completed") {
-        result = {
-          contractVersion: "1.0",
-          executionId: input2.executionId,
-          issueNumber: issue2.number,
-          status: run.conclusion === "cancelled" ? "cancelled" : "failed",
-          summary: "Workflow ended without a valid durable worker result",
-          artifacts: [run.url],
-          error: `Workflow conclusion: ${run.conclusion}`,
-          proposedActions: []
-        };
-      }
-      const elapsed = now.getTime() - new Date(runtime?.createdAt ?? run?.createdAt ?? event.at).getTime();
-      const active = runtime ? runtime.status === "running" : run ? run.status !== "completed" : !result;
-      const rejection = events.find((e) => e.data.type === "admission_rejected" && e.data.executionId === input2.executionId);
-      const rejected = result?.status === "cancelled" && !runtime && !run && result.summary.startsWith(admissionRejectedSummary) ? result.error ?? "UNKNOWN" : void 0;
-      executions.push({
-        input: input2,
-        attempt,
-        actionId: actionId2,
-        at: event.at,
-        run,
-        runtime,
-        result,
-        active,
-        ...rejected ? { rejected, ...rejection?.data.type === "admission_rejected" ? { rejectedPolicy: rejection.data.policyHash } : {} } : {},
-        orphaned: active && !!runtime && (issue2.state === "closed" || input2.taskVersion !== version2),
-        ambiguous: !runtime && !run && !result && elapsed > config2.execution.dispatchGraceMinutes * 6e4,
-        timedOut: runtime?.phase !== "awaiting-approval" && !!(run || runtime) && active && elapsed > input2.limits.timeoutMinutes * 6e4
-      });
-    }
-    const currentExecutions = executions.filter((e) => e.input.taskVersion === version2);
-    currentExecutions.sort((a, b) => a.attempt - b.attempt);
-    currentExecutions.filter((e) => !e.rejected && e.result?.status === "failed" && e.result.error === infrastructureFailureCode).slice(0, freeInfrastructureFailures).forEach((e) => {
-      e.infrastructure = true;
-    });
-    const real = currentExecutions.filter((e) => !e.rejected);
-    const latest = real.at(-1);
-    const attemptsUsed = real.filter((e) => !e.infrastructure).length;
-    const nextAttempt = (currentExecutions.at(-1)?.attempt ?? -1) + 1;
-    const refused = currentExecutions.filter((e) => e.rejected && (!latest || e.attempt > latest.attempt));
-    const lastRefused = refused.at(-1);
-    let refusal;
-    if (lastRefused) {
-      const at = (events.find((e) => e.data.type === "result" && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
-      const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 6e4).toISOString();
-      const changed = !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at;
-      refusal = { code: lastRefused.rejected, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
-    }
-    const criteria = acceptanceCriteria(issue2.body);
-    const deps = dependencies(issue2.body);
-    const unresolved = deps.filter((n) => snapshot.dependencyStates.get(n) !== true);
-    const automaticBlock = currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
-    const explicitBlock = issue2.labels.includes("harness:blocked") && !automaticBlock;
-    const semanticBlock = automaticBlock?.cause === "planner" && automaticBlock.taskVersion === version2;
-    const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map((n) => `#${n}`).join(", ")}` : !criteria.length ? "Missing Acceptance criteria section" : explicitBlock ? "Issue explicitly marked blocked; clear the blocked label to resume" : semanticBlock ? "Planner marked task blocked; revise the task or clear the blocked label" : void 0;
-    const automaticBlockCause = executions.some((e) => e.ambiguous) ? "dispatch" : unresolved.length ? "dependencies" : !criteria.length ? "specification" : semanticBlock ? "planner" : latest?.result?.status === "blocked" ? "worker" : void 0;
-    const linked = snapshot.prs.filter((p) => p.closingIssues.includes(issue2.number) || p.referencedIssues.includes(issue2.number));
-    const hasOpenPR = linked.some((p) => p.state === "open");
-    const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
-    const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
-    const failedValidation = latest?.runtime?.validation;
-    const requested = latest?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === latest.input.executionId ? [e.data.review] : []).at(-1) : void 0;
-    const repairable = latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" || !!requested;
-    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && repairable && attemptsUsed <= config2.execution.maxRetries;
-    const reworkReview = reworkable && latest?.result?.status === "success" ? requested : void 0;
-    let desiredStatus = issueStatus(issue2) ?? "backlog";
-    if (issue2.state === "closed") desiredStatus = "done";
-    else if (explicitBlock) desiredStatus = "blocked";
-    else if (issueStatus(issue2) === "done") desiredStatus = "backlog";
-    else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : executions.some((e) => e.runtime?.phase === "awaiting-approval") ? "awaiting-approval" : "running";
-    else if (hasClosingMerge) desiredStatus = "done";
-    else if (blockReason) desiredStatus = "blocked";
-    else if (reworkable) desiredStatus = "failed";
-    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed <= config2.execution.maxRetries) desiredStatus = "ready";
-    else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
-    else if (hasOpenPR) desiredStatus = "awaiting-pr";
-    else if (snapshot.readyIsGrant) {
-      if (["backlog", "ready", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = issue2.labels.includes("harness:ready") ? "ready" : "backlog";
-    } else if (["backlog", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = "ready";
-    const openFollowups = snapshot.issues.filter((i) => i.state === "open" && followupOrigin(i.body) === issue2.number).map((i) => i.number);
-    return {
-      issue: issue2,
-      version: version2,
-      status: issueStatus(issue2) ?? "backlog",
-      desiredStatus,
-      events,
-      executions,
-      latest,
-      attemptsUsed,
-      nextAttempt,
-      ...refusal ? { refusal } : {},
-      openFollowups,
-      blocked: !!blockReason,
-      blockReason,
-      automaticBlockCause: reworkable && automaticBlockCause === "worker" ? void 0 : automaticBlockCause,
-      hasOpenPR,
-      hasClosingMerge,
-      criteria,
-      reworkable,
-      ...reworkReview ? { reworkReview } : {}
-    };
-  });
-}
 
 // src/runtime/coding-context.ts
 var reworkMarker = (previousExecutionId) => `urn:sf-rework:${previousExecutionId}`;
@@ -70656,7 +70687,8 @@ function statusView(task, config2, context2) {
     stage = ready ? "awaiting-grant" : "refused";
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : "Ready to run. **Waiting only for the grant.**"] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
     if (rejection === "READY_ACTOR_NOT_AUTHORIZED" && task.issue.labels.includes("harness:ready")) state.push("", "The label `harness:ready` on this issue was applied by an account that cannot grant a run, for example the Factory's own App. It does not count as a grant.");
-    needs = rejection === "READY_ACTOR_NOT_AUTHORIZED" && task.issue.labels.includes("harness:ready") ? "An authorized person removes the label `harness:ready` and applies it again. Nothing else is missing; the run starts on the next reconciliation." : ready ? grant : rejection === "EXECUTOR_WRAPPER_RELEASE_MISMATCH" ? "Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards." : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
+    if (rejection === "MANAGED_ACTOR_NOT_AUTHORIZED") state.push("", "In this repository a person's `harness:managed` is the grant; this one was applied by an account that cannot grant a run.");
+    needs = rejection.startsWith("MANAGED_") && rejection !== "MANAGED_GRANT_UNSUPPORTED" ? "A person with write access removes the label `harness:managed` and applies it again. Nothing else is missing; the run starts on the next reconciliation." : rejection === "READY_ACTOR_NOT_AUTHORIZED" && task.issue.labels.includes("harness:ready") ? "An authorized person removes the label `harness:ready` and applies it again. Nothing else is missing; the run starts on the next reconciliation." : ready ? grant : rejection === "EXECUTOR_WRAPPER_RELEASE_MISMATCH" ? "Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards." : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
     if (task.refusal?.waiting) state.push("", `The next start waits for a new grant, a changed policy or configuration, or at the latest until ${task.refusal.until}.`);
   } else if (result?.status === "success" && task.reworkReview) {
     stage = "retry";
@@ -70761,7 +70793,7 @@ var Manager = class {
         return event?.data.type === "intent" ? [event.data.input.executionId] : [];
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
-      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant !== "none";
+      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant === "ready-label";
     }
     return snapshot;
   }
