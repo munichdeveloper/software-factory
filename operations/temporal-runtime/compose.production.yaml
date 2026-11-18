@@ -72,6 +72,9 @@ services:
       # Besides loopback the broker listens only on its address in runtime-api (this alias exists only there), so
       # the SF Manager's own Compose project reaches http://runtime-broker:8095 and the Temporal network does not.
       FACTORY_RUNTIME_LISTEN_ALIAS: factory-runtime-api
+      # 2026-11-18: one pass over all repositories costs ~450 GitHub requests; every 180 s used up the App installation's
+      # 5000 requests per hour (all repositories GITHUB_HTTP_403). Back to 180 once the reads are cached.
+      FACTORY_RECONCILE_INTERVAL_SECONDS: '360'
       # Self-hosted runner fallback (software-factory#110, docs/self-hosted-runners.md). Needs the GitHub App permissions
       # Administration and Variables write (granted 2026-11-17).
       FACTORY_RUNNER_FALLBACK: 'on'
