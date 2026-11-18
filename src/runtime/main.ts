@@ -19,6 +19,7 @@ import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract
 import { RuntimeStore, type Registration } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { startReconcileSchedule } from './schedule.js';
+import { QueueBoard } from './queue.js';
 import { SanityMonitor } from './sanity.js';
 import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
 import { CreditAlerts } from './credit-alerts.js';
@@ -235,18 +236,20 @@ export async function main(args = process.argv.slice(2)) {
     };
     const notifications = process.env.SLACK_BOT_TOKEN ? new SlackSink(process.env.SLACK_BOT_TOKEN) : undefined;
     const monitor = new SanityMonitor(store, undefined, process.env.SLACK_BOT_TOKEN ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined);
-    const serverOptions = { monitor, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
-      ...(notifications ? { notifications } : {}) };
+    // The broker reconciles its repositories itself; 0 leaves it to external callers (the SF Manager) as before.
+    // 180 s like the Manager did: one pass costs about 150 GitHub requests, once a minute already exceeds an App
+    // installation's 5000 requests per hour.
+    const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '180');
+    // The job queue view for software-factory-monitor; FACTORY_MONITOR_TOKEN opens it read-only (unset: manager token only).
+    const queue = new QueueBoard(undefined, interval || null);
+    const serverOptions = { monitor, queue, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
+      monitorToken: process.env.FACTORY_MONITOR_TOKEN ?? '', ...(notifications ? { notifications } : {}) };
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     const addresses = await listenAddresses(process.env.FACTORY_RUNTIME_LISTEN_ALIAS);
     // One server per address; they share the options, so a registration through either is served by both.
     const servers = addresses.map(() => runtimeServer(serverOptions));
     await Promise.all(servers.map((server, i) => new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, addresses[i], resolve); })));
-    // The broker reconciles its repositories itself; 0 leaves it to external callers (the SF Manager) as before.
-    // 180 s like the Manager did: one pass costs about 150 GitHub requests, once a minute already exceeds an App
-    // installation's 5000 requests per hour.
-    const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '180');
-    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
+    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, queue, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
     // Off unless the deployment turns it on: the App needs Administration and Variables write for it.
     const stopRunners = process.env.FACTORY_RUNNER_FALLBACK === 'on' ? (() => {
       const channel = process.env.FACTORY_RUNNER_ALERT_CHANNEL, slack = process.env.SLACK_BOT_TOKEN && channel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;

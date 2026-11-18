@@ -70586,49 +70586,65 @@ function statusView(task, config2, context2) {
   const result = task.latest?.result;
   const links = (result?.artifacts ?? []).filter((a) => /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/.test(a));
   const grant = "An authorized person applies the label `harness:ready`. Nothing else is missing; the run starts on the next reconciliation.";
-  let state, needs = "Nothing.", awaitsGrant = false;
+  let state, needs = "Nothing.", awaitsGrant = false, stage = "queued";
   const rejection = context2.rejection ?? (task.refusal?.waiting ? task.refusal.code : void 0);
-  if (task.issue.state === "closed") state = ["The task is closed."];
-  else if (task.executions.some((e) => e.ambiguous)) state = ["A start was sent and its outcome is not known yet. The Factory keeps resolving it and starts nothing else for this task meanwhile."];
-  else if (waiting) {
+  if (task.issue.state === "closed") {
+    state = ["The task is closed."];
+    stage = "closed";
+  } else if (task.executions.some((e) => e.ambiguous)) {
+    stage = "starting";
+    state = ["A start was sent and its outcome is not known yet. The Factory keeps resolving it and starts nothing else for this task meanwhile."];
+  } else if (waiting) {
+    stage = "awaiting-approval";
     state = ["A run is waiting at the approval gate."];
     needs = "Approve or cancel the run in the SF Manager.";
-  } else if (running) state = ["A worker is running."];
-  else if (task.blockReason && !(result?.status === "blocked" && task.automaticBlockCause === "worker")) {
+  } else if (running) {
+    state = ["A worker is running."];
+    stage = "running";
+  } else if (task.blockReason && !(result?.status === "blocked" && task.automaticBlockCause === "worker")) {
     state = [`**Blocked: ${task.blockReason}.**`];
+    stage = "blocked";
     needs = task.blockReason.startsWith("Unresolved dependencies") ? "Close the issues this task depends on, or remove them from its `Depends on:` line." : task.blockReason.startsWith("Missing Acceptance") ? "Add a section `## Acceptance criteria` with at least one list item to the task text." : "Remove the label `harness:blocked` when the task may continue.";
   } else if (rejection) {
     const ready = rejection.startsWith("READY_");
     const previous = result && ["failed", "cancelled"].includes(result.status) ? `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}). ` : "";
     awaitsGrant = ready;
+    stage = ready ? "awaiting-grant" : "refused";
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : "Ready to run. **Waiting only for the grant.**"] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
     needs = ready ? grant : rejection === "EXECUTOR_WRAPPER_RELEASE_MISMATCH" ? "Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards." : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
     if (task.refusal?.waiting) state.push("", `The next start waits for a new grant, a changed policy or configuration, or at the latest until ${task.refusal.until}.`);
   } else if (result?.status === "success") {
+    stage = "awaiting-pr";
     state = ["Implemented and independently validated."];
     needs = "Review and merge the pull request. The Factory does not merge on its own in this installation.";
   } else if (result?.status === "blocked") {
     ({ state, needs } = blocked(task, context2.repository, context2.readyIsGrant, config2));
+    stage = "blocked";
     if (task.reworkable) {
+      stage = "retry";
       state.push("", `Attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}. A further attempt starts on its own; it continues these changes and receives the failed checks and their output.`);
       needs = "Nothing; the Factory reworks the failed checks on its own.";
     }
   } else if (result?.status === "needs_approval") {
+    stage = "awaiting-approval";
     state = ["The last run asks for an approval before it continues."];
     needs = `Read the worker's request: ${quoted(result.summary)}`;
   } else if (result) {
     const left = task.attemptsUsed <= config2.execution.maxRetries, code = result.error && /^[A-Z_]{1,60}$/.test(result.error) ? ` (\`${result.error}\`)` : "";
     state = [task.latest.infrastructure ? `The last run failed before the agent started${code}, while setting up the runner or workspace. Nothing of the task ran, so this costs no attempt (${task.attemptsUsed} of ${config2.execution.maxRetries + 1} used).` : `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"}${code} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}).`];
     needs = left ? "Nothing; the Factory retries on its own." : "The retry limit is reached. Revise the task text to start over.";
+    stage = left ? "retry" : "failed";
   } else if (task.hasOpenPR) {
+    stage = "awaiting-pr";
     state = ["A pull request for this task is open."];
     needs = "Review and merge the pull request.";
   } else if (context2.readyIsGrant && !task.issue.labels.includes("harness:ready")) {
     state = ["Ready to run. **Waiting only for the grant.**"];
     needs = grant;
     awaitsGrant = true;
+    stage = "awaiting-grant";
   } else state = [context2.queued ? "Queued: all worker slots are in use. It starts when one is free." : "Queued; starts on the next reconciliation."];
-  return { awaitsGrant, body: [
+  return { awaitsGrant, stage, body: [
     statusMarker,
     `**Software Factory** \xB7 \`${task.desiredStatus}\``,
     "",
@@ -70673,6 +70689,15 @@ var Manager = class {
   /** The repository state the last run reconciled, for work that follows it (the broker's merge pass). */
   get lastSnapshot() {
     return this.observed;
+  }
+  /** The state after the last run acted, as its status comments describe it; the observed state where it took no second look. */
+  settled;
+  get settledSnapshot() {
+    return this.settled ?? this.observed;
+  }
+  /** Definite admission refusals of the last run, by issue: their codes. */
+  get lastRejections() {
+    return new Map(this.rejections.map((r) => [r.issueNumber, r.code]));
   }
   async snapshot() {
     const snapshot = await this.github.snapshot(this.config.execution.engine === "temporal" ? null : this.config.manager.workflow);
@@ -70785,6 +70810,7 @@ var Manager = class {
     } catch {
       return;
     }
+    this.settled = snapshot;
     try {
       for (const task of reconstruct(snapshot, this.config, this.now())) {
         const existing = (snapshot.comments.get(task.issue.number) ?? []).filter((c) => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
@@ -70950,6 +70976,7 @@ ${marker2}`;
     const started = this.now();
     this.rejections = [];
     this.grantWaits = [];
+    this.settled = void 0;
     const report = {
       correlationId: this.options.correlationId,
       startedAt: started.toISOString(),
