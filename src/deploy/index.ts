@@ -90,6 +90,12 @@ export function parseDeployEnvironment(text: string): DeployEnvironment {
   return { values, empty };
 }
 
+/** Names deploy.secrets declares that the wrapper's deploy-env neither passed nor left empty: the wrapper is out of date. */
+export function missingDeploySecrets(secrets: Record<string, string>, environment: DeployEnvironment): string[] {
+  const passed = new Set([...environment.values.map(([name]) => name), ...environment.empty]);
+  return Object.keys(secrets).filter(name => !passed.has(name)).sort();
+}
+
 /** Env file content for Docker Compose; single-quoted values are taken literally. */
 export function renderDeployEnvironment(environment: DeployEnvironment): string {
   return environment.values.map(([name, value]) => `${name}='${value}'\n`).join('');

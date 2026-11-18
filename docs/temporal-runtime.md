@@ -20,6 +20,23 @@ Build with Node 22.12+ or Node 24 and `npm ci && npm run build`. Build the pinne
 
 The broker `npm run runtime:serve -- --file REGISTRY.json` reads `TEMPORAL_ADDRESS`, `FACTORY_RUNTIME_DATABASE_URL`, `FACTORY_MANAGER_TOKEN` and `FACTORY_WORKER_TOKEN`. Manager/worker tokens must be distinct and at least 32 characters. It binds loopback port 8095 by default; `FACTORY_RUNTIME_LISTEN_ALIAS` names a network alias the broker resolves to its own address and listens on as well (production: `factory-runtime-api` on the internal `sf-runtime-api` network, which the SF Manager's own Compose project joins). It never listens on `0.0.0.0`, and an alias that does not resolve fails the start. The broker reconciles every bound repository itself every `FACTORY_RECONCILE_INTERVAL_SECONDS` (default 180, `0` turns it off; one pass costs about 150 GitHub requests, so once a minute would exceed an App installation's hourly quota): Factory runs no longer depend on the SF Manager being up. Passes never overlap, and a reconcile call that arrives while a pass runs is answered with `BUSY`. Use protected transport when exposing it beyond loopback; do not publish Temporal/PostgreSQL or grant workers Docker access.
 
+### Job queue view (`GET /v1/queue`)
+
+After every reconciliation the broker keeps, in memory, the queue of each bound repository: every open managed task
+with its stage (`starting`, `running`, `awaiting-approval`, `retry`, `queued`, `awaiting-grant`, `refused`, `blocked`,
+`awaiting-pr`, `failed`), the active run, attempts, priority, `Depends on:` issues, pull requests, the fixed reason code
+where one applies, and the repository's worker slots. The stage is the same fact the task's status comment states
+(`statusView` in `src/manager/status.ts`). The view is built from the state the reconciliation already read, so it costs
+no GitHub request. A failed reconciliation keeps the last view and adds its fixed reason code; after a broker restart a
+repository shows up again after its next pass.
+
+`GET /v1/queue` returns the view of all repositories. It accepts `FACTORY_MONITOR_TOKEN` (read-only, at least 32
+characters and distinct from the manager and worker tokens; it opens nothing else) or the manager token. Unset, only the
+manager token opens it. The view contains issue titles, so it is for authenticated operators only: its consumer is
+[software-factory-monitor](https://github.com/munichdeveloper/software-factory-monitor), which joins `sf-runtime-api` like
+the SF Manager. In production the token comes from the GitHub secret `BROKER_MONITOR_TOKEN` of this repository's
+`production` environment through the deploy wrapper's `deploy-env`.
+
 Registry format: `{ "namespace": "software-factory-poc", "repositories": [{ "repositoryId": 123, "repository": "owner/repo", "githubTokenEnv": "SF_GH_TEST_REPO", "release": { "factorySha": "40hex", "harnessSha": "40hex", "workflowHash": "64hex", "deploymentName": "factory-runtime", "buildId": "BUILD", "taskQueue": "factory-runtime", "schemaVersion": 1 }, "retainedReleases": [], "requireHumanGate": true }] }`. The broker verifies the live numeric repository ID before serving. Tokens belong in private environment configuration, never the registry or workflow input.
 
 Repositories the SF Manager rolls out to Temporal need no entry here. The Manager registers them with `PUT /v1/repositories/{id}/registration` (`{ "repository": "owner/name", "githubInstallationId": 123 }`, manager token). The broker verifies the installation allowlist and the live repository ID, binds the repository at once and stores the registration in its database, so a restart binds it again. A registered repository is served with the PINNED worker release (`FACTORY_RELEASE_FILE`, required), the `harness:ready` label as grant without a manual gate, and independent validation. Repeating a registration is idempotent; another name for a registered ID is refused. A static entry for the same ID takes precedence. A registration that cannot be bound at startup is logged and skipped; the repositories of the static registry still start.

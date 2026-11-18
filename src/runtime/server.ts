@@ -11,6 +11,7 @@ import type { Registration, RuntimeStore } from './store.js';
 import type { RuntimeMerge } from './merge.js';
 import type { NotificationSink } from '../notifications/slack.js';
 import type { SanityMonitor } from './sanity.js';
+import type { QueueBoard } from './queue.js';
 
 export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController;
   /** A planner, or a choice made from the repository configuration that is current at each reconciliation. */
@@ -23,7 +24,11 @@ export interface ServerOptions { managerToken: string; workerToken: string; bind
   /** Slack delivery for repositories whose configuration enables notifications (the broker's own bot token). */
   notifications?: NotificationSink;
   /** The broker's sanity check, told about every completed reconciliation. */
-  monitor?: SanityMonitor }
+  monitor?: SanityMonitor;
+  /** The job queue view, told about every reconciliation; served at GET /v1/queue. */
+  queue?: QueueBoard;
+  /** Read-only credential for GET /v1/queue (software-factory-monitor); it grants nothing else. */
+  monitorToken?: string }
 const registrationSchema = z.strictObject({ repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/), githubInstallationId: z.number().int().positive().safe() });
 const secureEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 const actorSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}(?:\[bot\])?$/);
@@ -46,7 +51,7 @@ const send = (response: ServerResponse, code: number, body: unknown) => { respon
  * One reconciliation of a repository: picks up ready tasks, starts and advances runs, then the merge pass. Callers are the
  * broker's own schedule and, while it still sends them, the SF Manager. The actor of a Manager call never grants execution.
  */
-export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor'>) {
+export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor' | 'queue'>) {
   const config = await binding.repository.config();
   if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
   // Runs the previous release still serves end after their retention, so the planner can retry them on this release.
@@ -67,16 +72,26 @@ export async function reconcileBinding(binding: RuntimeBinding, options: Pick<Se
   if (executed.length || report.errors.length || report.blockers.length) console.log(JSON.stringify({ event: 'factory-reconcile',
     repositoryId: binding.repository.repositoryId, outcome: report.outcome, executed, errors: report.errors, blockers: report.blockers }));
   await options.monitor?.observed(binding.repository, config, manager.lastSnapshot, report);
+  options.queue?.observed(binding.repository, config, manager.settledSnapshot, report, manager.lastRejections);
   return report;
 }
 
 export function runtimeServer(options: ServerOptions) {
   if (options.managerToken.length < 32 || options.workerToken.length < 32 || secureEqual(options.managerToken, options.workerToken)) throw new Error('SEPARATE_RUNTIME_TOKENS_REQUIRED');
   if (new Set(options.bindings.map(b => b.repository.repositoryId)).size !== options.bindings.length) throw new Error('DUPLICATE_REPOSITORY_BINDING');
+  const monitorToken = options.monitorToken || undefined;
+  if (monitorToken && (monitorToken.length < 32 || secureEqual(monitorToken, options.managerToken) || secureEqual(monitorToken, options.workerToken))) throw new Error('SEPARATE_RUNTIME_TOKENS_REQUIRED');
   return createServer(async (request, response) => {
     try {
       const path = new URL(request.url ?? '/', 'http://localhost').pathname, token = request.headers.authorization?.replace(/^Bearer /, '') ?? '';
       if (path === '/health' && request.method === 'GET') { send(response, 200, { service: 'factory-runtime', alive: true }); return; }
+      if (path === '/v1/queue') {
+        // Read-only: the monitor token opens this view and nothing else; the manager token opens it as well.
+        if (!(monitorToken && secureEqual(token, monitorToken)) && !secureEqual(token, options.managerToken)) { send(response, 401, { code: 'UNAUTHORIZED' }); return; }
+        if (request.method !== 'GET') throw new Error('METHOD');
+        if (!options.queue) { send(response, 404, { code: 'NOT_FOUND' }); return; }
+        send(response, 200, options.queue.view(options.bindings.map(b => b.repository))); return;
+      }
       const worker = path.startsWith('/v1/worker/');
       if (!secureEqual(token, worker ? options.workerToken : options.managerToken)) { send(response, 401, { code: 'UNAUTHORIZED' }); return; }
       if (worker) {

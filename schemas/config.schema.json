@@ -831,6 +831,18 @@
         "githubDeployment": {
           "default": false,
           "type": "boolean"
+        },
+        "secrets": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,99}$"
+          }
         }
       },
       "additionalProperties": false

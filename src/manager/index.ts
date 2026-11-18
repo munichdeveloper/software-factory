@@ -36,6 +36,11 @@ export class Manager {
   private observed?: Snapshot;
   /** The repository state the last run reconciled, for work that follows it (the broker's merge pass). */
   get lastSnapshot(): Snapshot | undefined { return this.observed; }
+  /** The state after the last run acted, as its status comments describe it; the observed state where it took no second look. */
+  private settled?: Snapshot;
+  get settledSnapshot(): Snapshot | undefined { return this.settled ?? this.observed; }
+  /** Definite admission refusals of the last run, by issue: their codes. */
+  get lastRejections(): ReadonlyMap<number, string> { return new Map(this.rejections.map(r => [r.issueNumber, r.code])); }
   private async snapshot(): Promise<Snapshot> {
     const snapshot = await this.github.snapshot(this.config.execution.engine === 'temporal' ? null : this.config.manager.workflow);
     if (this.config.execution.engine === 'temporal') {
@@ -135,6 +140,7 @@ export class Manager {
     // A run that changed nothing saw the state the comments describe; only a run that acted needs a second look.
     const unchanged = this.observed && !report.decisions.some(d => d.executed) && !this.rejections.length;
     try { snapshot = unchanged ? this.observed! : await this.snapshot(); } catch { return; }
+    this.settled = snapshot;
     try {
       for (const task of reconstruct(snapshot, this.config, this.now())) {
         const existing = (snapshot.comments.get(task.issue.number) ?? []).filter(c => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
@@ -266,7 +272,7 @@ export class Manager {
   }
   async run(): Promise<RunReport> {
     const started = this.now();
-    this.rejections = []; this.grantWaits = [];
+    this.rejections = []; this.grantWaits = []; this.settled = undefined;
     const report: RunReport = { correlationId: this.options.correlationId, startedAt: started.toISOString(), durationMs: 0,
       outcome: 'success', tasks: 0, decisions: [], errors: [], blockers: [], nextSteps: [] };
     if (!this.config.factory.enabled) { report.outcome = 'disabled'; return report; }

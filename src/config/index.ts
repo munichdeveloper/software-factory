@@ -188,7 +188,13 @@ export const configSchema = z.strictObject({
     }).prefault({}),
     keepReleases: bounded(1, 20, 5),
     timeoutMinutes: bounded(5, 60, 30),
-    githubDeployment: z.boolean().default(false)
+    githubDeployment: z.boolean().default(false),
+    // Application secrets from the deploy environment's GitHub secrets: variable name -> secret name. The SF Manager
+    // writes them into the wrapper's deploy-env (NAME=${{ secrets.SECRET }}); the values never enter this file.
+    // The deployment's own credentials (DEPLOY_*) and GitHub's reserved names cannot be passed on.
+    secrets: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/),
+      z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,99}$/).refine(s => !/^(?:GITHUB_|DEPLOY_)/i.test(s), 'must not name a GITHUB_ or DEPLOY_ secret'))
+      .refine(s => Object.keys(s).length <= 30, 'at most 30 secrets').default({})
   }).superRefine((deploy, context) => {
     if (deploy.enabled && deploy.trigger === 'checks' && !deploy.workflows.length) {
       context.addIssue({ code: 'custom', path: ['workflows'], message: 'trigger checks requires at least one workflow name' });
