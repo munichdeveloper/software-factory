@@ -80,7 +80,29 @@ export function dependencyCycles(tasks: Task[]): number[][] {
 }
 
 interface Target { repositoryId: number; repository: string }
-interface History { stalled: Map<number, { status: string; passes: number }>; failures: number; lastFailure: string | null; errorPasses: number }
+interface History { stalled: Map<number, { status: string; passes: number }>; failures: number; lastFailure: string | null; errorPasses: number; cleanPasses: number }
+
+/**
+ * The fixed codes behind a reconciliation's errors, at most three: what keeps failing, without any external text.
+ * Each error line is built from a fixed template; anything unknown counts as OTHER.
+ */
+export function errorCodes(errors: string[]): string[] {
+  const codes = errors.map(e => {
+    if (e.startsWith('Merge: ')) return `MERGE_${e.match(/\((\d{3}|unavailable)\)/)?.[1]?.toUpperCase() ?? 'FAILED'}`;
+    const llm = e.match(/^LLM planning failed \(([A-Z][A-Z0-9_]{1,40})\)/);
+    if (llm) return llm[1]!;
+    if (e.startsWith('LLM planning failed')) return 'LLM_FAILED';
+    const action = e.match(/^Action ([a-z_]+) on #\d+ failed \(HTTP (\d{3}|unknown)/);
+    if (action) return `ACTION_${action[1]!.toUpperCase()}_HTTP_${action[2]!.toUpperCase()}`;
+    if (e.startsWith('Recovery of execution')) return `RECOVERY_${e.match(/\(([A-Z][A-Z0-9_]{1,40})\)/)?.[1] ?? 'FAILED'}`;
+    if (e.startsWith('Slack notification')) return 'SLACK_FAILED';
+    if (e.startsWith('Status comments')) return 'STATUS_COMMENTS_FAILED';
+    if (e.startsWith('Manager time budget')) return 'TIME_BUDGET';
+    if (e.startsWith('Rejected malformed') || e.startsWith('Proposal references')) return 'PLAN_REJECTED';
+    return 'OTHER';
+  });
+  return [...new Set(codes)].sort().slice(0, 3);
+}
 export interface SanityStore {
   /** Records the current findings of the given kinds; returns what opened and what was resolved since the last call. */
   syncFindings(repositoryId: number, findings: Finding[], kinds: readonly FindingKind[], now: Date): Promise<{ opened: Finding[]; resolved: Finding[] }>;
@@ -98,7 +120,7 @@ export class SanityMonitor {
   constructor(private store: SanityStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink) {}
   private state(repositoryId: number): History {
     let history = this.history.get(repositoryId);
-    if (!history) this.history.set(repositoryId, history = { stalled: new Map(), failures: 0, lastFailure: null, errorPasses: 0 });
+    if (!history) this.history.set(repositoryId, history = { stalled: new Map(), failures: 0, lastFailure: null, errorPasses: 0, cleanPasses: 0 });
     return history;
   }
   /** After a reconciliation that completed (possibly with errors). Never throws. */
@@ -122,8 +144,11 @@ export class SanityMonitor {
       history.stalled = stalled;
       history.failures = 0; history.lastFailure = null;
       history.errorPasses = report.errors.length ? history.errorPasses + 1 : 0;
-      if (history.errorPasses >= settings.stalledPasses) found.push(finding('reconcile_failing', null, `${history.errorPasses} reconciliations in a row reported errors`));
-      await this.record(target, found, findingKinds, now);
+      history.cleanPasses = report.errors.length ? 0 : history.cleanPasses + 1;
+      if (history.errorPasses >= settings.stalledPasses) {
+        found.push(finding('reconcile_failing', null, `${history.errorPasses} reconciliations in a row reported errors (${errorCodes(report.errors).join(', ')})`));
+      }
+      await this.record(target, found, this.decided(history, settings) ? findingKinds : findingKinds.filter(k => k !== 'reconcile_failing'), now);
     });
   }
   /** After a reconciliation that failed with a fixed code (BUSY and disabled repositories are not failures). Never throws. */
@@ -133,12 +158,20 @@ export class SanityMonitor {
       const settings = this.settings.get(repositoryId) ?? monitoringSettings({} as Config);
       if (!settings.enabled) return;
       const history = this.state(repositoryId);
-      history.failures++; history.lastFailure = code(reason) ?? 'OPERATION_FAILED';
-      const found = history.failures >= settings.stalledPasses
-        ? [finding('reconcile_failing', null, `${history.failures} reconciliations in a row failed (${history.lastFailure})`)] : [];
+      history.failures++; history.lastFailure = code(reason) ?? 'OPERATION_FAILED'; history.cleanPasses = 0;
       // Without a view of the repository only this finding can change; the others stay as last seen.
-      await this.record(target, found, ['reconcile_failing'], this.now());
+      // Below the threshold the pass decides nothing: an open finding is not resolved by a further failure.
+      if (history.failures < settings.stalledPasses) return;
+      await this.record(target, [finding('reconcile_failing', null, `${history.failures} reconciliations in a row failed (${history.lastFailure})`)], ['reconcile_failing'], this.now());
     });
+  }
+  /**
+   * Whether this pass opens or resolves `reconcile_failing`. It opens after `stalledPasses` passes with errors and resolves
+   * only after as many clean passes in a row: a pass without errors in between (for example one where no task needed
+   * planning) or a broker restart, which starts the counters over, must not report the problem as solved and new again.
+   */
+  private decided(history: History, settings: MonitoringSettings): boolean {
+    return history.errorPasses >= settings.stalledPasses || history.cleanPasses >= settings.stalledPasses;
   }
   private async record({ repositoryId, repository }: Target, found: Finding[], kinds: readonly FindingKind[], now: Date) {
     const unique = [...new Map(found.map(f => [f.key, f])).values()];

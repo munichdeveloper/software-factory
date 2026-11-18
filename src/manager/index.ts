@@ -1,6 +1,6 @@
 import type { Config } from '../config/index.js';
 import type { GitHubPort } from '../github/port.js';
-import type { Planner } from '../llm/provider.js';
+import { planningCode, type Planner } from '../llm/provider.js';
 import { actionSchema, planSchema, type Action, type Snapshot } from '../types.js';
 import { actionId, executionId, hash, taskVersion } from '../state/identity.js';
 import { decodeEvent, type HarnessEvent } from '../state/events.js';
@@ -290,7 +290,7 @@ export class Manager {
     const eligible = tasks.filter(t => t.issue.state === 'open' && !t.blocked && !t.hasClosingMerge && !t.executions.some(e => e.active));
     if (eligible.length && this.config.llm.maxCalls > 0) {
       try { entries.push(...planSchema.parse(await this.planner.plan(eligible, this.config)).actions.map(action => ({ action: ownFields(action), source: 'planner' as const }))); }
-      catch { report.errors.push('LLM planning failed; deterministic reconciliation remains available (no unvalidated actions executed)'); }
+      catch (error) { report.errors.push(`LLM planning failed (${planningCode(error)}); deterministic reconciliation remains available (no unvalidated actions executed)`); }
     }
     for (const t of tasks) {
       if (t.latest?.result) entries.push(...t.latest.result.proposedActions.map(action => ({ action, source: 'worker' as const })));

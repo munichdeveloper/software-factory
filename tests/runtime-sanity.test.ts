@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { dependencyCycles, inspect, SanityMonitor, type Finding, type FindingKind, type SanityStore } from '../src/runtime/sanity.js';
+import { dependencyCycles, errorCodes, inspect, SanityMonitor, type Finding, type FindingKind, type SanityStore } from '../src/runtime/sanity.js';
 import { monitoringSettings } from '../src/config/index.js';
 import type { Execution, Task } from '../src/state/reconstruct.js';
 import type { RunReport } from '../src/manager/report.js';
@@ -89,10 +89,39 @@ it('counts a status that never settles and failing reconciliations over passes, 
 
   for (let i = 0; i < 3; i++) await monitor.failed(repo, 'OPERATION_FAILED');
   expect([...store.open.values()].map(f => f.detail)).toEqual(['3 reconciliations in a row failed (OPERATION_FAILED)']);
-  await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report());
+  for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report());
   expect(store.open.size).toBe(0);
-  for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report(['LLM planning failed']));
+  for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report(['LLM planning failed (LLM_HTTP_429); deterministic reconciliation remains available']));
+  expect([...store.open.values()].map(f => f.detail)).toEqual(['3 reconciliations in a row reported errors (LLM_HTTP_429)']);
+});
+
+it('neither flaps on a single clean pass nor reports a failing reconciliation as solved after a broker restart', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  const alerts = { post: vi.fn(async () => {}) }, store = new MemoryFindings(), cfg = config();
+  cfg.monitoring = { stalledPasses: 3, channel: 'C0123456789' };
+  const fine = snapshot(['harness:managed', 'harness:backlog']), failing = report(['LLM planning failed (LLM_HTTP_429); deterministic reconciliation remains available']);
+  let monitor = new SanityMonitor(store, () => clock, alerts);
+  for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, fine, failing);
+  // One pass that did not need the planner, then errors again: still the same open finding, no further message.
+  await monitor.observed(repo, cfg, fine, report());
+  for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, fine, failing);
   expect([...store.open.keys()]).toEqual(['reconcile_failing:-']);
+  expect(alerts.post).toHaveBeenCalledTimes(1);
+  // A restart forgets the streak: neither a clean pass nor a failed one decides until a full streak was seen.
+  monitor = new SanityMonitor(store, () => clock, alerts);
+  await monitor.observed(repo, cfg, fine, report());
+  await monitor.failed(repo, 'OPERATION_FAILED');
+  for (let i = 0; i < 2; i++) await monitor.observed(repo, cfg, fine, report());
+  expect([...store.open.keys()]).toEqual(['reconcile_failing:-']);
+  await monitor.observed(repo, cfg, fine, report());
+  expect(store.open.size).toBe(0);
+  expect(alerts.post).toHaveBeenCalledTimes(2);
+});
+
+it('names the fixed codes behind reconciliation errors, never their text', () => {
+  expect(errorCodes(['LLM planning failed (LLM_HTTP_429); deterministic reconciliation remains available', 'Merge: PR #4: review/update/merge not confirmed (403); no unreviewed merge performed',
+    'Action start_worker on #3 failed (HTTP 403, READY_NOT_GRANTED); durable intents preserved for recovery', 'something with secret text'])).toEqual(['ACTION_START_WORKER_HTTP_403', 'LLM_HTTP_429', 'MERGE_403']);
+  expect(errorCodes(['Slack notification reconciliation failed; repository actions remain committed', 'LLM planning failed; old broker'])).toEqual(['LLM_FAILED', 'SLACK_FAILED']);
 });
 
 it('stays silent where a repository turns it off and never lets a store failure reach the reconciliation', async () => {
