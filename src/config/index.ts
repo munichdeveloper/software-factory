@@ -60,10 +60,11 @@ export const configSchema = z.strictObject({
     overrides: z.partialRecord(z.enum(actionKinds), permissionSchema).default({}),
     /**
      * What admits a run in a repository the SF Manager registered with the ready label as grant. `ready-label`: only
-     * `harness:ready` applied by a person with write access. `none`: no grant; every managed, runnable task starts
+     * `harness:ready` applied by a person with write access. `managed-label`: `harness:managed` applied by a person
+     * with write access is the grant, and the Factory's own follow-ups inherit it. `none`: no grant; every managed, runnable task starts
      * within the autonomy policy and the execution limits.
      */
-    startGrant: z.enum(['ready-label', 'none']).default('ready-label')
+    startGrant: z.enum(['ready-label', 'managed-label', 'none']).default('ready-label')
   }).prefault({}),
   execution: z.strictObject({
     engine: z.enum(['github-actions', 'temporal']).default('github-actions'),
