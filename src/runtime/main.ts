@@ -8,10 +8,11 @@ import { Pool } from 'pg';
 import { Connection, Client } from '@temporalio/client';
 import { bundleWorkflowCode } from '@temporalio/worker';
 import { Octokit } from '@octokit/rest';
-import { codingAgents, loadConfig } from '../config/index.js';
+import { codingAgents, loadConfig, type Config } from '../config/index.js';
 import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
-import { MockPlanner, OpenAIPlanner } from '../llm/provider.js';
+import { ClaudePlanner, FallbackPlanner, MockPlanner, OpenAIPlanner } from '../llm/provider.js';
+import { claudeModels, claudeStructured } from '../llm/claude.js';
 import { assertRetainedReleases } from './retention.js';
 import { hash } from '../state/identity.js';
 import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract.js';
@@ -37,8 +38,8 @@ import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
 import { assertCanaryConfig, canaryLabel, canaryRepository, runCanary } from './canary.js';
-import { OpenAIMergeReviewer } from '../merge/reviewer.js';
-import { OpenAIRiskAssessor } from '../merge/risk.js';
+import { ClaudeMergeReviewer, FallbackMergeReviewer, OpenAIMergeReviewer } from '../merge/reviewer.js';
+import { ClaudeRiskAssessor, FallbackRiskAssessor, OpenAIRiskAssessor } from '../merge/risk.js';
 
 const registrySchema = z.strictObject({
   namespace: z.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
@@ -123,6 +124,8 @@ export async function main(args = process.argv.slice(2)) {
   const connection = await Connection.connect({ address: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233', connectTimeout: '5 seconds' });
   const temporal = new Client({ connection, namespace: registry.namespace });
   // Used-up agent credit (workers.coding.agents) goes to this channel, at most three times per agent.
+  // The broker's own Anthropic key (deploy secret BROKER_ANTHROPIC_API_KEY): planner, merge review and risk ask Claude first.
+  const claude = process.env.ANTHROPIC_API_KEY ? claudeStructured(process.env.ANTHROPIC_API_KEY) : undefined, models = claudeModels(process.env);
   const creditChannel = process.env.FACTORY_CREDIT_ALERT_CHANNEL;
   const creditAlerts = process.env.SLACK_BOT_TOKEN && creditChannel ? new CreditAlerts(store, new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN), creditChannel) : undefined;
   try {
@@ -186,13 +189,19 @@ export async function main(args = process.argv.slice(2)) {
       await assertRetainedReleases(item.repositoryId, [item.release, ...item.retainedReleases], store, temporal);
       await repository.config(); // An unreadable or invalid configuration fails the start, not the first reconciliation.
       // Chosen per reconciliation: a configuration change in the repository applies without restarting the broker.
-      const mock = new MockPlanner(), openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
+      // Claude first, OpenAI second (as for the coding agents), when the broker has an Anthropic key.
+      const openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? ''), mock = new MockPlanner();
+      const planner = claude ? new FallbackPlanner(new ClaudePlanner(claude, models.planner), openai) : openai;
+      const reviewer = (config: Config) => { const plain = new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config);
+        return claude ? new FallbackMergeReviewer(new ClaudeMergeReviewer(claude, models.review, config), plain) : plain; };
+      const assessor = (config: Config) => { const plain = new OpenAIRiskAssessor(process.env.OPENAI_API_KEY ?? '', config);
+        return claude ? new FallbackRiskAssessor(new ClaudeRiskAssessor(claude, models.risk, config), plain) : plain; };
       // Only pull requests the Factory published for its tasks in an issue-scoped registry entry; closed ones while a merge's follow-up may be open.
       const merge = new RuntimeMerge(item.repositoryId, (config, snapshot) => new MergeManager(
         new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
-        config, new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config), `temporal-merge:${item.repositoryId}`, github,
-        { ownedOnly: !!item.issueNumbers, assessor: new OpenAIRiskAssessor(process.env.OPENAI_API_KEY ?? '', config) }).run(snapshot));
-      return { repository, controller, planner: config => config.llm.provider === 'mock' ? mock : openai, merge };
+        config, reviewer(config), `temporal-merge:${item.repositoryId}`, github,
+        { ownedOnly: !!item.issueNumbers, assessor: assessor(config) }).run(snapshot));
+      return { repository, controller, planner: config => config.llm.provider === 'mock' ? mock : planner, merge };
     };
     const bindings: RuntimeBinding[] = [];
     for (const item of registry.repositories) bindings.push(await bind(item));

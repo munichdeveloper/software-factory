@@ -141,6 +141,7 @@ The wrapper names them in the action's `deploy-env` input, one `NAME=value` per 
           mode: deploy
           deploy-env: |
             OPENAI_API_KEY=${{ secrets.BROKER_OPENAI_API_KEY }}
+            ANTHROPIC_API_KEY=${{ secrets.BROKER_ANTHROPIC_API_KEY }}
 ```
 
 Every deployment writes these values to `.sf-deploy.env` (mode 600) in the release
