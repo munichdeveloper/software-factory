@@ -110,6 +110,14 @@
               "approval"
             ]
           }
+        },
+        "startGrant": {
+          "default": "ready-label",
+          "type": "string",
+          "enum": [
+            "ready-label",
+            "none"
+          ]
         }
       },
       "additionalProperties": false

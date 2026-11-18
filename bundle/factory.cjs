@@ -65146,7 +65146,13 @@ var configSchema = external_exports.strictObject({
   }).prefault({}),
   autonomy: external_exports.strictObject({
     profile: external_exports.enum(["advisory", "supervised", "autonomous"]).default("supervised"),
-    overrides: external_exports.partialRecord(external_exports.enum(actionKinds), permissionSchema).default({})
+    overrides: external_exports.partialRecord(external_exports.enum(actionKinds), permissionSchema).default({}),
+    /**
+     * What admits a run in a repository the SF Manager registered with the ready label as grant. `ready-label`: only
+     * `harness:ready` applied by a person with write access. `none`: no grant; every managed, runnable task starts
+     * within the autonomy policy and the execution limits.
+     */
+    startGrant: external_exports.enum(["ready-label", "none"]).default("ready-label")
   }).prefault({}),
   execution: external_exports.strictObject({
     engine: external_exports.enum(["github-actions", "temporal"]).default("github-actions"),
@@ -70755,7 +70761,7 @@ var Manager = class {
         return event?.data.type === "intent" ? [event.data.input.executionId] : [];
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
-      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant;
+      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant !== "none";
     }
     return snapshot;
   }
