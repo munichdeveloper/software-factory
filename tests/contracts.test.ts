@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config/index.js';
 import { acceptanceCriteria, canTransition, dependencies } from '../src/state/lifecycle.js';
-import { compactContext, OpenAIPlanner, smallPullRequestRule } from '../src/llm/provider.js';
+import { compactContext, OpenAIPlanner, planningCode, smallPullRequestRule } from '../src/llm/provider.js';
 import { reconstruct } from '../src/state/reconstruct.js';
 import { workerInputSchema, workerResultSchema } from '../src/workers/contract.js';
 import { config, issue, MemoryGitHub, clock } from './helpers.js';
@@ -41,7 +41,10 @@ describe('configuration, protocol and OpenAI transport', () => {
   it('bounds retries and never propagates provider response bodies or secret headers', async () => {
     const cfg = config(); cfg.llm.maxCalls = 2; let calls = 0;
     const fakeFetch = (async () => { calls++; return new Response('private secret body', { status: 429 }); }) as typeof fetch;
-    await expect(new OpenAIPlanner('private-key', fakeFetch).plan([], cfg)).rejects.toThrow('after 2 calls: OpenAI HTTP 429');
+    const failure = new OpenAIPlanner('private-key', fakeFetch).plan([], cfg);
+    await expect(failure).rejects.toThrow('after 2 calls: OpenAI HTTP 429');
+    expect(planningCode(await failure.catch((e: unknown) => e))).toBe('LLM_HTTP_429');
+    expect(planningCode(await new OpenAIPlanner('', fakeFetch).plan([], cfg).catch((e: unknown) => e))).toBe('LLM_KEY_MISSING');
     expect(calls).toBe(2);
   });
   it('rejects malformed JSON, unknown actions and incomplete/refused responses', async () => {

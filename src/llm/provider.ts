@@ -53,10 +53,22 @@ export function compactContext(tasks: Task[], config: Config): string {
     ...(config.workers.coding && config.workers.coding.enabled && config.workers.coding.smallPullRequests ? { trustedWorkingRules: smallPullRequestRule } : {}),
     untrustedTasks: selected });
 }
+/** Fixed codes for why planning failed; the provider's own text never leaves the planner. */
+export class PlanningError extends Error {
+  constructor(message: string, readonly code: string) { super(message); }
+}
+const planningCodeOf = (reason: string) => {
+  const http = reason.match(/^OpenAI HTTP (\d{3})$/);
+  if (http) return `LLM_HTTP_${http[1]}`;
+  return ({ 'Invalid structured plan': 'LLM_INVALID_PLAN', 'Invalid JSON plan': 'LLM_INVALID_JSON', 'OpenAI response incomplete or refused': 'LLM_INCOMPLETE',
+    'OpenAI response too large': 'LLM_TOO_LARGE', 'No LLM calls permitted': 'LLM_NO_CALLS' } as Record<string, string>)[reason] ?? 'LLM_TRANSPORT';
+};
+/** The fixed code of a planning failure, for reports and logs. */
+export const planningCode = (error: unknown) => error instanceof PlanningError ? error.code : 'LLM_FAILED';
 export class OpenAIPlanner implements Planner {
   constructor(private key: string, private fetcher: typeof fetch = fetch) {}
   async plan(tasks: Task[], config: Config): Promise<Plan> {
-    if (!this.key) throw new Error('OPENAI_API_KEY is required for llm.provider=openai');
+    if (!this.key) throw new PlanningError('OPENAI_API_KEY is required for llm.provider=openai', 'LLM_KEY_MISSING');
     let last = 'No LLM calls permitted';
     for (let attempt = 0; attempt < config.llm.maxCalls; attempt++) {
       try {
@@ -81,6 +93,6 @@ export class OpenAIPlanner implements Planner {
         last = error instanceof z.ZodError ? 'Invalid structured plan' : error instanceof SyntaxError ? 'Invalid JSON plan' : error instanceof Error && /^OpenAI /.test(error.message) ? error.message : 'LLM transport failure';
       }
     }
-    throw new Error(`LLM planning failed after ${config.llm.maxCalls} calls: ${last}`);
+    throw new PlanningError(`LLM planning failed after ${config.llm.maxCalls} calls: ${last}`, planningCodeOf(last));
   }
 }
