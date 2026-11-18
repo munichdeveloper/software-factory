@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { scopedRuntimeGitHub } from '../src/runtime/github-app.js';
+import { appCommitIdentity, scopedRuntimeGitHub } from '../src/runtime/github-app.js';
+import { Octokit } from '@octokit/rest';
 
 describe('runtime GitHub App scope', () => {
   it('requests only one numeric repository and minimal permissions for every scoped client', async () => {
@@ -57,5 +58,23 @@ describe('runtime GitHub App scope', () => {
     expect(sent).toEqual([null, '"first"', '"first"']);
     await api.graphql('query { viewer { login } }');
     expect(sent).toHaveLength(3);
+  });
+});
+
+describe('commit identity of the App', () => {
+  it('resolves the bot user from the App slug and its user id, once, and again after a failure', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+    const calls: string[] = []; let fail = true;
+    const fetcher: typeof fetch = async input => {
+      const path = new URL(String(input)).pathname; calls.push(decodeURIComponent(path));
+      if (path === '/app') return fail ? (fail = false, Response.json({ message: 'down' }, { status: 502 })) : Response.json({ slug: 'sf-manager' });
+      return Response.json({ id: 354123657, login: 'sf-manager[bot]' });
+    };
+    const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher, retries: 0 }, log: { debug() {}, info() {}, warn() {}, error() {} } });
+    await expect(appCommitIdentity('1', privateKey, api, fetcher)).rejects.toBeTruthy();
+    const identity = await appCommitIdentity('1', privateKey, api, fetcher);
+    expect(identity).toEqual({ name: 'sf-manager[bot]', email: '354123657+sf-manager[bot]@users.noreply.github.com' });
+    expect(await appCommitIdentity('1', privateKey, api, fetcher)).toBe(identity);
+    expect(calls).toEqual(['/app', '/app', '/users/sf-manager[bot]']);
   });
 });
