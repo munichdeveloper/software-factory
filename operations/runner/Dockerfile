@@ -10,6 +10,13 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends jq zip unzip xz-utils ca-certificates curl \
   fontconfig fonts-dejavu-core fonts-liberation openssh-client iptables \
   && rm -rf /var/lib/apt/lists/*
+# Google Chrome, as on hosted Ubuntu runners: browser tests select it there (Playwright `channel: chrome`), and its
+# dependencies are the system libraries Playwright's own Chromium needs. Independent validation cannot install either,
+# its account has no sudo. Google publishes neither a fixed-version download nor a Linux build for arm64.
+RUN if [ "$(dpkg --print-architecture)" = amd64 ]; then \
+    curl -fsSL -o /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get update && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+    && rm -rf /tmp/chrome.deb /var/lib/apt/lists/*; fi
 # The runner image's docker CLI has no plugins; compose and buildx come from the same Docker release as the slot daemons.
 COPY --from=docker:29.9.3-dind@sha256:7bf70dcb85c822e3fa6f2d332143e474b99147b9d7b39102b0cfe8b04a7dd61b \
   /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/lib/docker/cli-plugins/
