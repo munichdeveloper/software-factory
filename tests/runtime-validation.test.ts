@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, basename, resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { codingExecutionSchema } from '../src/runtime/coding-contract.js';
-import { materializeCodingArtifact, runCodingValidation } from '../src/runtime/validation.js';
+import { materializeCodingArtifact, runCodingValidation, runnerDockerHost } from '../src/runtime/validation.js';
 import { bindValidation, defaultValidationPlan, validationPlanSchema } from '../src/runtime/validation-contract.js';
 import type { CodingArtifact } from '../src/workers/coding.js';
 import { reportFor } from './validation-fixtures.js';
@@ -51,6 +51,13 @@ it.skipIf(process.platform === 'win32')('rejects symlink destinations without wr
   const f = await fixture(), outside = await mkdtemp(join(resolve(tmpdir()), 'sf-validation-')); directories.push(outside);
   await symlink(outside, join(f.root, 'link')); f.git('add', '.'); f.git('commit', '-qm', 'link'); f.artifact.baseSha = f.git('rev-parse', 'HEAD'); f.request.baseSha = f.artifact.baseSha;
   f.artifact.changes = [{ path: 'link/file.txt', mode: '100644', content: 'eA==' }]; await expect(materializeCodingArtifact(f.root, f.artifact, f.request)).rejects.toThrow('NON_REGULAR');
+});
+it('hands the validation account only the loopback Docker daemon of a runner pool slot', () => {
+  expect(runnerDockerHost({ DOCKER_HOST: 'tcp://127.0.0.1:2375' })).toBe('tcp://127.0.0.1:2375');
+  // A hosted runner names no daemon: its validation account uses the default socket.
+  expect(runnerDockerHost({})).toBeUndefined();
+  for (const other of ['', 'tcp://10.0.0.5:2375', 'tcp://127.0.0.1:2375/extra', 'tcp://127.0.0.1:0', 'tcp://localhost:2375', 'unix:///var/run/docker.sock',
+    'ssh://deploy@host', 'tcp://127.0.0.1:2375 --tlsverify', 'tcp://127.0.0.1:2375\nOPENAI_API_KEY=x']) expect(runnerDockerHost({ DOCKER_HOST: other })).toBeUndefined();
 });
 it('rejects credential/control environment injection, production-like Compose names and forged validation evidence', async () => {
   for (const key of ['OPENAI_API_KEY', 'GITHUB_TOKEN', 'NODE_OPTIONS', 'PATH', 'DOCKER_HOST', 'COMPOSE_PROJECT_NAME']) expect(() => validationPlanSchema.parse({ environment: { [key]: 'untrusted' } })).toThrow();

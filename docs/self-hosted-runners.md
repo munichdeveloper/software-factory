@@ -45,6 +45,12 @@ rules. The runner containers therefore have the capabilities `SYS_ADMIN` and `NE
 accounts, what the job mounted into their homes and their egress rules; the rules live in the network namespace of
 the slot's Docker daemon, which outlives the job.
 
+Independent validation runs a project's checks as an account without `sudo` and with an empty environment. Two things
+a hosted runner provides are therefore part of the pool: the image carries Google Chrome (browser tests that select
+it, and the system libraries of Playwright's own Chromium), and the validation account is handed the runner's
+`DOCKER_HOST`, because a slot has no Docker socket and its daemon listens on loopback only. That daemon needs no
+credentials: every process of a job can reach it, with or without the variable.
+
 ### Hand-out
 
 The runners hold no credentials. The broker, which has a GitHub App token per repository, writes a just-in-time

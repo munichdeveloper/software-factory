@@ -5,6 +5,22 @@ on:
     branches: [main, 'feat/**']
 permissions: {}
 jobs:
+  runner-pool:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      # The deployment builds this image on the runtime host; a failing build would only show there.
+      - name: Build the runner pool image with what the Factory's jobs expect in it
+        run: |
+          docker build -f operations/runner/Dockerfile -t sf-runner:ci .
+          docker run --rm --network none --entrypoint bash sf-runner:ci -ec '
+            google-chrome --version; iptables --version; ip6tables --version; docker compose version; docker buildx version
+            jq --version; ssh -V; fc-match sans; test -r /etc/sf-runner-pool; bash -n /usr/local/bin/sf-runner'
   temporal-package:
     runs-on: ubuntu-latest
     timeout-minutes: 15
