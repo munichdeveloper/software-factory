@@ -36,4 +36,26 @@ describe('runtime GitHub App scope', () => {
     });
     await expect(api.repos.get({ owner: 'test', repo: 'repo-a' })).rejects.toThrow(); expect(requests).toBe(1);
   });
+  it('asks with the last ETag and serves an unchanged answer from the cache, as a copy', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+    const sent: (string | null)[] = [];
+    let body = { id: 42, name: 'first' };
+    const api = scopedRuntimeGitHub({ appId: '1', privateKey, installationId: 123, repositoryId: 4242 }, async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/access_tokens')) return Response.json({ token: 't', expires_at: new Date(Date.now() + 3600000).toISOString(), permissions: {}, repository_selection: 'selected' }, { status: 201 });
+      if (init?.method === 'POST') return Response.json({ data: { ok: true } });
+      const match = new Headers(init?.headers).get('if-none-match'); sent.push(match);
+      const etag = `"${body.name}"`;
+      return match === etag ? new Response(null, { status: 304, headers: { etag } }) : Response.json(body, { headers: { etag } });
+    });
+    const first = await api.repos.get({ owner: 'test', repo: 'cached' });
+    (first.data as { name: string }).name = 'changed by a caller';
+    const second = await api.repos.get({ owner: 'test', repo: 'cached' });
+    expect(second.data).toEqual({ id: 42, name: 'first' });
+    body = { id: 42, name: 'second' };
+    expect((await api.repos.get({ owner: 'test', repo: 'cached' })).data).toEqual({ id: 42, name: 'second' });
+    expect(sent).toEqual([null, '"first"', '"first"']);
+    await api.graphql('query { viewer { login } }');
+    expect(sent).toHaveLength(3);
+  });
 });
