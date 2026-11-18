@@ -22,6 +22,7 @@ import { resolveTarget } from './deploy/target.js';
 import { SshTransport } from './deploy/transport.js';
 import { RuntimeHttpClient } from './runtime/client.js';
 import { codingExecutionSchema } from './runtime/coding-contract.js';
+import { providerProbe, selectAgent } from './runtime/agent-selection.js';
 import { validationPlanSchema } from './runtime/validation-contract.js';
 import { hostedValidationCommand, materializeCodingArtifact, runCodingValidation } from './runtime/validation.js';
 import { mkdir, stat } from 'node:fs/promises';
@@ -37,9 +38,18 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   } });
   const command = positionals[0] ?? 'manager';
   if (command === 'validate-coding-execution') {
-    const request = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ''));
+    let request = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ''));
+    if (Buffer.byteLength(JSON.stringify(request)) > 60000 || !process.env.GITHUB_OUTPUT) throw new Error('Invalid coding executor request');
+    // workers.coding.agents: the first agent whose provider still has credit runs; the Harness gets a plain request.
+    if (request.fallbacks) {
+      const chosen = await selectAgent(request, providerProbe(process.env));
+      await writeFile(values.output ?? 'coding-agent.json', JSON.stringify(chosen.selection));
+      for (const skipped of chosen.selection.skipped) console.log(`Skipped ${skipped.worker} (${skipped.model}): ${skipped.reason}`);
+      if (!chosen.request) throw new Error('No coding agent can run: every provider reported used-up credit or refused the key');
+      console.log(`Selected ${chosen.request.worker} (${chosen.request.model})`);
+      request = chosen.request;
+    }
     const text = JSON.stringify(request);
-    if (Buffer.byteLength(text) > 60000 || !process.env.GITHUB_OUTPUT) throw new Error('Invalid coding executor request');
     const validation = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN || '{}'));
     await appendFile(process.env.GITHUB_OUTPUT, `request=${text}\nexecution-id=${request.executionId}\nbase-sha=${request.baseSha}\nvalidation=${JSON.stringify(validation)}\n`); return;
   }

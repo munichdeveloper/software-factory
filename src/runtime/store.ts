@@ -46,7 +46,21 @@ export class RuntimeStore implements SanityStore {
       CREATE TABLE IF NOT EXISTS factory_runtime_findings (
         repository_id bigint NOT NULL, key text NOT NULL, kind text NOT NULL, issue_number integer, detail text NOT NULL,
         first_seen timestamptz NOT NULL, last_seen timestamptz NOT NULL, resolved_at timestamptz,
-        PRIMARY KEY(repository_id,key));`);
+        PRIMARY KEY(repository_id,key));
+      CREATE TABLE IF NOT EXISTS factory_runtime_credit_alerts (
+        agent text NOT NULL, kind text NOT NULL, sent integer NOT NULL DEFAULT 0, last_execution text,
+        updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(agent,kind));`);
+  }
+  /** Claims the next credit alert of an agent (CreditAlerts); null at the limit or when this execution already had one. */
+  async claimCreditAlert(agent: string, kind: string, executionId: string, limit: number): Promise<number | null> {
+    await this.pool.query('INSERT INTO factory_runtime_credit_alerts(agent,kind) VALUES($1,$2) ON CONFLICT DO NOTHING', [agent, kind]);
+    const { rows } = await this.pool.query<{ sent: number }>(
+      `UPDATE factory_runtime_credit_alerts SET sent=sent+1, last_execution=$3, updated_at=now()
+        WHERE agent=$1 AND kind=$2 AND sent<$4 AND last_execution IS DISTINCT FROM $3 RETURNING sent`, [agent, kind, executionId, limit]);
+    return rows[0] ? rows[0].sent : null;
+  }
+  async resetCreditAlerts(agent: string, kind: string): Promise<void> {
+    await this.pool.query('UPDATE factory_runtime_credit_alerts SET sent=0, updated_at=now() WHERE agent=$1 AND kind=$2 AND sent>0', [agent, kind]);
   }
   /** Repositories the SF Manager registered with this runtime, in addition to the host's static registry. */
   async registrations(): Promise<Registration[]> {

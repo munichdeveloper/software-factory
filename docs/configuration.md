@@ -41,7 +41,7 @@ Generated JSON schemas share the executable Zod source.
 | `llm.maxCalls` | `1` | Total calls incl. retries, 0–3; zero disables semantic planning only |
 | `workers.test.enabled` | `true` | Bundled non-code-changing worker |
 | `workers.test.operation` | `sha256` | Digest, deterministic `fail`, or deterministic `blocked` |
-| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY` |
+| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY`. `agents` (instead of `agent`, Temporal engine only) is a priority list of up to three agents, each `{agent, model, reasoningEffort}`: see [Agent priority list](#agent-priority-list) |
 | `workers.review` | `false` | Must be false; not implemented |
 | `merge.risk.enabled` | `false` | Risk-based auto-merge, see [merging](merging.md#risk-based-auto-merge); requires `merge.enabled` |
 | `merge.risk.mode` | `enforce` | `enforce` gates merges by risk class; `observe` only classifies and shows |
@@ -104,3 +104,34 @@ autonomy:
 Priority labels are `harness:priority-high`, `harness:priority-normal`,
 `harness:priority-low`. Mock planning orders priority then issue number; OpenAI
 may recommend a new priority or a necessary follow-up under the same policy.
+
+## Agent priority list
+
+```yaml
+workers:
+  coding:
+    enabled: true
+    agents:
+      - agent: claude
+        model: claude-opus-5-5
+        reasoningEffort: high
+      - agent: codex
+        model: gpt-6.1-sol
+        reasoningEffort: high
+```
+
+Neither Anthropic nor OpenAI publishes the remaining prepaid credit of an API key. Before each coding run the
+executor's `validate` job therefore sends each agent's provider a minimal request (a few tokens, a fraction of a cent)
+with the repository's key and the agent's model, in list order, and runs the first agent that can be used:
+
+| Provider answer | Result |
+| --- | --- |
+| success, rate limit, overload, network error | the agent runs (a transient failure is the agent's to retry) |
+| Anthropic `credit balance is too low`, HTTP 402, or the spend cap `enforced_spend_limit_reached`; OpenAI `insufficient_quota` | used-up credit: the next agent is tried |
+| no key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` missing) or a refused key (401/403) | the next agent is tried |
+
+The choice is uploaded as the artifact `coding-agent-<executionId>`; the broker names the agent that ran in the commit
+and PR title. When no agent can run the run fails without spending an attempt. With `FACTORY_CREDIT_ALERT_CHANNEL`
+set, the broker posts a Slack message for each agent skipped for used-up credit, at most three times per agent; once
+that agent has run again, a later shortage is announced anew. Each repository needs the secret of every agent in its
+list. A single `agent` keeps the earlier behaviour without any check.
