@@ -7,6 +7,29 @@ chmod 0777 "$slot"
 rm -f "$slot/busy"
 # The workspace is a volume shared with the slot's Docker daemon; it starts out owned by root.
 chown runner:runner "$work"
+# The Factory's coding job creates its own isolated accounts (Harness); their homes hold agent state of the job. The
+# Harness also bind-mounts the job's browser cache into the account's home and limits the account's egress with owner
+# rules in OUTPUT. A mount keeps the home from being removed, and the rules live in the network namespace of the slot's
+# Docker daemon, which outlives the job: left behind, they would apply to whichever account gets the UID next.
+clear_job_accounts() {
+  local account target filter
+  local -a rule
+  for account in codex-worker claude-worker; do
+    if id "$account" >/dev/null 2>&1; then pkill -KILL -u "$account" 2>/dev/null; fi
+    while read -r target; do
+      umount "$target" 2>/dev/null || umount -l "$target" 2>/dev/null
+    done < <(awk -v home="/home/$account/" 'index($2, home) == 1 { print $2 }' /proc/self/mounts | sort -r)
+    if id "$account" >/dev/null 2>&1; then userdel -r -f "$account" >/dev/null 2>&1; fi
+  done
+  for filter in iptables ip6tables; do
+    while read -r -a rule; do
+      "$filter" -w "${rule[@]}" 2>/dev/null
+    done < <("$filter" -w -S OUTPUT 2>/dev/null | sed -n 's/^-A \(OUTPUT .*--uid-owner .*\)$/-D \1/p')
+    "$filter" -w -F HARNESS_CLAUDE 2>/dev/null; "$filter" -w -X HARNESS_CLAUDE 2>/dev/null
+  done
+}
+# A slot restarted in the middle of a job starts clean as well.
+clear_job_accounts
 while true; do
   if [[ ! -s "$slot/jitconfig" ]]; then sleep 5; continue; fi
   # 'busy' first, so the broker never sees the slot idle between taking the file and the end of the job.
@@ -37,10 +60,7 @@ while true; do
   # Nothing of one job reaches the next: workspace, tool caches and home directory files are reset.
   find "$work" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
   rm -rf /home/runner/.cache /home/runner/.npm /home/runner/.m2 /home/runner/.docker /tmp/* 2>/dev/null
-  # The Factory's coding job creates its own isolated accounts (Harness); their homes hold agent state of the job.
-  for account in codex-worker claude-worker; do
-    if id "$account" >/dev/null 2>&1; then pkill -KILL -u "$account" 2>/dev/null; userdel -r -f "$account" >/dev/null 2>&1; fi
-  done
+  clear_job_accounts
   if [[ -n "${DOCKER_HOST:-}" ]]; then
     docker system prune --all --volumes --force >/dev/null 2>&1 || true
   fi

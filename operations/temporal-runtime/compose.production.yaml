@@ -173,6 +173,12 @@ services:
       dockerfile: operations/runner/Dockerfile
     restart: unless-stopped
     user: root
+    # The Factory's coding job (Harness) bind-mounts its browser cache into the coding account's home and limits that
+    # account's egress with iptables, both with sudo as on a hosted runner. The mount needs SYS_ADMIN and no AppArmor
+    # profile (Docker's default profile denies mount), the rules need NET_ADMIN; without them the job failed at the
+    # mount (Backofficer #62, 2026-11-18). A job can already do more through its slot's privileged daemon.
+    cap_add: [SYS_ADMIN, NET_ADMIN]
+    security_opt: [apparmor:unconfined]
     network_mode: service:runner-docker-1
     environment: { DOCKER_HOST: 'tcp://127.0.0.1:2375' }
     # The workspace is shared with the daemon so bind mounts of job files resolve to the same paths.
