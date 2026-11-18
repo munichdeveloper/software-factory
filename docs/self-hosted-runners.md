@@ -36,7 +36,10 @@ runner container (`operations/runner/Dockerfile`, the official `actions-runner` 
 GitHub's queue until a slot is free.
 
 Runners are ephemeral just-in-time runners: each takes exactly one job and is then removed by GitHub. Between jobs
-the slot wipes its workspace, temporary files and everything in its Docker daemon.
+the slot wipes its workspace, temporary files and everything in its Docker daemon, running service containers
+included. A slot that restarts in the middle of a job (a runtime deploy recreates the runner but not its Docker
+daemon) does the same before it takes the next job; otherwise the killed job's service containers keep their ports
+and the next job's services fail with "port is already allocated".
 
 The Factory's coding job sets up its isolated coding account with `sudo` as on a hosted runner (Harness): it
 bind-mounts the job's browser cache into the account's home and limits the account's egress with `iptables` owner
