@@ -11,6 +11,6 @@ it('counts requests per route template and keeps every limit window GitHub repor
   usage.record('POST /graphql', {});
   expect(usage.flush()).toEqual({ event: 'github-requests', total: 4,
     routes: { 'GET /repos/{owner}/{repo}/issues/{issue_number}': 2, 'GET /repos/{owner}/{repo}/collaborators/{username}/permission': 1, 'POST /graphql': 1 },
-    failures: { 403: 1 }, limits: { 'core@16:06': { used: 571, remaining: 4429 }, 'core@15:34': { used: 5000, remaining: 0 } } });
+    notModified: 0, failures: { 403: 1 }, limits: { 'core@16:06': { used: 571, remaining: 4429 }, 'core@15:34': { used: 5000, remaining: 0 } } });
   expect(usage.flush()).toBeNull();
 });

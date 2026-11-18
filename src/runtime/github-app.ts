@@ -8,10 +8,11 @@ import { z } from 'zod';
  * reconciliation; without these numbers the consumer can only be guessed. One line per minute with requests.
  */
 export class GitHubUsage {
-  private routes = new Map<string, number>(); private failures = new Map<number, number>();
+  private routes = new Map<string, number>(); private failures = new Map<number, number>(); private notModified = 0;
   private limits = new Map<string, { used: number; remaining: number }>();
-  record(route: string, headers: Record<string, unknown>, failedStatus?: number) {
+  record(route: string, headers: Record<string, unknown>, failedStatus?: number, unchanged = false) {
     this.routes.set(route, (this.routes.get(route) ?? 0) + 1);
+    if (unchanged) this.notModified++;
     if (failedStatus !== undefined) this.failures.set(failedStatus, (this.failures.get(failedStatus) ?? 0) + 1);
     const used = Number(headers['x-ratelimit-used']), remaining = Number(headers['x-ratelimit-remaining']), reset = Number(headers['x-ratelimit-reset']);
     // GitHub reports more than one window for an installation; they differ by their reset time.
@@ -22,12 +23,33 @@ export class GitHubUsage {
     if (!this.routes.size) return null;
     const total = [...this.routes.values()].reduce((a, b) => a + b, 0);
     const summary = { event: 'github-requests', total, routes: Object.fromEntries([...this.routes].sort((a, b) => b[1] - a[1]).slice(0, 8)),
-      failures: Object.fromEntries(this.failures), limits: Object.fromEntries(this.limits) };
-    this.routes.clear(); this.failures.clear(); this.limits.clear();
+      notModified: this.notModified, failures: Object.fromEntries(this.failures), limits: Object.fromEntries(this.limits) };
+    this.routes.clear(); this.failures.clear(); this.limits.clear(); this.notModified = 0;
     return summary;
   }
 }
 const usage = new GitHubUsage();
+
+/**
+ * Conditional GET requests (software-factory, 2026-11-18): every reconciliation reads the same repository, configuration,
+ * issues, timelines and permissions again, and one pass over six repositories cost about 450 requests, so the broker
+ * alone used the installation's 5000 per hour. GitHub answers an unchanged resource with 304 when the request names its
+ * ETag, and a 304 does not count against the limit. The cache keeps the last answer per URL and repository.
+ */
+export class ConditionalCache {
+  private entries = new Map<string, { etag: string; response: unknown }>();
+  constructor(private maxEntries = 3000) {}
+  etag(key: string) { return this.entries.get(key)?.etag; }
+  /** A copy, so callers (Octokit's paginate normalises list responses in place) never change the cached answer. */
+  cached<T>(key: string): T | undefined { const entry = this.entries.get(key); return entry ? structuredClone(entry.response) as T : undefined; }
+  store(key: string, etag: unknown, response: unknown) {
+    if (typeof etag !== 'string' || !etag) return;
+    this.entries.delete(key);
+    if (this.entries.size >= this.maxEntries) this.entries.delete(this.entries.keys().next().value!);
+    this.entries.set(key, { etag, response: structuredClone(response) });
+  }
+}
+const conditional = new ConditionalCache();
 setInterval(() => { const summary = usage.flush(); if (summary) console.log(JSON.stringify(summary)); }, 60000).unref();
 /** The App key stays in the broker; EVERY installation token is limited to one numeric repository. */
 /** What the broker's coding, publishing and merge paths ask for. Other uses name their own, narrower permissions. */
@@ -46,9 +68,17 @@ export function scopedRuntimeGitHub(options: { appId: string; privateKey: string
     // Hooks share the original options object; inner hooks may ignore a replacement object.
     parameters.headers.authorization = `token ${authentication.token}`;
     const route = `${parameters.method} ${parameters.url}`;
-    try { const response = await request(parameters); usage.record(route, response.headers); return response; }
-    catch (error) {
+    const key = parameters.method === 'GET' ? `${options.repositoryId} ${scoped.request.endpoint(parameters).url}` : undefined;
+    const etag = key ? conditional.etag(key) : undefined;
+    if (etag) parameters.headers['if-none-match'] = etag;
+    try {
+      const response = await request(parameters); usage.record(route, response.headers);
+      if (key) conditional.store(key, response.headers.etag, response);
+      return response;
+    } catch (error) {
       const failed = error as { status?: unknown; response?: { headers?: Record<string, unknown> } };
+      const cached = key && failed.status === 304 ? conditional.cached<Awaited<ReturnType<typeof request>>>(key) : undefined;
+      if (cached) { usage.record(route, failed.response?.headers ?? {}, undefined, true); return cached; }
       usage.record(route, failed.response?.headers ?? {}, typeof failed.status === 'number' ? failed.status : 0);
       throw error;
     }
