@@ -55,7 +55,15 @@ authorization. Existing installations continue with notifications disabled.
   number and title, and links the Issue. Each run is announced once: a retry or
   rework of the same task is a new run and is announced again. Starts older than
   24 hours are never announced, so turning the event on later does not replay
-  history. Leaving `run_started` out of the configuration keeps it off and leaves
+  history. Since Factory 0.11.1 the message also says why the run started, taken
+  from the task's trusted journal only: the first run of the task, a further
+  attempt ("Versuch 2 von 3") after the previous run failed, ended without a
+  result, was blocked or refused by the runtime (with its fixed error code, never
+  worker text), a new start that costs no attempt (failure before the agent
+  started), or a new run for a changed task. A start announced more than ten
+  minutes after it happened (the first pass after turning the event on, or after
+  the broker was down) is marked "Nachmeldung" with how long ago it started.
+  Leaving `run_started` out of the configuration keeps it off and leaves
   the configuration hash, and with it running executions, unchanged.
 - `approval_required`: the risk gate of the AI-reviewed merge (`merge.risk` with
   `mode: enforce` and `aboveThreshold: approval`) found a PR's risk class above

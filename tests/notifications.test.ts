@@ -189,6 +189,38 @@ it('announces each confirmed run start once, naming the repository and the task'
   // A retry or rework of the same task is a new run and is announced again.
   await f.receipt('e'.repeat(32)); await f.deliver(); expect(f.send).toHaveBeenCalledTimes(2);
 });
+it('says why a run started and when the message comes late', async () => {
+  const f = await runStartFixture(); const version = 'f'.repeat(64);
+  const input = (executionId: string, taskVersion = version) => ({ contractVersion: '1.0' as const, repository: f.gh.repository, issueNumber: 4, taskVersion,
+    description: 'Do it', acceptanceCriteria: ['done'], contextReferences: [], executionId, allowedActions: ['publish_result' as const],
+    limits: { timeoutMinutes: 30, maxOutputBytes: 16000 as const }, operation: 'sha256' as const, worker: 'codex' as const });
+  const at = (minutesAgo: number) => new Date(clock.getTime() - minutesAgo * 60000).toISOString();
+  const intent = (executionId: string, attempt: number, when: string, taskVersion = version) => f.gh.writeEvent(4, { version: 1, key: `intent:${executionId}`, at: when,
+    correlationId: 'test', data: { type: 'intent', input: input(executionId, taskVersion), actionId: 'c'.repeat(64), attempt } });
+  const result = (executionId: string, when: string, summary: string, error: string | null) => f.gh.writeEvent(4, { version: 1, key: `result:${executionId}`, at: when,
+    correlationId: 'test', data: { type: 'result', result: { contractVersion: '1.0', executionId, issueNumber: 4, status: 'failed', summary, artifacts: [], error, proposedActions: [] } } });
+  const [a, b, c, d] = ['1', '2', '3', '4'].map(n => n.repeat(32)) as [string, string, string, string];
+  await intent(a, 0, at(300)); await f.receipt(a, at(300));
+  await result(a, at(290), 'Temporal execution ended without a committed worker result', 'failed');
+  await intent(b, 1, at(200)); await f.receipt(b, at(200));
+  await result(b, at(190), 'The coding run failed before the agent started', 'EXECUTOR_INFRASTRUCTURE_FAILURE');
+  await intent(c, 1, at(100)); await f.receipt(c, at(100));
+  await result(c, at(90), 'Agent wrote <!channel> something', 'free text from the worker');
+  await intent(d, 0, at(2), 'e'.repeat(64)); await f.receipt(d, at(2));
+  await f.deliver();
+  expect(f.send.mock.calls.map(call => call[1].detail)).toEqual([
+    'Grund: erster Lauf dieser Aufgabe.\nNachmeldung: Der Lauf startete bereits vor 5 Std.',
+    'Grund: Versuch 2 von 3, weil der vorige Lauf ohne Ergebnis endete.\nNachmeldung: Der Lauf startete bereits vor 3 Std. 20 Min.',
+    'Grund: neuer Start, weil der vorige Lauf vor dem Start des Agenten scheiterte (EXECUTOR_INFRASTRUCTURE_FAILURE) (zählt nicht als Versuch).\nNachmeldung: Der Lauf startete bereits vor 1 Std. 40 Min.',
+    'Grund: neuer Lauf für die geänderte Aufgabe, nachdem der vorige Lauf gescheitert ist.'
+  ]);
+});
+it('keeps the delivery of a run start independent of its detail line', async () => {
+  const f = await runStartFixture(new Date(clock.getTime() - 3600000).toISOString()); await f.receipt(id);
+  const before = await f.deliver(); expect(before).toEqual([]);
+  expect(f.send.mock.calls[0]![1].detail).toBe('Nachmeldung: Der Lauf startete bereits vor 1 Std.');
+  await f.deliver(); expect(f.send).toHaveBeenCalledTimes(1);
+});
 it('routes run starts to their own channel', async () => {
   const f = await runStartFixture(); f.cfg.notifications.slack.events.run_started = { enabled: true, channel: 'C987654321' };
   await f.receipt(id); await f.deliver(); expect(f.send.mock.calls[0]![0]).toBe('C987654321');
