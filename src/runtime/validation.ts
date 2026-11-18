@@ -114,16 +114,24 @@ export async function runCodingValidation(options: { target: string; artifact: C
   if (report.status === 'failed' && report.workspaceUnchanged && report.checks.length && report.checks.every(c => c.status !== 'failed')) { report.status = 'passed'; report.reason = 'CHECKS_COMPLETED'; }
   return validationReportSchema.parse(report);
 }
+// A slot of the Factory's runner pool has no Docker socket: its jobs reach the slot's daemon over loopback TCP, named
+// by the runner's DOCKER_HOST (docs/self-hosted-runners.md). The validation account starts with an empty environment,
+// so without this its Docker checks cannot reach any daemon there. Only that loopback form is passed on, taken from
+// the runner and never from the plan; a hosted runner sets nothing and its account uses the default socket.
+export function runnerDockerHost(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return /^tcp:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(env.DOCKER_HOST ?? '') ? env.DOCKER_HOST : undefined;
+}
 export function hostedValidationCommand(target: string, logs: string): ValidationCommand {
   return async (name, args, seconds, values) => {
     await mkdir(logs, { recursive: true });
+    const docker = runnerDockerHost();
     // The JDK and Maven the validator job prepared (maven profile); absolute paths only, never from the plan.
     const tool = (value: string | undefined) => value && /^\/[\w./-]+$/.test(value) && !value.includes('..') ? value : undefined;
     const java = tool(process.env.JAVA_HOME), maven = tool(process.env.SF_MAVEN_HOME);
     const path = [java && `${java}/bin`, maven && `${maven}/bin`, dirname(process.execPath), '/usr/local/bin', '/usr/bin', '/bin'].filter(Boolean).join(':');
     return new Promise<number>(resolveExit => {
       const child = spawn('sudo', ['-n', '-u', 'sf-validator', '--', 'env', '-i', 'HOME=/home/sf-validator', `PATH=${path}`, ...(java ? [`JAVA_HOME=${java}`] : []),
-        ...Object.entries(values).map(([key, value]) => `${key}=${value}`), 'timeout', '--kill-after=5s', `${seconds}s`, ...args],
+        ...Object.entries(values).map(([key, value]) => `${key}=${value}`), ...(docker ? [`DOCKER_HOST=${docker}`] : []), 'timeout', '--kill-after=5s', `${seconds}s`, ...args],
       { cwd: target, env: { PATH: process.env.PATH, LANG: 'C.UTF-8' }, stdio: ['ignore', 'pipe', 'pipe'] });
       let text = '', size = 0;
       const consume = (chunk: Buffer) => { if (size < 64000) text += chunk.subarray(0, 64000 - size).toString(); size += chunk.length; };
