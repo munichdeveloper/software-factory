@@ -109,9 +109,8 @@ Die Zahlen sind Schätzungen. Nach dem Umbau werden sie mit den `github-requests
    `factoryCommand(..., 'reconcile')`. Den No-op-Job `reconcile-factory-tasks` dabei entfernen. Tests für Filter,
    Entprellung und nicht installierte Repos.
 2. **GitHub-App-Einstellungen** (Johannes, einmalig): Ereignisse `issues`, `issue_comment`, `pull_request_review`,
-   `check_suite`, `status` abonnieren. Prüfen, ob die Factory-Runtime dieselbe App wie der Manager nutzt. Falls
-   nicht: Die Runtime-App bekommt dieselbe Webhook-URL und das Secret, oder der Manager abonniert die Ereignisse
-   über seine App, die auf denselben Repos installiert ist.
+   `check_suite`, `status` abonnieren. Manager und Factory-Runtime nutzen dieselbe App (Johannes, 2026-11-18). Die
+   Webhook-URL und das Secret des Managers gelten also schon, es kommen nur Ereignisse hinzu.
 3. **software-factory**: Abgleich pro Repo serialisieren, Sanity-Streaks auf Zeit umstellen, Runner-Fallback
    eigener Takt.
 4. **Umschalten**: Takt per Deploy auf 900 s, eine Woche beobachten (Reaktionszeit, `github-requests`, verpasste
@@ -119,7 +118,8 @@ Die Zahlen sind Schätzungen. Nach dem Umbau werden sie mit den `github-requests
 
 ## 7. Offene Fragen
 
-- Nutzen Manager und Factory-Runtime dieselbe GitHub App? Am 2026-11-18 zeigte der Broker zwei getrennte
-  Limit-Fenster (`core@…`), was auf zwei Installationen hindeutet.
+- Manager und Factory-Runtime nutzen dieselbe GitHub App, teilen sich also auch das Kontingent einer Installation.
+  Der Broker zeigte am 2026-11-18 trotzdem zwei getrennte Limit-Fenster (`core@…`). Vermutlich ist die App zweimal
+  installiert, oder GitHub führt getrennte Fenster. Das wird beim Umbau geklärt, ändert aber den Plan nicht.
 - Reichen 15 Minuten Sicherheitsnetz, oder soll der Takt für Repos mit aktiven Läufen kürzer sein?
 - Soll der Manager die Ereignisse im Dashboard anzeigen („letzter Anstoß: issues.labeled vor 12 s“)?
