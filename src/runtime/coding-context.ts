@@ -37,6 +37,17 @@ export const loopbackEntry = 'sf-context sandbox loopback';
 export const failedChecksEntry = (report: ValidationReport) =>
   `sf-context validation-failed ${report.checks.filter(c => c.status === 'failed').map(c => `${c.name}:${c.exitCode ?? 'none'}`).join(', ')}`;
 
+/**
+ * What the independent merge review asked to change in the attempt a rework continues: its reason and findings,
+ * blocking ones first. Model text from the broker's own reviewer, made inert and labelled, never mixed with broker text.
+ */
+export function reviewEntries(review: { reason: string; findings: { severity: string; path: string; explanation: string }[] }, limit = 8): string[] {
+  const inert = (s: string) => [...s].filter(c => c === '\n' || c >= ' ' && c !== String.fromCharCode(127)).join('').replace(/\s+/g, ' ').trim();
+  const findings = [...review.findings].sort((a, b) => Number(b.severity === 'blocking') - Number(a.severity === 'blocking')).slice(0, limit);
+  return [`sf-context review-changes: ${inert(review.reason)}`, ...findings.map(f => `sf-context review-finding ${f.severity === 'blocking' ? 'blocking' : 'warning'} ${label(f.path) || '-'}: ${inert(f.explanation)}`)]
+    .map(entry => entry.slice(0, 1000));
+}
+
 /** Commits the executor fetches before the network is closed; `rework` is the one it also applies to the workspace. */
 export function contextCommits(references: string[]): { commit: string; rework: boolean }[] {
   const found = references.flatMap(r => { const m = r.match(/^sf-context (ref|rework) ([a-f0-9]{40})(?: |$)/); return m ? [{ commit: m[2]!, rework: m[1] === 'rework' }] : []; });

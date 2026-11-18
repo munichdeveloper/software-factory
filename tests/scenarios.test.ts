@@ -382,6 +382,38 @@ describe('the broker merges validated pull requests', () => {
     expect(w.factoryMerges).toEqual([{ pr, head: updated, reviewed: true }]);
     await w.tick(); await healthy(w);
   });
+  it('reworks a pull request the review asked to change, hands the worker the findings, and merges the rework', async () => {
+    const w = new World({ merging: true, rework: true }); w.open(1); await w.tick();
+    const first = execution(w, 1);
+    await w.finishCoding(first, 'passed'); await w.tick(); await w.tick();
+    const pr = prs(w)[0]!.number; w.refusedHeads.add(w.pulls.get(pr)!.head);
+    await w.mergePass(); await w.mergePass(); await w.mergePass();
+    expect(w.factoryMerges).toEqual([]);
+    expect(w.events(1).filter(e => e.type === 'merge_changes_requested')).toHaveLength(1);
+    await w.tick(); await w.tick();
+    const second = execution(w, 1);
+    expect(second).not.toBe(first);
+    const references = w.events(1).flatMap(e => e.type === 'intent' ? [e] : []).at(-1)!.input.contextReferences;
+    expect(references).toContain(`urn:sf-rework:${first}`);
+    expect(references).toContain('sf-context review-changes: Ungeprüfte Rechtsaussage.');
+    expect(references).toContain('sf-context review-finding blocking src/change.txt: AVV-Angabe ohne Quelle.');
+    await w.finishCoding(second, 'passed'); await w.tick(); await w.tick();
+    expect(prs(w).filter(p => p.state === 'open').map(p => p.headRefName)).toEqual([`sf/issue-1/${second}`]);
+    await w.mergePass(); await w.mergePass();
+    expect(w.factoryMerges.map(m => m.pr)).toEqual([prs(w)[1]!.number]);
+    await w.tick(); await healthy(w);
+  });
+  it('leaves a pull request the review asked to change to a person when rework is off, or its attempts are used up', async () => {
+    for (const options of [{ merging: true }, { merging: true, rework: true, maxRetries: 0 }]) {
+      const w = new World(options); w.open(1); await w.tick();
+      await w.finishCoding(execution(w, 1), 'passed'); await w.tick(); await w.tick();
+      w.refusedHeads.add(w.pulls.get(prs(w)[0]!.number)!.head);
+      await w.mergePass(); await w.mergePass(); await w.tick(); await w.tick();
+      expect(w.events(1).filter(e => e.type === 'intent')).toHaveLength(1);
+      expect(w.status(1)).toEqual(['awaiting-pr']);
+      expect(w.factoryMerges).toEqual([]);
+    }
+  });
   it('never merges the draft of a failed validation, and a failed check of the updated head stops the merge', async () => {
     const w = new World({ merging: true }); w.open(1); w.open(2); await w.tick();
     await w.finishCoding(execution(w, 1), 'failed'); await w.tick(); await w.tick();

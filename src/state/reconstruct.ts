@@ -6,6 +6,7 @@ import { currentAutomaticBlock } from './blocks.js';
 import { acceptanceCriteria, dependencies, issueStatus } from './lifecycle.js';
 import { taskVersion } from './identity.js';
 import { policyVersion } from '../policies/engine.js';
+import type { MergeReview } from '../merge/contract.js';
 
 /** Summary of the cancelled result the Manager writes when the runtime definitely refused a start. */
 export const admissionRejectedSummary = 'Runtime admission rejected before start';
@@ -45,8 +46,13 @@ export interface Task {
   refusal?: AdmissionRefusal;
   blocked: boolean; blockReason?: string;
   hasOpenPR: boolean; hasClosingMerge: boolean; criteria: string[];
-  /** The latest attempt failed only its independent validation and a further attempt is allowed to repair it. */
+  /**
+   * The latest attempt failed only its independent validation, or the independent merge review asked for changes to its
+   * pull request, and a further attempt is allowed to repair it.
+   */
   reworkable: boolean;
+  /** The merge review a rework answers, when the review (not the validation) is what it repairs. */
+  reworkReview?: MergeReview;
   automaticBlockCause?: BlockCause;
   /** Open follow-up issues the Factory created from this task (`Origin: #n`). */
   openFollowups: number[];
@@ -127,8 +133,13 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     // The only open pull requests are the ones the Factory published for this task's own attempts: a rework replaces them.
     const ownPRsOnly = linked.filter(p => p.state === 'open').every(p => executions.some(e => p.headRefName === `sf/issue-${issue.number}/${e.input.executionId}`));
     const failedValidation = latest?.runtime?.validation;
+    // The broker's merge review asked for changes to the pull request this very attempt published (and it is still open).
+    const requested = latest?.result?.status === 'success' && hasOpenPR ? events.flatMap(e => e.data.type === 'merge_changes_requested' &&
+      e.data.executionId === latest.input.executionId ? [e.data.review] : []).at(-1) : undefined;
+    const repairable = latest?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' || !!requested;
     const reworkable = config.execution.rework && issue.state === 'open' && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some(e => e.active) &&
-      latest?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' && attemptsUsed <= config.execution.maxRetries;
+      repairable && attemptsUsed <= config.execution.maxRetries;
+    const reworkReview = reworkable && latest?.result?.status === 'success' ? requested : undefined;
     let desiredStatus: Status = issueStatus(issue) ?? 'backlog';
     if (issue.state === 'closed') desiredStatus = 'done';
     else if (explicitBlock) desiredStatus = 'blocked';
@@ -151,6 +162,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     const openFollowups = snapshot.issues.filter(i => i.state === 'open' && followupOrigin(i.body) === issue.number).map(i => i.number);
     return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, attemptsUsed, nextAttempt,
       ...(refusal ? { refusal } : {}), openFollowups,
-      blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable };
+      blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable,
+      ...(reworkReview ? { reworkReview } : {}) };
   });
 }

@@ -119,6 +119,8 @@ export class World {
   /** Every merge the Factory performed: pull request, merged head and the head its review covered. */
   readonly factoryMerges: { pr: number; head: string; reviewed: boolean }[] = [];
   private reviewedHeads = new Set<string>();
+  /** Heads the independent review asks to change instead of approving. */
+  readonly refusedHeads = new Set<string>();
   readonly log: string[] = [];
   constructor(readonly options: WorldOptions = {}) {
     this.cfg.execution.engine = 'temporal';
@@ -259,7 +261,13 @@ export class World {
           behindBy: f.base === this.base ? 0 : 1 };
       },
       context: async facts => ({ facts, trustedScope: 'Test', trustedInstructions: '', changes: [{ path: 'src/change.txt', status: 'modified', patch: '+x', content: 'x' }] }),
-      comment: async (number, body) => { const f = this.pulls.get(number)!; f.comments.push({ id: f.comments.length + 1, author: bot, body, createdAt: this.now.toISOString() }); },
+      // GitHub's issue comment endpoint serves pull requests and issues alike.
+      comment: async (number, body) => {
+        const f = this.pulls.get(number);
+        if (f) { f.comments.push({ id: f.comments.length + 1, author: bot, body, createdAt: this.now.toISOString() }); return; }
+        const rows = this.github.state.comments.get(number) ?? [];
+        rows.push({ id: rows.length + 1, author: bot, body, createdAt: this.now.toISOString() }); this.github.state.comments.set(number, rows);
+      },
       update: async (number, head) => {
         const f = this.pulls.get(number)!; if (f.head !== head) throw new Error('head moved');
         Object.assign(f, { head: hash({ head, base: this.base }).slice(0, 40), base: this.base, checks: [{ name: 'test', state: 'in_progress' }] }); this.log.push(`PR ${number} updated`); return f.head;
@@ -279,6 +287,8 @@ export class World {
     // A reviewer that approves acceptable code and asks for an update when the branch is behind.
     const reviewer = { review: async (input: { facts: MergeFacts }) => {
       this.reviewedHeads.add(`${input.facts.number}:${input.facts.head}`);
+      if (this.refusedHeads.has(input.facts.head)) return { decision: 'request_changes' as const, reason: 'Ungeprüfte Rechtsaussage.',
+        findings: [{ path: 'src/change.txt', severity: 'blocking' as const, explanation: 'AVV-Angabe ohne Quelle.' }] };
       return { decision: input.facts.behindBy ? 'update_branch' as const : 'merge' as const, reason: 'Geprüft.', findings: [] };
     } };
     try { await new MergeManager(port, this.cfg, reviewer, 'merge', this.github, { ownedOnly: true }).run(await this.github.snapshot()); }

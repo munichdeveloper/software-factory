@@ -15,7 +15,8 @@ export function reconciliationPlan(tasks: Task[], config: Config): Action[] {
       t.executions.some(e => e.result && !t.events.some(event => event.data.type === 'result' && event.data.result.executionId === e.input.executionId))) {
       actions.push(proposal(t, 'transition', 'Reconcile lifecycle with GitHub facts', { status: t.desiredStatus }));
     }
-    if (t.reworkable) actions.push(proposal(t, 'retry_worker', 'Rework after a failed independent validation, within the configured limit'));
+    if (t.reworkable) actions.push(proposal(t, 'retry_worker', t.reworkReview ? 'Rework after the independent merge review asked for changes, within the configured limit'
+      : 'Rework after a failed independent validation, within the configured limit'));
     else if (t.issue.state === 'open' && !t.blocked && !t.hasClosingMerge && !t.hasOpenPR && t.latest?.result &&
       ['failed', 'cancelled'].includes(t.latest.result.status) && !t.executions.some(e => e.active) && t.attemptsUsed <= config.execution.maxRetries &&
       !t.refusal?.waiting) {
