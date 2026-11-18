@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { codingAgents, type Config } from '../config/index.js';
 import { planSchema, type Action, type Plan } from '../types.js';
 import type { Task } from '../state/reconstruct.js';
+import { claudeCode, claudeEffort, type ClaudeCall } from './claude.js';
 
 export interface Planner { plan(tasks: Task[], config: Config): Promise<Plan> }
 export const proposal = (task: Task, kind: Action['kind'], reason: string, values: Partial<Action> = {}): Action => ({
@@ -94,5 +95,28 @@ export class OpenAIPlanner implements Planner {
       }
     }
     throw new PlanningError(`LLM planning failed after ${config.llm.maxCalls} calls: ${last}`, planningCodeOf(last));
+  }
+}
+/** Claude with the same instructions, context and schema as the OpenAI planner. */
+export class ClaudePlanner implements Planner {
+  constructor(private call: ClaudeCall, private model: string) {}
+  async plan(tasks: Task[], config: Config): Promise<Plan> {
+    try {
+      return planSchema.parse(await this.call({ model: this.model, effort: claudeEffort(config.llm.reasoningEffort), maxTokens: Math.max(config.llm.maxOutputTokens, 4000),
+        timeoutMs: config.llm.timeoutSeconds * 1000, system: systemPrompt, input: compactContext(tasks, config), schema: planSchema }));
+    } catch (error) {
+      throw new PlanningError('LLM planning with Claude failed', error instanceof z.ZodError ? 'CLAUDE_INVALID_OUTPUT' : claudeCode(error));
+    }
+  }
+}
+/** Asks the planners in order; the first plan wins. When all fail, the last failure is reported. */
+export class FallbackPlanner implements Planner {
+  constructor(private primary: Planner, private secondary: Planner) {}
+  async plan(tasks: Task[], config: Config): Promise<Plan> {
+    try { return await this.primary.plan(tasks, config); }
+    catch (error) {
+      console.warn(JSON.stringify({ event: 'factory-llm-fallback', role: 'planner', from: 'claude', to: 'openai', code: planningCode(error) }));
+      return this.secondary.plan(tasks, config);
+    }
   }
 }
