@@ -6,13 +6,13 @@ RUN npm ci --ignore-scripts
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev --ignore-scripts
-RUN git init /harness && cd /harness && git remote add origin https://github.com/munichdeveloper/dev-agent-harness.git && git fetch --depth=1 origin b9b05462d83774011438ba66936b9cd1df441e3d && git checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = b9b05462d83774011438ba66936b9cd1df441e3d && npm ci --ignore-scripts && npm run build && npm prune --omit=dev --ignore-scripts
+RUN git init /harness && cd /harness && git remote add origin https://github.com/munichdeveloper/dev-agent-harness.git && git fetch --depth=1 origin 59d1364b337ed4e40d3beb12f4a0036078b12c59 && git checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = 59d1364b337ed4e40d3beb12f4a0036078b12c59 && npm ci --ignore-scripts && npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d AS base-runtime
 WORKDIR /app
 ARG FACTORY_SHA
 RUN node -e "if(!/^[a-f0-9]{40}$/.test(process.env.FACTORY_SHA||''))process.exit(1)"
-LABEL org.opencontainers.image.title="Software Factory Temporal Runtime" org.opencontainers.image.version="0.16.1" org.opencontainers.image.revision=$FACTORY_SHA
+LABEL org.opencontainers.image.title="Software Factory Temporal Runtime" org.opencontainers.image.version="0.17.0" org.opencontainers.image.revision=$FACTORY_SHA
 RUN mkdir -p /run/factory-package && chown node:node /run/factory-package
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules

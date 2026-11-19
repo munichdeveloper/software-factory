@@ -9,7 +9,7 @@ inputs:
     default: .github/software-factory.yml
   harness-ref:
     description: Immutable independent Harness runtime commit
-    default: b9b05462d83774011438ba66936b9cd1df441e3d
+    default: 59d1364b337ed4e40d3beb12f4a0036078b12c59
   execution-id:
     description: SF delegation execution identifier
     default: ''
