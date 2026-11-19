@@ -54,6 +54,8 @@ export interface Task {
   reworkable: boolean;
   /** The merge review a rework answers, when the review (not the validation) is what it repairs. */
   reworkReview?: MergeReview;
+  /** Why the merge side asked for that rework: review findings, or a conflict of the branch with the base. */
+  reworkCause?: 'review' | 'conflict';
   automaticBlockCause?: BlockCause;
   /** Open follow-up issues the Factory created from this task (`Origin: #n`). */
   openFollowups: number[];
@@ -138,8 +140,10 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     const ownPRsOnly = linked.filter(p => p.state === 'open').every(p => executions.some(e => p.headRefName === `sf/issue-${issue.number}/${e.input.executionId}`));
     const failedValidation = latest?.runtime?.validation;
     // The broker's merge review asked for changes to the pull request this very attempt published (and it is still open).
-    const requested = latest?.result?.status === 'success' && hasOpenPR ? events.flatMap(e => e.data.type === 'merge_changes_requested' &&
-      e.data.executionId === latest.input.executionId ? [e.data.review] : []).at(-1) : undefined;
+    // Or its branch conflicts with the base (cause conflict): the same rework, which resolves the conflict on the current base.
+    const requestedBy = latest?.result?.status === 'success' && hasOpenPR ? events.flatMap(e => e.data.type === 'merge_changes_requested' &&
+      e.data.executionId === latest.input.executionId ? [e.data] : []).at(-1) : undefined;
+    const requested = requestedBy?.review;
     const repairable = latest?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' || !!requested;
     const reworkable = config.execution.rework && issue.state === 'open' && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some(e => e.active) &&
       repairable && attemptsUsed <= config.execution.maxRetries;
@@ -167,6 +171,6 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, attemptsUsed, nextAttempt,
       ...(refusal ? { refusal } : {}), openFollowups,
       blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable,
-      ...(reworkReview ? { reworkReview } : {}) };
+      ...(reworkReview ? { reworkReview, reworkCause: requestedBy?.cause ?? 'review' } : {}) };
   });
 }

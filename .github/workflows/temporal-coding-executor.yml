@@ -107,11 +107,15 @@ jobs:
             git update-ref "refs/sf-context/$commit" "$commit"
             echo "Fetched context commit $commit ($kind)"
             [[ "$kind" == rework ]] || continue
-            # Continue from the previous attempt: its changes on the current base, uncommitted. On any conflict the
-            # workspace stays at the base and the commit remains available as context.
+            # Continue from the previous attempt: its changes on the current base, uncommitted. Where they conflict with
+            # the base, the files keep git's conflict markers for the worker to resolve (a merge-conflict rework); the
+            # commit remains available as context. Anything else that fails leaves the workspace at the base.
             if git -c user.name=sf -c user.email=sf@invalid merge --squash --no-commit "$commit" >/dev/null 2>&1; then
               git reset --quiet
               echo "Applied the previous attempt to the workspace"
+            elif conflicted="$(git diff --name-only --diff-filter=U)" && [[ -n "$conflicted" ]]; then
+              git reset --quiet
+              echo "Applied the previous attempt with conflict markers in: $(tr '\n' ' ' <<<"$conflicted")"
             else
               git reset --quiet --hard "$SF_BASE_SHA"; git clean --quiet -fd
               echo "The previous attempt does not apply to the current base; it is available as a commit only"

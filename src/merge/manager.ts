@@ -9,6 +9,7 @@ import { mergeReviewSchema, needsHumanLabel, type MergeFacts, type MergePort, ty
 import { aboveThreshold, builtinCriticalPaths, classifyRisk, describeRisk, type RiskAssessor, type RiskRecord } from './risk.js';
 import { routeNoteDe, routeOutcome } from '../llm/router.js';
 import { setLlmSubject, withLlmContext } from '../llm/analytics.js';
+import { reconstruct } from '../state/reconstruct.js';
 
 const safe = (s: string) => s.replaceAll('@', '@\u200b').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 // The broker's own display-only risk and hand-over labels are no input of a review: setting them must not invalidate it.
@@ -37,6 +38,13 @@ export function mergeGate(f: MergeFacts, config: Config): string | null {
 /** A review that stops the merge of its head: changes requested, deferred to a person, or a blocking finding. */
 const rejects = (review: MergeReview) => review.findings.some(x => x.severity === 'blocking') || ['request_changes', 'defer'].includes(review.decision);
 const failedCheck = (state: string) => ['failure', 'timed_out', 'cancelled', 'startup_failure', 'error'].includes(state);
+const blockedLabel = (f: MergeFacts) => f.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l));
+/** What a conflict rework tells the coding worker; the executor leaves the conflicting merge in its workspace. */
+const conflictReview = (f: MergeFacts): MergeReview => ({ decision: 'request_changes', findings: [],
+  reason: `Merge-Konflikt: Der Branch ${f.headBranch} lässt sich nicht konfliktfrei mit ${f.baseBranch} (Basis ${f.base.slice(0, 7)}) zusammenführen. ` +
+    'Setze die bisherigen Änderungen dieses Versuchs auf der aktuellen Basis fort. Wo sie kollidieren, enthält der Arbeitsbereich Konfliktmarker ' +
+    '(<<<<<<<, =======, >>>>>>>). Löse jeden Konflikt so auf, dass die neueren Änderungen der Basis erhalten bleiben und die Aufgabe weiterhin ' +
+    'vollständig erfüllt ist. Baue nichts neu, was schon vorhanden ist, und hinterlasse keine Konfliktmarker.' });
 const behind = (f: MergeFacts, config: Config) => config.merge.protection === 'factory' ? !!f.behindBy : f.mergeState === 'BEHIND';
 export interface MergeOptions {
   /** Only pull requests the Factory published for its own tasks; no adoption by label (an issue-scoped broker). */
@@ -96,6 +104,52 @@ export class MergeManager {
     await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
     await this.explain(f, `Nachträgliche Commits von ${unique.join(', ')} (Schreibrecht im Repository) werden übernommen: der neue Head durchläuft Pflichtprüfungen, Validierung und ein neues KI-Review.`);
     return null;
+  }
+  /**
+   * The branch conflicts with its base. A Factory pull request goes back to the coding worker as a rework when
+   * execution.rework allows one (journaled on the task once per head, like review findings); it resolves the conflict on
+   * the current base with the first-attempt agents. Everything else is handed over to a person (sf:needs-human).
+   */
+  private async conflict(f: MergeFacts, snapshot: Snapshot, ownership: Ownership | undefined, adopted: boolean) {
+    const conflictKey = hash({ protocol: 'sf-merge-conflict-v1', repository: this.api.repository.toLowerCase(), head: f.head });
+    const executionId = f.headBranch.match(/^sf\/issue-\d+\/([a-f0-9]{32})$/)?.[1];
+    const task = ownership && !adopted && executionId ? reconstruct(snapshot, this.config).find(t => t.issue.number === ownership.task.number) : undefined;
+    const limit = !!task && task.attemptsUsed > this.config.execution.maxRetries;
+    if (task && executionId && this.config.execution.rework && !limit && task.latest?.input.executionId === executionId) {
+      const key = `merge-changes-requested:${conflictKey}`;
+      if (!(snapshot.comments.get(task.issue.number) ?? []).some(c => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) {
+        const journal = encodeEvent({ version: 1, key, at: new Date().toISOString(), correlationId: this.correlationId,
+          data: { type: 'merge_changes_requested', prNumber: f.number, head: f.head, executionId, reviewKey: conflictKey, review: conflictReview(f), cause: 'conflict' } });
+        const summary = `\n\n### Software Factory – Merge-Konflikt\n\n${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die Factory startet selbst einen weiteren Versuch, der die Änderungen auf der aktuellen Basis fortsetzt und die Konflikte auflöst (bis zur Grenze von \`execution.maxRetries\`).`)}`;
+        await this.api.comment(task.issue.number, journal + summary);
+      }
+      await this.explain(f, 'Der Branch hat Merge-Konflikte mit der Basis. Die Factory löst sie mit einer Nacharbeit auf der aktuellen Basis auf; der neue Stand durchläuft danach Pflichtprüfungen, Validierung und ein neues KI-Review.');
+      return;
+    }
+    const why = !ownership || adopted ? 'Der PR wurde nicht von der Factory für eine Aufgabe erstellt.'
+      : !this.config.execution.rework ? 'Automatische Nacharbeit ist in diesem Repository aus (`execution.rework`).'
+      : limit ? `Die Versuche der Aufgabe sind aufgebraucht (\`execution.maxRetries\`: ${this.config.execution.maxRetries}).`
+      : 'Der PR gehört nicht zum letzten Versuch der Aufgabe.';
+    await this.event(f, `merge-handover:${conflictKey}`, { type: 'merge_handover', prNumber: f.number, head: f.head, base: f.base, reviewKey: conflictKey, decision: 'conflict' });
+    if (this.api.needsHuman && !f.labels.includes(needsHumanLabel)) await this.api.needsHuman(f.number, true);
+    await this.explain(f, `Der Branch hat Merge-Konflikte mit der Basis. ${why} Bitte die Konflikte selbst auflösen; danach folgen Pflichtprüfungen, Validierung und ein neues KI-Review.`);
+  }
+  /** Merges the base into the branch (once per head and base), then dispatches the validation of the new head. */
+  private async updateBranch(f: MergeFacts, snapshot: Snapshot, ownership: Ownership | undefined, adopted: boolean, done: string): Promise<boolean> {
+    const key = `branch-update:${hash({ head: f.head, base: f.base })}`;
+    if (this.events(f).some(e => e.key === key)) { await this.explain(f, 'Branch-Aktualisierung wurde bereits angefordert; GitHub-Status prüfen.'); return false; }
+    await this.event(f, key, { type: 'branch_update', head: f.head, base: f.base });
+    let head: string;
+    try { head = await this.api.update(f.number, f.head); }
+    catch (error) {
+      if (!(error instanceof Error && error.message === 'MERGE_CONFLICT')) throw error;
+      await this.conflict(f, snapshot, ownership, adopted); return false;
+    }
+    const updated = await this.api.facts(f.number);
+    if (updated.head !== head) { await this.explain(updated, 'Branch wurde erneut verändert; keine Freigabe für den ungeprüften Stand.'); return true; }
+    await this.dispatch(updated, this.config.merge.validationWorkflow, updated.headBranch, head);
+    await this.explain(updated, done);
+    return true;
   }
   private ownership(f: MergeFacts, snapshot: Snapshot): Ownership | undefined {
     const url = `https://github.com/${this.api.repository}/pull/${f.number}`;
@@ -167,6 +221,11 @@ export class MergeManager {
             await this.explain(f, 'Der validierte Entwurf wurde zur Prüfung freigegeben; Review und Merge folgen im nächsten Durchlauf.'); continue;
           }
         }
+        // A conflicting branch gets no pull-request checks from GitHub, so it would wait for them forever: resolve it first.
+        if (f.state === 'open' && !f.draft && f.sameRepository && !blockedLabel(f) && f.mergeState === 'DIRTY') {
+          phase = 'Merge-Konflikt behandeln';
+          await this.conflict(f, snapshot, ownership, adopted); continue;
+        }
         if (f.state === 'open' && !f.draft) {
           const required = [...new Set([...this.config.merge.requiredChecks, ...f.nativeRequiredChecks])];
           const failed = f.checks.filter(c => required.includes(c.name) && failedCheck(c.state));
@@ -206,6 +265,14 @@ export class MergeManager {
           await this.event(f, `merge-status:${hash({ head: f.head, verdictKey })}`, { type: 'merge_status', head: f.head, base: f.base,
             reason: `Das KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}, Basis ${earlier.base.slice(0, 7)}).` },
             `**Noch kein Merge.** Das KI-Review hat diesen Head bereits abgelehnt (**${earlier.review.decision}**). Eine neuere Basis allein ändert daran nichts; ein neues Review folgt erst nach einem neuen Commit, einer geänderten Aufgabe oder Konfiguration.\n\nGeprüfter Head: \`${f.head}\`.`);
+          continue;
+        }
+        // A branch behind its base is brought up to date before any review: the review of a stale state would only be
+        // repeated after the update (controla#135 waited 16 base commits behind for a review that never asked for one).
+        if (this.config.merge.updateBranch && behind(f, this.config) && !f.unresolvedThreads.length &&
+          !['CHANGES_REQUESTED', 'REVIEW_REQUIRED'].includes(f.reviewDecision ?? '')) {
+          phase = 'Branch-Aktualisierung';
+          if (await this.updateBranch(f, snapshot, ownership, adopted, `Der Branch enthielt ${f.behindBy ?? 'einige'} neuere Commit(s) der Basis nicht und wurde von der Factory aktualisiert. Pflichtprüfungen, Validierung und KI-Review folgen für den neuen Stand.`)) report.updated++;
           continue;
         }
         const risk = this.config.merge.risk;
@@ -294,15 +361,8 @@ export class MergeManager {
         if (review.decision === 'update_branch') {
           if (!this.config.merge.updateBranch || !behind(live, this.config) || live.unresolvedThreads.length ||
             ['CHANGES_REQUESTED', 'REVIEW_REQUIRED'].includes(live.reviewDecision ?? '')) { await this.explain(live, 'Branch-Aktualisierung ist nicht erlaubt oder durch offene Reviews blockiert.'); continue; }
-          const key = `branch-update:${hash({ head: f.head, base: f.base })}`;
-          if (this.events(live).some(e => e.key === key)) { await this.explain(live, 'Branch-Aktualisierung wurde bereits angefordert; GitHub-Status prüfen.'); continue; }
-          await this.event(live, key, { type: 'branch_update', head: f.head, base: f.base });
           phase = 'Branch-Aktualisierung';
-          const head = await this.api.update(number, f.head); report.updated++;
-          const updated = await this.api.facts(number);
-          if (updated.head !== head) { await this.explain(updated, 'Branch wurde erneut verändert; keine Freigabe für den ungeprüften Stand.'); continue; }
-          await this.dispatch(updated, this.config.merge.validationWorkflow, updated.headBranch, head);
-          await this.explain(updated, 'KI hat eine Branch-Aktualisierung veranlasst. Neue Tests und eine neue KI-Entscheidung sind vor dem Merge erforderlich.');
+          if (await this.updateBranch(live, snapshot, ownership, adopted, 'KI hat eine Branch-Aktualisierung veranlasst. Neue Tests und eine neue KI-Entscheidung sind vor dem Merge erforderlich.')) report.updated++;
           continue;
         }
         const gate = mergeGate(live, this.config);

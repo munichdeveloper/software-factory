@@ -69898,14 +69898,16 @@ var eventSchema = external_exports.strictObject({
       riskClass: riskClassSchema,
       autoMergeUpTo: riskClassSchema
     }),
-    // Written on the task when the independent review asked for changes to a Factory pull request: the rework source.
+    // Written on the task when the independent review asked for changes to a Factory pull request, or when its branch
+    // conflicts with the base (cause conflict): the rework source.
     external_exports.strictObject({
       type: external_exports.literal("merge_changes_requested"),
       prNumber: external_exports.number().int().positive(),
       head: external_exports.string().length(40),
       executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
       reviewKey: external_exports.string().length(64),
-      review: mergeReviewSchema
+      review: mergeReviewSchema,
+      cause: external_exports.enum(["review", "conflict"]).optional()
     }),
     // Written once per review that hands a Factory pull request over to a person; the Slack notice handover_required reads it.
     external_exports.strictObject({
@@ -69914,7 +69916,7 @@ var eventSchema = external_exports.strictObject({
       head: external_exports.string().length(40),
       base: external_exports.string().length(40),
       reviewKey: external_exports.string().length(64),
-      decision: external_exports.enum(["request_changes", "defer"])
+      decision: external_exports.enum(["request_changes", "defer", "conflict"])
     }),
     external_exports.strictObject({ type: external_exports.literal("merge_status"), head: external_exports.string().length(40), base: external_exports.string().length(40), reason: external_exports.string().max(3e3) }),
     external_exports.strictObject({ type: external_exports.literal("decision"), action: external_exports.string().max(3e4), outcome: external_exports.enum(["allow", "deny", "approval", "executed"]), reason: external_exports.string().max(2e3) })
@@ -70204,7 +70206,8 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
     const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
     const failedValidation = latest?.runtime?.validation;
-    const requested = latest?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === latest.input.executionId ? [e.data.review] : []).at(-1) : void 0;
+    const requestedBy = latest?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === latest.input.executionId ? [e.data] : []).at(-1) : void 0;
+    const requested = requestedBy?.review;
     const repairable = latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" || !!requested;
     const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && repairable && attemptsUsed <= config2.execution.maxRetries;
     const reworkReview = reworkable && latest?.result?.status === "success" ? requested : void 0;
@@ -70242,7 +70245,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       hasClosingMerge,
       criteria,
       reworkable,
-      ...reworkReview ? { reworkReview } : {}
+      ...reworkReview ? { reworkReview, reworkCause: requestedBy?.cause ?? "review" } : {}
     };
   });
 }
@@ -70904,7 +70907,7 @@ Decision: ${intent.actionId}
         url: `https://github.com/${github.repository}/pull/${pr.number}`,
         repository: github.repository,
         reviewKey: e.data.reviewKey,
-        detail: e.data.decision === "defer" ? "Das KI-Review \xFCberl\xE4sst die Entscheidung einem Menschen (defer). Begr\xFCndung im PR." : "Das KI-Review verlangt \xC4nderungen, automatische Nacharbeit (execution.rework) ist aus. Bitte nachbessern; Commits mit Schreibrecht \xFCbernimmt die Factory."
+        detail: e.data.decision === "conflict" ? "Der Branch hat Merge-Konflikte mit der Basis, die die Factory nicht selbst aufl\xF6st (Nacharbeit aus oder Versuche aufgebraucht). Bitte aufl\xF6sen; Commits mit Schreibrecht \xFCbernimmt die Factory." : e.data.decision === "defer" ? "Das KI-Review \xFCberl\xE4sst die Entscheidung einem Menschen (defer). Begr\xFCndung im PR." : "Das KI-Review verlangt \xC4nderungen, automatische Nacharbeit (execution.rework) ist aus. Bitte nachbessern; Commits mit Schreibrecht \xFCbernimmt die Factory."
       });
     }
   }
@@ -71017,12 +71020,13 @@ function statusView(task, config2, context2) {
     if (task.refusal?.waiting) state.push("", `The next start waits for a new grant, a changed policy or configuration, or at the latest until ${task.refusal.until}.`);
   } else if (result?.status === "success" && task.reworkReview) {
     stage = "retry";
+    const conflict = task.reworkCause === "conflict";
     state = [
-      "Implemented and independently validated, but the independent merge review asked for changes.",
+      conflict ? "Implemented and independently validated, but the pull request branch conflicts with the current base." : "Implemented and independently validated, but the independent merge review asked for changes.",
       "",
-      `Attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}. A further attempt starts on its own; it continues these changes and receives the review findings.`
+      `Attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}. A further attempt starts on its own; it continues these changes ${conflict ? "on the current base and resolves the conflicts" : "and receives the review findings"}.`
     ];
-    needs = "Nothing; the Factory reworks the review findings on its own.";
+    needs = conflict ? "Nothing; the Factory resolves the merge conflicts on its own." : "Nothing; the Factory reworks the review findings on its own.";
   } else if (result?.status === "success") {
     stage = "awaiting-pr";
     state = ["Implemented and independently validated."];
@@ -71331,7 +71335,7 @@ ${marker2}`;
         const rework = action.kind === "retry_worker" && task.reworkable && this.config.execution.engine === "temporal";
         const retry = action.kind === "retry_worker" && !rework && task.latest?.result?.status === "failed" && this.config.execution.engine === "temporal";
         const previous = rework || retry ? task.latest.input.executionId : void 0;
-        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework || task.executions.some((e) => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== "success" && e.result.error !== infrastructureFailureCode));
+        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework && task.reworkCause !== "conflict" || task.executions.some((e) => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== "success" && e.result.error !== infrastructureFailureCode));
         if (this.config.execution.engine === "temporal" && this.options.workerRuntime?.preflight) {
           try {
             await this.options.workerRuntime.preflight(live2.number, previous);
@@ -72233,7 +72237,12 @@ var GitHubMergePort = class {
     await this.api.issues.createComment({ ...this.target, issue_number: number4, body });
   }
   async update(number4, head) {
-    await this.api.pulls.updateBranch({ ...this.target, pull_number: number4, expected_head_sha: head });
+    try {
+      await this.api.pulls.updateBranch({ ...this.target, pull_number: number4, expected_head_sha: head });
+    } catch (error62) {
+      if (error62 instanceof Error && "status" in error62 && error62.status === 422 && /conflict/i.test(error62.message)) throw new Error("MERGE_CONFLICT", { cause: error62 });
+      throw error62;
+    }
     for (let i = 0; i < 15; i++) {
       const { data } = await this.api.pulls.get({ ...this.target, pull_number: number4 });
       if (data.head.sha !== head) return data.head.sha;
@@ -72401,6 +72410,12 @@ function mergeGate(f, config2) {
 }
 var rejects = (review) => review.findings.some((x) => x.severity === "blocking") || ["request_changes", "defer"].includes(review.decision);
 var failedCheck = (state) => ["failure", "timed_out", "cancelled", "startup_failure", "error"].includes(state);
+var blockedLabel = (f) => f.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l));
+var conflictReview = (f) => ({
+  decision: "request_changes",
+  findings: [],
+  reason: `Merge-Konflikt: Der Branch ${f.headBranch} l\xE4sst sich nicht konfliktfrei mit ${f.baseBranch} (Basis ${f.base.slice(0, 7)}) zusammenf\xFChren. Setze die bisherigen \xC4nderungen dieses Versuchs auf der aktuellen Basis fort. Wo sie kollidieren, enth\xE4lt der Arbeitsbereich Konfliktmarker (<<<<<<<, =======, >>>>>>>). L\xF6se jeden Konflikt so auf, dass die neueren \xC4nderungen der Basis erhalten bleiben und die Aufgabe weiterhin vollst\xE4ndig erf\xFCllt ist. Baue nichts neu, was schon vorhanden ist, und hinterlasse keine Konfliktmarker.`
+});
 var behind = (f, config2) => config2.merge.protection === "factory" ? !!f.behindBy : f.mergeState === "BEHIND";
 var MergeManager = class {
   constructor(api, config2, reviewer, correlationId, tasks, options = {}) {
@@ -72486,6 +72501,66 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
     await this.explain(f, `Nachtr\xE4gliche Commits von ${unique.join(", ")} (Schreibrecht im Repository) werden \xFCbernommen: der neue Head durchl\xE4uft Pflichtpr\xFCfungen, Validierung und ein neues KI-Review.`);
     return null;
   }
+  /**
+   * The branch conflicts with its base. A Factory pull request goes back to the coding worker as a rework when
+   * execution.rework allows one (journaled on the task once per head, like review findings); it resolves the conflict on
+   * the current base with the first-attempt agents. Everything else is handed over to a person (sf:needs-human).
+   */
+  async conflict(f, snapshot, ownership, adopted) {
+    const conflictKey = hash2({ protocol: "sf-merge-conflict-v1", repository: this.api.repository.toLowerCase(), head: f.head });
+    const executionId2 = f.headBranch.match(/^sf\/issue-\d+\/([a-f0-9]{32})$/)?.[1];
+    const task = ownership && !adopted && executionId2 ? reconstruct(snapshot, this.config).find((t) => t.issue.number === ownership.task.number) : void 0;
+    const limit3 = !!task && task.attemptsUsed > this.config.execution.maxRetries;
+    if (task && executionId2 && this.config.execution.rework && !limit3 && task.latest?.input.executionId === executionId2) {
+      const key = `merge-changes-requested:${conflictKey}`;
+      if (!(snapshot.comments.get(task.issue.number) ?? []).some((c) => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) {
+        const journal = encodeEvent({
+          version: 1,
+          key,
+          at: (/* @__PURE__ */ new Date()).toISOString(),
+          correlationId: this.correlationId,
+          data: { type: "merge_changes_requested", prNumber: f.number, head: f.head, executionId: executionId2, reviewKey: conflictKey, review: conflictReview(f), cause: "conflict" }
+        });
+        const summary2 = `
+
+### Software Factory \u2013 Merge-Konflikt
+
+${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die Factory startet selbst einen weiteren Versuch, der die \xC4nderungen auf der aktuellen Basis fortsetzt und die Konflikte aufl\xF6st (bis zur Grenze von \`execution.maxRetries\`).`)}`;
+        await this.api.comment(task.issue.number, journal + summary2);
+      }
+      await this.explain(f, "Der Branch hat Merge-Konflikte mit der Basis. Die Factory l\xF6st sie mit einer Nacharbeit auf der aktuellen Basis auf; der neue Stand durchl\xE4uft danach Pflichtpr\xFCfungen, Validierung und ein neues KI-Review.");
+      return;
+    }
+    const why = !ownership || adopted ? "Der PR wurde nicht von der Factory f\xFCr eine Aufgabe erstellt." : !this.config.execution.rework ? "Automatische Nacharbeit ist in diesem Repository aus (`execution.rework`)." : limit3 ? `Die Versuche der Aufgabe sind aufgebraucht (\`execution.maxRetries\`: ${this.config.execution.maxRetries}).` : "Der PR geh\xF6rt nicht zum letzten Versuch der Aufgabe.";
+    await this.event(f, `merge-handover:${conflictKey}`, { type: "merge_handover", prNumber: f.number, head: f.head, base: f.base, reviewKey: conflictKey, decision: "conflict" });
+    if (this.api.needsHuman && !f.labels.includes(needsHumanLabel)) await this.api.needsHuman(f.number, true);
+    await this.explain(f, `Der Branch hat Merge-Konflikte mit der Basis. ${why} Bitte die Konflikte selbst aufl\xF6sen; danach folgen Pflichtpr\xFCfungen, Validierung und ein neues KI-Review.`);
+  }
+  /** Merges the base into the branch (once per head and base), then dispatches the validation of the new head. */
+  async updateBranch(f, snapshot, ownership, adopted, done) {
+    const key = `branch-update:${hash2({ head: f.head, base: f.base })}`;
+    if (this.events(f).some((e) => e.key === key)) {
+      await this.explain(f, "Branch-Aktualisierung wurde bereits angefordert; GitHub-Status pr\xFCfen.");
+      return false;
+    }
+    await this.event(f, key, { type: "branch_update", head: f.head, base: f.base });
+    let head;
+    try {
+      head = await this.api.update(f.number, f.head);
+    } catch (error62) {
+      if (!(error62 instanceof Error && error62.message === "MERGE_CONFLICT")) throw error62;
+      await this.conflict(f, snapshot, ownership, adopted);
+      return false;
+    }
+    const updated = await this.api.facts(f.number);
+    if (updated.head !== head) {
+      await this.explain(updated, "Branch wurde erneut ver\xE4ndert; keine Freigabe f\xFCr den ungepr\xFCften Stand.");
+      return true;
+    }
+    await this.dispatch(updated, this.config.merge.validationWorkflow, updated.headBranch, head);
+    await this.explain(updated, done);
+    return true;
+  }
   ownership(f, snapshot) {
     const url2 = `https://github.com/${this.api.repository}/pull/${f.number}`;
     for (const task of snapshot.issues) {
@@ -72568,6 +72643,11 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
             continue;
           }
         }
+        if (f.state === "open" && !f.draft && f.sameRepository && !blockedLabel(f) && f.mergeState === "DIRTY") {
+          phase = "Merge-Konflikt behandeln";
+          await this.conflict(f, snapshot, ownership, adopted);
+          continue;
+        }
         if (f.state === "open" && !f.draft) {
           const required2 = [.../* @__PURE__ */ new Set([...this.config.merge.requiredChecks, ...f.nativeRequiredChecks])];
           const failed = f.checks.filter((c) => required2.includes(c.name) && failedCheck(c.state));
@@ -72630,6 +72710,11 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
 
 Gepr\xFCfter Head: \`${f.head}\`.`
           );
+          continue;
+        }
+        if (this.config.merge.updateBranch && behind(f, this.config) && !f.unresolvedThreads.length && !["CHANGES_REQUESTED", "REVIEW_REQUIRED"].includes(f.reviewDecision ?? "")) {
+          phase = "Branch-Aktualisierung";
+          if (await this.updateBranch(f, snapshot, ownership, adopted, `Der Branch enthielt ${f.behindBy ?? "einige"} neuere Commit(s) der Basis nicht und wurde von der Factory aktualisiert. Pflichtpr\xFCfungen, Validierung und KI-Review folgen f\xFCr den neuen Stand.`)) report.updated++;
           continue;
         }
         const risk = this.config.merge.risk;
@@ -72771,22 +72856,8 @@ ${riskNote ? `${riskNote}
             await this.explain(live2, "Branch-Aktualisierung ist nicht erlaubt oder durch offene Reviews blockiert.");
             continue;
           }
-          const key = `branch-update:${hash2({ head: f.head, base: f.base })}`;
-          if (this.events(live2).some((e) => e.key === key)) {
-            await this.explain(live2, "Branch-Aktualisierung wurde bereits angefordert; GitHub-Status pr\xFCfen.");
-            continue;
-          }
-          await this.event(live2, key, { type: "branch_update", head: f.head, base: f.base });
           phase = "Branch-Aktualisierung";
-          const head = await this.api.update(number4, f.head);
-          report.updated++;
-          const updated = await this.api.facts(number4);
-          if (updated.head !== head) {
-            await this.explain(updated, "Branch wurde erneut ver\xE4ndert; keine Freigabe f\xFCr den ungepr\xFCften Stand.");
-            continue;
-          }
-          await this.dispatch(updated, this.config.merge.validationWorkflow, updated.headBranch, head);
-          await this.explain(updated, "KI hat eine Branch-Aktualisierung veranlasst. Neue Tests und eine neue KI-Entscheidung sind vor dem Merge erforderlich.");
+          if (await this.updateBranch(live2, snapshot, ownership, adopted, "KI hat eine Branch-Aktualisierung veranlasst. Neue Tests und eine neue KI-Entscheidung sind vor dem Merge erforderlich.")) report.updated++;
           continue;
         }
         const gate = mergeGate(live2, this.config);

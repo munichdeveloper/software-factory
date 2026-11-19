@@ -93,7 +93,9 @@ authorization. Existing installations continue with notifications disabled.
   `maxPerRun`). Leaving it out keeps it off and the configuration hash unchanged.
 - `handover_required`: the independent merge review handed a Factory pull request over
   to a person, because it asked for changes while `execution.rework` is off, or because
-  it deferred the decision (`defer`, with or without rework). The broker records a
+  it deferred the decision (`defer`, with or without rework), or because its branch has
+  merge conflicts the Factory does not resolve itself (rework off or attempts used up;
+  see "Stale branches and merge conflicts" in merging.md). The broker records a
   trusted `merge_handover` event on the PR and labels it `sf:needs-human`; the message
   names the repository, PR number and title and what is needed, and links the PR. Each
   review is announced once; a hand-over for a head the PR no longer has, or for a closed

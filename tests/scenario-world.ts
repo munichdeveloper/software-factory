@@ -135,6 +135,8 @@ export class World {
   private reviewedHeads = new Set<string>();
   /** Heads the independent review asks to change instead of approving. */
   readonly refusedHeads = new Set<string>();
+  /** Heads whose branch conflicts with the base: GitHub reports DIRTY and refuses to update them. */
+  readonly conflictingHeads = new Set<string>();
   readonly log: string[] = [];
   constructor(readonly options: WorldOptions = {}) {
     this.cfg.execution.engine = 'temporal';
@@ -282,7 +284,7 @@ export class World {
       facts: async number => {
         const pr = this.github.state.prs.find(p => p.number === number)!, f = this.pulls.get(number)!;
         return { number, title: 'Implement', body: `Closes #${pr.closingIssues[0]}`, head: f.head, base: this.base, headBranch: pr.headRefName!, baseBranch: 'main',
-          state: pr.state, draft: f.draft, sameRepository: true, labels: [], mergeState: 'CLEAN', reviewDecision: null, unresolvedThreads: [], checks: structuredClone(f.checks),
+          state: pr.state, draft: f.draft, sameRepository: true, labels: [], mergeState: this.conflictingHeads.has(f.head) ? 'DIRTY' : 'CLEAN', reviewDecision: null, unresolvedThreads: [], checks: structuredClone(f.checks),
           mergeSha: f.mergeSha, mergeActorType: f.mergeSha ? 'Bot' : null, strictChecks: false, nativeRequiredChecks: [], comments: structuredClone(f.comments),
           behindBy: f.base === this.base ? 0 : 1 };
       },
@@ -296,6 +298,7 @@ export class World {
       },
       update: async (number, head) => {
         const f = this.pulls.get(number)!; if (f.head !== head) throw new Error('head moved');
+        if (this.conflictingHeads.has(head)) throw new Error('MERGE_CONFLICT');
         Object.assign(f, { head: hash({ head, base: this.base }).slice(0, 40), base: this.base, checks: [{ name: 'test', state: 'in_progress' }] }); this.log.push(`PR ${number} updated`); return f.head;
       },
       merge: async (number, head) => {

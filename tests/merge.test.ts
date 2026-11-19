@@ -3,6 +3,8 @@ import { config, clock, MemoryGitHub, issue } from './helpers.js';
 import { MergeManager, mergeGate } from '../src/merge/manager.js';
 import type { MergeFacts, MergePort, MergeReview, ReviewInput } from '../src/merge/contract.js';
 import { decodeEvent, encodeEvent } from '../src/state/events.js';
+import { taskVersion } from '../src/state/identity.js';
+import { reconstruct } from '../src/state/reconstruct.js';
 import { OpenAIMergeReviewer } from '../src/merge/reviewer.js';
 import { deliverNotifications } from '../src/notifications/slack.js';
 import { ModelRouter, routedCall, Routing } from '../src/llm/router.js';
@@ -122,12 +124,28 @@ it('requires exact current human approval in supervised mode and accepts only au
   x.f.comments.push({ id: 100, author: 'maintainer', body: approval, createdAt: clock.toISOString() });
   await x.run(); expect(x.api.merge).toHaveBeenCalledTimes(1);
 });
-it('lets AI request a safe update, dispatches CI for the new head, and requires a new review before merging', async () => {
-  const x = fixture('update_branch'); x.f.mergeState = 'BEHIND';
+it('updates a branch behind its base before any review, dispatches CI for the new head, and reviews only the new head', async () => {
+  const x = fixture(); x.f.mergeState = 'BEHIND';
   expect((await x.run()).updated).toBe(1); expect(x.api.update).toHaveBeenCalledWith(52, 'a'.repeat(40));
+  expect(x.reviewer.review).not.toHaveBeenCalled();
   expect(x.api.dispatch).toHaveBeenCalledWith('test.yml', 'feature'); expect(x.api.merge).not.toHaveBeenCalled();
-  x.f.checks = x.cfg.merge.requiredChecks.map(name => ({ name, state: 'success' })); x.review.decision = 'merge';
-  await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(2); expect(x.api.merge).toHaveBeenCalledWith(52, 'c'.repeat(40), 'squash');
+  x.f.checks = x.cfg.merge.requiredChecks.map(name => ({ name, state: 'success' }));
+  await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(1); expect(x.api.merge).toHaveBeenCalledWith(52, 'c'.repeat(40), 'squash');
+});
+it('leaves a stale branch alone when merge.updateBranch is off', async () => {
+  const x = fixture(); x.f.mergeState = 'BEHIND'; x.cfg.merge.updateBranch = false;
+  await x.run(); expect(x.api.update).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
+});
+it.each(['DIRTY', 'update'] as const)('hands an adopted pull request with a merge conflict (%s) over to a person, without review and without waiting for checks', async how => {
+  const x = fixture(); const needsHuman = vi.fn(async () => {}); Object.assign(x.api, { needsHuman });
+  if (how === 'DIRTY') { x.f.mergeState = 'DIRTY'; x.f.checks = []; }
+  else { x.f.mergeState = 'BEHIND'; vi.mocked(x.api.update).mockRejectedValue(new Error('MERGE_CONFLICT')); }
+  const report = await x.run(); expect(report.errors).toEqual([]);
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
+  const handovers = x.f.comments.map(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data).filter(d => d?.type === 'merge_handover');
+  expect(handovers).toEqual([expect.objectContaining({ decision: 'conflict', head: 'a'.repeat(40) })]);
+  expect(needsHuman).toHaveBeenCalledWith(52, true);
+  expect(x.f.comments.at(-1)!.body).toContain('Merge-Konflikte');
 });
 it('fails closed when context is incomplete or the review provider is unavailable', async () => {
   for (const stage of ['context', 'review'] as const) {
@@ -245,6 +263,35 @@ it('with Factory protection requires the head to contain the current base and up
   expect((await x.owned()).merged).toBe(1); expect(x.api.merge).toHaveBeenCalledWith(52, 'c'.repeat(40), 'squash');
   expect(mergeGate({ ...x.f, state: 'open', behindBy: null }, x.cfg)).toContain('unbekannt');
   expect(mergeGate({ ...x.f, state: 'open', behindBy: 0 }, config())).toContain('Serverseitige PR-Regeln');
+});
+it('sends a conflicting Factory pull request back to the coding worker as a conflict rework (execution.rework)', async () => {
+  const x = temporal(); x.f.draft = false; x.f.mergeState = 'DIRTY'; x.f.checks = []; x.cfg.execution.rework = true;
+  const task = x.snapshot.issues.find(i => i.number === 7)!, exec = 'e'.repeat(32);
+  x.snapshot.comments.get(7)!.unshift({ id: 0, author: 'github-actions[bot]', createdAt: clock.toISOString(), body: encodeEvent({ version: 1, key: `intent:${exec}`,
+    at: clock.toISOString(), correlationId: 'c', data: { type: 'intent', actionId: 'a'.repeat(64), attempt: 0, input: { contractVersion: '1.0', repository: 'owner/target',
+      issueNumber: 7, taskVersion: taskVersion(task), description: task.body, acceptanceCriteria: ['Done'], contextReferences: [], executionId: exec,
+      allowedActions: ['publish_result'], limits: { timeoutMinutes: 30, maxOutputBytes: 16000 }, operation: 'sha256', worker: 'test' } } }) });
+  const tasks: { number: number; body: string }[] = [];
+  vi.mocked(x.api.comment).mockImplementation(async (number, body) => {
+    if (number === 7) tasks.push({ number, body }); else x.f.comments.push({ id: x.f.comments.length + 1, body, author: 'github-actions[bot]', createdAt: clock.toISOString() });
+  });
+  await x.owned(); expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
+  const journaled = tasks.map(t => decodeEvent({ id: 1, author: 'github-actions[bot]', createdAt: clock.toISOString(), body: t.body }, x.cfg.manager.trustedActors)?.data);
+  expect(journaled).toEqual([expect.objectContaining({ type: 'merge_changes_requested', cause: 'conflict', prNumber: 52, executionId: 'e'.repeat(32) })]);
+  expect(tasks[0]!.body).toContain('Merge-Konflikt');
+  expect(x.f.comments.some(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data.type === 'merge_handover')).toBe(false);
+  // Once per head: the next pass journals nothing new on the task.
+  x.snapshot.comments.get(7)!.push({ id: 9, author: 'github-actions[bot]', createdAt: clock.toISOString(), body: tasks[0]!.body });
+  await x.owned(); expect(tasks).toHaveLength(1);
+  x.snapshot.prs.push({ number: 52, state: 'open', merged: false, closingIssues: [7], referencedIssues: [], headRefName: `sf/issue-7/${exec}`, headSha: x.f.head });
+  const state = reconstruct(x.snapshot, x.cfg).find(t => t.issue.number === 7)!;
+  expect(state).toMatchObject({ reworkable: true, reworkCause: 'conflict' }); expect(state.reworkReview!.reason).toContain('Konfliktmarker');
+});
+it('hands a conflicting Factory pull request over to a person without execution.rework', async () => {
+  const x = temporal(); x.f.draft = false; x.f.mergeState = 'DIRTY'; x.cfg.execution.rework = false;
+  await x.owned();
+  expect(x.f.comments.some(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data.type === 'merge_handover')).toBe(true);
+  expect(x.f.comments.at(-1)!.body).toContain('execution.rework');
 });
 it('re-runs a failed required check once before review, and lets the failure stand after that', async () => {
   const x = temporal(); x.f.draft = false; x.f.checks[0]!.state = 'failure';

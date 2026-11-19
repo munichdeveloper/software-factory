@@ -230,7 +230,8 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
       if (e?.data.type !== 'merge_handover' || e.data.prNumber !== pr.number || e.data.head !== pr.headSha || !afterStart(e.at)) continue;
       await deliver(pr.number, { event: 'handover_required', number: pr.number, title: pr.title ?? `PR #${pr.number}`, actor: 'Software Factory',
         url: `https://github.com/${github.repository}/pull/${pr.number}`, repository: github.repository, reviewKey: e.data.reviewKey,
-        detail: e.data.decision === 'defer' ? 'Das KI-Review überlässt die Entscheidung einem Menschen (defer). Begründung im PR.'
+        detail: e.data.decision === 'conflict' ? 'Der Branch hat Merge-Konflikte mit der Basis, die die Factory nicht selbst auflöst (Nacharbeit aus oder Versuche aufgebraucht). Bitte auflösen; Commits mit Schreibrecht übernimmt die Factory.'
+          : e.data.decision === 'defer' ? 'Das KI-Review überlässt die Entscheidung einem Menschen (defer). Begründung im PR.'
           : 'Das KI-Review verlangt Änderungen, automatische Nacharbeit (execution.rework) ist aus. Bitte nachbessern; Commits mit Schreibrecht übernimmt die Factory.' });
     }
   }

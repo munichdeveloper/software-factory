@@ -223,7 +223,8 @@ export class Manager {
         const previous = rework || retry ? task.latest!.input.executionId : undefined;
         // Escalate to workers.coding.retryAgents only when an earlier attempt failed for a reason the agent owns: a
         // rework, or a failed, blocked or cancelled result other than a runner failure before the agent started.
-        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework ||
+        // A conflict with the base is mechanical work and stays on the first-attempt agents (Johannes, 2026-11-19).
+        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework && task.reworkCause !== 'conflict' ||
           task.executions.some(e => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== 'success' &&
             e.result.error !== infrastructureFailureCode));
         // A missing grant is known before anything durable exists: do not leave an intent that can never start.
