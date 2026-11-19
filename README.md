@@ -56,6 +56,8 @@ A [concept for per-PR preview environments](docs/preview-environments.md) on Coo
 (not implemented) describes an additional E2E gate before merging. Optional
 [risk-based auto-merge](docs/merging.md#risk-based-auto-merge) lets the Factory merge
 low- and medium-risk PRs on its own and ask for approval above a threshold.
+A [concept for failure events](docs/failure-events.md) (not implemented) publishes failed
+validation steps and refused starts and resumes a refused start once its cause is gone.
 
 ## Deployment after pushes (v0.5.0)
 
