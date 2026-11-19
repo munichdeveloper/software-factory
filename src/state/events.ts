@@ -42,7 +42,7 @@ export const eventSchema = z.strictObject({
     z.strictObject({ type: z.literal('merge_handover'), prNumber: z.number().int().positive(), head: z.string().length(40), base: z.string().length(40),
       reviewKey: z.string().length(64), decision: z.enum(['request_changes', 'defer', 'conflict']) }),
     z.strictObject({ type: z.literal('merge_status'), head: z.string().length(40), base: z.string().length(40), reason: z.string().max(3000) }),
-    z.strictObject({ type: z.literal('decision'), action: z.string().max(30000), outcome: z.enum(['allow', 'deny', 'approval', 'executed']), reason: z.string().max(2000) })
+    z.strictObject({ type: z.literal('decision'), action: z.string().max(30000), outcome: z.enum(['allow', 'deny', 'approval', 'executed', 'refused']), reason: z.string().max(2000) })
   ])
 });
 export type HarnessEvent = z.infer<typeof eventSchema>;

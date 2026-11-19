@@ -155,10 +155,14 @@ export class Manager {
       }
     } catch { report.errors.push('Status comments could not be updated; the lifecycle itself is unaffected'); }
   }
-  private async audit(action: Action, outcome: 'allow' | 'deny' | 'approval' | 'executed', reason: string): Promise<void> {
+  /**
+   * `refused` closes an `allow` the runtime turned down before any intent existed; its reason is the runtime's fixed
+   * code and its key names the code, so each action and code is journaled once, not on every reconciliation (#128).
+   */
+  private async audit(action: Action, outcome: 'allow' | 'deny' | 'approval' | 'executed' | 'refused', reason: string): Promise<void> {
     if (!this.config.reporting.persistDecisions || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return;
     const id = actionId(action, policyVersion(this.config));
-    await this.event(action.issueNumber, `decision:${id}:${outcome}`, { type: 'decision', action: JSON.stringify(action), outcome, reason });
+    await this.event(action.issueNumber, `decision:${id}:${outcome}${outcome === 'refused' ? `:${reason}` : ''}`, { type: 'decision', action: JSON.stringify(action), outcome, reason });
   }
   private async execute(action: Action, task: Task, snapshot: Snapshot): Promise<boolean> {
     const live = await this.github.getIssue(task.issue.number);
@@ -335,7 +339,10 @@ export class Manager {
         await this.audit(action, decision.outcome, decision.reason);
         if (decision.outcome === 'approval') report.nextSteps.push(`Approve #${action.issueNumber} by commenting: /harness approve ${id}`);
         if (decision.outcome !== 'allow' || this.config.execution.dryRun) continue;
+        const rejectionsBefore = this.rejections.length;
         record.executed = await this.execute(action, task, snapshot);
+        const refused = this.rejections.slice(rejectionsBefore).find(r => !r.recorded && r.issueNumber === action.issueNumber);
+        if (refused && /^[A-Z][A-Z0-9_]{0,79}$/.test(refused.code)) await this.audit(action, 'refused', refused.code);
         if (record.executed) {
           budget.actions++;
           if (action.kind === 'create_followup') { budget.newIssues++; (budget.followupOrigins ??= []).push(action.issueNumber); }
