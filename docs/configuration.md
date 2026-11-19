@@ -42,7 +42,7 @@ Generated JSON schemas share the executable Zod source.
 | `llm.maxCalls` | `1` | Total calls incl. retries, 0–3; zero disables semantic planning only |
 | `workers.test.enabled` | `true` | Bundled non-code-changing worker |
 | `workers.test.operation` | `sha256` | Digest, deterministic `fail`, or deterministic `blocked` |
-| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY`. `agents` (instead of `agent`, Temporal engine only) is a priority list of up to three agents, each `{agent, model, reasoningEffort}`: see [Agent priority list](#agent-priority-list). `retryAgents` (optional, same shape) is the list for further attempts: see [Escalation on retry](#escalation-on-retry) |
+| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY`. `agents` (instead of `agent`, Temporal engine only) is a priority list of up to three agents, each `{agent, model, reasoningEffort}`: see [Agent priority list](#agent-priority-list). `retryAgents` (optional, same shape) is the list for attempts after the agent failed: see [Escalation on retry](#escalation-on-retry) |
 | `workers.review` | `false` | Must be false; not implemented |
 | `merge.risk.enabled` | `false` | Risk-based auto-merge, see [merging](merging.md#risk-based-auto-merge); requires `merge.enabled` |
 | `merge.risk.mode` | `enforce` | `enforce` gates merges by risk class; `observe` only classifies and shows |
@@ -160,8 +160,11 @@ workers:
         reasoningEffort: high
 ```
 
-The first attempt of a task runs the `agents` list; every further attempt (a retry after a failed attempt, or a rework
-after a failed validation or a merge review's requested changes) runs `retryAgents` instead, with the same credit check
-and fallback. Most tasks then cost the cheaper model, and only those that fail once escalate to the stronger one.
+The first attempt of a task runs the `agents` list. A further attempt runs `retryAgents` instead (with the same
+credit check and fallback) once an earlier attempt of the same task version failed for a reason the agent owns: a
+rework after a failed validation or a merge review's requested changes, or a failed, blocked, cancelled or timed-out
+agent run. A retry after the runner failed before the agent started (`EXECUTOR_INFRASTRUCTURE_FAILURE`, e.g. a setup
+step) keeps `agents`, since a stronger model would not change that outcome. The Manager marks an escalated intent with
+`urn:sf-escalate`. Most tasks then cost the cheaper model, and only those the agent could not finish escalate.
 `retryAgents` is optional without a default: a configuration without it keeps its hash and every attempt uses `agents`.
 Each repository needs the secret of every agent in both lists.

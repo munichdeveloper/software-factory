@@ -96,9 +96,9 @@ export const configSchema = z.strictObject({
        */
       agents: z.array(codingAgentSchema).min(1).max(3).optional(),
       /**
-       * Optional priority list for further attempts (a retry after a failed attempt or a rework after a failed validation
-       * or a merge review), Temporal engine only: lets a cheaper first attempt escalate to a stronger model. Without it every
-       * attempt uses agents (or agent). Optional without a default, so configurations that leave it out keep their hash.
+       * Optional priority list for escalated attempts, Temporal engine only: a further attempt after an earlier attempt
+       * failed for a reason the agent owns (failed validation, requested changes, failed or timed-out agent run). A retry
+       * after the runner failed before the agent started keeps agents. Without it every attempt uses agents (or agent). Optional without a default, so configurations that leave it out keep their hash.
        */
       retryAgents: z.array(codingAgentSchema).min(1).max(3).optional(),
       /** The default is a Codex model; with agent claude name a Claude model such as claude-opus-5-5 or claude-sonnet-5-5. */
@@ -244,9 +244,9 @@ export type Config = z.infer<typeof configSchema>;
 export function codingAgents(coding: Exclude<Config['workers']['coding'], false>): CodingAgent[] {
   return coding.agents ?? [{ agent: coding.agent ?? 'codex', model: coding.model, reasoningEffort: coding.reasoningEffort }];
 }
-/** The agents of one attempt: retryAgents for a further attempt when configured, otherwise the regular list. */
-export function attemptAgents(coding: Exclude<Config['workers']['coding'], false>, furtherAttempt: boolean): CodingAgent[] {
-  return furtherAttempt && coding.retryAgents ? coding.retryAgents : codingAgents(coding);
+/** The agents of one attempt: retryAgents for an escalated attempt when configured, otherwise the regular list. */
+export function attemptAgents(coding: Exclude<Config['workers']['coding'], false>, escalate: boolean): CodingAgent[] {
+  return escalate && coding.retryAgents ? coding.retryAgents : codingAgents(coding);
 }
 export function loadConfig(source: string): Config {
   const doc = parseDocument(source, { uniqueKeys: true });

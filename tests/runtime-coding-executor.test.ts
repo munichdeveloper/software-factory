@@ -203,13 +203,13 @@ it('sends a priority list as the first agent with fallbacks and keeps a single a
   expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'high', fallbacks: [{ worker: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' }] });
   const single = fixture(); await single.poll(); expect(single.requests[0]).not.toHaveProperty('fallbacks');
 });
-it('sends retryAgents for a retry or rework and the regular list for a first attempt', async () => {
+it('sends retryAgents for an escalated attempt and the regular list otherwise', async () => {
   const lists = { agent: undefined, agents: [{ agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' }, { agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' }],
     retryAgents: [{ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' }, { agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' }] };
   const first = fixture(); first.cfg.workers.coding = { ...(first.cfg.workers.coding as object), ...lists } as typeof first.cfg.workers.coding;
   await first.poll();
   expect(first.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
-  const retried = { ...snapshot, admission: { ...snapshot.admission, input: { ...snapshot.admission.input, contextReferences: [...snapshot.admission.input.contextReferences, `urn:sf-retry:${'c'.repeat(32)}`] } } };
+  const retried = { ...snapshot, admission: { ...snapshot.admission, input: { ...snapshot.admission.input, contextReferences: [...snapshot.admission.input.contextReferences, `urn:sf-retry:${'c'.repeat(32)}`, 'urn:sf-escalate'] } } };
   const again = fixture(retried); again.cfg.workers.coding = { ...(again.cfg.workers.coding as object), ...lists } as typeof again.cfg.workers.coding;
   await again.poll();
   expect(again.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'high', fallbacks: [{ worker: 'codex', model: 'gpt-6.1-sol', effort: 'high' }] });

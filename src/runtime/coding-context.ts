@@ -20,8 +20,13 @@ export function retryOf(input: { contextReferences: string[] }): string | null {
   const ids = input.contextReferences.flatMap(r => r.match(/^urn:sf-retry:([a-f0-9]{32})$/)?.[1] ?? []);
   return ids.length === 1 ? ids[0]! : null;
 }
-/** A retry or a rework: the Manager marked the intent with the execution it repeats or reworks. */
-export const furtherAttempt = (input: { contextReferences: string[] }) => reworkOf(input) !== null || retryOf(input) !== null;
+/**
+ * Written by the Manager into the intent of a further attempt when an earlier attempt of the same task version failed
+ * for a reason the agent owns (failed validation, requested changes, a failed or timed-out agent run), not when only
+ * the runner failed before the agent started: such an attempt runs workers.coding.retryAgents.
+ */
+export const escalationMarker = 'urn:sf-escalate';
+export const escalated = (input: { contextReferences: string[] }) => input.contextReferences.includes(escalationMarker);
 
 // Ref and branch names are echoed into a prompt and a shell-free git call: keep them to an inert alphabet.
 const label = (value: string) => value.replace(/[^A-Za-z0-9._/#-]/g, '').slice(0, 200);

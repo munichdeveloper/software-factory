@@ -4,12 +4,12 @@ import { planningCode, type Planner } from '../llm/provider.js';
 import { actionSchema, planSchema, type Action, type Snapshot } from '../types.js';
 import { actionId, executionId, hash, taskVersion } from '../state/identity.js';
 import { decodeEvent, type HarnessEvent } from '../state/events.js';
-import { admissionRejectedSummary, reconstruct, type Task } from '../state/reconstruct.js';
+import { admissionRejectedSummary, infrastructureFailureCode, reconstruct, type Task } from '../state/reconstruct.js';
 import { lastBlockLabelEventId } from '../state/blocks.js';
 import { managedLabel, priorityLabels, withStatus } from '../state/lifecycle.js';
 import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
 import { workerInputSchema, type WorkerInput } from '../workers/contract.js';
-import { retryMarker, reviewEntries, reworkMarker } from '../runtime/coding-context.js';
+import { escalationMarker, retryMarker, reviewEntries, reworkMarker } from '../runtime/coding-context.js';
 import { untrustedEdit, untrustedEditReason } from '../state/content-trust.js';
 import { reconciliationPlan } from './plan.js';
 import type { RunReport } from './report.js';
@@ -221,6 +221,11 @@ export class Manager {
         // A retry after a failed run names it too, so the grant that admitted it carries over (software-factory#93).
         const retry = action.kind === 'retry_worker' && !rework && task.latest?.result?.status === 'failed' && this.config.execution.engine === 'temporal';
         const previous = rework || retry ? task.latest!.input.executionId : undefined;
+        // Escalate to workers.coding.retryAgents only when an earlier attempt failed for a reason the agent owns: a
+        // rework, or a failed, blocked or cancelled result other than a runner failure before the agent started.
+        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework ||
+          task.executions.some(e => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== 'success' &&
+            e.result.error !== infrastructureFailureCode));
         // A missing grant is known before anything durable exists: do not leave an intent that can never start.
         if (this.config.execution.engine === 'temporal' && this.options.workerRuntime?.preflight) {
           try { await this.options.workerRuntime.preflight(live.number, previous); }
@@ -232,7 +237,7 @@ export class Manager {
         // Intent first. If dispatch or subsequent writes fail, a future run observes this intent AND actual runs.
         const input = workerInputSchema.parse({ contractVersion: '1.0', repository: this.github.repository,
           issueNumber: live.number, taskVersion: action.taskVersion, description: live.body, acceptanceCriteria: task.criteria,
-          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : []),
+          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : []), ...(escalate ? [escalationMarker] : []),
             // A rework after a merge review hands the worker what the review asked to change.
             ...(rework && task.reworkReview ? reviewEntries(task.reworkReview) : [])], executionId: id,
           allowedActions: ['publish_result'], limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16000 },

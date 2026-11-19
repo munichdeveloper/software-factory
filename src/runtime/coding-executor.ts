@@ -9,7 +9,7 @@ import type { RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
 import { bindValidation, validationReportSchema, type ValidationReport } from './validation-contract.js';
-import { failedChecksEntry, furtherAttempt, loopbackEntry, maxContextRefs, namedRefs, outputEntries, refEntry, reworkEntry, reworkOf, unavailableEntry } from './coding-context.js';
+import { failedChecksEntry, escalated, loopbackEntry, maxContextRefs, namedRefs, outputEntries, refEntry, reworkEntry, reworkOf, unavailableEntry } from './coding-context.js';
 
 export const codingWorkflow = 'factory-temporal-executor.yml';
 export function executorWrapper(factorySha: string, harnessSha: string, validated = false) {
@@ -249,8 +249,9 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
       } });
     // The admission's worker "codex" names the isolated coding worker; which agent runs comes from workers.coding: the
     // first agent of the list, with the others as fallbacks the executor tries when a provider reports used-up credit.
-    // A retry or rework uses retryAgents when configured, so a cheap first attempt can escalate to a stronger model.
-    const [first, ...others] = attemptAgents(coding, furtherAttempt(input));
+    // An escalated attempt (see escalationMarker) uses retryAgents when configured: a cheap first attempt escalates to a
+    // stronger model only after the agent itself failed, not after a runner failure.
+    const [first, ...others] = attemptAgents(coding, escalated(input));
     const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: first!.agent,
       task: { id: `github:${snapshot.repository}#${input.issueNumber}`, version: input.taskVersion, description,
         acceptanceCriteria: input.acceptanceCriteria, contextReferences: [...input.contextReferences, ...extra.entries] }, baseSha: snapshot.baseSha,
