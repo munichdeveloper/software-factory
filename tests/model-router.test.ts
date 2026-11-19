@@ -47,8 +47,14 @@ describe('ModelRouter', () => {
     const fetcher = vi.fn();
     expect(await new ModelRouter(undefined, fetcher).route('coding', 's', options, settings)).toMatchObject({ used: false, reason: 'no-key', code: null });
     expect(fetcher).not.toHaveBeenCalled();
-    expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.4 } } })).route('coding', 's', options, settings))
-      .toMatchObject({ used: false, reason: 'low-confidence', choice: 'strong', confidence: 0.4 });
+    // Jev's confidence is (p - 1/n) / (1 - 1/n): with two candidates 0.32 means a 66 % lean, which clears 0.5 ...
+    expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.32 } } })).route('coding', 's', options, settings))
+      .toMatchObject({ used: true, choice: 'strong', confidence: 0.66 });
+    // ... the threshold applies to the chosen candidate's probability, given or recovered.
+    expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.4 } } })).route('coding', 's', options, { ...settings, minConfidence: 0.8 }))
+      .toMatchObject({ used: false, reason: 'low-confidence', choice: 'strong', confidence: 0.7 });
+    expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.9, probabilities: { cheap: 0.4, strong: 0.6 } } } })).route('coding', 's', options, { ...settings, minConfidence: 0.65 }))
+      .toMatchObject({ used: false, reason: 'low-confidence', confidence: 0.6 });
     expect(await new ModelRouter('key', answering({ error: { message: 'secret detail' } }, 503)).route('coding', 's', options, settings))
       .toEqual({ used: false, purpose: 'coding', reason: 'unavailable', code: 'HTTP_503', choice: null, confidence: null, model: 'typesafe/jev-1.14' });
     expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'other', confidence: 0.9 } } })).route('coding', 's', options, settings))
@@ -98,7 +104,7 @@ describe('routedCall', () => {
       { id: 'strong', description: 'Hard', model: 'claude-opus-5-5', reasoningEffort: 'high' }];
     const result = () => ({ decision: 'merge' });
     const routedResult = await routedCall({ ...base, candidates, routing: routing('strong'), configured: async () => result(), run: () => async () => result() });
-    expect(routeNoteDe(routeOutcome(routedResult))).toBe('Modellwahl: Der Model Router (Jev) wählte `strong` (claude-opus-5-5, high) mit 90 % Konfidenz.');
+    expect(routeNoteDe(routeOutcome(routedResult))).toBe('Modellwahl: Der Model Router (Jev) wählte `strong` (claude-opus-5-5, high) mit 95 % Wahrscheinlichkeit.');
     const failed = await routedCall({ ...base, candidates, routing: routing('strong'), configured: async () => result(), run: () => async () => { throw new Error('HTTP 529'); } });
     expect(routeNoteDe(routeOutcome(failed))).toBe('Modellwahl: Der Model Router wählte `strong`, der Kandidat konnte nicht laufen; geprüft haben die konfigurierten Modelle.');
     const skipped = await routedCall({ ...base, candidates, routing: routing(null), configured: async () => result(), run: () => async () => result() });

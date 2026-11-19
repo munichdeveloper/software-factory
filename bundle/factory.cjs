@@ -69582,24 +69582,24 @@ var skipDe = {
   "no-key": "kein Jev-Schl\xFCssel im Broker",
   unavailable: "Jev nicht erreichbar",
   "invalid-answer": "keine verwertbare Antwort von Jev",
-  "low-confidence": "Jevs Konfidenz unter dem Minimum"
+  "low-confidence": "Jev zu unsicher"
 };
 var skipEn = {
   "no-key": "no Jev key on the broker",
   unavailable: "Jev was unreachable",
   "invalid-answer": "Jev gave no usable answer",
-  "low-confidence": "Jev's confidence was below the minimum"
+  "low-confidence": "Jev's choice was below the minimum probability"
 };
 function routeNoteDe(outcome) {
   if (!outcome) return "";
   const { record: record2, candidate } = outcome;
   if (outcome.ran === "candidate" && record2.used && candidate)
-    return `Modellwahl: Der Model Router (Jev) w\xE4hlte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ""}) mit ${pct(record2.confidence)} Konfidenz.`;
+    return `Modellwahl: Der Model Router (Jev) w\xE4hlte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ""}) mit ${pct(record2.confidence)} Wahrscheinlichkeit.`;
   if (record2.used) return `Modellwahl: Der Model Router w\xE4hlte \`${record2.choice}\`, der Kandidat konnte nicht laufen; gepr\xFCft haben die konfigurierten Modelle.`;
   return `Modellwahl: ohne Model Router (${skipDe[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}); gepr\xFCft haben die konfigurierten Modelle.`;
 }
 function routeNoteEn(record2, agent) {
-  if (record2.used && agent) return `**Model:** chosen by the model router (Jev): \`${record2.choice}\` (${agent.agent}, ${agent.model}, ${agent.reasoningEffort}), ${pct(record2.confidence)} confidence.`;
+  if (record2.used && agent) return `**Model:** chosen by the model router (Jev): \`${record2.choice}\` (${agent.agent}, ${agent.model}, ${agent.reasoningEffort}), ${pct(record2.confidence)} probability.`;
   if (record2.used) return `**Model:** the model router chose \`${record2.choice}\`; the configured agents run.`;
   return `**Model:** the configured agents; the model router was not used (${skipEn[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}).`;
 }
