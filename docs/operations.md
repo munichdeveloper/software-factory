@@ -16,6 +16,23 @@ does not depend on `reporting.persistDecisions`. A later remove/reapply is a new
 block and never inherits an older automatic origin, even for the same actor.
 Unknown/legacy block provenance is treated as explicit and requires manual clearing.
 
+### Unblocking a task
+
+Why a task is blocked decides how to resume it:
+
+- **Blocked by a person** (`harness:blocked` applied by hand): remove the label.
+- **Specification or dependencies** (missing acceptance criteria, an open `Depends on`): fix the issue text or close
+  the dependency; the block clears on the next reconciliation.
+- **Blocked by the worker** (its result was `blocked`, for example because the sandbox could not run a check): removing
+  the label is not enough. The journal still holds that result for this task version, so the Manager applies the label
+  again. Revise the issue instead: any change to its title or body is a new task version without that result, so the
+  block clears and the next attempt starts (with a ready grant where `autonomy.startGrant` requires one). Say in the
+  revision what changed, for example that a dependency is now available.
+
+The coding sandbox has no network. Coding runs install the root `package-lock.json` before it goes offline, and with a
+validation plan the project's build and tests run in the separate hosted validation job; a worker that reports
+`blocked` only because it could not run those checks counts as successful when that validation passes (controla#63).
+
 | Failure | Recovery |
 |---|---|
 | API failure before intent | Retry manager; no worker has been dispatched |

@@ -33,8 +33,10 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+    # The request itself is no job output: GitHub drops a job output it takes for a secret (an issue that quotes
+    # `Authorization: Bearer <key>`, say), and the next job then got an empty request (software-factory#182). It travels
+    # as the artifact coding-request-<executionId> instead.
     outputs:
-      request: ${{ steps.request.outputs.request }}
       execution-id: ${{ steps.request.outputs.execution-id }}
       base-sha: ${{ steps.request.outputs.base-sha }}
       validation: ${{ steps.request.outputs.validation }}
@@ -66,6 +68,16 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CLAUDE_CODE_VERSION: '2.1.318' # keep equal to the harness's Claude Code version
         run: node bundle/factory.cjs validate-coding-execution --output coding-agent.json
+      - name: Hand the validated request to the next jobs as a file
+        env:
+          SF_REQUEST: ${{ steps.request.outputs.request }}
+        run: printf '%s' "$SF_REQUEST" > "$RUNNER_TEMP/coding-request.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coding-request-${{ steps.request.outputs.execution-id }}
+          path: ${{ runner.temp }}/coding-request.json
+          if-no-files-found: error
+          retention-days: 7
       # The broker reads the choice to name the agent and to alert on used-up credit, also when no agent could run.
       - if: ${{ always() && hashFiles('coding-agent.json') != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -81,6 +93,21 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: coding-request-${{ needs.validate.outputs.execution-id }}
+          path: ${{ runner.temp }}/sf-request
+      # A request that does not arrive intact stops here with its own code instead of failing inside the Harness.
+      - id: request
+        name: Read the validated request
+        env:
+          SF_EXECUTION_ID: ${{ needs.validate.outputs.execution-id }}
+        run: |
+          file="$RUNNER_TEMP/sf-request/coding-request.json"
+          if [[ "$(jq -r '.executionId' "$file" 2>/dev/null)" != "$SF_EXECUTION_ID" ]]; then
+            echo "::error::REQUEST_UNAVAILABLE: the validated coding request did not reach this job intact"; exit 1
+          fi
+          { echo 'request<<SF_CODING_REQUEST_EOF'; cat "$file"; echo; echo 'SF_CODING_REQUEST_EOF'; } >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ needs.validate.outputs.base-sha }}
@@ -92,7 +119,7 @@ jobs:
         working-directory: target
         timeout-minutes: 5
         env:
-          SF_CODING_REQUEST: ${{ needs.validate.outputs.request }}
+          SF_CODING_REQUEST: ${{ steps.request.outputs.request }}
           SF_BASE_SHA: ${{ needs.validate.outputs.base-sha }}
           SF_FETCH_TOKEN: ${{ github.token }}
         run: |
@@ -138,7 +165,7 @@ jobs:
       # Opt-in per repository (workers.coding.loopback), passed on by the broker: local servers and browser tests for the worker.
       - id: sandbox
         env:
-          SF_CODING_REQUEST: ${{ needs.validate.outputs.request }}
+          SF_CODING_REQUEST: ${{ steps.request.outputs.request }}
         run: |
           loopback=false
           if jq -e '.task.contextReferences | index("sf-context sandbox loopback")' <<<"$SF_CODING_REQUEST" >/dev/null; then loopback=true; fi
@@ -158,7 +185,7 @@ jobs:
         with:
           loopback: ${{ steps.sandbox.outputs.loopback }}
           browser-cache: ${{ steps.browsers.outputs.path }}
-          request: ${{ needs.validate.outputs.request }}
+          request: ${{ steps.request.outputs.request }}
           execution-id: ${{ needs.validate.outputs.execution-id }}
           workspace: ${{ github.workspace }}/target
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -189,6 +216,6 @@ jobs:
     uses: ./.github/workflows/temporal-artifact-validator.yml
     with:
       factory-ref: ${{ inputs.factory-ref }}
-      request: ${{ needs.validate.outputs.request }}
+      execution-id: ${{ needs.validate.outputs.execution-id }}
       validation: ${{ needs.validate.outputs.validation }}
       source-run-id: ${{ github.run_id }}

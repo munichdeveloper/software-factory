@@ -69919,7 +69919,7 @@ var eventSchema = external_exports.strictObject({
       decision: external_exports.enum(["request_changes", "defer", "conflict"])
     }),
     external_exports.strictObject({ type: external_exports.literal("merge_status"), head: external_exports.string().length(40), base: external_exports.string().length(40), reason: external_exports.string().max(3e3) }),
-    external_exports.strictObject({ type: external_exports.literal("decision"), action: external_exports.string().max(3e4), outcome: external_exports.enum(["allow", "deny", "approval", "executed"]), reason: external_exports.string().max(2e3) })
+    external_exports.strictObject({ type: external_exports.literal("decision"), action: external_exports.string().max(3e4), outcome: external_exports.enum(["allow", "deny", "approval", "executed", "refused"]), reason: external_exports.string().max(2e3) })
   ])
 });
 function encodeEvent(event) {
@@ -71251,10 +71251,14 @@ var Manager = class {
       report.errors.push("Status comments could not be updated; the lifecycle itself is unaffected");
     }
   }
+  /**
+   * `refused` closes an `allow` the runtime turned down before any intent existed; its reason is the runtime's fixed
+   * code and its key names the code, so each action and code is journaled once, not on every reconciliation (#128).
+   */
   async audit(action, outcome, reason) {
     if (!this.config.reporting.persistDecisions || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return;
     const id = actionId(action, policyVersion(this.config));
-    await this.event(action.issueNumber, `decision:${id}:${outcome}`, { type: "decision", action: JSON.stringify(action), outcome, reason });
+    await this.event(action.issueNumber, `decision:${id}:${outcome}${outcome === "refused" ? `:${reason}` : ""}`, { type: "decision", action: JSON.stringify(action), outcome, reason });
   }
   async execute(action, task, snapshot) {
     const live2 = await this.github.getIssue(task.issue.number);
@@ -71493,7 +71497,10 @@ ${marker2}`;
         await this.audit(action, decision.outcome, decision.reason);
         if (decision.outcome === "approval") report.nextSteps.push(`Approve #${action.issueNumber} by commenting: /harness approve ${id}`);
         if (decision.outcome !== "allow" || this.config.execution.dryRun) continue;
+        const rejectionsBefore = this.rejections.length;
         record2.executed = await this.execute(action, task, snapshot);
+        const refused = this.rejections.slice(rejectionsBefore).find((r) => !r.recorded && r.issueNumber === action.issueNumber);
+        if (refused && /^[A-Z][A-Z0-9_]{0,79}$/.test(refused.code)) await this.audit(action, "refused", refused.code);
         if (record2.executed) {
           budget.actions++;
           if (action.kind === "create_followup") {

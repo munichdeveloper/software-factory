@@ -1221,7 +1221,8 @@
                 "allow",
                 "deny",
                 "approval",
-                "executed"
+                "executed",
+                "refused"
               ]
             },
             "reason": {

@@ -68,6 +68,16 @@ describe('manager integration with simulated GitHub responses', () => {
     await run(planner); await run(planner); const count = github.mutations.length; await run(planner);
     expect(github.state.issues).toHaveLength(2); expect(github.mutations).toHaveLength(count);
   });
+  it('unblocks a worker-blocked task when a maintainer revises it, not when the label alone is removed (#82)', async () => {
+    const { github, run } = setup(); github.state.issues.push(issue()); await finishedAttempt(github, 1, 'blocked');
+    await run(); expect(github.state.issues[0]!.labels).toContain('harness:blocked'); const dispatched = github.dispatches;
+    // Removing the label alone: the journal still holds the worker's blocked result for this task version.
+    const task = github.state.issues[0]!; task.labels = task.labels.filter(l => l !== 'harness:blocked'); github.labelBlock(1, false);
+    await run(); expect(github.state.issues[0]!.labels).toContain('harness:blocked'); expect(github.dispatches).toBe(dispatched);
+    // Revising the title or body is a new task version without that result: the label goes and a new attempt starts.
+    github.state.issues[0]!.body += '\nThe registry is reachable through the dependency cache now.';
+    await run(); expect(github.state.issues[0]!.labels).not.toContain('harness:blocked'); expect(github.dispatches).toBe(dispatched + 1);
+  });
   it('12: enforces parallel worker and per-run action limits', async () => {
     const { github, cfg, run } = setup(); github.state.issues.push(issue(1), issue(2), issue(3)); cfg.manager.maxActions = 1;
     const report = await run(); expect(github.dispatches).toBe(1); expect(report.decisions.filter(d => d.decision.outcome === 'deny')).toHaveLength(2);

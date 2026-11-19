@@ -3,7 +3,7 @@ import { Manager } from '../src/manager/index.js';
 import { MockPlanner } from '../src/llm/provider.js';
 import { reconstruct } from '../src/state/reconstruct.js';
 import { RuntimeHttpClient } from '../src/runtime/client.js';
-import type { RuntimeObservation, WorkerRuntimePort } from '../src/runtime/contract.js';
+import { RuntimeAdmissionRejected, type RuntimeObservation, type WorkerRuntimePort } from '../src/runtime/contract.js';
 import { clock, config, issue, MemoryGitHub } from './helpers.js';
 import { decodeEvent } from '../src/state/events.js';
 
@@ -27,6 +27,14 @@ describe('regular Factory manager on Temporal', () => {
     const events = (f.github.state.comments.get(1) ?? []).map(c => decodeEvent(c, f.cfg.manager.trustedActors));
     expect(events.map(e => e?.data.type)).toContain('temporal_receipt');
     expect(events.find(e => e?.data.type === 'temporal_receipt')?.data).toMatchObject({ runId: f.observations[0]!.runId });
+  });
+  it.each(['READY_APPROVAL_REQUIRED', 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'])('closes an allowed start the runtime refuses before the intent with %s, once', async code => {
+    const f = fixture(); f.runtime.preflight = vi.fn(async () => { throw new RuntimeAdmissionRejected(code); });
+    await f.run(); await f.run(new Date(clock.getTime() + 60000));
+    expect(f.start).not.toHaveBeenCalled();
+    const decisions = (f.github.state.comments.get(1) ?? []).map(c => decodeEvent(c, f.cfg.manager.trustedActors)?.data)
+      .filter(d => d?.type === 'decision' && JSON.parse(d.action).kind === 'start_worker');
+    expect(decisions.map(d => d?.type === 'decision' && [d.outcome, d.reason])).toEqual([['allow', expect.any(String)], ['refused', code]]);
   });
   it('keeps an open human gate across long pauses without worker timeout or redispatch', async () => {
     const f = fixture(); await f.run(); const report = await f.run(new Date(clock.getTime() + 7 * 86400000));

@@ -34,6 +34,15 @@ for (const path of [...(await readdir('.github/workflows')).map(f => `.github/wo
     assert.equal(step.with.mode, 'deploy');
     assert(!JSON.stringify(job).includes('OPENAI_API_KEY') && !JSON.stringify(job).includes('SLACK_BOT_TOKEN'), 'deploy job receives only deployment secrets');
   }
+  // GitHub drops a job output it takes for a secret, so a coding request quoting `Authorization: Bearer <key>` reached the
+  // next job empty (#182). The request travels as the artifact coding-request-<executionId>, never as a job output.
+  if (['.github/workflows/coding-worker.yml', '.github/workflows/temporal-coding-executor.yml'].includes(path)) {
+    for (const [name, job] of Object.entries(workflow.jobs) as [string, { outputs?: Record<string, string> }][]) {
+      assert(!Object.keys(job.outputs ?? {}).includes('request'), `${path}: job ${name} must not pass the coding request as a job output`);
+    }
+    assert(JSON.stringify(workflow.jobs).includes('coding-request-'), `${path}: the coding request must travel as an artifact`);
+  }
+  if (path === '.github/workflows/temporal-artifact-validator.yml') assert(!workflow.on.workflow_call.inputs.request, 'the validator reads the request artifact');
   console.log(`Validated ${path}`);
 }
 const action = parseDocument(await readFile('action.yml', 'utf8')).toJS();
