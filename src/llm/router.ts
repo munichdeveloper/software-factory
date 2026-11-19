@@ -121,14 +121,24 @@ const skipTexts: Record<RouterSkip, string> = {
 export const routerAlertWindowMs = 6 * 3600000;
 
 /**
- * Slack messages when the router was not used and the configured models ran instead (Johannes, 2026-11-19). Throttled in
- * memory: one message per repository, purpose and reason every six hours, naming how often it happened meanwhile.
+ * Slack messages about the router (Johannes, 2026-11-19): every decision Jev made, and when the router was not used and
+ * the configured models ran instead. The latter are throttled in memory: one message per repository, purpose and reason
+ * every six hours, naming how often it happened meanwhile.
  */
+/** What a candidate names beyond its id, when the caller's candidates carry it (coding: agent, model, effort). */
+export interface ChosenDetails { agent?: unknown; model?: unknown; reasoningEffort?: unknown }
+
 export class RouterAlerts {
   private last = new Map<string, { at: number; suppressed: number }>();
   constructor(private sink: RouterAlertSink, private channel: string, private now: () => number = Date.now, private windowMs = routerAlertWindowMs) {}
-  async observe(repository: string, record: RouteRecord): Promise<void> {
-    if (record.used) return;
+  async observe(repository: string, record: RouteRecord, chosen?: RouterOption & ChosenDetails): Promise<void> {
+    if (record.used) {
+      // Every decision Jev made gets its own message, unthrottled (Johannes, 2026-11-19: "welche Entscheidung Jev
+      // erfolgreich getroffen hat"): one per coding execution, merge review or risk assessment.
+      const details = chosen ? [chosen.agent, chosen.model, chosen.reasoningEffort].filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
+      await this.sink.post(this.channel, `SF Model Router: Jev hat für ${purposeNames[record.purpose]} in ${repository} \`${record.choice}\`${details.length ? ` (${details.join(', ')})` : ''} gewählt, mit ${Math.round(record.confidence * 100)} % Wahrscheinlichkeit.`);
+      return;
+    }
     const key = `${repository}|${record.purpose}|${record.reason}`, prior = this.last.get(key), now = this.now();
     if (prior && now - prior.at < this.windowMs) { prior.suppressed++; return; }
     this.last.set(key, { at: now, suppressed: 0 });
@@ -147,7 +157,8 @@ export class Routing {
   async route(repository: string, purpose: RouterPurpose, state: string, options: RouterOption[], settings: RouterSettings): Promise<RouteRecord> {
     const record = await this.router.route(purpose, state, options, settings);
     logRoute(repository, record);
-    try { await this.alerts?.observe(repository, record); } catch { /* an alert never fails the work */ }
+    const chosen = record.used ? options.find(o => o.id === record.choice) as (RouterOption & ChosenDetails) | undefined : undefined;
+    try { await this.alerts?.observe(repository, record, chosen); } catch { /* an alert never fails the work */ }
     return record;
   }
 }

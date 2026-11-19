@@ -230,8 +230,9 @@ gives its choice, not with TypeSafe's `confidence` ((p − 1/n) / (1 − 1/n), 0
 0.65 to follow only clear leans. Since 0.16.1 the task's status comment names the agent of its
 coding run (`**Model:**`, chosen by the router or the configured agents and why), and the merge review and risk
 comments name the model that did the review (`Modellwahl: …`). Each decision is also logged as one `factory-router` line (purpose,
-choice, confidence or reason and a fixed code). With `FACTORY_ROUTER_ALERT_CHANNEL` on the broker, every case in which
-the configured models ran instead goes to Slack, at most once per repository, purpose and reason every six hours; the
+choice, confidence or reason and a fixed code). With `FACTORY_ROUTER_ALERT_CHANNEL` on the broker, every decision Jev made
+goes to Slack (since 0.17.2: purpose, repository, chosen candidate with agent, model and effort, probability), and every
+case in which the configured models ran instead too, at most once per repository, purpose and reason every six hours; the
 next message counts the cases in between. Issue and pull request text reaches Jev as untrusted data it only classifies:
 at worst it picks another of the configured candidates. `router` is optional without a default: a configuration without
 it keeps its hash.

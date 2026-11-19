@@ -74,7 +74,6 @@ describe('RouterAlerts', () => {
     await alerts.observe('owner/repo', skipped);
     await alerts.observe('owner/repo', skipped);
     await alerts.observe('owner/repo', { ...skipped, purpose: 'review' });
-    await alerts.observe('owner/repo', { used: true, purpose: 'coding', choice: 'cheap', confidence: 0.9, model: 'm' });
     expect(posts).toHaveLength(2);
     expect(posts[0]).toContain('Coding in owner/repo lief ohne Router, direkt mit den konfigurierten Modellen.');
     expect(posts[0]).toContain('OPENROUTER_API_KEY');
@@ -83,6 +82,24 @@ describe('RouterAlerts', () => {
     expect(posts[2]).toContain('Seit der letzten Meldung 1-mal ohne eigene Nachricht.');
     await alerts.observe('owner/repo', { ...skipped, reason: 'low-confidence', choice: 'strong', confidence: 0.31 });
     expect(posts[3]).toContain('gewählt hätte er strong mit 31 %');
+  });
+  it('reports every decision Jev made, with the chosen candidate', async () => {
+    const posts: string[] = [];
+    const alerts = new RouterAlerts({ post: async (_channel, text) => { posts.push(text); } }, 'C123');
+    const decided: RouteRecord = { used: true, purpose: 'coding', choice: 'sonnet-medium', confidence: 0.724, model: 'typesafe/jev-1.14' };
+    await alerts.observe('owner/repo', decided, { id: 'sonnet-medium', description: 'd', agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' });
+    await alerts.observe('owner/repo', { ...decided, purpose: 'risk', choice: 'opus-high', confidence: 0.81 });
+    expect(posts).toEqual([
+      'SF Model Router: Jev hat für Coding in owner/repo `sonnet-medium` (claude, claude-sonnet-5-5, medium) gewählt, mit 72 % Wahrscheinlichkeit.',
+      'SF Model Router: Jev hat für Risikobewertung in owner/repo `opus-high` gewählt, mit 81 % Wahrscheinlichkeit.']);
+  });
+  it('passes the chosen candidate from Routing to the alerts', async () => {
+    const posts: string[] = [];
+    const routing = new Routing(new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.9 } } })),
+      new RouterAlerts({ post: async (_channel, text) => { posts.push(text); } }, 'C123'));
+    await routing.route('owner/repo', 'review', 'pr', options.map(o => ({ ...o, model: `model-${o.id}`, reasoningEffort: 'high' })), settings);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toContain('Merge-Review in owner/repo `strong` (model-strong, high) gewählt');
   });
 });
 
