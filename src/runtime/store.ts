@@ -92,7 +92,8 @@ export class RuntimeStore implements SanityStore {
   }
   /**
    * Every priced model call since `since`: the coding runs (factory_runtime_usage, with the stored routing decision and
-   * whether the attempt was an escalation) and the broker's own calls.
+   * whether the attempt was an escalation; runs on the Claude subscription as agent claude-subscription at 0 $) and the
+   * broker's own calls.
    */
   async analyticsCalls(since: Date): Promise<AnalyticsCall[]> {
     const { rows } = await this.pool.query<{ repository: string; step: string; issue_number: number | null; pr_number: number | null; execution_id: string | null;
@@ -102,8 +103,10 @@ export class RuntimeStore implements SanityStore {
         CASE WHEN jsonb_exists(r.snapshot->'admission'->'input'->'contextReferences', $2) THEN 'escalation'
           WHEN jsonb_typeof(e.receipt->'agent') = 'object' THEN 'router' ELSE 'configured' END AS selection,
         e.receipt->'route'->>'choice' AS router_choice, (e.receipt->'route'->>'confidence')::double precision AS router_probability,
-        u.record->>'worker' AS agent, u.record->>'model' AS model, u.record->>'effort' AS effort, u.record->'tokens' AS tokens,
-        u.cost_usd, u.record->>'outcome' AS outcome, u.recorded_at
+        CASE WHEN u.billing='subscription' THEN 'claude-subscription' ELSE u.record->>'worker' END AS agent,
+        u.record->>'model' AS model, u.record->>'effort' AS effort, u.record->'tokens' AS tokens,
+        -- A run on the Claude subscription is not billed: its estimate stays in the usage report, not in the cost.
+        CASE WHEN u.billing='subscription' THEN 0 ELSE u.cost_usd END AS cost_usd, u.record->>'outcome' AS outcome, u.recorded_at
       FROM factory_runtime_usage u
         LEFT JOIN factory_runtime_effects e ON e.repository_id=u.repository_id AND e.execution_id=u.execution_id AND e.effect='coding-route' AND e.phase='confirmed'
         LEFT JOIN factory_runtime_runs r ON r.repository_id=u.repository_id AND r.execution_id=u.execution_id
