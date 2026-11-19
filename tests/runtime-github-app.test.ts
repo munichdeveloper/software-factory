@@ -69,6 +69,27 @@ describe('runtime GitHub App scope', () => {
     await api.graphql('query { viewer { login } }');
     expect(sent).toHaveLength(3);
   });
+  it('never caches a full list page without a next link, so a new page is found (controla#133)', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+    const comments = Array.from({ length: 3 }, (_, i) => ({ id: i + 1, body: `c${i + 1}`, user: { login: 'bot' }, created_at: '2026-11-19T20:00:00Z' }));
+    const sent: (string | null)[] = [];
+    const api = scopedRuntimeGitHub({ appId: '1', privateKey, installationId: 123, repositoryId: 4444 }, async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/access_tokens')) return Response.json({ token: 't', expires_at: new Date(Date.now() + 3600000).toISOString(), permissions: {}, repository_selection: 'selected' }, { status: 201 });
+      const match = new Headers(init?.headers).get('if-none-match'); sent.push(match);
+      const page = Number(url.searchParams.get('page') ?? 1), items = comments.slice((page - 1) * 2, page * 2), etag = `"${items.map(c => c.id).join('-')}"`;
+      // Like GitHub: the ETag covers the items only, so page 1 stays "unchanged" when a third comment adds page 2.
+      if (match === etag) return new Response(null, { status: 304, headers: { etag } });
+      const next = page * 2 < comments.length ? `<https://api.github.com${url.pathname}?per_page=2&page=${page + 1}>; rel="next"` : '';
+      return Response.json(items, { headers: { etag, ...(next ? { link: next } : {}) } });
+    });
+    const list = () => api.paginate(api.issues.listComments, { owner: 'test', repo: 'repo', issue_number: 133, per_page: 2 });
+    comments.length = 2;
+    expect((await list()).map(c => c.id)).toEqual([1, 2]);
+    comments.push({ id: 3, body: 'c3', user: { login: 'bot' }, created_at: '2026-11-19T20:01:00Z' });
+    expect((await list()).map(c => c.id)).toEqual([1, 2, 3]);
+    expect(sent[1]).toBeNull();
+  });
   it('downloads artifacts as a stream, without the conditional cache (controla#124)', async () => {
     const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
     const sent: (string | null)[] = [];
