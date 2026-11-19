@@ -170,7 +170,7 @@ Jede Stufe erzeugt ihr eigenes Ereignis, damit Monitor und Analytics sehen, welc
 Alle am 19.11.2026 entschieden, unter der Leitlinie aus Abschnitt 3: möglichst autonom.
 
 1. **Kanal:** Problem-Ereignisse (`validation_failed`, `start_refused`, `attention_required`) gehen in einen
-   **eigenen Slack-Kanal für Probleme**, nicht in `ki-notification`. `run_started` bleibt in `ki-notification`.
+   **eigenen Slack-Kanal `#factory-todo`**, nicht in `ki-notification`. `run_started` bleibt in `ki-notification`.
    Umsetzung über das `channel`-Feld je Regel (Abschnitt 5); der Kanal wird vor der Aktivierung angelegt und die
    Slack-App eingeladen.
 2. **Claude-Abonnent:** darf kleine Fixes selbst pushen, mit `sf:automerge`; Merge über KI-Review und Pflicht-Checks
