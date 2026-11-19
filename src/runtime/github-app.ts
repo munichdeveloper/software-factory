@@ -50,6 +50,18 @@ export class ConditionalCache {
   }
 }
 const conditional = new ConditionalCache();
+/**
+ * A full list page without a next link (controla#133, 2026-11-19): GitHub's ETag covers the page's items, not its Link
+ * header. Cached when an issue had exactly 100 comments, page 1 stayed "unchanged" (304) after comment 101, the cached
+ * answer named no next page, and pagination ended at 100: the broker never saw the newest intent (NO_MATCHING_INTENT)
+ * and every later event on that issue. Such a page is never cached, so the next read sees the new Link header.
+ */
+export function openEndedPage(url: string, response: { data: unknown; headers: Record<string, unknown> }): boolean {
+  if (!Array.isArray(response.data)) return false;
+  const perPage = Number(new URL(url, 'https://api.github.com').searchParams.get('per_page') ?? 30);
+  const link = typeof response.headers.link === 'string' ? response.headers.link : '';
+  return response.data.length >= perPage && !/rel="next"/.test(link);
+}
 setInterval(() => { const summary = usage.flush(); if (summary) console.log(JSON.stringify(summary)); }, 60000).unref();
 /** The App's installation on one repository, asked with the App's own JWT (no installation token is created). */
 export async function appInstallationId(options: { appId: string; privateKey: string }, owner: string, repo: string, fetcher: typeof fetch = fetch): Promise<number> {
@@ -83,7 +95,7 @@ export function scopedRuntimeGitHub(options: { appId: string; privateKey: string
     if (etag) parameters.headers['if-none-match'] = etag;
     try {
       const response = await request(parameters); usage.record(route, response.headers);
-      if (key) conditional.store(key, response.headers.etag, response);
+      if (key && !openEndedPage(scoped.request.endpoint(parameters).url, response)) conditional.store(key, response.headers.etag, response);
       return response;
     } catch (error) {
       const failed = error as { status?: unknown; response?: { headers?: Record<string, unknown> } };
