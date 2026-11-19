@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { decisionsUrl, endpointModel, ModelRouter, routerEndpoint, typesafeUrl, RouterAlerts, routedCall, routeNoteDe, routeOutcome, Routing, type RouteRecord } from '../src/llm/router.js';
+import { decisionsUrl, describeOption, endpointModel, ModelRouter, routerEndpoint, typesafeUrl, RouterAlerts, routedCall, routeNoteDe, routeOutcome, Routing, type RouteRecord } from '../src/llm/router.js';
 import { loadConfig } from '../src/config/index.js';
 
 const settings = { model: 'typesafe/jev-1.14', minConfidence: 0.5, timeoutSeconds: 5 };
@@ -38,6 +38,16 @@ describe('ModelRouter', () => {
     const body = JSON.parse(String(init.body));
     expect(body.state).toHaveLength(8000);
     expect(body.questions.route).toMatchObject({ type: 'choice', criteria: { cheap: 'Small changes', strong: 'Hard changes' } });
+  });
+  it('shows Jev the actual model, runner and effort of every option', async () => {
+    expect(describeOption({ id: 'haiku-low', agent: 'claude', model: 'claude-haiku-5-5', reasoningEffort: 'low' })).toBe('Model claude-haiku-5-5, run by the claude coding agent, reasoning effort low.');
+    expect(describeOption({ id: 'opus-high', provider: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high', description: 'Large PRs' })).toBe('Model claude-opus-5-5, run by the claude API, reasoning effort high. Large PRs');
+    expect(describeOption({ id: 'plain' })).toBe('plain');
+    const fetcher = answering({ answers: { route: { choice: 'sonnet-high', probabilities: { 'sonnet-high': 0.6, 'opus-low': 0.4 } } } });
+    await new ModelRouter('key', fetcher).route('coding', 's', [{ id: 'sonnet-high', agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'high' }, { id: 'opus-low', agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'low' }], settings);
+    const route = JSON.parse(String(fetcher.mock.calls[0]![1].body)).questions.route;
+    expect(route.criteria['opus-low']).toBe('Model claude-opus-5-5, run by the claude coding agent, reasoning effort low.');
+    expect(route.instructions).toContain('a smaller model at a higher effort can do better');
   });
   it('takes the probability of the choice when no confidence is given', async () => {
     const record = await new ModelRouter('key', answering({ answers: { route: { choice: 'cheap', probabilities: { cheap: 0.7, strong: 0.3 } } } })).route('review', 's', options, settings);
@@ -143,6 +153,13 @@ describe('router configuration', () => {
     const config = loadConfig(yaml(`router:\n  coding:\n    candidates:\n      - { id: sonnet-medium, agent: claude, model: claude-sonnet-5-5, reasoningEffort: medium, description: Small changes }\n      - { id: opus-high, agent: claude, model: claude-opus-5-5, reasoningEffort: high, description: Hard changes }\n  review:\n    candidates:\n      - { id: gpt-medium, provider: openai, model: gpt-6.1-sol, reasoningEffort: medium, description: Small PRs }\n      - { id: opus-high, provider: claude, model: claude-opus-5-5, reasoningEffort: high, description: Large PRs }\n`));
     expect(config.router).toMatchObject({ enabled: true, model: 'typesafe/jev-1.14', minConfidence: 0.5, timeoutSeconds: 10 });
     expect(config.router?.coding?.candidates).toHaveLength(2);
+  });
+  it('accepts a full model and effort matrix without descriptions, up to 16 candidates', () => {
+    const matrix = (n: number) => Array.from({ length: n }, (_, i) => `      - { id: c${i}, provider: claude, model: claude-haiku-5-5, reasoningEffort: low }`).join('\n');
+    const config = loadConfig(yaml(`router:\n  review:\n    candidates:\n${matrix(16)}\n`));
+    expect(config.router?.review?.candidates).toHaveLength(16);
+    expect(config.router?.review?.candidates[0]?.description).toBeUndefined();
+    expect(() => loadConfig(yaml(`router:\n  review:\n    candidates:\n${matrix(17)}\n`))).toThrow('router.review.candidates');
   });
   it('leaves configurations without a router unchanged', () => {
     expect(loadConfig(yaml('')).router).toBeUndefined();

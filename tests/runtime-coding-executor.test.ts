@@ -285,7 +285,8 @@ describe('the model router for coding', () => {
     expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'high',
       fallbacks: [{ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' }, { worker: 'codex', model: 'gpt-6.1-sol', effort: 'high' }] });
     expect(asked).toHaveLength(1);
-    expect(asked[0]).toMatchObject({ model: 'typesafe/jev-1.14', questions: { route: { type: 'choice', criteria: { 'sonnet-medium': 'Small, well specified changes', 'opus-high': 'Broad or difficult changes' } } } });
+    expect(asked[0]).toMatchObject({ model: 'typesafe/jev-1.14', questions: { route: { type: 'choice', criteria: { 'sonnet-medium': 'Model claude-sonnet-5-5, run by the claude coding agent, reasoning effort medium. Small, well specified changes',
+      'opus-high': 'Model claude-opus-5-5, run by the claude coding agent, reasoning effort high. Broad or difficult changes' } } } });
     expect(JSON.stringify(asked[0])).toContain('Implement a safe change');
   });
   it('keeps the configured agents below the minimum confidence and without a key', async () => {

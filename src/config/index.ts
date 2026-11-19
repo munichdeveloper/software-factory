@@ -55,8 +55,8 @@ const codingAgentSchema = z.strictObject({ agent: codingAgentName, model: coding
     if (entry.credential && entry.agent !== 'claude') context.addIssue({ code: 'custom', path: ['credential'], message: 'credential subscription is available for agent claude only' });
   });
 export type CodingAgent = z.infer<typeof codingAgentSchema>;
-/** An option the model router may pick; id names it in the decision, description tells the router what it is for. */
-const routerOptionId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/), routerDescription = z.string().min(1).max(300);
+/** An option the model router may pick; id names it in the decision. Jev sees its model, runner and effort, plus the optional description. */
+const routerOptionId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/), routerDescription = z.string().min(1).max(300).optional();
 const codingCandidateSchema = z.strictObject({ id: routerOptionId, agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort,
   description: routerDescription }).superRefine((entry, context) => agentRules(entry, context));
 /** A broker-side model (merge review, risk assessment, planner): Claude with the broker's Anthropic key or OpenAI. */
@@ -64,7 +64,9 @@ const llmCandidateSchema = z.strictObject({ id: routerOptionId, provider: z.enum
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']), description: routerDescription }).superRefine((entry, context) => {
   if ((entry.provider === 'claude') !== /^claude-/.test(entry.model)) context.addIssue({ code: 'custom', path: ['model'], message: 'provider claude needs a Claude model, provider openai a non-Claude model' });
 });
-const routerCandidates = <T extends z.ZodType<{ id: string }>>(candidate: T) => z.strictObject({ candidates: z.array(candidate).min(2).max(6) })
+/** Room for a full matrix of models and efforts (Johannes, 2026-11-19: Jev chooses freely between models and efforts). */
+export const maxRouterCandidates = 16;
+const routerCandidates = <T extends z.ZodType<{ id: string }>>(candidate: T) => z.strictObject({ candidates: z.array(candidate).min(2).max(maxRouterCandidates) })
   .superRefine((value, context) => {
     if (new Set(value.candidates.map(c => c.id)).size !== value.candidates.length) context.addIssue({ code: 'custom', path: ['candidates'], message: 'candidate ids must be unique' });
   });
