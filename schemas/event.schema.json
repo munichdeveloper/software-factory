@@ -1121,6 +1121,51 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "merge_handover"
+            },
+            "prNumber": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "head": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "base": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "reviewKey": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "decision": {
+              "type": "string",
+              "enum": [
+                "request_changes",
+                "defer"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "prNumber",
+            "head",
+            "base",
+            "reviewKey",
+            "decision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "merge_status"
             },
             "head": {

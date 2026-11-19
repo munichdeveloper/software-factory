@@ -281,6 +281,25 @@ it.each(['absent', 'disabled', 'closed', 'moved-head', 'untrusted', 'since', 'ot
   if (condition === 'other-channel') expect(f.send.mock.calls[0]![0]).toBe('C987654321');
   else expect(f.send).not.toHaveBeenCalled();
 });
+it('announces a Factory pull request handed over to a person once per review, only for its current head', async () => {
+  const cfg = config(); cfg.notifications.slack.enabled = true; cfg.notifications.slack.channel = channel;
+  cfg.notifications.slack.events.handover_required = { enabled: true, channel: null };
+  const gh = new MemoryGitHub();
+  gh.state.prs = [{ number: 52, state: 'open', merged: false, closingIssues: [], referencedIssues: [], title: 'Rework billing', headRefName: 'sf/issue-4/x', headSha: 'a'.repeat(40) }];
+  const handover = (reviewKey: string, head = 'a'.repeat(40), d: 'request_changes' | 'defer' = 'request_changes') => gh.writeEvent(52, { version: 1,
+    key: `merge-handover:${reviewKey}`, at: clock.toISOString(), correlationId: 'test',
+    data: { type: 'merge_handover', prNumber: 52, head, base: 'b'.repeat(40), reviewKey, decision: d } });
+  const send = vi.fn<NotificationSink['send']>(async () => ({ channel, timestamp: '1.23' }));
+  const deliver = () => deliverNotifications(gh, cfg, structuredClone(gh.state), { send }, 'test', clock);
+  await handover(key); await handover('c'.repeat(64), 'c'.repeat(40));
+  expect(await deliver()).toEqual([]); await deliver();
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(send.mock.calls[0]![1]).toMatchObject({ event: 'handover_required', number: 52, reviewKey: key, url: `https://github.com/${gh.repository}/pull/52` });
+  expect(send.mock.calls[0]![1].detail).toContain('execution.rework');
+  await handover('e'.repeat(64), 'a'.repeat(40), 'defer'); await deliver();
+  expect(send).toHaveBeenCalledTimes(2); expect(send.mock.calls[1]![1].detail).toContain('defer');
+  delete cfg.notifications.slack.events.handover_required; await handover('d'.repeat(64)); await deliver(); expect(send).toHaveBeenCalledTimes(2);
+});
 it('leaves configurations without approval notices unchanged', () => {
   expect(config().notifications.slack.events).not.toHaveProperty('approval_required');
 });

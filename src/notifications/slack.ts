@@ -5,20 +5,23 @@ import { decodeEvent } from '../state/events.js';
 import { hash } from '../state/identity.js';
 import { infrastructureFailureSummary } from '../state/reconstruct.js';
 
-export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged' | 'approval_required' | 'grant_required'; number: number; title: string; actor: string; url: string;
+export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged' | 'approval_required' | 'grant_required' | 'handover_required'; number: number; title: string; actor: string; url: string;
   /** Shown in the message; run starts name their repository because one channel can collect several. */
   repository?: string;
   /** A task can start several runs (retries, rework); each start is its own delivery. */
   executionId?: string;
   /** One approval request of a risk gate; a new head or base asks again and is announced again. */
   approvalId?: string;
+  /** One review that handed a pull request over to a person; a new review (new head or base) is announced again. */
+  reviewKey?: string;
   /** A task waits for a grant before its first run, or again after the run named here; each wait is its own delivery. */
   after?: string;
   /** Trusted, Factory-generated detail line (never PR or issue content). */
   detail?: string }
 const labels: Record<Notification['event'], string> = {
   run_started: 'SF: Factory-Lauf gestartet', issue_created: 'SF: Issue autonom angelegt', pr_merged: 'SF: PR durch Bot gemergt',
-  approval_required: 'SF: PR wartet auf Freigabe (Risiko über Schwelle)', grant_required: 'SF: Issue wartet auf Freigabe (harness:ready)' };
+  approval_required: 'SF: PR wartet auf Freigabe (Risiko über Schwelle)', grant_required: 'SF: Issue wartet auf Freigabe (harness:ready)',
+  handover_required: 'SF: PR braucht einen Menschen (KI-Review)' };
 /**
  * A task the Manager's status comment of this reconciliation describes as waiting for nothing but a person's
  * `harness:ready` grant (ready-label repositories). `after` names the run a further attempt follows, if any.
@@ -141,6 +144,7 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
     const deliveryId = hash({ repository: github.repository.toLowerCase(), event: notification.event, number: notification.number, channel,
       ...(notification.executionId ? { executionId: notification.executionId } : {}),
       ...(notification.approvalId ? { approvalId: notification.approvalId } : {}),
+      ...(notification.reviewKey ? { reviewKey: notification.reviewKey } : {}),
       ...(notification.event === 'grant_required' ? { after: notification.after ?? null } : {}) });
     // Re-read to handle repeated manager runs and duplicate PR links across tasks.
     const deliveries = (await github.comments(journal)).flatMap(c => {
@@ -212,6 +216,22 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
       await deliver(pr.number, { event: 'approval_required', number: pr.number, title: pr.title ?? `PR #${pr.number}`, actor: 'Software Factory',
         url: `https://github.com/${github.repository}/pull/${pr.number}`, repository: github.repository, approvalId: e.data.approvalId,
         detail: `Risiko ${e.data.riskClass} liegt über der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}` });
+    }
+  }
+  // The review handed a Factory pull request over to a person (changes without execution.rework, or a deferral). Only the
+  // current head counts, like approval_required: a PR that moved on or was closed no longer waits for that hand-over.
+  if (settings.events.handover_required?.enabled) for (const pr of snapshot.prs) {
+    if (pr.state !== 'open' || !pr.headSha) continue;
+    let comments;
+    try { comments = await github.comments(pr.number); }
+    catch (error) { if (error instanceof Error && error.message === 'ISSUE_OUTSIDE_RUNTIME_SCOPE') continue; throw error; }
+    for (const c of comments) {
+      const e = decodeEvent(c, config.manager.trustedActors);
+      if (e?.data.type !== 'merge_handover' || e.data.prNumber !== pr.number || e.data.head !== pr.headSha || !afterStart(e.at)) continue;
+      await deliver(pr.number, { event: 'handover_required', number: pr.number, title: pr.title ?? `PR #${pr.number}`, actor: 'Software Factory',
+        url: `https://github.com/${github.repository}/pull/${pr.number}`, repository: github.repository, reviewKey: e.data.reviewKey,
+        detail: e.data.decision === 'defer' ? 'Das KI-Review überlässt die Entscheidung einem Menschen (defer). Begründung im PR.'
+          : 'Das KI-Review verlangt Änderungen, automatische Nacharbeit (execution.rework) ist aus. Bitte nachbessern; Commits mit Schreibrecht übernimmt die Factory.' });
     }
   }
   // A task that waits only for a person's `harness:ready` (software-factory#127). The wait is the Manager's own finding of

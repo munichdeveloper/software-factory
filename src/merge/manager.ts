@@ -5,14 +5,14 @@ import { untrustedEdit } from '../state/content-trust.js';
 import { hash, taskVersion } from '../state/identity.js';
 import type { GitHubPort } from '../github/port.js';
 import { permission, policyVersion } from '../policies/engine.js';
-import { mergeReviewSchema, type MergeFacts, type MergePort, type MergeReview, type MergeReviewer, type ReviewInput } from './contract.js';
+import { mergeReviewSchema, needsHumanLabel, type MergeFacts, type MergePort, type MergeReview, type MergeReviewer, type ReviewInput } from './contract.js';
 import { aboveThreshold, builtinCriticalPaths, classifyRisk, describeRisk, type RiskAssessor, type RiskRecord } from './risk.js';
 import { routeNoteDe, routeOutcome } from '../llm/router.js';
 import { setLlmSubject, withLlmContext } from '../llm/analytics.js';
 
 const safe = (s: string) => s.replaceAll('@', '@\u200b').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-// The broker's own display-only risk labels are no input of a review: setting them must not invalidate it.
-const factsKey = (f: MergeFacts) => ({ ...f, comments: [], labels: f.labels.filter(l => !l.startsWith('sf:risk-')).sort(),
+// The broker's own display-only risk and hand-over labels are no input of a review: setting them must not invalidate it.
+const factsKey = (f: MergeFacts) => ({ ...f, comments: [], labels: f.labels.filter(l => !l.startsWith('sf:risk-') && l !== needsHumanLabel).sort(),
   nativeRequiredChecks: [...f.nativeRequiredChecks].sort(),
   checks: [...f.checks].sort((a, b) => `${a.name}:${a.state}`.localeCompare(`${b.name}:${b.state}`)) });
 export function mergeGate(f: MergeFacts, config: Config): string | null {
@@ -76,6 +76,25 @@ export class MergeManager {
     const summary = Buffer.from(`\n\n### Software Factory – Review verlangt Änderungen\n\n${safe(`Das unabhängige KI-Review von #${f.number} verlangt Änderungen. ${next}`)}`);
     await this.api.comment(task.number, journal + summary.subarray(0, Math.max(0, 60000 - Buffer.byteLength(journal) - 4)).toString('utf8'));
   }
+  /**
+   * Commits pushed onto a Factory pull request after it was published (a person fixed review findings, or updated the
+   * branch). They are adopted when every one of them comes from an account that may write to the repository, which could
+   * merge the pull request itself anyway: the new head then goes through the required checks, the validation workflow
+   * and a fresh review like any other head. Returns why the head is refused, or null when it is adopted.
+   */
+  private async laterCommits(f: MergeFacts, publishedHead: string): Promise<string | null> {
+    const refused = 'Der Head entspricht nicht dem veröffentlichten, validierten Commit; die Factory mergt keine fremden Änderungen.';
+    if (!this.api.pushedSince) return refused;
+    const authors = await this.api.pushedSince(publishedHead, f.head);
+    if (!authors?.length) return `${refused} Der Head setzt den veröffentlichten Commit nicht fort (umgeschriebene Historie).`;
+    const unique = [...new Set(authors)];
+    const trusted = await Promise.all(unique.map(a => !!a && (this.config.manager.trustedActors.includes(a) || this.api.canApprove(a))));
+    const outsiders = unique.filter((_, i) => !trusted[i]).map(a => a || 'unbekannt');
+    if (outsiders.length) return `${refused} Nachträgliche Commits ohne Schreibrecht im Repository: ${outsiders.join(', ')}.`;
+    await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
+    await this.explain(f, `Nachträgliche Commits von ${unique.join(', ')} (Schreibrecht im Repository) werden übernommen: der neue Head durchläuft Pflichtprüfungen, Validierung und ein neues KI-Review.`);
+    return null;
+  }
   private ownership(f: MergeFacts, snapshot: Snapshot): Ownership | undefined {
     const url = `https://github.com/${this.api.repository}/pull/${f.number}`;
     for (const task of snapshot.issues) {
@@ -136,7 +155,9 @@ export class MergeManager {
           if (ownership.status !== 'success') { await this.explain(f, `Der Lauf wurde mit Status ${ownership.status} veröffentlicht, nicht als erfolgreich validiert; die Factory mergt ihn nicht.`); continue; }
           // The published, validated commit or a base update the Factory itself requested; nothing pushed by others.
           if (ownership.publishedHead && f.head !== ownership.publishedHead && !this.events(f).some(e => e.data.type === 'branch_update')) {
-            await this.explain(f, 'Der Head entspricht nicht dem veröffentlichten, validierten Commit; die Factory mergt keine fremden Änderungen.'); continue;
+            phase = 'Nachträgliche Commits prüfen';
+            const refusal = await this.laterCommits(f, ownership.publishedHead);
+            if (refusal) { await this.explain(f, refusal); continue; }
           }
           if (f.draft && f.state === 'open' && this.api.ready && !f.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) {
             phase = 'Entwurf freigeben';
@@ -219,7 +240,13 @@ export class MergeManager {
           phase = 'Nacharbeit an der Aufgabe vermerken';
           await this.changesRequested(f, owner, snapshot, reviewKey, review);
         }
-        if (review.findings.some(x => x.severity === 'blocking') || ['request_changes', 'defer'].includes(review.decision)) continue;
+        // Hand over to a person what nothing in the Factory will continue: changes without automatic rework, or a deferral.
+        const blocked = review.decision === 'request_changes' || review.findings.some(x => x.severity === 'blocking');
+        const handOver = !!owner && !adopted && ((blocked && !this.config.execution.rework) || review.decision === 'defer');
+        if (handOver) await this.event(f, `merge-handover:${reviewKey}`, { type: 'merge_handover', prNumber: number, head: f.head, base: f.base,
+          reviewKey, decision: review.decision === 'defer' ? 'defer' : 'request_changes' });
+        if (this.api.needsHuman && handOver !== f.labels.includes(needsHumanLabel)) { phase = 'Übergabe-Label setzen'; await this.api.needsHuman(number, handOver); }
+        if (blocked || review.decision === 'defer') continue;
         const live = await this.api.facts(number);
         if (hash(factsKey(live)) !== hash(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== 'open' || live.draft || !live.sameRepository ||
           live.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) { await this.explain(live, 'PR, Head, Basis oder Freigabe hat sich während der KI-Prüfung geändert; erneute Prüfung erforderlich.'); continue; }

@@ -198,6 +198,45 @@ it('does not merge a Factory pull request whose head was changed by someone else
   const x = temporal(); x.f.draft = false; x.f.head = 'f'.repeat(40);
   await x.owned(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.f.comments.at(-1)!.body).toContain('fremden Änderungen');
 });
+it('adopts commits a person with write access pushed onto a Factory pull request after review findings (controla#124)', async () => {
+  const x = temporal(); x.f.draft = false; x.f.head = 'f'.repeat(40);
+  const pushedSince = vi.fn(async () => ['maintainer', 'maintainer']); Object.assign(x.api, { pushedSince });
+  expect((await x.owned()).merged).toBe(1);
+  expect(pushedSince).toHaveBeenCalledWith('a'.repeat(40), 'f'.repeat(40));
+  expect(x.api.dispatch).toHaveBeenCalledWith('test.yml', x.f.headBranch);
+  expect(x.reviewer.review).toHaveBeenCalledTimes(1); expect(x.api.merge).toHaveBeenCalledWith(52, 'f'.repeat(40), 'squash');
+  expect(x.f.comments.some(c => c.body.includes('Nachträgliche Commits von maintainer (Schreibrecht im Repository) werden übernommen'))).toBe(true);
+});
+it.each([
+  ['an account without write access', ['maintainer', 'stranger'], 'ohne Schreibrecht im Repository: stranger'],
+  ['a commit without any GitHub account', [''], 'ohne Schreibrecht im Repository: unbekannt'],
+  ['rewritten history', null, 'umgeschriebene Historie']
+] as const)('refuses later commits from %s', async (_case, authors, reason) => {
+  const x = temporal(); x.f.draft = false; x.f.head = 'f'.repeat(40);
+  Object.assign(x.api, { pushedSince: vi.fn(async () => authors && [...authors]) });
+  await x.owned(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.reviewer.review).not.toHaveBeenCalled();
+  expect(x.f.comments.at(-1)!.body).toContain('fremden Änderungen'); expect(x.f.comments.at(-1)!.body).toContain(reason);
+});
+it.each([
+  ['request_changes without rework', 'request_changes', false, true],
+  ['request_changes with rework', 'request_changes', true, false],
+  ['defer, even with rework', 'defer', true, true]
+] as const)('hands a Factory pull request over to a person on %s', async (_case, decision, rework, handOver) => {
+  const x = temporal(); x.f.draft = false; x.review.decision = decision; x.cfg.execution.rework = rework;
+  const needsHuman = vi.fn(async (_n: number, on: boolean) => { x.f.labels = on ? [...x.f.labels, 'sf:needs-human'] : x.f.labels.filter(l => l !== 'sf:needs-human'); });
+  Object.assign(x.api, { needsHuman });
+  await x.owned(); expect(x.api.merge).not.toHaveBeenCalled();
+  const handovers = x.f.comments.map(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data).filter(d => d?.type === 'merge_handover');
+  expect(handovers).toHaveLength(handOver ? 1 : 0);
+  if (handOver) expect(handovers[0]).toMatchObject({ prNumber: 52, head: 'a'.repeat(40), decision });
+  expect(needsHuman.mock.calls).toEqual(handOver ? [[52, true]] : []);
+  // The label is display only: it does not invalidate the cached review, and a later approving review removes it.
+  await x.owned(); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
+  if (handOver) {
+    x.f.head = 'f'.repeat(40); Object.assign(x.api, { pushedSince: vi.fn(async () => ['maintainer']) }); x.review.decision = 'merge';
+    expect((await x.owned()).merged).toBe(1); expect(needsHuman).toHaveBeenLastCalledWith(52, false);
+  }
+});
 it('with Factory protection requires the head to contain the current base and updates a stale branch through a new review', async () => {
   const x = temporal(); x.f.draft = false; x.f.behindBy = 2; x.review.decision = 'update_branch';
   await x.owned(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.api.update).toHaveBeenCalledWith(52, 'a'.repeat(40));
