@@ -59,6 +59,21 @@ describe('runtime GitHub App scope', () => {
     await api.graphql('query { viewer { login } }');
     expect(sent).toHaveLength(3);
   });
+  it('downloads artifacts as a stream, without the conditional cache (controla#124)', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+    const sent: (string | null)[] = [];
+    const api = scopedRuntimeGitHub({ appId: '1', privateKey, installationId: 123, repositoryId: 4343 }, async (input, init) => {
+      if (String(input).endsWith('/access_tokens')) return Response.json({ token: 't', expires_at: new Date(Date.now() + 3600000).toISOString(), permissions: {}, repository_selection: 'selected' }, { status: 201 });
+      sent.push(new Headers(init?.headers).get('if-none-match'));
+      return new Response(new Uint8Array([80, 75, 3, 4]), { headers: { etag: '"blob"', 'content-type': 'application/zip' } });
+    });
+    for (let i = 0; i < 2; i++) {
+      const response = await api.actions.downloadArtifact({ owner: 'test', repo: 'repo', artifact_id: 7, archive_format: 'zip', request: { parseSuccessResponseBody: false } });
+      const bytes = new Uint8Array(await new Response(response.data as ReadableStream<Uint8Array>).arrayBuffer());
+      expect([...bytes]).toEqual([80, 75, 3, 4]);
+    }
+    expect(sent).toEqual([null, null]);
+  });
 });
 
 describe('commit identity of the App', () => {
