@@ -334,7 +334,10 @@ describe('spend cap and token usage', () => {
     const seen: UsageEntry[] = [];
     const f = fixture(snapshot, withUsage(usage()), undefined, undefined, undefined, async entry => { seen.push(entry); });
     await f.poll(); f.finish(); expect(await f.poll()).toEqual({ artifact: artifact() });
-    expect(seen).toEqual([{ repositoryId: 42, repository: 'owner/target', issueNumber: 2, runId: 12, record: usage(), billing: 'api' }]);
+    // The cost is the price of the run's tokens (usageEntry); the rest of the record is the uploaded one.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ repositoryId: 42, repository: 'owner/target', issueNumber: 2, runId: 12, billing: 'api', agentEstimateUsd: usage().costUsd,
+      record: { ...usage(), costUsd: seen[0]!.record.costUsd } });
     const failed: UsageEntry[] = [];
     const g = fixture(snapshot, withUsage(usage(), 'failure'), undefined, undefined, undefined, async entry => { failed.push(entry); });
     expect(await g.poll()).toMatchObject({ failed: true });

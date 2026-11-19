@@ -69,13 +69,16 @@ export class RuntimeStore implements SanityStore {
       CREATE INDEX IF NOT EXISTS factory_analytics_calls_time ON factory_analytics_calls(recorded_at);
       CREATE TABLE IF NOT EXISTS factory_analytics_issues (
         repository text NOT NULL, issue_number integer NOT NULL, title text NOT NULL, state text NOT NULL, pr_number integer,
-        merged_at timestamptz, merged_by text, updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(repository,issue_number));`);
+        merged_at timestamptz, merged_by text, updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(repository,issue_number));
+      ALTER TABLE factory_analytics_calls ADD COLUMN IF NOT EXISTS price_source text;
+      ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS price_source text;
+      ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS agent_estimate_usd double precision;`);
   }
   /** One broker model call (merge review, risk assessment, planner) for the cost analytics. */
   async recordLlmCall(r: LlmCallRecord): Promise<void> {
-    await this.pool.query(`INSERT INTO factory_analytics_calls(repository,step,pr_number,issue_number,selection,router_choice,router_probability,provider,model,effort,tokens,cost_usd,outcome)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, [r.repository, r.step, r.prNumber, r.issueNumber, r.selection, r.routerChoice, r.routerProbability,
-      r.provider, r.model, r.effort, r.tokens === null ? null : JSON.stringify(r.tokens), r.costUsd, r.outcome]);
+    await this.pool.query(`INSERT INTO factory_analytics_calls(repository,step,pr_number,issue_number,selection,router_choice,router_probability,provider,model,effort,tokens,cost_usd,outcome,price_source)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [r.repository, r.step, r.prNumber, r.issueNumber, r.selection, r.routerChoice, r.routerProbability,
+      r.provider, r.model, r.effort, r.tokens === null ? null : JSON.stringify(r.tokens), r.costUsd, r.outcome, r.priceSource]);
   }
   /** Title, state and merge of the issues the analytics name; written only when they changed. */
   async upsertAnalyticsIssues(repository: string, issues: AnalyticsIssue[]): Promise<void> {
@@ -98,7 +101,7 @@ export class RuntimeStore implements SanityStore {
   async analyticsCalls(since: Date): Promise<AnalyticsCall[]> {
     const { rows } = await this.pool.query<{ repository: string; step: string; issue_number: number | null; pr_number: number | null; execution_id: string | null;
       selection: string; router_choice: string | null; router_probability: number | null; agent: string; model: string; effort: string | null;
-      tokens: unknown; cost_usd: number | null; outcome: string | null; recorded_at: Date }>(`
+      tokens: unknown; cost_usd: number | null; price_source: string | null; outcome: string | null; recorded_at: Date }>(`
       SELECT u.repository, 'coding' AS step, u.issue_number, NULL::integer AS pr_number, u.execution_id,
         CASE WHEN jsonb_exists(r.snapshot->'admission'->'input'->'contextReferences', $2) THEN 'escalation'
           WHEN jsonb_typeof(e.receipt->'agent') = 'object' THEN 'router' ELSE 'configured' END AS selection,
@@ -106,25 +109,25 @@ export class RuntimeStore implements SanityStore {
         CASE WHEN u.billing='subscription' THEN 'claude-subscription' ELSE u.record->>'worker' END AS agent,
         u.record->>'model' AS model, u.record->>'effort' AS effort, u.record->'tokens' AS tokens,
         -- A run on the Claude subscription is not billed: its estimate stays in the usage report, not in the cost.
-        CASE WHEN u.billing='subscription' THEN 0 ELSE u.cost_usd END AS cost_usd, u.record->>'outcome' AS outcome, u.recorded_at
+        CASE WHEN u.billing='subscription' THEN 0 ELSE u.cost_usd END AS cost_usd, u.price_source, u.record->>'outcome' AS outcome, u.recorded_at
       FROM factory_runtime_usage u
         LEFT JOIN factory_runtime_effects e ON e.repository_id=u.repository_id AND e.execution_id=u.execution_id AND e.effect='coding-route' AND e.phase='confirmed'
         LEFT JOIN factory_runtime_runs r ON r.repository_id=u.repository_id AND r.execution_id=u.execution_id
       WHERE u.recorded_at >= $1
       UNION ALL
       SELECT repository, step, issue_number, pr_number, NULL, selection, router_choice, router_probability, provider, model, effort, tokens,
-        cost_usd, outcome, recorded_at FROM factory_analytics_calls WHERE recorded_at >= $1
+        cost_usd, price_source, outcome, recorded_at FROM factory_analytics_calls WHERE recorded_at >= $1
       ORDER BY recorded_at LIMIT 50000`, [since, escalationMarker]);
     return rows.map(r => ({ repository: r.repository, step: r.step as AnalyticsCall['step'], issueNumber: r.issue_number, prNumber: r.pr_number, executionId: r.execution_id,
       selection: r.selection as AnalyticsCall['selection'], routerChoice: r.router_choice, routerProbability: r.router_probability,
       agent: r.agent, model: r.model, effort: r.effort, tokens: tokensOf(r.tokens), costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
-      outcome: r.outcome, at: r.recorded_at.toISOString() }));
+      priceSource: r.price_source, outcome: r.outcome, at: r.recorded_at.toISOString() }));
   }
   /** Token usage of coding runs (UsageAlerts): stored once per execution. */
   async recordUsage(entry: UsageEntry): Promise<boolean> {
-    const { rowCount } = await this.pool.query(`INSERT INTO factory_runtime_usage(repository_id,execution_id,repository,issue_number,run_id,record,cost_usd,billing)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`, [entry.repositoryId, entry.record.executionId, entry.repository, entry.issueNumber,
-      entry.runId, JSON.stringify(entry.record), entry.record.costUsd, entry.billing]);
+    const { rowCount } = await this.pool.query(`INSERT INTO factory_runtime_usage(repository_id,execution_id,repository,issue_number,run_id,record,cost_usd,billing,price_source,agent_estimate_usd)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING`, [entry.repositoryId, entry.record.executionId, entry.repository, entry.issueNumber,
+      entry.runId, JSON.stringify(entry.record), entry.record.costUsd, entry.billing, entry.priceSource ?? null, entry.agentEstimateUsd ?? null]);
     return (rowCount ?? 0) > 0;
   }
   async usageDay(repositoryId: number, day: string): Promise<{ costUsd: number; runs: number; unknownCost: number }> {

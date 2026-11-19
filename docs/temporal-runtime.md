@@ -45,9 +45,18 @@ an escalation); the broker's own calls (merge review, risk assessment, planner) 
 with repository, pull request, closing issue, step, provider, model, effort, tokens, list-price cost and whether the model
 router chose the model. Issue titles and merges (`factory_analytics_issues`) come from each reconciliation's snapshot and
 are written only when they change, so they cost no GitHub request. Every attempt of an issue counts towards it, also
-discarded ones; only inference cost is counted (Jev's routing requests and Actions minutes are not). Anthropic models are
-priced from a list in `src/llm/analytics.ts`; `FACTORY_MODEL_PRICES` (`{"model": [input, output, cacheRead, cacheWrite]}`,
-USD per million tokens) adds or overrides models, for example the OpenAI fallbacks, whose cost is unknown otherwise.
+discarded ones; only inference cost is counted (Jev's routing requests and Actions minutes are not).
+
+Prices are current at the time of each call and stored with it; earlier calls keep their price. The broker reads a
+public price list (`FACTORY_PRICE_LIST_URL`, default OpenRouter's model list `https://openrouter.ai/api/v1/models`, no
+key; `off` turns it off), keeps it for an hour and refreshes it in the background (after a failure: retry after five
+minutes, keeping the last list). Order per model: `FACTORY_MODEL_PRICES` (`{"model": [input, output, cacheRead,
+cacheWrite]}`, USD per million tokens, explicit override), the live list, the Anthropic list prices in
+`src/llm/analytics.ts` (fallback while the list is unreachable or lacks the model). Model names are compared without
+provider prefix, variant, date and with dots as hyphens (`anthropic/claude-fable-5.2` = `claude-fable-5-2`). Coding runs
+are priced the same way from their tokens when the broker stores them; Claude Code's own estimate is kept
+(`agent_estimate_usd`) and used only when no price is known. Each row records its `price_source` (`live`, `table`,
+`configured`, `agent`). Runs on the Claude subscription count 0 $ in the analytics.
 
 `GET /v1/analytics?days=30&repository=owner/name` (days 1..365, repository optional) takes the same tokens as the job
 queue view. It returns the period's totals (cost, lost cost, merged features, mean and median cost per merged feature),

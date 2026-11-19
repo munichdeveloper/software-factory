@@ -65,7 +65,12 @@ describe('usage records and reports', () => {
       limits: { timeoutMinutes: 5, maxOutputBytes: 16000 }, operation: 'sha256', worker: 'codex' } },
     baseSha: '2'.repeat(40), specHash: 'f'.repeat(64), configHash: '3'.repeat(64), requireHumanGate: true });
   it('accepts only a valid record of the polled execution', () => {
-    expect(usageEntry(snapshot, 5, record())).toEqual({ repositoryId: 42, repository: 'owner/target', issueNumber: 2, runId: 5, record: record(), billing: 'api' });
+    // The tokens are priced at the current price (Opus 5.5 table: 4 / 20 / 0.20 / 5 $ per million); Claude Code's estimate is kept.
+    expect(usageEntry(snapshot, 5, record())).toEqual({ repositoryId: 42, repository: 'owner/target', issueNumber: 2, runId: 5,
+      record: record({ costUsd: (1000 * 4 + 30000 * 20 + 900000 * 0.2 + 50000 * 5) / 1e6 }), billing: 'api', priceSource: 'table', agentEstimateUsd: 3.4 });
+    // No price for the model: the agent's own estimate stays.
+    expect(usageEntry(snapshot, 5, record({ model: 'gpt-6.1-sol', worker: 'codex' }))).toMatchObject({ record: { costUsd: 3.4 }, priceSource: 'agent', agentEstimateUsd: 3.4 });
+    expect(usageEntry(snapshot, 5, record({ model: 'gpt-6.1-sol', costUsd: null }))).toMatchObject({ record: { costUsd: null }, priceSource: null });
     expect(usageEntry(snapshot, 5, record(), 'subscription')?.billing).toBe('subscription');
     expect(usageEntry(snapshot, 5, record({ executionId: 'b'.repeat(32) }))).toBeNull();
     expect(usageEntry(snapshot, 5, { ...record(), extra: 1 })).toBeNull();
