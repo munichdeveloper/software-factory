@@ -78,6 +78,7 @@ services:
       FACTORY_RUNNER_SLOTS_DIR: /run/factory/runners
       FACTORY_RUNNER_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification
       FACTORY_CREDIT_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification: agent credit used up (workers.coding.agents)
+      FACTORY_ROUTER_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification: model router not used, configured models ran (router:)
       # Private repositories outside the registry whose own CI follows SF_RUNNER (id:owner/name).
       FACTORY_RUNNER_REPOSITORIES: 1449777386:munichdeveloper/sf-manager,1448658563:munichdeveloper/business-os
     volumes:

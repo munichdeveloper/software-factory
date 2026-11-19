@@ -46,6 +46,39 @@ function agentRules(entry: { agent: 'codex' | 'claude'; model: string; reasoning
 const codingAgentSchema = z.strictObject({ agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort.default('high') })
   .superRefine((entry, context) => agentRules(entry, context));
 export type CodingAgent = z.infer<typeof codingAgentSchema>;
+/** An option the model router may pick; id names it in the decision, description tells the router what it is for. */
+const routerOptionId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/), routerDescription = z.string().min(1).max(300);
+const codingCandidateSchema = z.strictObject({ id: routerOptionId, agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort,
+  description: routerDescription }).superRefine((entry, context) => agentRules(entry, context));
+/** A broker-side model (merge review, risk assessment, planner): Claude with the broker's Anthropic key or OpenAI. */
+const llmCandidateSchema = z.strictObject({ id: routerOptionId, provider: z.enum(['claude', 'openai']), model: codingModel,
+  reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']), description: routerDescription }).superRefine((entry, context) => {
+  if ((entry.provider === 'claude') !== /^claude-/.test(entry.model)) context.addIssue({ code: 'custom', path: ['model'], message: 'provider claude needs a Claude model, provider openai a non-Claude model' });
+});
+const routerCandidates = <T extends z.ZodType<{ id: string }>>(candidate: T) => z.strictObject({ candidates: z.array(candidate).min(2).max(6) })
+  .superRefine((value, context) => {
+    if (new Set(value.candidates.map(c => c.id)).size !== value.candidates.length) context.addIssue({ code: 'custom', path: ['candidates'], message: 'candidate ids must be unique' });
+  });
+/**
+ * Model router: before a model works, a decision model (TypeSafe Jev via OpenRouter, the broker's OPENROUTER_API_KEY)
+ * picks one of the candidates of that purpose. Without an answer above minConfidence the configured models run as
+ * before, and the broker reports it. A purpose without candidates is not routed. Optional without a default, so
+ * configurations that leave it out keep their hash.
+ */
+export const routerSchema = z.strictObject({
+  enabled: z.boolean().default(true),
+  model: z.string().regex(/^~?[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]{0,80}$/).default('typesafe/jev-1.14'),
+  minConfidence: z.number().min(0).max(1).default(0.5),
+  timeoutSeconds: bounded(1, 30, 10),
+  /** First attempts of coding runs (Temporal engine); escalated attempts keep retryAgents. */
+  coding: routerCandidates(codingCandidateSchema).optional(),
+  review: routerCandidates(llmCandidateSchema).optional(),
+  risk: routerCandidates(llmCandidateSchema).optional(),
+  planner: routerCandidates(llmCandidateSchema).optional()
+});
+export type RouterConfig = z.infer<typeof routerSchema>;
+export type CodingCandidate = z.infer<typeof codingCandidateSchema>;
+export type LlmCandidate = z.infer<typeof llmCandidateSchema>;
 export const configSchema = z.strictObject({
   version: z.literal(1),
   factory: z.strictObject({ enabled: z.boolean().default(true), scope: z.string().min(1).max(4000) }),
@@ -230,8 +263,10 @@ export const configSchema = z.strictObject({
       pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
   }).prefault({}) }).prefault({}),
-  monitoring: monitoringSchema.partial().optional()
+  monitoring: monitoringSchema.partial().optional(),
+  router: routerSchema.optional()
 }).superRefine((config, context) => {
+  if (config.router?.coding && config.execution.engine !== 'temporal') context.addIssue({ code: 'custom', path: ['router', 'coding'], message: 'router.coding requires execution.engine temporal' });
   // The Claude worker and the agent priority list exist only in the Temporal executor; the legacy Actions coding workflow runs Codex.
   if (config.workers.coding && config.execution.engine !== 'temporal') {
     if (config.workers.coding.retryAgents) context.addIssue({ code: 'custom', path: ['workers', 'coding', 'retryAgents'], message: 'retryAgents requires execution.engine temporal' });

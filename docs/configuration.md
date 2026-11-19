@@ -64,6 +64,7 @@ Generated JSON schemas share the executable Zod source.
 | `deploy.rollback`/`keepReleases`/`timeoutMinutes` | `true`/`5`/`30` | Restart previous release on failure; releases kept 1–20; per-step timeout 5–60 |
 | `deploy.githubDeployment` | `false` | Additional GitHub deployment record with outcome |
 | `deploy.secrets` | `{}` | Application secrets from GitHub: `NAME: SECRET_NAME`; the SF Manager renders them into the wrapper's `deploy-env` (0.12.0, see [deploy](deploy.md#declared-in-the-configuration-deploysecrets-0120)) |
+| `router` | absent | Model router (0.16.0): a decision model picks model and effort per call among the candidates of each purpose, see [Model router](#model-router) |
 | `reporting.persistDecisions` | `true` | Deduplicated decision comments; execution intents/results and automatic block provenance always durable |
 
 ## Policy defaults
@@ -168,3 +169,60 @@ step) keeps `agents`, since a stronger model would not change that outcome. The 
 `urn:sf-escalate`. Most tasks then cost the cheaper model, and only those the agent could not finish escalate.
 `retryAgents` is optional without a default: a configuration without it keeps its hash and every attempt uses `agents`.
 Each repository needs the secret of every agent in both lists.
+
+## Model router
+
+```yaml
+router:
+  enabled: true                 # default true
+  model: typesafe/jev-1.14      # decision model on OpenRouter (default)
+  minConfidence: 0.5            # below this the configured models run
+  timeoutSeconds: 10
+  coding:                       # first attempts of coding runs (Temporal engine)
+    candidates:
+      - id: sonnet-medium
+        agent: claude
+        model: claude-sonnet-5-5
+        reasoningEffort: medium
+        description: Clearly specified, contained changes in one area; bug fixes, small features, texts, tests.
+      - id: opus-high
+        agent: claude
+        model: claude-opus-5-5
+        reasoningEffort: high
+        description: Changes across several modules, new architecture, migrations, security or hard debugging.
+  review:                       # merge review; likewise risk (assessment) and planner (llm.provider openai)
+    candidates:
+      - id: sonnet-medium
+        provider: claude
+        model: claude-sonnet-5-5
+        reasoningEffort: medium
+        description: Small pull requests with few files and a clear purpose.
+      - id: opus-high
+        provider: claude
+        model: claude-opus-5-5
+        reasoningEffort: high
+        description: Large pull requests, security-relevant or behaviour-changing code.
+```
+
+Before a model does the work, the broker asks the decision model TypeSafe Jev (OpenRouter Decisions API,
+`POST /api/alpha/decisions`) one choice question: the options are the candidates' ids with their descriptions, the
+state is the request in short (a coding task's description and acceptance criteria; a pull request's title, body and
+file list with changed lines, never its patches). Jev answers with a choice and its confidence; the chosen candidate
+then does the actual work with the same instructions, input and schema as the configured model, only model and effort
+differ. A routed coding agent runs first, the configured `agents` stay behind it as the credit fallbacks; the decision
+is stored per execution, so later polls send the identical request. Escalated attempts are not routed: they run
+`retryAgents`. Broker-side candidates run with the broker's keys: `provider: claude` needs its Anthropic key, `openai`
+its OpenAI key; a candidate that cannot run, or fails, falls back to the configured chain (Claude first, OpenAI second).
+A mock configuration (`provider: llm` with `llm.provider: mock`) is never routed. A purpose without `candidates` is not
+routed, and each purpose takes 2 to 6 candidates with unique ids; the candidates are also the floor, so leave out cheap
+options where a cheap answer is not acceptable (e.g. no `low` effort for reviews).
+
+The router never blocks. Without the broker's `OPENROUTER_API_KEY` (deploy secret `BROKER_OPENROUTER_API_KEY` in the
+environment `production`), when Jev is unreachable or answers something unusable, and when its confidence stays below
+`minConfidence`, the configured models run as before. Each decision is logged as one `factory-router` line (purpose,
+choice, confidence or reason and a fixed code). With `FACTORY_ROUTER_ALERT_CHANNEL` on the broker, every case in which
+the configured models ran instead goes to Slack, at most once per repository, purpose and reason every six hours; the
+next message counts the cases in between. Issue and pull request text reaches Jev as untrusted data it only classifies:
+at worst it picks another of the configured candidates. `router` is optional without a default: a configuration without
+it keeps its hash.
+
