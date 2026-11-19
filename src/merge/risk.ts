@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Config } from '../config/index.js';
 import type { ReviewInput } from './contract.js';
 import { claudeEffort, logFallback, type ClaudeCall } from '../llm/claude.js';
+import { openaiTokens, recordLlmCall } from '../llm/analytics.js';
 
 /** Risk classes, ordered from least to most risky. */
 export const riskClasses = ['low', 'medium', 'high', 'critical'] as const;
@@ -148,6 +149,7 @@ export class OpenAIRiskAssessor implements RiskAssessor {
     });
     if (!response.ok) throw Object.assign(new Error('Risk assessment provider unavailable'), { status: response.status });
     const body = await response.json() as { status?: string; output?: { content?: { type?: string; text?: string }[] }[] };
+    recordLlmCall('openai', assessor.model, assessor.reasoningEffort, openaiTokens(body), body.status === 'completed' ? 'success' : 'failed');
     if (body.status !== 'completed') throw new Error('Risk assessment incomplete or refused');
     const text = body.output?.flatMap(o => o.content ?? []).filter(c => c.type === 'output_text').map(c => c.text ?? '').join('') ?? '';
     if (text.length > 20000) throw new Error('Risk assessment output too large');

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import type { z } from 'zod';
+import { recordLlmCall } from './analytics.js';
 
 /**
  * Claude as the broker's first model provider (Johannes, 2026-11-18): planner, merge review and risk assessment ask
@@ -51,11 +52,13 @@ export function claudeStructured(key: string, client?: Anthropic): ClaudeCall {
     const usage = response.usage as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } | undefined;
     console.log(JSON.stringify({ event: 'factory-llm-usage', provider: 'claude', model: request.model, input: usage?.input_tokens ?? null,
       output: usage?.output_tokens ?? null, cacheRead: usage?.cache_read_input_tokens ?? null, cacheWrite: usage?.cache_creation_input_tokens ?? null }));
-    if (response.stop_reason === 'refusal') throw new ClaudeError('CLAUDE_REFUSED');
-    if (response.stop_reason === 'max_tokens') throw new ClaudeError('CLAUDE_INCOMPLETE');
-    if (response.parsed_output === null || response.parsed_output === undefined) throw new ClaudeError('CLAUDE_INVALID_OUTPUT');
+    const tokens = usage && typeof usage.input_tokens === 'number' && typeof usage.output_tokens === 'number'
+      ? { input: usage.input_tokens, output: usage.output_tokens, cacheRead: usage.cache_read_input_tokens ?? 0, cacheWrite: usage.cache_creation_input_tokens ?? 0 } : null;
     const parsed = request.schema.safeParse(response.parsed_output);
-    if (!parsed.success) throw new ClaudeError('CLAUDE_INVALID_OUTPUT');
+    const failure = response.stop_reason === 'refusal' ? 'CLAUDE_REFUSED' : response.stop_reason === 'max_tokens' ? 'CLAUDE_INCOMPLETE'
+      : response.parsed_output === null || response.parsed_output === undefined || !parsed.success ? 'CLAUDE_INVALID_OUTPUT' : null;
+    recordLlmCall('claude', request.model, request.effort, tokens, failure ? 'failed' : 'success');
+    if (failure || !parsed.success) throw new ClaudeError(failure ?? 'CLAUDE_INVALID_OUTPUT');
     return parsed.data;
   };
 }

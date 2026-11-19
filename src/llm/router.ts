@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { countLlmCall } from './meter.js';
+import { noteLlmSelection, withLlmContext } from './analytics.js';
 
 /**
  * Model router (Johannes, 2026-11-19): before a model does the work, a decision model (TypeSafe Jev through the
@@ -201,6 +202,10 @@ export async function routedCall<C extends RouterOption & { model: string; reaso
   run: (candidate: C) => (() => Promise<T>) | null;
   configured: () => Promise<T>; fatal?: (error: unknown) => boolean;
 }): Promise<T> {
+  // Analytics: every model call below belongs to this repository and step; the router's outcome is noted once known.
+  return withLlmContext({ repository: options.repository, step: options.purpose, selection: 'configured', routerChoice: null, routerProbability: null }, () => routedCallIn(options));
+}
+async function routedCallIn<C extends RouterOption & { model: string; reasoningEffort?: string | null }, T>(options: Parameters<typeof routedCall<C, T>>[0]): Promise<T> {
   const { routing, router, candidates } = options;
   countLlmCall(options.repository, options.purpose);
   if (!routing || !router?.enabled || !candidates?.length) return options.configured();
@@ -209,6 +214,7 @@ export async function routedCall<C extends RouterOption & { model: string; reaso
   const named = candidate ? { id: candidate.id, model: candidate.model, reasoningEffort: candidate.reasoningEffort ?? null } : null;
   const noted = (value: T, ran: RouteOutcome['ran']): T => { if (value && typeof value === 'object') outcomes.set(value, { record, candidate: named, ran }); return value; };
   const call = candidate ? options.run(candidate) : null;
+  noteLlmSelection(call ? 'router' : 'configured', record.choice ?? null, record.confidence ?? null);
   if (!call) {
     if (candidate) console.warn(JSON.stringify({ event: 'factory-router-candidate', repository: options.repository, purpose: options.purpose, choice: candidate.id, outcome: 'unavailable' }));
     return noted(await options.configured(), 'configured');
@@ -217,6 +223,7 @@ export async function routedCall<C extends RouterOption & { model: string; reaso
   catch (error) {
     if (options.fatal?.(error)) throw error;
     console.warn(JSON.stringify({ event: 'factory-router-candidate', repository: options.repository, purpose: options.purpose, choice: candidate!.id, outcome: 'failed' }));
+    noteLlmSelection('configured', record.choice ?? null, record.confidence ?? null);
     return noted(await options.configured(), 'configured');
   }
 }
