@@ -149,10 +149,17 @@ den normalen Merge-Ablauf (KI-Review, Pflicht-Checks, Risiko). Das erzeugt `vali
 5. Verhalten beim manuellen Neustart (6.2).
 6. Erneute Validierung eines „blocked“-PRs nach neuem Head (6.4).
 
-## 8. Offene Entscheidungen
+## 8. Entscheidungen
 
-1. **Kanal:** Sollen `validation_failed` und `start_refused` in denselben Slack-Kanal wie `run_started`
-   (`ki-notification`), oder in einen eigenen?
+Entschieden:
+
+1. **Kanal (entschieden 19.11.2026):** Problem-Ereignisse (`validation_failed`, `start_refused`, `attention_required`)
+   gehen in einen **eigenen Slack-Kanal für Probleme**, nicht in `ki-notification`. `run_started` bleibt in
+   `ki-notification`. Umsetzung über das `channel`-Feld je Regel (Abschnitt 5); der Kanal wird vor der Aktivierung
+   angelegt und die Slack-App eingeladen.
+
+Noch offen:
+
 2. **Claude-Abonnent:** Darf ein Claude-Thread auf ein Ereignis hin selbst Code im PR ändern (wie heute bei #76),
    oder nur melden und fragen?
 3. **Lärm:** Soll `validation_failed` auch dann melden, wenn die Factory sowieso selbst nachbessert, oder erst, wenn
