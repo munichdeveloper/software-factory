@@ -32,7 +32,6 @@ jobs:
       issues: write
     outputs:
       ready: ${{ steps.prepare.outputs.ready }}
-      request: ${{ steps.prepare.outputs.request }}
       base-sha: ${{ steps.prepare.outputs.base-sha }}
       base-branch: ${{ steps.prepare.outputs.base-branch }}
     steps:
@@ -61,6 +60,18 @@ jobs:
           HARNESS_ISSUE_NUMBER: ${{ inputs.issue-number }}
           CONFIG: ${{ inputs.config-path }}
         run: node bundle/factory.cjs prepare-coding --config-path "$CONFIG"
+      # The request travels as an artifact, not as a job output that GitHub drops when it looks secret (#182).
+      - if: steps.prepare.outputs.ready == 'true'
+        env:
+          SF_REQUEST: ${{ steps.prepare.outputs.request }}
+        run: printf '%s' "$SF_REQUEST" > "$RUNNER_TEMP/coding-request.json"
+      - if: steps.prepare.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coding-request-${{ inputs.execution-id }}
+          path: ${{ runner.temp }}/coding-request.json
+          if-no-files-found: error
+          retention-days: 7
   code:
     needs: prepare
     if: needs.prepare.outputs.ready == 'true'
@@ -69,6 +80,20 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: coding-request-${{ inputs.execution-id }}
+          path: ${{ runner.temp }}/sf-request
+      - id: request
+        name: Read the prepared request
+        env:
+          SF_EXECUTION_ID: ${{ inputs.execution-id }}
+        run: |
+          file="$RUNNER_TEMP/sf-request/coding-request.json"
+          if [[ "$(jq -r '.executionId' "$file" 2>/dev/null)" != "$SF_EXECUTION_ID" ]]; then
+            echo "::error::REQUEST_UNAVAILABLE: the prepared coding request did not reach this job intact"; exit 1
+          fi
+          { echo 'request<<SF_CODING_REQUEST_EOF'; cat "$file"; echo; echo 'SF_CODING_REQUEST_EOF'; } >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ needs.prepare.outputs.base-sha }}
@@ -83,7 +108,7 @@ jobs:
       - id: codex
         uses: ./.runtime/harness
         with:
-          request: ${{ needs.prepare.outputs.request }}
+          request: ${{ steps.request.outputs.request }}
           execution-id: ${{ inputs.execution-id }}
           workspace: ${{ github.workspace }}/target
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

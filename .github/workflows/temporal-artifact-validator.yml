@@ -5,7 +5,8 @@ on:
       factory-ref:
         type: string
         required: true
-      request:
+      # The request comes from the source run's artifact coding-request-<executionId> (software-factory#182).
+      execution-id:
         type: string
         required: true
       validation:
@@ -33,17 +34,22 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: coding-request-${{ inputs.execution-id }}
+          path: ${{ runner.temp }}/sf-request
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source-run-id }}
       - name: Validate bound request and plan before materializing target changes
         id: request
         env:
-          SF_CODING_REQUEST: ${{ inputs.request }}
           SF_VALIDATION_PLAN: ${{ inputs.validation }}
           FACTORY_REF: ${{ inputs.factory-ref }}
           SOURCE_RUN: ${{ inputs.source-run-id }}
         run: |
           [[ "$FACTORY_REF" =~ ^[a-f0-9]{40}$ ]]
           [[ "$SOURCE_RUN" =~ ^[1-9][0-9]{0,15}$ ]]
-          node .runtime/factory/bundle/factory.cjs validate-coding-execution
+          SF_CODING_REQUEST="$(cat "$RUNNER_TEMP/sf-request/coding-request.json")" node .runtime/factory/bundle/factory.cjs validate-coding-execution
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ steps.request.outputs.base-sha }}
