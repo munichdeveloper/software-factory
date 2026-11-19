@@ -29,9 +29,9 @@ Why a task is blocked decides how to resume it:
   block clears and the next attempt starts (with a ready grant where `autonomy.startGrant` requires one). Say in the
   revision what changed, for example that a dependency is now available.
 
-Coding runs install the repository's locked npm dependencies before the sandbox goes offline, and the project's build
-and tests run in the separate hosted validation job, so a worker no longer blocks because the sandbox cannot reach the
-npm registry (controla#63).
+The coding sandbox has no network. Coding runs install the root `package-lock.json` before it goes offline, and with a
+validation plan the project's build and tests run in the separate hosted validation job; a worker that reports
+`blocked` only because it could not run those checks counts as successful when that validation passes (controla#63).
 
 | Failure | Recovery |
 |---|---|
