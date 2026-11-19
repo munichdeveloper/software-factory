@@ -82,6 +82,7 @@ export class MapStore extends RuntimeStore {
   artifacts = new Map<string, CodingArtifact>(); validations = new Map<string, ValidationReport>();
   override async artifact(_repo: number, id: string) { return this.artifacts.get(id) ?? null; }
   override async validation(_repo: number, id: string) { return this.validations.get(id) ?? null; }
+  override async effectReceipt() { return null; }
   override async saveArtifact(_repo: number, id: string, value: CodingArtifact) { this.artifacts.set(id, value); }
   override async saveValidation(_repo: number, id: string, value: ValidationReport) { this.validations.set(id, value); }
   override async gate(_repo: number, id: string, binding: string, _actor: string, approved: boolean) {

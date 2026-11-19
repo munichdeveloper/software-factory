@@ -1,5 +1,6 @@
 import type { Config } from '../config/index.js';
 import type { Task } from '../state/reconstruct.js';
+import { routeNoteEn } from '../llm/router.js';
 
 export const statusMarker = '<!-- software-factory:status -->';
 
@@ -127,7 +128,10 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
   } else if (task.hasOpenPR) { stage = 'awaiting-pr'; state = ['A pull request for this task is open.']; needs = 'Review and merge the pull request.'; }
   else if (context.readyIsGrant && !task.issue.labels.includes('harness:ready')) { state = ['Ready to run. **Waiting only for the grant.**']; needs = grant; awaitsGrant = true; stage = 'awaiting-grant'; }
   else state = [context.queued ? 'Queued: all worker slots are in use. It starts when one is free.' : 'Queued; starts on the next reconciliation.'];
-  return { awaitsGrant, stage, body: [statusMarker, `**Software Factory** · \`${task.desiredStatus}\``, '', ...state, '', `**Needed from you:** ${needs}`,
+  // Which agent the running or latest coding execution uses, when the model router was asked (router.coding).
+  const routed = (running ?? task.latest)?.runtime?.route;
+  const model = routed && task.issue.state === 'open' ? ['', routeNoteEn(routed.record, routed.agent)] : [];
+  return { awaitsGrant, stage, body: [statusMarker, `**Software Factory** · \`${task.desiredStatus}\``, '', ...state, ...model, '', `**Needed from you:** ${needs}`,
     ...(links.length ? ['', `**Pull request:** ${links.join(', ')}`] : []),
     '', '_Kept up to date by the Factory. Editing or deleting this comment changes nothing._'].join('\n') };
 }

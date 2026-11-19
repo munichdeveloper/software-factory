@@ -31,6 +31,8 @@ class MemoryStore extends RuntimeStore {
   override async artifact() { return this.codingArtifact; }
   override async saveArtifact(_repo: number, _id: string, artifact: CodingArtifact) { this.codingArtifact = artifact; }
   override async validation() { return this.validationState; }
+  routeReceipt: unknown = null;
+  override async effectReceipt(_repo: number, _id: string, effect: string) { return effect === 'coding-route' ? this.routeReceipt : null; }
   override async saveValidation(_repo: number, _id: string, report: ValidationReport) { this.validationState = report; }
   override async cancel() { this.row!.cancelled = true; this.row!.approved = false; }
   override async gate(_repositoryId: number, _executionId: string, binding: string, _actor: string, approved: boolean) {
@@ -198,6 +200,17 @@ describe('durable result outbox', () => {
     expect((await f.controller.observations([id]))[0]!.validation).toEqual({ status: 'failed', reason: 'CHECK_FAILED', runId: 4711, failed: [{ name: 'test', exitCode: 1 }] });
     row.result = { ...f.result, status: 'success' };
     expect((await f.controller.observations([id]))[0]).not.toHaveProperty('validation');
+  });
+  it('reports the model router\'s stored decision of a coding run, and nothing when it was not routed', async () => {
+    const f = await fixture(false, true); await f.controller.start(f.admission); const id = f.admission.input.executionId;
+    expect((await f.controller.observations([id]))[0]).not.toHaveProperty('route');
+    f.store.routeReceipt = { route: null, agent: null };
+    expect((await f.controller.observations([id]))[0]).not.toHaveProperty('route');
+    const record = { used: true, purpose: 'coding', choice: 'opus-high', confidence: 0.82, model: 'typesafe/jev-1.14' }, agent = { agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' };
+    f.store.routeReceipt = { route: record, agent };
+    expect((await f.controller.observations([id]))[0]!.route).toEqual({ record, agent });
+    f.store.routeReceipt = { route: { used: 'maybe' }, agent };
+    expect((await f.controller.observations([id]))[0]).not.toHaveProperty('route');
   });
   it('persists a correlated coding artifact, publishes a draft result and reuses it after restart', async () => {
     const f = await fixture(true, true); await f.controller.start(f.admission); const row = f.store.row!;

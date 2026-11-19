@@ -53,6 +53,13 @@ describe('private runtime HTTP boundaries', () => {
     expect((await f.call('/v1/repositories/42/reconcile', { actor: 'attacker' })).status).toBe(409);
     expect((await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer', shell: 'id' })).status).toBe(400);
   });
+  it('leaves the broker-internal routing decision out of observations it answers over HTTP', async () => {
+    const f = await fixture(), observation = { issueNumber: 1, executionId: 'a'.repeat(32), status: 'running',
+      route: { record: { used: false, purpose: 'coding', reason: 'no-key', code: null, choice: null, confidence: null, model: 'typesafe/jev-1.14' }, agent: null } };
+    f.controller.observations.mockResolvedValue([observation] as never);
+    const answered = await (await f.call('/v1/repositories/42/observations', { executionIds: ['a'.repeat(32)] })).json();
+    expect(answered).toEqual([{ issueNumber: 1, executionId: 'a'.repeat(32), status: 'running' }]);
+  });
   it('loads only repository-scoped observations and applies commands to exact bindings', async () => {
     const f = await fixture(); expect((await f.call('/v1/repositories/42/runs')).status).toBe(200);
     expect((await f.call('/v1/repositories/42/observations', { executionIds: ['a'.repeat(32)] })).status).toBe(200);

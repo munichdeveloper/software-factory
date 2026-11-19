@@ -69544,6 +69544,61 @@ var validationReportSchema = external_exports.strictObject({
   workspaceUnchanged: external_exports.boolean()
 });
 
+// src/llm/router.ts
+var routeRecordSchema = external_exports.discriminatedUnion("used", [
+  external_exports.strictObject({
+    used: external_exports.literal(true),
+    purpose: external_exports.enum(["coding", "review", "risk", "planner"]),
+    choice: external_exports.string().max(40),
+    confidence: external_exports.number().min(0).max(1),
+    model: external_exports.string().max(100)
+  }),
+  external_exports.strictObject({
+    used: external_exports.literal(false),
+    purpose: external_exports.enum(["coding", "review", "risk", "planner"]),
+    reason: external_exports.enum(["no-key", "low-confidence", "unavailable", "invalid-answer"]),
+    /** HTTP status or a fixed transport code when Jev could not be asked. */
+    code: external_exports.string().regex(/^[A-Z0-9_]{1,40}$/).nullable(),
+    choice: external_exports.string().max(40).nullable(),
+    confidence: external_exports.number().min(0).max(1).nullable(),
+    model: external_exports.string().max(100)
+  })
+]);
+var decisionSchema = external_exports.object({ answers: external_exports.object({ route: external_exports.object({
+  choice: external_exports.string(),
+  confidence: external_exports.number().min(0).max(1).optional(),
+  probabilities: external_exports.record(external_exports.string(), external_exports.number()).optional()
+}) }) });
+var routerAlertWindowMs = 6 * 36e5;
+var outcomes = /* @__PURE__ */ new WeakMap();
+var routeOutcome = (value) => value && typeof value === "object" ? outcomes.get(value) : void 0;
+var pct = (confidence) => `${Math.round(confidence * 100)} %`;
+var skipDe = {
+  "no-key": "kein OpenRouter-Schl\xFCssel im Broker",
+  unavailable: "Jev nicht erreichbar",
+  "invalid-answer": "keine verwertbare Antwort von Jev",
+  "low-confidence": "Jevs Konfidenz unter dem Minimum"
+};
+var skipEn = {
+  "no-key": "no OpenRouter key on the broker",
+  unavailable: "Jev was unreachable",
+  "invalid-answer": "Jev gave no usable answer",
+  "low-confidence": "Jev's confidence was below the minimum"
+};
+function routeNoteDe(outcome) {
+  if (!outcome) return "";
+  const { record: record2, candidate } = outcome;
+  if (outcome.ran === "candidate" && record2.used && candidate)
+    return `Modellwahl: Der Model Router (Jev) w\xE4hlte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ""}) mit ${pct(record2.confidence)} Konfidenz.`;
+  if (record2.used) return `Modellwahl: Der Model Router w\xE4hlte \`${record2.choice}\`, der Kandidat konnte nicht laufen; gepr\xFCft haben die konfigurierten Modelle.`;
+  return `Modellwahl: ohne Model Router (${skipDe[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}); gepr\xFCft haben die konfigurierten Modelle.`;
+}
+function routeNoteEn(record2, agent) {
+  if (record2.used && agent) return `**Model:** chosen by the model router (Jev): \`${record2.choice}\` (${agent.agent}, ${agent.model}, ${agent.reasoningEffort}), ${pct(record2.confidence)} confidence.`;
+  if (record2.used) return `**Model:** the model router chose \`${record2.choice}\`; the configured agents run.`;
+  return `**Model:** the configured agents; the model router was not used (${skipEn[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}).`;
+}
+
 // src/runtime/contract.ts
 var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
 var digest2 = external_exports.string().regex(/^[a-f0-9]{64}$/);
@@ -69577,6 +69632,8 @@ var snapshotSchema = external_exports.strictObject({
   configHash: digest2,
   requireHumanGate: external_exports.boolean()
 });
+var routedAgentSchema = external_exports.strictObject({ agent: external_exports.enum(["codex", "claude"]), model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]) });
+var codingRouteSchema = external_exports.strictObject({ route: routeRecordSchema.nullable(), agent: routedAgentSchema.nullable() });
 var observationSchema = external_exports.strictObject({
   issueNumber: external_exports.number().int().positive(),
   executionId: executionKey,
@@ -69593,7 +69650,12 @@ var observationSchema = external_exports.strictObject({
     reason: external_exports.string().regex(/^[A-Z_]{1,40}$/),
     failed: external_exports.strictObject({ name: external_exports.string().regex(/^[a-z-]{1,30}$/), exitCode: external_exports.number().int().nullable() }).array().max(10),
     runId: external_exports.number().int().positive().safe()
-  }).optional()
+  }).optional(),
+  /**
+   * The model router's decision for this coding execution (router.coding), for the status comment. Broker-internal: the
+   * HTTP API leaves it out, so clients of earlier releases keep parsing their observations.
+   */
+  route: external_exports.strictObject({ record: routeRecordSchema, agent: routedAgentSchema.nullable() }).optional()
 });
 var RuntimeAdmissionRejected = class extends Error {
   constructor(code) {
@@ -70773,11 +70835,14 @@ function statusView(task, config2, context2) {
     awaitsGrant = true;
     stage = "awaiting-grant";
   } else state = [context2.queued ? "Queued: all worker slots are in use. It starts when one is free." : "Queued; starts on the next reconciliation."];
+  const routed = (running ?? task.latest)?.runtime?.route;
+  const model2 = routed && task.issue.state === "open" ? ["", routeNoteEn(routed.record, routed.agent)] : [];
   return { awaitsGrant, stage, body: [
     statusMarker,
     `**Software Factory** \xB7 \`${task.desiredStatus}\``,
     "",
     ...state,
+    ...model2,
     "",
     `**Needed from you:** ${needs}`,
     ...links.length ? ["", `**Pull request:** ${links.join(", ")}`] : [],
@@ -72280,6 +72345,13 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
         let context2;
         const current = f;
         const load = () => context2 ??= this.api.context(current, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+        let reviewNote = "", riskNote = "";
+        const configuredAssessor = this.options.assessor;
+        const assessor = configuredAssessor && { assess: async (i) => {
+          const assessed = await configuredAssessor.assess(i);
+          riskNote = routeNoteDe(routeOutcome(assessed));
+          return assessed;
+        } };
         const reviewing = cached2?.data.type === "merge_review" ? Promise.resolve(cached2.data.review) : (async () => {
           report.reviewed++;
           phase = "Vollst\xE4ndigen \xC4nderungskontext laden";
@@ -72287,9 +72359,11 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
           if (sourceTask) input2.sourceTask = sourceTask;
           if (Buffer.byteLength(JSON.stringify({ ...input2, facts: factsKey(current) })) > this.config.merge.review.maxContextBytes) throw new Error("Review context exceeds limit; no truncated approval");
           phase = "KI-Review";
-          return mergeReviewSchema.parse(await this.reviewer.review(input2));
+          const reviewed = await this.reviewer.review(input2);
+          reviewNote = routeNoteDe(routeOutcome(reviewed));
+          return mergeReviewSchema.parse(reviewed);
         })();
-        const assessing = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === "merge_risk" ? Promise.resolve(cachedRisk.data.risk) : load().then((input2) => classifyRisk(input2.changes, risk, this.options.assessor), () => classifyRisk([], risk, { assess: () => Promise.reject(new Error("No context")) }));
+        const assessing = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === "merge_risk" ? Promise.resolve(cachedRisk.data.risk) : load().then((input2) => classifyRisk(input2.changes, risk, assessor), () => classifyRisk([], risk, { assess: () => Promise.reject(new Error("No context")) }));
         const [review, riskRecord] = await Promise.all([reviewing, assessing]);
         await this.event(
           f,
@@ -72301,7 +72375,9 @@ ${review.reason}
 
 ${review.findings.map((x) => `- ${x.severity}: ${x.path} \u2013 ${x.explanation}`).join("\n")}
 
-Head: \`${f.head}\`; Basis: \`${f.base}\`.`
+${reviewNote ? `${reviewNote}
+
+` : ""}Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         );
         if (riskKey && riskRecord) {
           if (riskRecord.source === "error") await this.explain(f, describeRisk(riskRecord, risk));
@@ -72311,7 +72387,9 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
             { type: "merge_risk", head: f.head, base: f.base, riskKey, risk: riskRecord },
             `${describeRisk(riskRecord, risk)}
 
-Head: \`${f.head}\`; Basis: \`${f.base}\`.`
+${riskNote ? `${riskNote}
+
+` : ""}Head: \`${f.head}\`; Basis: \`${f.base}\`.`
           );
           const label2 = `sf:risk-${riskRecord.class}`;
           if (this.api.riskLabel && (!f.labels.includes(label2) || f.labels.some((l) => l.startsWith("sf:risk-") && l !== label2))) {

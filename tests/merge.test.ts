@@ -5,6 +5,7 @@ import type { MergeFacts, MergePort, MergeReview, ReviewInput } from '../src/mer
 import { decodeEvent, encodeEvent } from '../src/state/events.js';
 import { OpenAIMergeReviewer } from '../src/merge/reviewer.js';
 import { deliverNotifications } from '../src/notifications/slack.js';
+import { ModelRouter, routedCall, Routing } from '../src/llm/router.js';
 
 function fixture(decision: MergeReview['decision'] = 'merge') {
   const cfg = config(); cfg.merge.enabled = true; cfg.autonomy.overrides.merge_pr = 'allow'; cfg.llm.provider = 'openai';
@@ -227,4 +228,16 @@ it('names a missing review key on the pull request instead of an unexplained fai
   const x = fixture(); x.reviewer.review.mockRejectedValue(new Error('A real OpenAI merge reviewer is required'));
   await x.run(); expect(x.api.merge).not.toHaveBeenCalled();
   expect(x.f.comments.at(-1)!.body).toContain('OPENAI_API_KEY');
+});
+it('names the model the router picked in the review comment, without journaling it', async () => {
+  const x = fixture();
+  const routing = new Routing(new ModelRouter('key', async () => Response.json({ answers: { route: { choice: 'opus-high', confidence: 0.75 } } })));
+  const candidates = [{ id: 'sonnet-medium', description: 'Small', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' },
+    { id: 'opus-high', description: 'Large', model: 'claude-opus-5-5', reasoningEffort: 'high' }];
+  const reviewer = { review: (input: ReviewInput) => routedCall({ routing, repository: 'owner/target', purpose: 'review', state: () => 'pr', candidates,
+    router: { enabled: true, model: 'typesafe/jev-1.14', minConfidence: 0.5, timeoutSeconds: 5 }, configured: () => x.reviewer.review(input), run: () => () => x.reviewer.review(input) }) };
+  await new MergeManager(x.api, x.cfg, reviewer, 'test').run(structuredClone(x.snapshot));
+  const comment = x.f.comments.find(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data.type === 'merge_review')!;
+  expect(comment.body).toContain('Modellwahl: Der Model Router (Jev) wählte `opus-high` (claude-opus-5-5, high) mit 75 % Konfidenz.');
+  expect(decodeEvent(comment, x.cfg.manager.trustedActors)!.data).toEqual(expect.objectContaining({ review: x.review }));
 });

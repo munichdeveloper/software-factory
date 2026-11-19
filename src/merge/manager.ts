@@ -7,6 +7,7 @@ import type { GitHubPort } from '../github/port.js';
 import { permission, policyVersion } from '../policies/engine.js';
 import { mergeReviewSchema, type MergeFacts, type MergePort, type MergeReview, type MergeReviewer, type ReviewInput } from './contract.js';
 import { aboveThreshold, builtinCriticalPaths, classifyRisk, describeRisk, type RiskAssessor, type RiskRecord } from './risk.js';
+import { routeNoteDe, routeOutcome } from '../llm/router.js';
 
 const safe = (s: string) => s.replaceAll('@', '@\u200b').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 // The broker's own display-only risk labels are no input of a review: setting them must not invalidate it.
@@ -176,6 +177,11 @@ export class MergeManager {
         let context: Promise<ReviewInput> | undefined;
         const current = f;
         const load = () => context ??= this.api.context(current, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+        // Which model did the work, when the model router was asked (router.review, router.risk); shown, never journaled.
+        let reviewNote = '', riskNote = '';
+        const configuredAssessor = this.options.assessor;
+        const assessor: RiskAssessor | undefined = configuredAssessor && { assess: async i => {
+          const assessed = await configuredAssessor.assess(i); riskNote = routeNoteDe(routeOutcome(assessed)); return assessed; } };
         // Review and risk assessment are independent and run in parallel; the assessment never rejects (failures are critical).
         const reviewing: Promise<MergeReview> = cached?.data.type === 'merge_review' ? Promise.resolve(cached.data.review) : (async () => {
           report.reviewed++;
@@ -184,18 +190,20 @@ export class MergeManager {
           if (sourceTask) input.sourceTask = sourceTask;
           if (Buffer.byteLength(JSON.stringify({ ...input, facts: factsKey(current) })) > this.config.merge.review.maxContextBytes) throw new Error('Review context exceeds limit; no truncated approval');
           phase = 'KI-Review';
-          return mergeReviewSchema.parse(await this.reviewer.review(input));
+          const reviewed = await this.reviewer.review(input);
+          reviewNote = routeNoteDe(routeOutcome(reviewed));
+          return mergeReviewSchema.parse(reviewed);
         })();
         const assessing: Promise<RiskRecord | null> = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === 'merge_risk' ? Promise.resolve(cachedRisk.data.risk)
-          : load().then(input => classifyRisk(input.changes, risk, this.options.assessor), () => classifyRisk([], risk, { assess: () => Promise.reject(new Error('No context')) }));
+          : load().then(input => classifyRisk(input.changes, risk, assessor), () => classifyRisk([], risk, { assess: () => Promise.reject(new Error('No context')) }));
         const [review, riskRecord] = await Promise.all([reviewing, assessing]);
         await this.event(f, `merge-review:${reviewKey}`, { type: 'merge_review', head: f.head, base: f.base, reviewKey, review },
-          `**KI-Entscheidung: ${review.decision}**\n\n${review.reason}\n\n${review.findings.map(x => `- ${x.severity}: ${x.path} – ${x.explanation}`).join('\n')}\n\nHead: \`${f.head}\`; Basis: \`${f.base}\`.`);
+          `**KI-Entscheidung: ${review.decision}**\n\n${review.reason}\n\n${review.findings.map(x => `- ${x.severity}: ${x.path} – ${x.explanation}`).join('\n')}\n\n${reviewNote ? `${reviewNote}\n\n` : ''}Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
         if (riskKey && riskRecord) {
           // A failed assessment is not journaled, so the next pass assesses again; until then it counts as critical.
           if (riskRecord.source === 'error') await this.explain(f, describeRisk(riskRecord, risk));
           else await this.event(f, `merge-risk:${riskKey}`, { type: 'merge_risk', head: f.head, base: f.base, riskKey, risk: riskRecord },
-            `${describeRisk(riskRecord, risk)}\n\nHead: \`${f.head}\`; Basis: \`${f.base}\`.`);
+            `${describeRisk(riskRecord, risk)}\n\n${riskNote ? `${riskNote}\n\n` : ''}Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
           const label = `sf:risk-${riskRecord.class}`;
           if (this.api.riskLabel && (!f.labels.includes(label) || f.labels.some(l => l.startsWith('sf:risk-') && l !== label))) {
             phase = 'Risiko-Label setzen';

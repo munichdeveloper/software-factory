@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { workerInputSchema, workerResultSchema } from '../workers/contract.js';
 import { validationPlanSchema } from './validation-contract.js';
+import { routeRecordSchema } from '../llm/router.js';
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -31,6 +32,10 @@ export const snapshotSchema = z.strictObject({
   specHash: digest, configHash: digest, requireHumanGate: z.boolean(),
 });
 export type RunSnapshot = z.infer<typeof snapshotSchema>;
+/** The agent a coding route chose, as stored with the execution. */
+export const routedAgentSchema = z.strictObject({ agent: z.enum(['codex', 'claude']), model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']) });
+/** The stored routing decision of a coding execution (effect `coding-route`); null fields: not routed. */
+export const codingRouteSchema = z.strictObject({ route: routeRecordSchema.nullable(), agent: routedAgentSchema.nullable() });
 export type RunPhase = 'starting' | 'awaiting-approval' | 'authorizing' | 'running' | 'publishing' | 'completed' | 'cancelled';
 export interface RuntimeState { phase: RunPhase; binding: string; result: z.infer<typeof workerResultSchema> | null }
 export const observationSchema = z.strictObject({
@@ -43,6 +48,11 @@ export const observationSchema = z.strictObject({
   validation: z.strictObject({ status: z.enum(['passed', 'failed', 'unsupported', 'invalid']), reason: z.string().regex(/^[A-Z_]{1,40}$/),
     failed: z.strictObject({ name: z.string().regex(/^[a-z-]{1,30}$/), exitCode: z.number().int().nullable() }).array().max(10),
     runId: z.number().int().positive().safe() }).optional(),
+  /**
+   * The model router's decision for this coding execution (router.coding), for the status comment. Broker-internal: the
+   * HTTP API leaves it out, so clients of earlier releases keep parsing their observations.
+   */
+  route: z.strictObject({ record: routeRecordSchema, agent: routedAgentSchema.nullable() }).optional(),
 });
 export type RuntimeObservation = z.infer<typeof observationSchema>;
 /**

@@ -8,7 +8,7 @@ import { authorizeDelegation } from '../workers/execute-delegation.js';
 import { decodeEvent } from '../state/events.js';
 import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
 import { RuntimeStore, type StoredRun } from './store.js';
-import { admissionCode, admissionSchema, RuntimeAdmissionRejected, snapshotSchema, workflowId, type Admission, type RunSnapshot, type RuntimeObservation, type RuntimeRelease, type RuntimeState, type WorkerRuntimePort } from './contract.js';
+import { admissionCode, admissionSchema, codingRouteSchema, RuntimeAdmissionRejected, snapshotSchema, workflowId, type Admission, type RunSnapshot, type RuntimeObservation, type RuntimeRelease, type RuntimeState, type WorkerRuntimePort } from './contract.js';
 import { executorWrapper, type CodingExecutionPort } from './coding-executor.js';
 import type { CodingArtifact } from '../workers/coding.js';
 import type { ReadyApproval } from './contract.js';
@@ -238,11 +238,21 @@ export class RuntimeController implements WorkerRuntimePort {
       const report = row.result?.status === 'blocked' && row.snapshot.validationPlan ? await this.store.validation(this.repo.repositoryId, id) : null;
       // A run that failed without committing a result says why, instead of the Manager's generic failure (software-factory#93).
       const stopped = !row.result && (status === 'failed' || status === 'timed_out') ? failedResult(row.snapshot, await workflowFailure(handle, status)) : null;
+      const route = await this.route(id);
       result.push({ issueNumber: row.snapshot.admission.input.issueNumber, executionId: id, workflowId: row.workflowId, runId: row.runId, status, phase: state.phase, binding: row.binding, createdAt: row.createdAt, result: row.result ?? stopped,
         ...(report ? { validation: { status: report.status, reason: report.reason, runId: report.workflowRunId,
-          failed: report.checks.filter(c => c.status === 'failed').map(c => ({ name: c.name, exitCode: c.exitCode })) } } : {}) });
+          failed: report.checks.filter(c => c.status === 'failed').map(c => ({ name: c.name, exitCode: c.exitCode })) } } : {}),
+        ...(route ? { route } : {}) });
     }
     return result;
+  }
+  /** The model router's stored decision for a coding execution; informational, so an unreadable one is left out. */
+  private async route(executionId: string): Promise<RuntimeObservation['route']> {
+    try {
+      const receipt = await this.store.effectReceipt(this.repo.repositoryId, executionId, 'coding-route');
+      const stored = receipt === null ? null : codingRouteSchema.parse(receipt);
+      return stored?.route ? { record: stored.route, agent: stored.agent } : undefined;
+    } catch { return undefined; }
   }
   async authorize(snapshot: RunSnapshot, binding: string): Promise<StoredRun> { return (await this.authorized(snapshot, binding)).stored; }
   /** One complete authorization, with the configuration it found current. */

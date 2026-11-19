@@ -150,6 +150,12 @@ export class RuntimeStore implements SanityStore {
   async terminal(repositoryId: number, executionId: string) {
     await this.db().query('UPDATE factory_runtime_runs SET terminal=true WHERE repository_id=$1 AND execution_id=$2', [repositoryId, executionId]);
   }
+  /** The confirmed receipt of one runtime effect of an execution, or null when it has none (yet). */
+  async effectReceipt(repositoryId: number, executionId: string, effect: string): Promise<unknown> {
+    const { rows } = await this.db().query<{ receipt: unknown }>("SELECT receipt FROM factory_runtime_effects WHERE repository_id=$1 AND execution_id=$2 AND effect=$3 AND phase='confirmed'",
+      [repositoryId, executionId, effect]);
+    return rows[0]?.receipt ?? null;
+  }
   async artifact(repositoryId: number, executionId: string): Promise<CodingArtifact | null> {
     const { rows } = await this.db().query<{ artifact: unknown; digest: string }>('SELECT artifact,digest FROM factory_runtime_artifacts WHERE repository_id=$1 AND execution_id=$2', [repositoryId, executionId]);
     if (!rows[0]) return null;
