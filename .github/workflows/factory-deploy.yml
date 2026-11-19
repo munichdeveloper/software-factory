@@ -45,5 +45,6 @@ jobs:
             OPENAI_API_KEY=${{ secrets.BROKER_OPENAI_API_KEY }}
             ANTHROPIC_API_KEY=${{ secrets.BROKER_ANTHROPIC_API_KEY }}
             OPENROUTER_API_KEY=${{ secrets.BROKER_OPENROUTER_API_KEY }}
+            TYPESAFE_API_KEY=${{ secrets.BROKER_TYPESAFE_API_KEY }}
             SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
             FACTORY_MONITOR_TOKEN=${{ secrets.BROKER_MONITOR_TOKEN }}

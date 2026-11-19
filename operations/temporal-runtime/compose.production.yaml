@@ -79,6 +79,7 @@ services:
       FACTORY_RUNNER_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification
       FACTORY_CREDIT_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification: agent credit used up (workers.coding.agents)
       FACTORY_ROUTER_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification: model router not used, configured models ran (router:)
+      FACTORY_ROUTER_API: typesafe # Jev directly at TypeSafe (TYPESAFE_API_KEY); openrouter asks through OpenRouter
       # ki-notification: token usage of coding runs (expensive runs, spend cap reached, tokens without result, daily
       # spend per repository, loops of broker model calls) and the daily report at 06:00 UTC.
       FACTORY_USAGE_ALERT_CHANNEL: C0CGJKK3EKS

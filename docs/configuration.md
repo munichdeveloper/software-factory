@@ -176,7 +176,7 @@ Each repository needs the secret of every agent in both lists.
 ```yaml
 router:
   enabled: true                 # default true
-  model: typesafe/jev-1.14      # decision model on OpenRouter (default)
+  model: typesafe/jev-1.14      # decision model (default; jev-1.14.0 at TypeSafe)
   minConfidence: 0.5            # below this the configured models run
   timeoutSeconds: 10
   coding:                       # first attempts of coding runs (Temporal engine)
@@ -205,8 +205,12 @@ router:
         description: Large pull requests, security-relevant or behaviour-changing code.
 ```
 
-Before a model does the work, the broker asks the decision model TypeSafe Jev (OpenRouter Decisions API,
-`POST /api/alpha/decisions`) one choice question: the options are the candidates' ids with their descriptions, the
+Before a model does the work, the broker asks the decision model TypeSafe Jev one choice question. Since 0.17.0 it asks
+TypeSafe directly (`POST https://api.typesafe.ai/v1/systemone`, broker key `TYPESAFE_API_KEY`, deploy secret
+`BROKER_TYPESAFE_API_KEY`) or through OpenRouter (Decisions API `POST /api/alpha/decisions`, `OPENROUTER_API_KEY`, deploy
+secret `BROKER_OPENROUTER_API_KEY`). The broker setting `FACTORY_ROUTER_API` (`typesafe` or `openrouter`) chooses; without
+it a TypeSafe key wins. `router.model` keeps OpenRouter's id: for TypeSafe, `typesafe/jev-1.14` becomes `jev-1.14.0`,
+and TypeSafe's own names (`jev-latest`, `jev-preview`) pass unchanged. The question: the options are the candidates' ids with their descriptions, the
 state is the request in short (a coding task's description and acceptance criteria; a pull request's title, body and
 file list with changed lines, never its patches). Jev answers with a choice and its confidence; the chosen candidate
 then does the actual work with the same instructions, input and schema as the configured model, only model and effort
@@ -218,8 +222,8 @@ A mock configuration (`provider: llm` with `llm.provider: mock`) is never routed
 routed, and each purpose takes 2 to 6 candidates with unique ids; the candidates are also the floor, so leave out cheap
 options where a cheap answer is not acceptable (e.g. no `low` effort for reviews).
 
-The router never blocks. Without the broker's `OPENROUTER_API_KEY` (deploy secret `BROKER_OPENROUTER_API_KEY` in the
-environment `production`), when Jev is unreachable or answers something unusable, and when its confidence stays below
+The router never blocks. Without the broker's key for the chosen endpoint (deploy secrets in the environment
+`production`), when Jev is unreachable or answers something unusable, and when its confidence stays below
 `minConfidence`, the configured models run as before. Since 0.16.1 the task's status comment names the agent of its
 coding run (`**Model:**`, chosen by the router or the configured agents and why), and the merge review and risk
 comments name the model that did the review (`Modellwahl: …`). Each decision is also logged as one `factory-router` line (purpose,

@@ -36,11 +36,42 @@ const decisionSchema = z.object({ answers: z.object({ route: z.object({ choice: 
 
 type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 export const decisionsUrl = 'https://openrouter.ai/api/alpha/decisions';
+/** TypeSafe's own API for Jev (docs.typesafe.ai/api/system-one): same questions and answers as OpenRouter's Decisions API. */
+export const typesafeUrl = 'https://api.typesafe.ai/v1/systemone';
+/**
+ * Where the broker asks Jev (Johannes, 2026-11-19: "Mach das konfigurierbar und stelle auf direkte Jev api"):
+ * `typesafe` with a TypeSafe key (TYPESAFE_API_KEY), or `openrouter` with an OpenRouter key (OPENROUTER_API_KEY).
+ */
+export type RouterApi = 'typesafe' | 'openrouter';
+export interface RouterEndpoint { api: RouterApi; key: string | undefined }
+/**
+ * The endpoint from the broker's environment: FACTORY_ROUTER_API names it; without it TypeSafe is used when its key
+ * is set, otherwise OpenRouter.
+ */
+export function routerEndpoint(env: Record<string, string | undefined>): RouterEndpoint {
+  const api = z.enum(['typesafe', 'openrouter']).optional().parse(env.FACTORY_ROUTER_API || undefined)
+    ?? (env.TYPESAFE_API_KEY ? 'typesafe' : 'openrouter');
+  return { api, key: (api === 'typesafe' ? env.TYPESAFE_API_KEY : env.OPENROUTER_API_KEY)?.trim() || undefined };
+}
+/**
+ * The model name for the endpoint: repositories configure OpenRouter's id (typesafe/jev-1.14); TypeSafe names the
+ * same model jev-1.14.0 and accepts its aliases (jev-latest, jev-preview) as they are.
+ */
+export function endpointModel(api: RouterApi, model: string): string {
+  if (api === 'openrouter') return model;
+  const name = model.replace(/^typesafe\//, '');
+  return /^jev-\d+\.\d+$/.test(name) ? `${name}.0` : name;
+}
 /** At most this many characters of the request reach Jev; more adds cost, not a better choice. */
 export const maxRouterState = 8000;
 
 export class ModelRouter {
-  constructor(private key: string | undefined, private fetcher: Fetcher = fetch) {}
+  private key: string | undefined;
+  readonly api: RouterApi;
+  constructor(endpoint: RouterEndpoint | string | undefined, private fetcher: Fetcher = fetch) {
+    const resolved = typeof endpoint === 'object' ? endpoint : { api: 'openrouter' as const, key: endpoint };
+    this.key = resolved.key; this.api = resolved.api;
+  }
   /** Never throws: an unusable answer comes back as a record with used false. */
   async route(purpose: RouterPurpose, state: string, options: RouterOption[], settings: RouterSettings): Promise<RouteRecord> {
     const skip = (reason: RouterSkip, code: string | null = null, choice: string | null = null, confidence: number | null = null): RouteRecord =>
@@ -48,9 +79,9 @@ export class ModelRouter {
     if (!this.key) return skip('no-key');
     let response: Response;
     try {
-      response = await this.fetcher(decisionsUrl, { method: 'POST', signal: AbortSignal.timeout(settings.timeoutSeconds * 1000),
+      response = await this.fetcher(this.api === 'typesafe' ? typesafeUrl : decisionsUrl, { method: 'POST', signal: AbortSignal.timeout(settings.timeoutSeconds * 1000),
         headers: { authorization: `Bearer ${this.key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: settings.model, state: state.slice(0, maxRouterState),
+        body: JSON.stringify({ model: endpointModel(this.api, settings.model), state: state.slice(0, maxRouterState),
           questions: { route: { type: 'choice', instructions: questions[purpose], criteria: Object.fromEntries(options.map(o => [o.id, o.description])) } } }) });
     } catch (error) {
       return skip('unavailable', error instanceof Error && error.name === 'TimeoutError' ? 'TIMEOUT' : 'TRANSPORT');
@@ -75,7 +106,7 @@ export function logRoute(repository: string, record: RouteRecord) {
 export interface RouterAlertSink { post(channel: string, text: string): Promise<void> }
 const purposeNames: Record<RouterPurpose, string> = { coding: 'Coding', review: 'Merge-Review', risk: 'Risikobewertung', planner: 'Planung' };
 const skipTexts: Record<RouterSkip, string> = {
-  'no-key': 'Der Broker hat keinen OpenRouter-Schlüssel (OPENROUTER_API_KEY).',
+  'no-key': 'Der Broker hat keinen Schlüssel für Jev (TYPESAFE_API_KEY oder OPENROUTER_API_KEY).',
   unavailable: 'Jev war nicht erreichbar',
   'invalid-answer': 'Jev hat keine verwertbare Antwort geliefert',
   'low-confidence': 'Jevs Konfidenz lag unter dem konfigurierten Minimum'
@@ -121,9 +152,9 @@ const outcomes = new WeakMap<object, RouteOutcome>();
 /** The outcome routedCall recorded for a result it returned, so the comment reporting that result can name the model. */
 export const routeOutcome = (value: unknown): RouteOutcome | undefined => value && typeof value === 'object' ? outcomes.get(value) : undefined;
 const pct = (confidence: number) => `${Math.round(confidence * 100)} %`;
-const skipDe: Record<RouterSkip, string> = { 'no-key': 'kein OpenRouter-Schlüssel im Broker', unavailable: 'Jev nicht erreichbar',
+const skipDe: Record<RouterSkip, string> = { 'no-key': 'kein Jev-Schlüssel im Broker', unavailable: 'Jev nicht erreichbar',
   'invalid-answer': 'keine verwertbare Antwort von Jev', 'low-confidence': 'Jevs Konfidenz unter dem Minimum' };
-const skipEn: Record<RouterSkip, string> = { 'no-key': 'no OpenRouter key on the broker', unavailable: 'Jev was unreachable',
+const skipEn: Record<RouterSkip, string> = { 'no-key': 'no Jev key on the broker', unavailable: 'Jev was unreachable',
   'invalid-answer': 'Jev gave no usable answer', 'low-confidence': "Jev's confidence was below the minimum" };
 /** One German line for the merge comments (review, risk): which model did the work and why. */
 export function routeNoteDe(outcome: RouteOutcome | undefined): string {

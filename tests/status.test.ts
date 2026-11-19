@@ -103,7 +103,7 @@ describe('status comment: the model router of a coding run', () => {
       agent: { agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' } }))
       .toContain('**Model:** chosen by the model router (Jev): `opus-high` (claude, claude-opus-5-5, high), 82 % confidence.');
     expect(routed({ record: { used: false, purpose: 'coding', reason: 'no-key', code: null, choice: null, confidence: null, model: 'typesafe/jev-1.14' }, agent: null }))
-      .toContain('**Model:** the configured agents; the model router was not used (no OpenRouter key on the broker).');
+      .toContain('**Model:** the configured agents; the model router was not used (no Jev key on the broker).');
     expect(routed({ record: { used: false, purpose: 'coding', reason: 'low-confidence', code: null, choice: 'opus-high', confidence: 0.31, model: 'typesafe/jev-1.14' }, agent: null }))
       .toContain("the model router was not used (Jev's confidence was below the minimum, 31 %).");
     expect(statusComment(task, cfg, context)).not.toContain('**Model:**');

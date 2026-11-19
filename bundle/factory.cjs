@@ -69579,13 +69579,13 @@ var outcomes = /* @__PURE__ */ new WeakMap();
 var routeOutcome = (value) => value && typeof value === "object" ? outcomes.get(value) : void 0;
 var pct = (confidence) => `${Math.round(confidence * 100)} %`;
 var skipDe = {
-  "no-key": "kein OpenRouter-Schl\xFCssel im Broker",
+  "no-key": "kein Jev-Schl\xFCssel im Broker",
   unavailable: "Jev nicht erreichbar",
   "invalid-answer": "keine verwertbare Antwort von Jev",
   "low-confidence": "Jevs Konfidenz unter dem Minimum"
 };
 var skipEn = {
-  "no-key": "no OpenRouter key on the broker",
+  "no-key": "no Jev key on the broker",
   unavailable: "Jev was unreachable",
   "invalid-answer": "Jev gave no usable answer",
   "low-confidence": "Jev's confidence was below the minimum"

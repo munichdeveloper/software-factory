@@ -14,7 +14,7 @@ import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
 import { ClaudePlanner, FallbackPlanner, MockPlanner, OpenAIPlanner } from '../llm/provider.js';
 import { claudeModels, claudeStructured } from '../llm/claude.js';
-import { ModelRouter, RouterAlerts, Routing } from '../llm/router.js';
+import { ModelRouter, RouterAlerts, Routing, routerEndpoint } from '../llm/router.js';
 import { routedAssessor, routedPlanner, routedReviewer, type RoutedModels } from '../llm/routed-models.js';
 import { assertRetainedReleases } from './retention.js';
 import { hash } from '../state/identity.js';
@@ -134,8 +134,9 @@ export async function main(args = process.argv.slice(2)) {
   const claude = process.env.ANTHROPIC_API_KEY ? claudeStructured(process.env.ANTHROPIC_API_KEY) : undefined, models = claudeModels(process.env);
   const creditChannel = process.env.FACTORY_CREDIT_ALERT_CHANNEL;
   const creditAlerts = process.env.SLACK_BOT_TOKEN && creditChannel ? new CreditAlerts(store, new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN), creditChannel) : undefined;
-  // The model router (router: in a repository's configuration) asks Jev through OpenRouter with the broker's own key
-  // (deploy secret BROKER_OPENROUTER_API_KEY). Without the key every routed purpose runs its configured models and,
+  // The model router (router: in a repository's configuration) asks Jev with the broker's own key: directly at TypeSafe
+  // (deploy secret BROKER_TYPESAFE_API_KEY) or through OpenRouter (BROKER_OPENROUTER_API_KEY); FACTORY_ROUTER_API
+  // chooses, and without it a TypeSafe key wins. Without the key every routed purpose runs its configured models and,
   // with FACTORY_ROUTER_ALERT_CHANNEL, Slack hears about it.
   // Token usage (Johannes, 2026-11-19): every coding run's usage is stored and logged; runs above the thresholds, runs
   // stopped by their spend cap, runs that used tokens without a result and a repository's daily spend go to Slack, and
@@ -144,7 +145,9 @@ export async function main(args = process.argv.slice(2)) {
   const usageAlerts = new UsageAlerts(store, usageSink, usageChannel, usageThresholds(process.env));
   setLlmCallMeter(new LlmCallMeter(usageSink, usageChannel, z.coerce.number().int().min(1).max(10000).parse(process.env.FACTORY_LLM_CALLS_ALERT_PER_HOUR ?? '20')));
   const routerChannel = process.env.FACTORY_ROUTER_ALERT_CHANNEL;
-  const routing = new Routing(new ModelRouter(process.env.OPENROUTER_API_KEY || undefined),
+  const endpoint = routerEndpoint(process.env);
+  console.log(JSON.stringify({ event: 'factory-router-endpoint', api: endpoint.api, key: !!endpoint.key }));
+  const routing = new Routing(new ModelRouter(endpoint),
     process.env.SLACK_BOT_TOKEN && routerChannel ? new RouterAlerts(new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN), routerChannel) : undefined);
   try {
     await store.migrate();
