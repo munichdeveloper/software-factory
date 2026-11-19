@@ -10,7 +10,9 @@ export const codingExecutionSchema = z.strictObject({ contractVersion: z.literal
     acceptanceCriteria: z.string().min(1).array().min(1).max(20), contextReferences: z.string().max(1000).array().max(30) }),
   baseSha: z.string().regex(/^[a-f0-9]{40}$/), allowedActions: z.tuple([z.literal('edit_workspace'), z.literal('run_commands')]),
   model, effort,
-  limits: z.strictObject({ timeoutMinutes: z.number().int().min(1).max(30), maxFiles: z.literal(100), maxPatchBytes: z.literal(5000000) }),
+  limits: z.strictObject({ timeoutMinutes: z.number().int().min(1).max(30), maxFiles: z.literal(100), maxPatchBytes: z.literal(5000000),
+    /** Spend cap of the attempt (harness: Claude Code --max-budget-usd); absent for executions dispatched before caps existed. */
+    maxCostUsd: z.number().positive().max(1000).optional() }),
   /**
    * Broker to executor only: the executor's agent selection removes it and may swap in the first fallback whose
    * provider still has credit, so the Harness always receives a plain 3.0 request. Absent for a single agent.

@@ -142,7 +142,12 @@ export const configSchema = z.strictObject({
       /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
       loopback: z.boolean().default(false),
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
-      smallPullRequests: z.boolean().default(true) }).superRefine((coding, context) => {
+      smallPullRequests: z.boolean().default(true),
+      /**
+       * Spend cap per coding attempt in US dollars, Temporal engine only: Claude Code stops at it (--max-budget-usd; Codex
+       * has no such limit). Without it the broker uses 10 $. Optional without a default, so configurations keep their hash.
+       */
+      maxCostUsd: z.number().positive().max(1000).optional() }).superRefine((coding, context) => {
       for (const key of ['agents', 'retryAgents'] as const) {
         const seen = new Set<string>();
         coding[key]?.forEach((entry, index) => {

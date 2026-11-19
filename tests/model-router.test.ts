@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { decisionsUrl, ModelRouter, RouterAlerts, routedCall, routeNoteDe, routeOutcome, Routing, type RouteRecord } from '../src/llm/router.js';
+import { decisionsUrl, endpointModel, ModelRouter, routerEndpoint, typesafeUrl, RouterAlerts, routedCall, routeNoteDe, routeOutcome, Routing, type RouteRecord } from '../src/llm/router.js';
 import { loadConfig } from '../src/config/index.js';
 
 const settings = { model: 'typesafe/jev-1.14', minConfidence: 0.5, timeoutSeconds: 5 };
@@ -7,6 +7,27 @@ const options = [{ id: 'cheap', description: 'Small changes' }, { id: 'strong', 
 const answering = (body: unknown, status = 200) => vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => Response.json(body, { status }));
 
 describe('ModelRouter', () => {
+  it('asks TypeSafe directly with its own key and model name', async () => {
+    const fetcher = answering({ model: 'jev-1.14.0', answers: { route: { type: 'choice', choice: 'cheap', confidence: 0.9, probabilities: { cheap: 0.9, strong: 0.1 } } }, usage: { input_tokens: 300, output_tokens: 5 } });
+    const record = await new ModelRouter({ api: 'typesafe', key: 'ts-key' }, fetcher).route('review', 's', options, settings);
+    expect(record).toEqual({ used: true, purpose: 'review', choice: 'cheap', confidence: 0.9, model: 'typesafe/jev-1.14' });
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toBe(typesafeUrl);
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer ts-key');
+    expect(JSON.parse(String(init.body)).model).toBe('jev-1.14.0');
+  });
+  it('chooses the endpoint from the environment and maps model names', () => {
+    expect(routerEndpoint({})).toEqual({ api: 'openrouter', key: undefined });
+    expect(routerEndpoint({ OPENROUTER_API_KEY: 'or' })).toEqual({ api: 'openrouter', key: 'or' });
+    expect(routerEndpoint({ OPENROUTER_API_KEY: 'or', TYPESAFE_API_KEY: ' ts\n' })).toEqual({ api: 'typesafe', key: 'ts' });
+    expect(routerEndpoint({ OPENROUTER_API_KEY: 'or', TYPESAFE_API_KEY: 'ts', FACTORY_ROUTER_API: 'openrouter' })).toEqual({ api: 'openrouter', key: 'or' });
+    expect(routerEndpoint({ OPENROUTER_API_KEY: 'or', FACTORY_ROUTER_API: 'typesafe' })).toEqual({ api: 'typesafe', key: undefined });
+    expect(() => routerEndpoint({ FACTORY_ROUTER_API: 'other' })).toThrow();
+    expect(endpointModel('typesafe', 'typesafe/jev-1.14')).toBe('jev-1.14.0');
+    expect(endpointModel('typesafe', 'jev-latest')).toBe('jev-latest');
+    expect(endpointModel('typesafe', 'typesafe/jev-1.13.0')).toBe('jev-1.13.0');
+    expect(endpointModel('openrouter', 'typesafe/jev-1.14')).toBe('typesafe/jev-1.14');
+  });
   it('asks the OpenRouter Decisions API with one choice question and returns the choice', async () => {
     const fetcher = answering({ answers: { route: { type: 'choice', choice: 'strong', confidence: 0.82, probabilities: { cheap: 0.18, strong: 0.82 } } } });
     const record = await new ModelRouter('key', fetcher).route('coding', 'x'.repeat(20000), options, settings);
@@ -81,7 +102,7 @@ describe('routedCall', () => {
     const failed = await routedCall({ ...base, candidates, routing: routing('strong'), configured: async () => result(), run: () => async () => { throw new Error('HTTP 529'); } });
     expect(routeNoteDe(routeOutcome(failed))).toBe('Modellwahl: Der Model Router wählte `strong`, der Kandidat konnte nicht laufen; geprüft haben die konfigurierten Modelle.');
     const skipped = await routedCall({ ...base, candidates, routing: routing(null), configured: async () => result(), run: () => async () => result() });
-    expect(routeNoteDe(routeOutcome(skipped))).toBe('Modellwahl: ohne Model Router (kein OpenRouter-Schlüssel im Broker); geprüft haben die konfigurierten Modelle.');
+    expect(routeNoteDe(routeOutcome(skipped))).toBe('Modellwahl: ohne Model Router (kein Jev-Schlüssel im Broker); geprüft haben die konfigurierten Modelle.');
     const unrouted = await routedCall({ ...base, candidates: undefined, routing: routing('strong'), configured: async () => result(), run: () => async () => result() });
     expect(routeNoteDe(routeOutcome(unrouted))).toBe('');
   });

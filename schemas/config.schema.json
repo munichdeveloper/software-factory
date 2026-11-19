@@ -386,6 +386,11 @@
                 "smallPullRequests": {
                   "default": true,
                   "type": "boolean"
+                },
+                "maxCostUsd": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000
                 }
               },
               "required": [

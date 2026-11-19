@@ -1,6 +1,7 @@
 import type { Config } from '../config/index.js';
 import type { Task } from '../state/reconstruct.js';
 import { routeNoteEn } from '../llm/router.js';
+import { usageNoteEn } from '../runtime/usage.js';
 
 export const statusMarker = '<!-- software-factory:status -->';
 
@@ -131,6 +132,9 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
   // Which agent the running or latest coding execution uses, when the model router was asked (router.coding).
   const routed = (running ?? task.latest)?.runtime?.route;
   const model = routed && task.issue.state === 'open' ? ['', routeNoteEn(routed.record, routed.agent)] : [];
+  // What the latest finished agent run cost, once the broker recorded its usage.
+  const spent = task.latest?.runtime?.usage;
+  if (spent && task.issue.state === 'open') model.push(...(model.length ? [] : ['']), usageNoteEn(spent));
   return { awaitsGrant, stage, body: [statusMarker, `**Software Factory** · \`${task.desiredStatus}\``, '', ...state, ...model, '', `**Needed from you:** ${needs}`,
     ...(links.length ? ['', `**Pull request:** ${links.join(', ')}`] : []),
     '', '_Kept up to date by the Factory. Editing or deleting this comment changes nothing._'].join('\n') };

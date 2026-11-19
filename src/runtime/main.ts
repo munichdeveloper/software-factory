@@ -14,7 +14,7 @@ import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
 import { ClaudePlanner, FallbackPlanner, MockPlanner, OpenAIPlanner } from '../llm/provider.js';
 import { claudeModels, claudeStructured } from '../llm/claude.js';
-import { ModelRouter, RouterAlerts, Routing } from '../llm/router.js';
+import { ModelRouter, RouterAlerts, Routing, routerEndpoint } from '../llm/router.js';
 import { routedAssessor, routedPlanner, routedReviewer, type RoutedModels } from '../llm/routed-models.js';
 import { assertRetainedReleases } from './retention.js';
 import { hash } from '../state/identity.js';
@@ -26,6 +26,8 @@ import { QueueBoard } from './queue.js';
 import { SanityMonitor } from './sanity.js';
 import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
 import { CreditAlerts } from './credit-alerts.js';
+import { dailyUsageReport, UsageAlerts, usageThresholds } from './usage.js';
+import { LlmCallMeter, setLlmCallMeter } from '../llm/meter.js';
 import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
 import { startRuntimeWorker, type WorkerPackage } from './worker.js';
@@ -132,11 +134,20 @@ export async function main(args = process.argv.slice(2)) {
   const claude = process.env.ANTHROPIC_API_KEY ? claudeStructured(process.env.ANTHROPIC_API_KEY) : undefined, models = claudeModels(process.env);
   const creditChannel = process.env.FACTORY_CREDIT_ALERT_CHANNEL;
   const creditAlerts = process.env.SLACK_BOT_TOKEN && creditChannel ? new CreditAlerts(store, new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN), creditChannel) : undefined;
-  // The model router (router: in a repository's configuration) asks Jev through OpenRouter with the broker's own key
-  // (deploy secret BROKER_OPENROUTER_API_KEY). Without the key every routed purpose runs its configured models and,
+  // The model router (router: in a repository's configuration) asks Jev with the broker's own key: directly at TypeSafe
+  // (deploy secret BROKER_TYPESAFE_API_KEY) or through OpenRouter (BROKER_OPENROUTER_API_KEY); FACTORY_ROUTER_API
+  // chooses, and without it a TypeSafe key wins. Without the key every routed purpose runs its configured models and,
   // with FACTORY_ROUTER_ALERT_CHANNEL, Slack hears about it.
+  // Token usage (Johannes, 2026-11-19): every coding run's usage is stored and logged; runs above the thresholds, runs
+  // stopped by their spend cap, runs that used tokens without a result and a repository's daily spend go to Slack, and
+  // a report of the previous day is posted each morning. The broker's own model calls are counted against loops.
+  const usageChannel = process.env.FACTORY_USAGE_ALERT_CHANNEL, usageSink = process.env.SLACK_BOT_TOKEN && usageChannel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;
+  const usageAlerts = new UsageAlerts(store, usageSink, usageChannel, usageThresholds(process.env));
+  setLlmCallMeter(new LlmCallMeter(usageSink, usageChannel, z.coerce.number().int().min(1).max(10000).parse(process.env.FACTORY_LLM_CALLS_ALERT_PER_HOUR ?? '20')));
   const routerChannel = process.env.FACTORY_ROUTER_ALERT_CHANNEL;
-  const routing = new Routing(new ModelRouter(process.env.OPENROUTER_API_KEY || undefined),
+  const endpoint = routerEndpoint(process.env);
+  console.log(JSON.stringify({ event: 'factory-router-endpoint', api: endpoint.api, key: !!endpoint.key }));
+  const routing = new Routing(new ModelRouter(endpoint),
     process.env.SLACK_BOT_TOKEN && routerChannel ? new RouterAlerts(new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN), routerChannel) : undefined);
   try {
     await store.migrate();
@@ -192,7 +203,8 @@ export async function main(args = process.argv.slice(2)) {
       repository.coding = { executor: new ActionsCodingExecutor(api, effects, (snapshot, binding) => controller.authorize(snapshot, binding), async () => (await repository.config()).manager.trustedActors,
         id => store.validation(repository.repositoryId, id),
         async (_snapshot, selection) => { try { await creditAlerts?.observe(item.repository, selection); } catch { /* an alert never fails a run */ } },
-        routing),
+        routing,
+        async entry => { try { await usageAlerts.observe(entry); } catch { /* an alert never fails a run */ } }),
         publish: async (snapshot, binding, artifact, createdAt, validation) => { const config = await repository.config();
           // The agent that ran: the executor's stored choice for a priority list, otherwise the configured agent.
           const chosen = await storedSelection(effects(snapshot, binding), snapshot.admission.input.executionId, () => controller.authorize(snapshot, binding));
@@ -279,9 +291,11 @@ export async function main(args = process.argv.slice(2)) {
       const slots = process.env.FACTORY_RUNNER_SLOTS_DIR;
       return startRunnerFallback(fallback, slots ? new RunnerDispenser(fallback, slots) : null, Math.max(interval, 60) * 1000);
     })() : () => {};
+    const report = usageSink && usageChannel ? setInterval(() => { void dailyUsageReport(store, usageSink, usageChannel, new Date()).catch(() => undefined); }, 600000) : undefined;
+    report?.unref();
     console.log(JSON.stringify({ service: 'factory-runtime', port, addresses, reconcileIntervalSeconds: interval, repositories: bindings.map(b => b.repository.repositoryId) }));
     await new Promise<void>(resolve => {
-      const stop = () => { stopRunners(); void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
+      const stop = () => { stopRunners(); if (report) clearInterval(report); void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
       process.once('SIGINT', stop); process.once('SIGTERM', stop);
     });
   } finally { await connection.close(); await store.pool.end(); }

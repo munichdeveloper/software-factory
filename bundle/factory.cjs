@@ -609,8 +609,8 @@ var require_Node = __commonJS({
         };
         const res = toJS.toJS(this, "", ctx);
         if (typeof onAnchor === "function")
-          for (const { count, res: res2 } of ctx.anchors.values())
-            onAnchor(res2, count);
+          for (const { count: count2, res: res2 } of ctx.anchors.values())
+            onAnchor(res2, count2);
         return typeof reviver === "function" ? applyReviver.applyReviver(reviver, { "": res }, "", res) : res;
       }
     };
@@ -718,13 +718,13 @@ var require_Alias = __commonJS({
         const anchor2 = anchors2 && source && anchors2.get(source);
         return anchor2 ? anchor2.count * anchor2.aliasCount : 0;
       } else if (identity.isCollection(node2)) {
-        let count = 0;
+        let count2 = 0;
         for (const item of node2.items) {
           const c = getAliasCount(doc, item, anchors2);
-          if (c > count)
-            count = c;
+          if (c > count2)
+            count2 = c;
         }
-        return count;
+        return count2;
       } else if (identity.isPair(node2)) {
         const kc = getAliasCount(doc, node2.key, anchors2);
         const vc = getAliasCount(doc, node2.value, anchors2);
@@ -3677,8 +3677,8 @@ var require_Document = __commonJS({
         };
         const res = toJS.toJS(this.contents, jsonArg ?? "", ctx);
         if (typeof onAnchor === "function")
-          for (const { count, res: res2 } of ctx.anchors.values())
-            onAnchor(res2, count);
+          for (const { count: count2, res: res2 } of ctx.anchors.values())
+            onAnchor(res2, count2);
         return typeof reviver === "function" ? applyReviver.applyReviver(reviver, { "": res }, "", res) : res;
       }
       /**
@@ -3755,12 +3755,12 @@ var require_errors = __commonJS({
         lineStr = prev + lineStr;
       }
       if (/[^ ]/.test(lineStr)) {
-        let count = 1;
+        let count2 = 1;
         const end = error62.linePos[1];
         if (end?.line === line && end.col > col) {
-          count = Math.max(1, Math.min(end.col - col, 80 - ci));
+          count2 = Math.max(1, Math.min(end.col - col, 80 - ci));
         }
-        const pointer = " ".repeat(ci) + "^".repeat(count);
+        const pointer = " ".repeat(ci) + "^".repeat(count2);
         error62.message += `:
 
 ${lineStr}
@@ -10849,9 +10849,9 @@ function recordMessagesCreateResponse(client, call, body, data) {
     loggerFor(client).debug("could not record the response on its span", problem);
   }
 }
-function recordCountTokensResponse(client, call, count) {
+function recordCountTokensResponse(client, call, count2) {
   try {
-    call?.span.setAttribute(ATTR_ANTHROPIC_MESSAGE_COUNT_TOKENS_INPUT_TOKENS, count.input_tokens);
+    call?.span.setAttribute(ATTR_ANTHROPIC_MESSAGE_COUNT_TOKENS_INPUT_TOKENS, count2.input_tokens);
   } catch (problem) {
     loggerFor(client).debug("could not record the response on its span", problem);
   }
@@ -16702,15 +16702,15 @@ function betaEditTool(ctx) {
           throw e;
         throw new ToolError(`edit: ${fsErrorMessage(e, file_path)}`);
       }
-      const count = data.split(old_string).length - 1;
-      if (count === 0)
+      const count2 = data.split(old_string).length - 1;
+      if (count2 === 0)
         throw new ToolError(`edit: old_string not found in ${file_path}`);
       let updated;
       if (replace_all) {
         updated = data.split(old_string).join(new_string);
       } else {
-        if (count > 1)
-          throw new ToolError(`edit: old_string appears ${count} times in ${file_path} (must be unique)`);
+        if (count2 > 1)
+          throw new ToolError(`edit: old_string appears ${count2} times in ${file_path} (must be unique)`);
         updated = data.replace(old_string, () => new_string);
       }
       try {
@@ -16718,7 +16718,7 @@ function betaEditTool(ctx) {
       } catch (e) {
         throw new ToolError(`edit: write: ${fsErrorMessage(e, file_path)}`);
       }
-      return `edited ${file_path} (${replace_all ? count : 1} replacement(s))`;
+      return `edited ${file_path} (${replace_all ? count2 : 1} replacement(s))`;
     }
   });
 }
@@ -30543,9 +30543,9 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
             __span: call,
             headers
           });
-          return call ? request2._thenUnwrap((count) => {
-            recordCountTokensResponse(this._client, call, count);
-            return count;
+          return call ? request2._thenUnwrap((count2) => {
+            recordCountTokensResponse(this._client, call, count2);
+            return count2;
           }) : request2;
         }
         /**
@@ -31892,9 +31892,9 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
             __span: call,
             headers
           });
-          return call ? request2._thenUnwrap((count) => {
-            recordCountTokensResponse(this._client, call, count);
-            return count;
+          return call ? request2._thenUnwrap((count2) => {
+            recordCountTokensResponse(this._client, call, count2);
+            return count2;
           }) : request2;
         }
       }
@@ -39867,20 +39867,20 @@ var require_resolve = __commonJS({
       return false;
     }
     function countKeys(schema) {
-      let count = 0;
+      let count2 = 0;
       for (const key in schema) {
         if (key === "$ref")
           return Infinity;
-        count++;
+        count2++;
         if (SIMPLE_INLINED.has(key))
           continue;
         if (typeof schema[key] == "object") {
-          (0, util_1.eachItem)(schema[key], (sch) => count += countKeys(sch));
+          (0, util_1.eachItem)(schema[key], (sch) => count2 += countKeys(sch));
         }
-        if (count === Infinity)
+        if (count2 === Infinity)
           return Infinity;
       }
-      return count;
+      return count2;
     }
     function getFullPath(resolver, id = "", normalize) {
       if (normalize !== false)
@@ -43418,8 +43418,8 @@ var require_contains = __commonJS({
         cxt.result(valid, () => cxt.reset());
         function validateItemsWithCount() {
           const schValid = gen.name("_valid");
-          const count = gen.let("count", 0);
-          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count)));
+          const count2 = gen.let("count", 0);
+          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count2)));
         }
         function validateItems(_valid, block) {
           gen.forRange("i", 0, len, (i) => {
@@ -43432,16 +43432,16 @@ var require_contains = __commonJS({
             block();
           });
         }
-        function checkLimits(count) {
-          gen.code((0, codegen_1._)`${count}++`);
+        function checkLimits(count2) {
+          gen.code((0, codegen_1._)`${count2}++`);
           if (max === void 0) {
-            gen.if((0, codegen_1._)`${count} >= ${min}`, () => gen.assign(valid, true).break());
+            gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true).break());
           } else {
-            gen.if((0, codegen_1._)`${count} > ${max}`, () => gen.assign(valid, false).break());
+            gen.if((0, codegen_1._)`${count2} > ${max}`, () => gen.assign(valid, false).break());
             if (min === 1)
               gen.assign(valid, true);
             else
-              gen.if((0, codegen_1._)`${count} >= ${min}`, () => gen.assign(valid, true));
+              gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true));
           }
         }
       }
@@ -46393,14 +46393,14 @@ function codePointLength(str) {
   const units = str.length;
   if (!highSurrogate.test(str))
     return units;
-  let count = units;
+  let count2 = units;
   for (let i = 0; i < units - 1; i++) {
     if ((str.charCodeAt(i) & 64512) === 55296 && (str.charCodeAt(i + 1) & 64512) === 56320) {
-      count--;
+      count2--;
       i++;
     }
   }
-  return count;
+  return count2;
 }
 function getLengthableOrigin(input2) {
   if (Array.isArray(input2))
@@ -50783,8 +50783,8 @@ function az_default() {
 }
 
 // node_modules/zod/v4/locales/be.js
-function getBelarusianPlural(count, one, few, many) {
-  const absCount = Math.abs(count);
+function getBelarusianPlural(count2, one, few, many) {
+  const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -53431,8 +53431,8 @@ function hu_default() {
 }
 
 // node_modules/zod/v4/locales/hy.js
-function getArmenianPlural(count, one, many) {
-  return Math.abs(count) === 1 ? one : many;
+function getArmenianPlural(count2, one, many) {
+  return Math.abs(count2) === 1 ? one : many;
 }
 function withDefiniteArticle(word) {
   if (!word)
@@ -56170,8 +56170,8 @@ function ro_default() {
 }
 
 // node_modules/zod/v4/locales/ru.js
-function getRussianPlural(count, one, few, many) {
-  const absCount = Math.abs(count);
+function getRussianPlural(count2, one, few, many) {
+  const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -65235,7 +65235,12 @@ var configSchema = external_exports.strictObject({
       /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
       loopback: external_exports.boolean().default(false),
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
-      smallPullRequests: external_exports.boolean().default(true)
+      smallPullRequests: external_exports.boolean().default(true),
+      /**
+       * Spend cap per coding attempt in US dollars, Temporal engine only: Claude Code stops at it (--max-budget-usd; Codex
+       * has no such limit). Without it the broker uses 10 $. Optional without a default, so configurations keep their hash.
+       */
+      maxCostUsd: external_exports.number().positive().max(1e3).optional()
     }).superRefine((coding, context2) => {
       for (const key of ["agents", "retryAgents"]) {
         const seen = /* @__PURE__ */ new Set();
@@ -69574,13 +69579,13 @@ var outcomes = /* @__PURE__ */ new WeakMap();
 var routeOutcome = (value) => value && typeof value === "object" ? outcomes.get(value) : void 0;
 var pct = (confidence) => `${Math.round(confidence * 100)} %`;
 var skipDe = {
-  "no-key": "kein OpenRouter-Schl\xFCssel im Broker",
+  "no-key": "kein Jev-Schl\xFCssel im Broker",
   unavailable: "Jev nicht erreichbar",
   "invalid-answer": "keine verwertbare Antwort von Jev",
   "low-confidence": "Jevs Konfidenz unter dem Minimum"
 };
 var skipEn = {
-  "no-key": "no OpenRouter key on the broker",
+  "no-key": "no Jev key on the broker",
   unavailable: "Jev was unreachable",
   "invalid-answer": "Jev gave no usable answer",
   "low-confidence": "Jev's confidence was below the minimum"
@@ -69598,6 +69603,34 @@ function routeNoteEn(record2, agent) {
   if (record2.used) return `**Model:** the model router chose \`${record2.choice}\`; the configured agents run.`;
   return `**Model:** the configured agents; the model router was not used (${skipEn[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}).`;
 }
+
+// src/runtime/usage.ts
+var count = external_exports.number().int().min(0).max(1e12);
+var tokensSchema = external_exports.strictObject({ input: count, output: count, cacheRead: count, cacheWrite: count });
+var usageRecordSchema = external_exports.strictObject({
+  contractVersion: external_exports.literal("1.0"),
+  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  worker: external_exports.enum(["codex", "claude"]),
+  model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  effort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]),
+  source: external_exports.enum(["proxy", "codex-session"]).nullable(),
+  requests: count.nullable(),
+  tokens: tokensSchema.nullable(),
+  costUsd: external_exports.number().min(0).max(1e5).nullable(),
+  turns: count.nullable(),
+  durationMs: count.nullable(),
+  outcome: external_exports.string().regex(/^[a-z_]{1,60}$/).nullable(),
+  budgetUsd: external_exports.number().positive().max(1e3).nullable(),
+  budgetReached: external_exports.boolean()
+});
+function usageNoteEn(record2) {
+  const cost = record2.costUsd === null ? "cost unknown" : `$${record2.costUsd.toFixed(2)}`;
+  const tokens = record2.tokens ? `, ${thousandsEn(record2.tokens.input + record2.tokens.cacheRead + record2.tokens.cacheWrite)} input / ${thousandsEn(record2.tokens.output)} output tokens` : "";
+  const turns = record2.turns === null ? "" : `, ${record2.turns} turns`;
+  const stop = record2.budgetReached ? ` (stopped at the $${(record2.budgetUsd ?? 0).toFixed(2)} cap)` : "";
+  return `**Usage:** ${cost}${tokens}${turns}${stop}.`;
+}
+var thousandsEn = (value) => value >= 1e6 ? `${(value / 1e6).toFixed(1)}M` : value >= 1e3 ? `${Math.round(value / 1e3)}k` : String(value);
 
 // src/runtime/contract.ts
 var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
@@ -69655,7 +69688,9 @@ var observationSchema = external_exports.strictObject({
    * The model router's decision for this coding execution (router.coding), for the status comment. Broker-internal: the
    * HTTP API leaves it out, so clients of earlier releases keep parsing their observations.
    */
-  route: external_exports.strictObject({ record: routeRecordSchema, agent: routedAgentSchema.nullable() }).optional()
+  route: external_exports.strictObject({ record: routeRecordSchema, agent: routedAgentSchema.nullable() }).optional(),
+  /** Token usage and cost of this execution's agent run, once recorded; broker-internal like route. */
+  usage: usageRecordSchema.optional()
 });
 var RuntimeAdmissionRejected = class extends Error {
   constructor(code) {
@@ -70837,6 +70872,8 @@ function statusView(task, config2, context2) {
   } else state = [context2.queued ? "Queued: all worker slots are in use. It starts when one is free." : "Queued; starts on the next reconciliation."];
   const routed = (running ?? task.latest)?.runtime?.route;
   const model2 = routed && task.issue.state === "open" ? ["", routeNoteEn(routed.record, routed.agent)] : [];
+  const spent = task.latest?.runtime?.usage;
+  if (spent && task.issue.state === "open") model2.push(...model2.length ? [] : [""], usageNoteEn(spent));
   return { awaitsGrant, stage, body: [
     statusMarker,
     `**Software Factory** \xB7 \`${task.desiredStatus}\``,
@@ -72045,14 +72082,14 @@ var GitHubMergePort = class {
   }
   async rerunFailed(number4, head, checks) {
     const runs = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: head, event: "pull_request", per_page: 100 });
-    let count = 0;
+    let count2 = 0;
     for (const run of runs.filter((r) => r.head_sha === head && r.run_attempt === 1 && r.status === "completed" && ["failure", "timed_out", "cancelled", "startup_failure"].includes(r.conclusion ?? "") && r.pull_requests?.some((p) => p.number === number4))) {
       const jobs = await this.api.paginate(this.api.actions.listJobsForWorkflowRun, { ...this.target, run_id: run.id, filter: "latest", per_page: 100 });
       if (!jobs.some((j) => checks.includes(j.name) && j.conclusion !== "success")) continue;
       await this.api.actions.reRunWorkflowFailedJobs({ ...this.target, run_id: run.id });
-      count++;
+      count2++;
     }
-    return count;
+    return count2;
   }
   async riskLabel(number4, label2) {
     const { data: labels2 } = await this.api.issues.listLabelsOnIssue({ ...this.target, issue_number: number4, per_page: 100 });
@@ -73066,7 +73103,13 @@ var codingExecutionSchema = external_exports.strictObject({
   allowedActions: external_exports.tuple([external_exports.literal("edit_workspace"), external_exports.literal("run_commands")]),
   model,
   effort,
-  limits: external_exports.strictObject({ timeoutMinutes: external_exports.number().int().min(1).max(30), maxFiles: external_exports.literal(100), maxPatchBytes: external_exports.literal(5e6) }),
+  limits: external_exports.strictObject({
+    timeoutMinutes: external_exports.number().int().min(1).max(30),
+    maxFiles: external_exports.literal(100),
+    maxPatchBytes: external_exports.literal(5e6),
+    /** Spend cap of the attempt (harness: Claude Code --max-budget-usd); absent for executions dispatched before caps existed. */
+    maxCostUsd: external_exports.number().positive().max(1e3).optional()
+  }),
   /**
    * Broker to executor only: the executor's agent selection removes it and may swap in the first fallback whose
    * provider still has credit, so the Harness always receives a plain 3.0 request. Absent for a single agent.

@@ -47,6 +47,10 @@ export function claudeStructured(key: string, client?: Anthropic): ClaudeCall {
       messages: [{ role: 'user', content: request.input }],
       output_config: { ...(request.effort ? { effort: request.effort } : {}), format: zodOutputFormat(request.schema) }
     }, { timeout: request.timeoutMs });
+    // Tokens of every broker call, for the usage review (no text, ids and numbers only).
+    const usage = response.usage as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } | undefined;
+    console.log(JSON.stringify({ event: 'factory-llm-usage', provider: 'claude', model: request.model, input: usage?.input_tokens ?? null,
+      output: usage?.output_tokens ?? null, cacheRead: usage?.cache_read_input_tokens ?? null, cacheWrite: usage?.cache_creation_input_tokens ?? null }));
     if (response.stop_reason === 'refusal') throw new ClaudeError('CLAUDE_REFUSED');
     if (response.stop_reason === 'max_tokens') throw new ClaudeError('CLAUDE_INCOMPLETE');
     if (response.parsed_output === null || response.parsed_output === undefined) throw new ClaudeError('CLAUDE_INVALID_OUTPUT');

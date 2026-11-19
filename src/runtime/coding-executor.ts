@@ -10,6 +10,7 @@ import { codingRouteSchema, type RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
 import { bindValidation, validationReportSchema, type ValidationReport } from './validation-contract.js';
+import { defaultCodingBudgetUsd, usageEntry, type UsageEntry } from './usage.js';
 import { failedChecksEntry, escalated, loopbackEntry, maxContextRefs, namedRefs, outputEntries, refEntry, reworkEntry, reworkOf, unavailableEntry } from './coding-context.js';
 
 export const codingWorkflow = 'factory-temporal-executor.yml';
@@ -119,7 +120,9 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     /** Called with each execution's stored agent choice, e.g. for the used-up credit alert; must not throw. */
     private onSelection?: (snapshot: RunSnapshot, selection: AgentSelection) => Promise<void>,
     /** The model router (router.coding): picks the first attempt's agent among the configured candidates. */
-    private routing?: Routing) {}
+    private routing?: Routing,
+    /** Called with the token usage of each completed run (UsageAlerts); must not throw. */
+    private onUsage?: (entry: UsageEntry) => Promise<void>) {}
   private async download(target: { owner: string; repo: string }, artifactId: number, limit: number, error: string) {
     const response = await this.api.actions.downloadArtifact({ ...target, artifact_id: artifactId, archive_format: 'zip', request: { parseSuccessResponseBody: false } });
     const reader = (response.data as ReadableStream<Uint8Array>).getReader(); const chunks: Uint8Array[] = []; let size = 0;
@@ -209,6 +212,19 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
    * The executor's agent choice (coding-agent-<id>), read once per execution and stored, so the publication names the
    * agent that ran and the broker alerts once about agents skipped for used-up credit. Absent or unreadable: null.
    */
+  /** Hands the run's usage record (coding-usage-<id>, uploaded also for failed runs) to onUsage; never fails the poll. */
+  private async usage(snapshot: RunSnapshot, target: { owner: string; repo: string }, runId: number, artifacts: { id: number; name: string; size_in_bytes: number; expired: boolean }[]) {
+    if (!this.onUsage) return;
+    try {
+      const match = artifacts.filter(a => a.name === `coding-usage-${snapshot.admission.input.executionId}`);
+      if (match.length !== 1 || match[0]!.expired || match[0]!.size_in_bytes > 100000) return;
+      const entry = usageEntry(snapshot, runId, decodeSingleJson(await this.download(target, match[0]!.id, 100000, 'USAGE_ARCHIVE_LIMIT'), 'usage.json'));
+      if (entry) await this.onUsage(entry);
+    } catch (error) {
+      console.warn(JSON.stringify({ event: 'factory-usage', repository: snapshot.repository, executionId: snapshot.admission.input.executionId,
+        outcome: 'unreadable', code: error instanceof Error ? error.message.slice(0, 80) : 'unknown' }));
+    }
+  }
   private async selection(snapshot: RunSnapshot, binding: string, target: { owner: string; repo: string }, artifacts: { id: number; name: string; size_in_bytes: number; expired: boolean }[]) {
     const id = snapshot.admission.input.executionId;
     const selection = await storedSelection(this.effects(snapshot, binding), id, () => this.authorize(snapshot, binding), async () => {
@@ -279,11 +295,20 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     // stronger model only after the agent itself failed, not after a runner failure. A routed agent goes first, the
     // configured list stays behind it as the fallbacks.
     const [first, ...others] = routedAgents(routed.agent, attemptAgents(coding, escalated(input)));
+    // The spend cap, resolved once and stored like the scope above: an execution dispatched before caps existed keeps
+    // its request without one, and a later configuration change does not alter a dispatched request.
+    const budget = (await effects.perform({ key: 'coding-budget', payload: { baseSha: snapshot.baseSha }, authorize, contentAddressed: true,
+      validate: z.strictObject({ usd: z.number().positive().max(1000).nullable() }).parse, reconcile: async () => null,
+      apply: async () => {
+        try { await this.api.git.getRef({ ...target, ref: `heads/sf-temporal-executor/${input.executionId}` }); return { usd: null }; }
+        catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
+        return { usd: coding.maxCostUsd ?? defaultCodingBudgetUsd };
+      } })).usd;
     const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: first!.agent,
       task: { id: `github:${snapshot.repository}#${input.issueNumber}`, version: input.taskVersion, description,
         acceptanceCriteria: input.acceptanceCriteria, contextReferences: [...input.contextReferences, ...extra.entries] }, baseSha: snapshot.baseSha,
       allowedActions: ['edit_workspace', 'run_commands'], model: first!.model, effort: first!.reasoningEffort,
-      limits: { timeoutMinutes: input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5000000 },
+      limits: { timeoutMinutes: input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5000000, ...(budget === null ? {} : { maxCostUsd: budget }) },
       ...(others.length ? { fallbacks: others.map(a => ({ worker: a.agent, model: a.model, effort: a.reasoningEffort })) } : {}) });
     const serialized = JSON.stringify(request); if (Buffer.byteLength(serialized) > 60000) throw new Error('EXECUTOR_REQUEST_LIMIT');
     const ref = `sf-temporal-executor/${input.executionId}`, name = `SF Temporal ${input.executionId} ${binding}`;
@@ -311,7 +336,8 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
       throw error;
     }
     if (!run || run.status !== 'completed') return null;
-    const artifacts = run.conclusion === 'success' || request.fallbacks ? await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: run.id, per_page: 100 }) : [];
+    const artifacts = run.conclusion === 'success' || request.fallbacks || this.onUsage ? await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: run.id, per_page: 100 }) : [];
+    await this.usage(snapshot, target, run.id, artifacts);
     const selection = request.fallbacks ? await this.selection(snapshot, binding, target, artifacts) : null;
     if (run.conclusion !== 'success') {
       // No agent could run because every provider reported used-up credit: nothing started, so no attempt is spent.
