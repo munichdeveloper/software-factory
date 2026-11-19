@@ -243,10 +243,10 @@ export async function main(args = process.argv.slice(2)) {
       const assessor = (config: Config) => { const plain = new OpenAIRiskAssessor(process.env.OPENAI_API_KEY ?? '', config);
         return routedAssessor(routed, config, claude ? new FallbackRiskAssessor(new ClaudeRiskAssessor(claude, models.risk, config), plain) : plain); };
       // Only pull requests the Factory published for its tasks in an issue-scoped registry entry; closed ones while a merge's follow-up may be open.
-      const merge = new RuntimeMerge(item.repositoryId, (config, snapshot) => new MergeManager(
+      const merge = new RuntimeMerge(item.repositoryId, (config, snapshot, observe) => new MergeManager(
         new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
         config, reviewer(config), `temporal-merge:${item.repositoryId}`, github,
-        { ownedOnly: !!item.issueNumbers, assessor: assessor(config) }).run(snapshot));
+        { ownedOnly: !!item.issueNumbers, assessor: assessor(config), observe }).run(snapshot));
       return { repository, controller, planner: config => config.llm.provider === 'mock' ? mock : planner, merge };
     };
     const bindings: RuntimeBinding[] = [];
