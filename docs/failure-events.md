@@ -1,6 +1,6 @@
 # Konzept: Ereignisse für gescheiterte Prüfschritte und abgelehnte Starts
 
-Status: **Konzept, nicht umgesetzt.** Alle Entscheidungen sind getroffen (Abschnitt 8). Umsetzung: Issue #188.
+Status: **Konzept, nicht umgesetzt.** Alle Entscheidungen sind getroffen (Abschnitt 8). Umsetzung: Issue #188 (verwandt: #189).
 
 Dieses Dokument beschreibt, wie der Broker einen gescheiterten Prüfschritt, einen abgelehnten Start oder einen
 festhängenden Lauf als **Ereignis** veröffentlicht. Wer will, kann es abonnieren: Slack, der Factory-Monitor, ein
@@ -141,6 +141,11 @@ Vorschlag: Ändert sich der Head eines solchen PRs (Nachbesserung oder Fix von H
 unabhängige Validierung für den neuen Head erneut. Besteht sie, gilt der PR als erfolgreich validiert und geht in
 den normalen Merge-Ablauf (KI-Review, Pflicht-Checks, Risiko). Das erzeugt `validation_passed` bzw. erneut
 `validation_failed`. Ersatz-PRs aus Claude-Threads bekommen bis dahin `sf:automerge` (Regel seit 19.11.2026).
+
+Dabei aktualisiert der Broker auch den Validierungsabschnitt im PR-Text auf den neuen Head. Bei Backofficer#76 hat das
+KI-Review mit „defer“ abgelehnt, nur weil im PR-Text noch „browser: failed“ vom alten Head stand, obwohl die
+Browser-Tests auf dem neuen Head grün waren. Zu große PRs für Review und Risikobewertung behandelt
+Issue #189 (Prüfung in Teilen).
 
 ### 6.5 Reaktionsstufen
 
