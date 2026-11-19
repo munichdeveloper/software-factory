@@ -454,6 +454,27 @@ describe('the broker merges validated pull requests', () => {
     expect(w.factoryMerges.map(m => m.pr)).toEqual([prs(w)[1]!.number]);
     await w.tick(); await healthy(w);
   });
+  it('resolves a merge conflict with a rework on the first-attempt agents, without a review of the conflicting head', async () => {
+    const w = new World({ merging: true, rework: true, coding: true });
+    w.cfg.workers.coding = { ...(w.cfg.workers.coding as object), retryAgents: [{ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' }] } as typeof w.cfg.workers.coding;
+    w.open(1); await w.tick();
+    const first = execution(w, 1);
+    await w.finishCoding(first, 'passed'); await w.tick(); await w.tick();
+    const pr = prs(w)[0]!.number;
+    await w.mergePass(); w.moveBase(); w.conflictingHeads.add(w.pulls.get(pr)!.head);
+    await w.mergePass(); await w.mergePass();
+    expect(w.factoryMerges).toEqual([]); expect(w.log).not.toContain(`PR ${pr} updated`);
+    expect(w.events(1).filter(e => e.type === 'merge_changes_requested')).toEqual([expect.objectContaining({ cause: 'conflict' })]);
+    await w.tick(); await w.tick();
+    const second = execution(w, 1); expect(second).not.toBe(first);
+    const references = w.events(1).flatMap(e => e.type === 'intent' ? [e] : []).at(-1)!.input.contextReferences;
+    expect(references).toContain(`urn:sf-rework:${first}`); expect(references).not.toContain('urn:sf-escalate');
+    expect(references.some(r => r.startsWith('sf-context review-changes: Merge-Konflikt'))).toBe(true);
+    await w.finishCoding(second, 'passed'); await w.tick(); await w.tick();
+    await w.mergePass(); await w.mergePass();
+    expect(w.factoryMerges.map(m => m.pr)).toEqual([prs(w)[1]!.number]);
+    await w.tick(); await healthy(w);
+  });
   it('leaves a pull request the review asked to change to a person when rework is off, or its attempts are used up', async () => {
     for (const options of [{ merging: true }, { merging: true, rework: true, maxRetries: 0 }]) {
       const w = new World(options); w.open(1); await w.tick();

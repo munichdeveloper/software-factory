@@ -106,7 +106,12 @@ export class GitHubMergePort implements MergePort {
   }
   async comment(number: number, body: string) { await this.api.issues.createComment({ ...this.target, issue_number: number, body }); }
   async update(number: number, head: string) {
-    await this.api.pulls.updateBranch({ ...this.target, pull_number: number, expected_head_sha: head });
+    try { await this.api.pulls.updateBranch({ ...this.target, pull_number: number, expected_head_sha: head }); }
+    catch (error) {
+      // GitHub refuses the update when head and base conflict (422 "merge conflict between base and head").
+      if (error instanceof Error && 'status' in error && error.status === 422 && /conflict/i.test(error.message)) throw new Error('MERGE_CONFLICT', { cause: error });
+      throw error;
+    }
     // GitHub updates asynchronously. Never dispatch tests for the previous head.
     for (let i = 0; i < 15; i++) {
       const { data } = await this.api.pulls.get({ ...this.target, pull_number: number });

@@ -58,6 +58,36 @@ are honored. Advisory, dry-run, global disable and merge disable perform no revi
 or merge mutations. Notifications and merge policy changes do not invalidate
 unrelated coding-worker approvals; merge approvals include their own full policy.
 
+## Stale branches and merge conflicts
+
+With `merge.updateBranch: true` (the default) the Factory brings a branch that is
+behind its base up to date itself, before any AI review: once the required checks of
+the current head are green and that head was not already rejected, it merges the base
+into the branch (GitHub "Update branch"), dispatches the validation workflow for the
+new head and reviews only that head. A review of a stale state would only be repeated
+after the update. Each head/base pair is updated at most once.
+
+A branch that conflicts with its base (GitHub `mergeStateStatus` `DIRTY`, or an update
+GitHub refuses with a merge conflict) gets no pull-request checks, so the Factory does
+not wait for them and does not review it:
+
+- A Factory pull request of the task's latest attempt, with `execution.rework: true` and
+  attempts left within `execution.maxRetries`: the broker journals a
+  `merge_changes_requested` event with `cause: conflict` on the task, once per head. The
+  Manager starts a rework. The executor applies the previous attempt to the current
+  base and leaves git's conflict markers in the files where it collides; the worker
+  resolves them and is told so in its review context. A conflict rework stays on
+  `workers.coding.agents` and does not escalate to `retryAgents` by itself. The rework's
+  pull request replaces the old one and goes through checks, validation and review.
+- Everything else (rework off, attempts used up, a pull request adopted with
+  `sf:automerge`): a `merge_handover` event with `decision: conflict` and the label
+  `sf:needs-human` hand it over to a person; with
+  `notifications.slack.events.handover_required` that is announced on Slack. Commits a
+  person with write access pushes to resolve it are adopted.
+
+A failed update caused by a conflict no longer ends the merge pass for the other pull
+requests.
+
 ## Risk-based auto-merge
 
 With `merge.risk.enabled` every merge candidate also gets a risk class (`low`,

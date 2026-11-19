@@ -27,6 +27,7 @@ export interface MergePort {
   facts(number: number): Promise<MergeFacts>;
   context(facts: MergeFacts, maxFiles: number, maxBytes: number): Promise<ReviewInput>;
   comment(number: number, body: string): Promise<void>;
+  /** Merges the base into the branch while its head is `head`; throws MERGE_CONFLICT when the two conflict. */
   update(number: number, head: string): Promise<string>;
   merge(number: number, head: string, method: 'squash' | 'merge' | 'rebase'): Promise<string>;
   dispatch(workflow: string, ref: string): Promise<void>;
