@@ -43,7 +43,7 @@ Generated JSON schemas share the executable Zod source.
 | `llm.maxCalls` | `1` | Total calls incl. retries, 0–3; zero disables semantic planning only |
 | `workers.test.enabled` | `true` | Bundled non-code-changing worker |
 | `workers.test.operation` | `sha256` | Digest, deterministic `fail`, or deterministic `blocked` |
-| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY`. `agents` (instead of `agent`, Temporal engine only) is a priority list of up to three agents, each `{agent, model, reasoningEffort}`: see [Agent priority list](#agent-priority-list). `retryAgents` (optional, same shape) is the list for attempts after the agent failed: see [Escalation on retry](#escalation-on-retry) |
+| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY`. `agents` (instead of `agent`, Temporal engine only) is a priority list of up to three agents, each `{agent, model, reasoningEffort}`: see [Agent priority list](#agent-priority-list). `retryAgents` (optional, same shape) is the list for attempts after the agent failed: see [Escalation on retry](#escalation-on-retry). An entry may add `credential: subscription` to run on a Claude subscription: see [Claude subscription as fallback](#claude-subscription-as-fallback) |
 | `workers.review` | `false` | Must be false; not implemented |
 | `merge.risk.enabled` | `false` | Risk-based auto-merge, see [merging](merging.md#risk-based-auto-merge); requires `merge.enabled` |
 | `merge.risk.mode` | `enforce` | `enforce` gates merges by risk class; `observe` only classifies and shows |
@@ -139,6 +139,34 @@ and PR title. When no agent can run the run fails without spending an attempt. W
 set, the broker posts a Slack message for each agent skipped for used-up credit, at most three times per agent; once
 that agent has run again, a later shortage is announced anew. Each repository needs the secret of every agent in its
 list. A single `agent` keeps the earlier behaviour without any check.
+
+### Claude subscription as fallback
+
+```yaml
+    agents:
+      - agent: claude
+        model: claude-sonnet-5-5
+        reasoningEffort: medium
+      - agent: claude
+        model: claude-sonnet-5-5
+        reasoningEffort: medium
+        credential: subscription
+```
+
+An entry with `credential: subscription` (agent `claude` only, never first in `agents` or `retryAgents`) runs Claude
+Code with the OAuth token of a Claude Pro/Max subscription instead of the API key, for example when the API credit is
+used up. Create the token once with `claude setup-token` and store it as the repository secret
+`CLAUDE_CODE_OAUTH_TOKEN` (the SF Manager checks it like the API keys). Its credit check is one print-mode call of the
+pinned Claude Code in the `validate` job: an HTTP 429 means the subscription's 5-hour or weekly limit is reached, 401/403
+a token that no longer works; either way the next agent is tried. The harness hands the token only to its credential
+proxy (dev-agent-harness#16); the worker sees a placeholder, and GitHub masks the secret in logs.
+
+The subscription shares its limits with the owner's own Claude use, so the broker takes at most
+`FACTORY_SUBSCRIPTION_MAX_RUNS_PER_DAY` runs on it in any 24 hours across all repositories (deploy variable, default
+6; finished runs count). At the cap the entry is left out of new requests and Slack hears it once a day. With
+`FACTORY_CREDIT_ALERT_CHANNEL` every run the subscription takes over is announced. Its usage is stored with
+`billing = subscription`: `cost_usd` is Claude Code's list-price estimate, left out of the daily spend threshold and
+listed separately in the daily report. Check the subscription's terms before using it for unattended runs.
 
 ## Escalation on retry
 

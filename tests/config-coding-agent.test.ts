@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { configSchema } from '../src/config/index.js';
+import { codingAgents, configSchema } from '../src/config/index.js';
 
 const base = (coding: Record<string, unknown>, engine = 'temporal') =>
   ({ version: 1, factory: { scope: 'test' }, execution: { engine }, workers: { coding: { enabled: true, ...coding } } });
@@ -31,7 +31,7 @@ it('refuses a list with agent beside it, twice the same agent, mismatched models
   const pair = [{ agent: 'claude', model: 'claude-opus-5-5' }, { agent: 'codex', model: 'gpt-6.1-sol' }];
   expect(issues(base({ agent: 'codex', agents: pair }))).toEqual(['workers.coding.agent: name either agent or agents, not both']);
   expect(issues(base({}))).toEqual(['workers.coding.agent: name agent or agents']);
-  expect(issues(base({ agents: [pair[0], pair[0]] }))).toEqual(['workers.coding.agents.1.agent: each agent may appear once']);
+  expect(issues(base({ agents: [pair[0], pair[0]] }))).toEqual(['workers.coding.agents.1.agent: each agent may appear once (claude may appear once more with credential subscription)']);
   expect(issues(base({ agents: [{ agent: 'codex', model: 'claude-opus-5-5' }] }))).toEqual(['workers.coding.agents.0.model: a Claude model needs agent claude']);
   expect(issues(base({ agents: [{ agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'max' }] }))).toEqual(['workers.coding.agents.0.reasoningEffort: max is available for agent claude only']);
   expect(issues(base({ agents: [] }))).toHaveLength(1);
@@ -48,7 +48,19 @@ it('accepts retryAgents for further attempts, Temporal only, and leaves configur
   const plain = configSchema.parse(base({ agents: first })).workers.coding as Exclude<typeof parsed.workers.coding, false>;
   expect(plain).not.toHaveProperty('retryAgents');
   expect(attemptAgents(plain, true)).toEqual(attemptAgents(plain, false));
-  expect(issues(base({ agents: first, retryAgents: [retry[0], retry[0]] }))).toEqual(['workers.coding.retryAgents.1.agent: each agent may appear once']);
+  expect(issues(base({ agents: first, retryAgents: [retry[0], retry[0]] }))).toEqual(['workers.coding.retryAgents.1.agent: each agent may appear once (claude may appear once more with credential subscription)']);
   expect(issues(base({ agents: first, retryAgents: [{ agent: 'codex', model: 'claude-opus-5-5' }] }))).toEqual(['workers.coding.retryAgents.0.model: a Claude model needs agent claude']);
   expect(issues(base({ agent: 'codex', retryAgents: [{ agent: 'codex', model: 'gpt-6.1-sol' }] }, 'github-actions'))).toEqual(['workers.coding.retryAgents: retryAgents requires execution.engine temporal']);
+});
+it('accepts the Claude subscription as a fallback of agent claude only, never first', () => {
+  const sub = { agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium', credential: 'subscription' };
+  const api = { agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' };
+  const parsed = configSchema.parse(base({ agents: [api, { agent: 'codex', model: 'gpt-6.1-sol' }, sub], retryAgents: [{ agent: 'claude', model: 'claude-opus-5-5' }, sub] }));
+  const coding = parsed.workers.coding as Exclude<typeof parsed.workers.coding, false>;
+  expect(codingAgents(coding)[2]).toEqual(sub);
+  expect(codingAgents(coding)[0]).not.toHaveProperty('credential');
+  expect(issues(base({ agents: [sub, api] }))).toEqual(['workers.coding.agents.0.credential: the subscription is a fallback: list an agent with its API key first']);
+  expect(issues(base({ agents: [{ agent: 'codex', model: 'gpt-6.1-sol' }, { agent: 'codex', model: 'gpt-6.1-sol', credential: 'subscription' }] })))
+    .toEqual(['workers.coding.agents.1.credential: credential subscription is available for agent claude only']);
+  expect(issues(base({ agents: [api, sub, sub] }))).toEqual(['workers.coding.agents.2.agent: each agent may appear once (claude may appear once more with credential subscription)']);
 });

@@ -41,17 +41,21 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     let request = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ''));
     if (Buffer.byteLength(JSON.stringify(request)) > 60000 || !process.env.GITHUB_OUTPUT) throw new Error('Invalid coding executor request');
     // workers.coding.agents: the first agent whose provider still has credit runs; the Harness gets a plain request.
+    // credential names the secret the Harness gets: the API key, or the Claude subscription's OAuth token.
+    let credential = 'api-key';
     if (request.fallbacks) {
       const chosen = await selectAgent(request, providerProbe(process.env));
       await writeFile(values.output ?? 'coding-agent.json', JSON.stringify(chosen.selection));
-      for (const skipped of chosen.selection.skipped) console.log(`Skipped ${skipped.worker} (${skipped.model}): ${skipped.reason}`);
-      if (!chosen.request) throw new Error('No coding agent can run: every provider reported used-up credit or refused the key');
-      console.log(`Selected ${chosen.request.worker} (${chosen.request.model})`);
+      const label = (a: { worker: string; credential?: string }) => `${a.worker}${a.credential === 'subscription' ? ' subscription' : ''}`;
+      for (const skipped of chosen.selection.skipped) console.log(`Skipped ${label(skipped)} (${skipped.model}): ${skipped.reason}`);
+      if (!chosen.request || !chosen.selection.selected) throw new Error('No coding agent can run: every provider reported used-up credit or refused the key');
+      console.log(`Selected ${label(chosen.selection.selected)} (${chosen.request.model})`);
+      if (chosen.selection.selected.credential === 'subscription') credential = 'subscription';
       request = chosen.request;
     }
     const text = JSON.stringify(request);
     const validation = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN || '{}'));
-    await appendFile(process.env.GITHUB_OUTPUT, `request=${text}\nexecution-id=${request.executionId}\nbase-sha=${request.baseSha}\nvalidation=${JSON.stringify(validation)}\n`); return;
+    await appendFile(process.env.GITHUB_OUTPUT, `request=${text}\nexecution-id=${request.executionId}\nbase-sha=${request.baseSha}\nvalidation=${JSON.stringify(validation)}\ncredential=${credential}\n`); return;
   }
   if (command === 'validate-coding-artifact') {
     if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true' || !(await isFreshValidationRunner()) || process.env.GITHUB_RUN_ATTEMPT !== '1') throw new Error('Validation requires a fresh hosted job');

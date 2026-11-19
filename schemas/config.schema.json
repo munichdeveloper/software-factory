@@ -305,6 +305,10 @@
                           "xhigh",
                           "max"
                         ]
+                      },
+                      "credential": {
+                        "type": "string",
+                        "const": "subscription"
                       }
                     },
                     "required": [
@@ -342,6 +346,10 @@
                           "xhigh",
                           "max"
                         ]
+                      },
+                      "credential": {
+                        "type": "string",
+                        "const": "subscription"
                       }
                     },
                     "required": [

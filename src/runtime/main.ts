@@ -29,6 +29,7 @@ import { SanityMonitor } from './sanity.js';
 import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
 import { CreditAlerts } from './credit-alerts.js';
 import { dailyUsageReport, UsageAlerts, usageThresholds } from './usage.js';
+import { SubscriptionCap, subscriptionMaxRunsPerDay } from './subscription.js';
 import { LlmCallMeter, setLlmCallMeter } from '../llm/meter.js';
 import { listenAddresses } from './listen.js';
 import { runtimeServer, type RuntimeBinding } from './server.js';
@@ -136,6 +137,9 @@ export async function main(args = process.argv.slice(2)) {
   const claude = process.env.ANTHROPIC_API_KEY ? claudeStructured(process.env.ANTHROPIC_API_KEY) : undefined, models = claudeModels(process.env);
   const creditChannel = process.env.FACTORY_CREDIT_ALERT_CHANNEL;
   const creditAlerts = process.env.SLACK_BOT_TOKEN && creditChannel ? new CreditAlerts(store, new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN), creditChannel) : undefined;
+  // Runs on the Claude subscription (credential subscription) per 24 hours across all repositories; the cap goes to the credit channel.
+  const subscriptionCap = new SubscriptionCap(store, subscriptionMaxRunsPerDay(process.env),
+    process.env.SLACK_BOT_TOKEN && creditChannel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined, creditChannel);
   // The model router (router: in a repository's configuration) asks Jev with the broker's own key: directly at TypeSafe
   // (deploy secret BROKER_TYPESAFE_API_KEY) or through OpenRouter (BROKER_OPENROUTER_API_KEY); FACTORY_ROUTER_API
   // chooses, and without it a TypeSafe key wins. Without the key every routed purpose runs its configured models and,
@@ -210,7 +214,8 @@ export async function main(args = process.argv.slice(2)) {
         id => store.validation(repository.repositoryId, id),
         async (_snapshot, selection) => { try { await creditAlerts?.observe(item.repository, selection); } catch { /* an alert never fails a run */ } },
         routing,
-        async entry => { try { await usageAlerts.observe(entry); } catch { /* an alert never fails a run */ } }),
+        async entry => { try { await usageAlerts.observe(entry); } catch { /* an alert never fails a run */ } },
+        { allowed: async name => { try { return await subscriptionCap.allowed(name); } catch { return false; } } }),
         publish: async (snapshot, binding, artifact, createdAt, validation) => { const config = await repository.config();
           // The agent that ran: the executor's stored choice for a priority list, otherwise the configured agent.
           const chosen = await storedSelection(effects(snapshot, binding), snapshot.admission.input.executionId, () => controller.authorize(snapshot, binding));

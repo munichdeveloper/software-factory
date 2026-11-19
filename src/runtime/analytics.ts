@@ -16,7 +16,7 @@ export interface AnalyticsTokens { input: number; output: number; cacheRead: num
 export interface AnalyticsCall {
   repository: string; step: AnalyticsStep; issueNumber: number | null; prNumber: number | null; executionId: string | null;
   selection: 'router' | 'configured' | 'escalation'; routerChoice: string | null; routerProbability: number | null;
-  /** The coding agent (claude, codex) or the broker's provider (claude, openai). */
+  /** The coding agent (claude, codex, claude-subscription) or the broker's provider (claude, openai). */
   agent: string; model: string; effort: string | null; tokens: AnalyticsTokens | null; costUsd: number | null; outcome: string | null; at: string;
 }
 export interface AnalyticsIssue {

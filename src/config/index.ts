@@ -42,9 +42,18 @@ function agentRules(entry: { agent: 'codex' | 'claude'; model: string; reasoning
     context.addIssue({ code: 'custom', path: ['reasoningEffort'], message: 'max is available for agent claude only' });
   }
 }
-/** One entry of workers.coding.agents. */
-const codingAgentSchema = z.strictObject({ agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort.default('high') })
-  .superRefine((entry, context) => agentRules(entry, context));
+/**
+ * One entry of workers.coding.agents. credential subscription (agent claude only): Claude Code runs with the OAuth token
+ * of a Claude subscription (repository secret CLAUDE_CODE_OAUTH_TOKEN, from `claude setup-token`) instead of the API
+ * key, within the subscription's usage limits and the broker's daily cap (FACTORY_SUBSCRIPTION_MAX_RUNS_PER_DAY). Only
+ * as a fallback, never first in a list. Optional without a default, so entries that leave it out keep their hash.
+ */
+const codingAgentSchema = z.strictObject({ agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort.default('high'),
+  credential: z.literal('subscription').optional() })
+  .superRefine((entry, context) => {
+    agentRules(entry, context);
+    if (entry.credential && entry.agent !== 'claude') context.addIssue({ code: 'custom', path: ['credential'], message: 'credential subscription is available for agent claude only' });
+  });
 export type CodingAgent = z.infer<typeof codingAgentSchema>;
 /** An option the model router may pick; id names it in the decision, description tells the router what it is for. */
 const routerOptionId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/), routerDescription = z.string().min(1).max(300);
@@ -151,9 +160,11 @@ export const configSchema = z.strictObject({
       for (const key of ['agents', 'retryAgents'] as const) {
         const seen = new Set<string>();
         coding[key]?.forEach((entry, index) => {
-          if (seen.has(entry.agent)) context.addIssue({ code: 'custom', path: [key, index, 'agent'], message: 'each agent may appear once' });
-          seen.add(entry.agent);
+          const id = `${entry.agent}:${entry.credential ?? 'api-key'}`;
+          if (seen.has(id)) context.addIssue({ code: 'custom', path: [key, index, 'agent'], message: 'each agent may appear once (claude may appear once more with credential subscription)' });
+          seen.add(id);
         });
+        if (coding[key]?.[0]?.credential) context.addIssue({ code: 'custom', path: [key, 0, 'credential'], message: 'the subscription is a fallback: list an agent with its API key first' });
       }
       if (coding.agents) {
         if (coding.agent) context.addIssue({ code: 'custom', path: ['agent'], message: 'name either agent or agents, not both' });

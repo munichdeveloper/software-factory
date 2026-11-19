@@ -1,4 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { execFile } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { z } from 'zod';
 import { codingExecutionSchema, type CodingExecutionRequest, type CodingFallback } from './coding-contract.js';
 
@@ -11,14 +15,19 @@ import { codingExecutionSchema, type CodingExecutionRequest, type CodingFallback
  */
 export type ProbeOutcome = 'available' | 'exhausted' | 'missing-key' | 'rejected';
 export type Probe = (agent: CodingFallback) => Promise<ProbeOutcome>;
-const agentSchema = z.strictObject({ worker: z.enum(['codex', 'claude']), model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']) });
+const agentSchema = z.strictObject({ worker: z.enum(['codex', 'claude']), model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']),
+  /** subscription: Claude Code with the Claude subscription's OAuth token instead of the API key. */
+  credential: z.literal('subscription').optional() });
 /** What the executor uploads as coding-agent-<executionId>; the broker names the agent and alerts from it. */
 export const agentSelectionSchema = z.strictObject({ version: z.literal(1), executionId: z.string().regex(/^[a-f0-9]{32}$/),
   selected: agentSchema.nullable(),
   skipped: z.strictObject({ ...agentSchema.shape, reason: z.enum(['exhausted', 'missing-key', 'rejected']) }).array().max(3) });
 export type AgentSelection = z.infer<typeof agentSelectionSchema>;
 
-/** Returns the plain request for the Harness (or null when no agent can run) and the record of the choice. */
+/**
+ * Returns the plain request for the Harness (or null when no agent can run) and the record of the choice. The chosen
+ * agent's credential is not part of the request: the executor hands the Harness the matching secret instead.
+ */
 export async function selectAgent(input: CodingExecutionRequest, probe: Probe): Promise<{ request: CodingExecutionRequest | null; selection: AgentSelection }> {
   const { fallbacks, ...plain } = input;
   const candidates: CodingFallback[] = [{ worker: plain.worker, model: plain.model, effort: plain.effort }, ...(fallbacks ?? [])];
@@ -73,6 +82,40 @@ export async function probeCodex(key: string | undefined, model: string, fetcher
   return response.status === 429 && /insufficient_quota/.test(code) ? 'exhausted' : 'available';
 }
 
+export type CommandRunner = (command: string, args: string[], env: Record<string, string>, timeoutMs: number) => Promise<{ code: number; stdout: string }>;
+const runCommand: CommandRunner = (command, args, env, timeoutMs) => new Promise(resolve => {
+  const child = execFile(command, args, { env, timeout: timeoutMs, maxBuffer: 1 << 20 }, (error, stdout) => {
+    resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout: String(stdout) });
+  });
+  child.stdin?.end();
+});
+/**
+ * A Claude subscription (OAuth token from `claude setup-token`): one minimal print-mode run of the pinned Claude Code
+ * CLI, because subscription tokens are meant for Claude Code. A 429 means the subscription's usage limit is reached
+ * (5-hour or weekly window), 401/403 a token that no longer works. Anything else, an install failure included, keeps the
+ * agent: the run itself then decides. Without retries, and without the API key in the environment, which Claude Code
+ * would otherwise prefer.
+ */
+export async function probeClaudeSubscription(token: string | undefined, model: string, version: string, run: CommandRunner = runCommand): Promise<ProbeOutcome> {
+  if (!token) return 'missing-key';
+  if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version)) return 'available';
+  const home = await mkdtemp(join(tmpdir(), 'sf-claude-probe-'));
+  try {
+    const result = await run('npx', ['--yes', `@anthropic-ai/claude-code@${version}`, '--print', '--model', model, '--max-turns', '1',
+      '--output-format', 'json', '--strict-mcp-config', probeText], {
+      PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: home, CLAUDE_CODE_OAUTH_TOKEN: token, CLAUDE_CODE_MAX_RETRIES: '0',
+      DISABLE_AUTOUPDATER: '1', DISABLE_TELEMETRY: '1', DISABLE_ERROR_REPORTING: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      ...(process.env.HTTPS_PROXY ? { HTTPS_PROXY: process.env.HTTPS_PROXY } : {}), ...(process.env.NODE_EXTRA_CA_CERTS ? { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS } : {})
+    }, 180000);
+    let status: unknown = null;
+    try { status = (JSON.parse(result.stdout.trim().split('\n').pop() ?? '') as { api_error_status?: unknown }).api_error_status; } catch { return 'available'; }
+    if (status === 429) return 'exhausted';
+    if (status === 401 || status === 403) return 'rejected';
+    return 'available';
+  } finally { await rm(home, { recursive: true, force: true }); }
+}
+
 export function providerProbe(env: Record<string, string | undefined>): Probe {
-  return agent => agent.worker === 'claude' ? probeClaude(env.ANTHROPIC_API_KEY, agent.model) : probeCodex(env.OPENAI_API_KEY, agent.model);
+  return agent => agent.credential === 'subscription' ? probeClaudeSubscription(env.CLAUDE_CODE_OAUTH_TOKEN, agent.model, env.CLAUDE_CODE_VERSION ?? '')
+    : agent.worker === 'claude' ? probeClaude(env.ANTHROPIC_API_KEY, agent.model) : probeCodex(env.OPENAI_API_KEY, agent.model);
 }

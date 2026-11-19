@@ -36803,10 +36803,10 @@ var init_client = __esm({
             apiKey: apiKey === void 0 ? readEnv("ANTHROPIC_API_KEY") : void 0,
             authToken: authToken === void 0 ? readEnv("ANTHROPIC_AUTH_TOKEN") : void 0
           };
-          const credential = passedName != null ? { type: passedName, value: given[passedName] } : env?.apiKey != null ? { type: "apiKey", value: env.apiKey } : env?.authToken != null ? { type: "authToken", value: env.authToken } : { type: "defaultChain" };
+          const credential2 = passedName != null ? { type: passedName, value: given[passedName] } : env?.apiKey != null ? { type: "apiKey", value: env.apiKey } : env?.authToken != null ? { type: "authToken", value: env.authToken } : { type: "defaultChain" };
           const options = {
-            apiKey: credential.type === "apiKey" ? credential.value : null,
-            authToken: credential.type === "authToken" ? credential.value : null,
+            apiKey: credential2.type === "apiKey" ? credential2.value : null,
+            authToken: credential2.type === "authToken" ? credential2.value : null,
             webhookKey,
             ...opts,
             baseURL: baseURL || `https://api.anthropic.com`
@@ -36859,16 +36859,16 @@ var init_client = __esm({
             }
           } else {
             this._authState = { provider: null, tokenCache: null, resolution: null, error: null, extraHeaders: {} };
-            switch (credential.type) {
+            switch (credential2.type) {
               case "apiKey":
               case "authToken":
                 break;
               case "credentials":
-                this._authState.provider = credential.value;
-                this._authState.tokenCache = this._makeTokenCache(credential.value);
+                this._authState.provider = credential2.value;
+                this._authState.tokenCache = this._makeTokenCache(credential2.value);
                 break;
               case "config": {
-                const result = resolveCredentialsFromConfig(credential.value, this._credentialResolverOptions());
+                const result = resolveCredentialsFromConfig(credential2.value, this._credentialResolverOptions());
                 this._authState.provider = result.provider;
                 this._authState.tokenCache = this._makeTokenCache(result.provider);
                 this._authState.extraHeaders = result.extraHeaders;
@@ -36876,7 +36876,7 @@ var init_client = __esm({
                 break;
               }
               case "profile":
-                this._authState.resolution = this._resolveDefaultCredentials(credential.value);
+                this._authState.resolution = this._resolveDefaultCredentials(credential2.value);
                 break;
               case "defaultChain":
                 if (this._shouldResolveDefaultCredentials()) {
@@ -36884,7 +36884,7 @@ var init_client = __esm({
                 }
                 break;
               default:
-                checkNever(credential);
+                checkNever(credential2);
             }
           }
         }
@@ -45161,7 +45161,7 @@ var require__ = __commonJS({
 });
 
 // src/cli.ts
-var import_promises4 = require("node:fs/promises");
+var import_promises5 = require("node:fs/promises");
 var import_node_crypto3 = require("node:crypto");
 var import_node_util = require("node:util");
 var import_node_url = require("node:url");
@@ -65190,7 +65190,15 @@ function agentRules(entry, context2) {
     context2.addIssue({ code: "custom", path: ["reasoningEffort"], message: "max is available for agent claude only" });
   }
 }
-var codingAgentSchema = external_exports.strictObject({ agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort.default("high") }).superRefine((entry, context2) => agentRules(entry, context2));
+var codingAgentSchema = external_exports.strictObject({
+  agent: codingAgentName,
+  model: codingModel,
+  reasoningEffort: codingEffort.default("high"),
+  credential: external_exports.literal("subscription").optional()
+}).superRefine((entry, context2) => {
+  agentRules(entry, context2);
+  if (entry.credential && entry.agent !== "claude") context2.addIssue({ code: "custom", path: ["credential"], message: "credential subscription is available for agent claude only" });
+});
 var routerOptionId = external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
 var routerDescription = external_exports.string().min(1).max(300);
 var codingCandidateSchema = external_exports.strictObject({
@@ -65303,9 +65311,11 @@ var configSchema = external_exports.strictObject({
       for (const key of ["agents", "retryAgents"]) {
         const seen = /* @__PURE__ */ new Set();
         coding[key]?.forEach((entry, index) => {
-          if (seen.has(entry.agent)) context2.addIssue({ code: "custom", path: [key, index, "agent"], message: "each agent may appear once" });
-          seen.add(entry.agent);
+          const id = `${entry.agent}:${entry.credential ?? "api-key"}`;
+          if (seen.has(id)) context2.addIssue({ code: "custom", path: [key, index, "agent"], message: "each agent may appear once (claude may appear once more with credential subscription)" });
+          seen.add(id);
         });
+        if (coding[key]?.[0]?.credential) context2.addIssue({ code: "custom", path: [key, 0, "credential"], message: "the subscription is a fallback: list an agent with its API key first" });
       }
       if (coding.agents) {
         if (coding.agent) context2.addIssue({ code: "custom", path: ["agent"], message: "name either agent or agents, not both" });
@@ -73152,7 +73162,8 @@ var worker = external_exports.enum(["codex", "claude"]);
 var model = external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/);
 var effort = external_exports.enum(["low", "medium", "high", "xhigh", "max"]);
 var agentValid = (r) => (r.worker === "claude" || r.effort !== "max") && r.worker === "claude" === /^claude-/.test(r.model);
-var codingFallbackSchema = external_exports.strictObject({ worker, model, effort }).refine(agentValid);
+var credential = external_exports.literal("subscription").optional();
+var codingFallbackSchema = external_exports.strictObject({ worker, model, effort, credential }).refine(agentValid).refine((r) => !r.credential || r.worker === "claude");
 var codingExecutionSchema = external_exports.strictObject({
   contractVersion: external_exports.literal("3.0"),
   executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
@@ -73184,7 +73195,17 @@ var codingExecutionSchema = external_exports.strictObject({
 
 // src/runtime/agent-selection.ts
 init_sdk();
-var agentSchema = external_exports.strictObject({ worker: external_exports.enum(["codex", "claude"]), model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), effort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]) });
+var import_node_child_process4 = require("node:child_process");
+var import_promises3 = require("node:fs/promises");
+var import_node_os2 = require("node:os");
+var import_node_path3 = require("node:path");
+var agentSchema = external_exports.strictObject({
+  worker: external_exports.enum(["codex", "claude"]),
+  model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  effort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]),
+  /** subscription: Claude Code with the Claude subscription's OAuth token instead of the API key. */
+  credential: external_exports.literal("subscription").optional()
+});
 var agentSelectionSchema = external_exports.strictObject({
   version: external_exports.literal(1),
   executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
@@ -73246,20 +73267,68 @@ async function probeCodex(key, model2, fetcher = fetch) {
   }
   return response.status === 429 && /insufficient_quota/.test(code) ? "exhausted" : "available";
 }
+var runCommand = (command, args, env, timeoutMs) => new Promise((resolve4) => {
+  const child = (0, import_node_child_process4.execFile)(command, args, { env, timeout: timeoutMs, maxBuffer: 1 << 20 }, (error62, stdout) => {
+    resolve4({ code: error62 ? typeof error62.code === "number" ? error62.code : 1 : 0, stdout: String(stdout) });
+  });
+  child.stdin?.end();
+});
+async function probeClaudeSubscription(token, model2, version2, run = runCommand) {
+  if (!token) return "missing-key";
+  if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version2)) return "available";
+  const home = await (0, import_promises3.mkdtemp)((0, import_node_path3.join)((0, import_node_os2.tmpdir)(), "sf-claude-probe-"));
+  try {
+    const result = await run("npx", [
+      "--yes",
+      `@anthropic-ai/claude-code@${version2}`,
+      "--print",
+      "--model",
+      model2,
+      "--max-turns",
+      "1",
+      "--output-format",
+      "json",
+      "--strict-mcp-config",
+      probeText
+    ], {
+      PATH: process.env.PATH ?? "/usr/bin:/bin",
+      HOME: home,
+      CLAUDE_CODE_OAUTH_TOKEN: token,
+      CLAUDE_CODE_MAX_RETRIES: "0",
+      DISABLE_AUTOUPDATER: "1",
+      DISABLE_TELEMETRY: "1",
+      DISABLE_ERROR_REPORTING: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      ...process.env.HTTPS_PROXY ? { HTTPS_PROXY: process.env.HTTPS_PROXY } : {},
+      ...process.env.NODE_EXTRA_CA_CERTS ? { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS } : {}
+    }, 18e4);
+    let status = null;
+    try {
+      status = JSON.parse(result.stdout.trim().split("\n").pop() ?? "").api_error_status;
+    } catch {
+      return "available";
+    }
+    if (status === 429) return "exhausted";
+    if (status === 401 || status === 403) return "rejected";
+    return "available";
+  } finally {
+    await (0, import_promises3.rm)(home, { recursive: true, force: true });
+  }
+}
 function providerProbe(env) {
-  return (agent) => agent.worker === "claude" ? probeClaude(env.ANTHROPIC_API_KEY, agent.model) : probeCodex(env.OPENAI_API_KEY, agent.model);
+  return (agent) => agent.credential === "subscription" ? probeClaudeSubscription(env.CLAUDE_CODE_OAUTH_TOKEN, agent.model, env.CLAUDE_CODE_VERSION ?? "") : agent.worker === "claude" ? probeClaude(env.ANTHROPIC_API_KEY, agent.model) : probeCodex(env.OPENAI_API_KEY, agent.model);
 }
 
 // src/runtime/validation.ts
-var import_promises3 = require("node:fs/promises");
-var import_node_path3 = require("node:path");
-var import_node_child_process4 = require("node:child_process");
+var import_promises4 = require("node:fs/promises");
+var import_node_path4 = require("node:path");
+var import_node_child_process5 = require("node:child_process");
 async function regularPath(root, path4) {
-  const full = (0, import_node_path3.resolve)(root, path4), part = (0, import_node_path3.relative)(root, full);
-  if (!part || part.startsWith("..") || (0, import_node_path3.isAbsolute)(part)) throw new Error("INVALID_VALIDATION_PATH");
-  for (let current = full; current !== root; current = (0, import_node_path3.dirname)(current)) {
+  const full = (0, import_node_path4.resolve)(root, path4), part = (0, import_node_path4.relative)(root, full);
+  if (!part || part.startsWith("..") || (0, import_node_path4.isAbsolute)(part)) throw new Error("INVALID_VALIDATION_PATH");
+  for (let current = full; current !== root; current = (0, import_node_path4.dirname)(current)) {
     try {
-      const stat3 = await (0, import_promises3.lstat)(current);
+      const stat3 = await (0, import_promises4.lstat)(current);
       if (stat3.isSymbolicLink() || current !== full && !stat3.isDirectory()) throw new Error("NON_REGULAR_VALIDATION_PATH");
     } catch (e) {
       if (!(e && typeof e === "object" && "code" in e && e.code === "ENOENT")) throw e;
@@ -73271,22 +73340,22 @@ async function materializeCodingArtifact(target, source, request2) {
   const artifact = codingArtifactSchema.parse(source), input2 = codingExecutionSchema.parse(request2);
   validateChanges(artifact);
   if (artifact.baseSha !== input2.baseSha || artifact.result.executionId !== input2.executionId || artifact.result.taskId !== input2.task.id || artifact.result.taskVersion !== input2.task.version) throw new Error("UNRELATED_CODING_ARTIFACT");
-  const root = await (0, import_promises3.realpath)((0, import_node_path3.resolve)(target));
-  const current = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-  const dirty = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim();
+  const root = await (0, import_promises4.realpath)((0, import_node_path4.resolve)(target));
+  const current = (0, import_node_child_process5.execFileSync)("git", ["-c", `safe.directory=${root}`, "rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const dirty = (0, import_node_child_process5.execFileSync)("git", ["-c", `safe.directory=${root}`, "status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim();
   if (current !== input2.baseSha || dirty) throw new Error("VALIDATION_BASE_MISMATCH");
   for (const change of artifact.changes) {
     const full = await regularPath(root, change.path);
     try {
-      if (!(await (0, import_promises3.lstat)(full)).isFile()) throw new Error("NON_REGULAR_VALIDATION_PATH");
+      if (!(await (0, import_promises4.lstat)(full)).isFile()) throw new Error("NON_REGULAR_VALIDATION_PATH");
     } catch (e) {
       if (!(e && typeof e === "object" && "code" in e && e.code === "ENOENT")) throw e;
     }
-    if (change.content === null) await (0, import_promises3.unlink)(full);
+    if (change.content === null) await (0, import_promises4.unlink)(full);
     else {
-      await (0, import_promises3.mkdir)((0, import_node_path3.dirname)(full), { recursive: true });
-      await (0, import_promises3.writeFile)(full, Buffer.from(change.content, "base64"));
-      await (0, import_promises3.chmod)(full, change.mode === "100755" ? 493 : 420);
+      await (0, import_promises4.mkdir)((0, import_node_path4.dirname)(full), { recursive: true });
+      await (0, import_promises4.writeFile)(full, Buffer.from(change.content, "base64"));
+      await (0, import_promises4.chmod)(full, change.mode === "100755" ? 493 : 420);
     }
   }
   return artifact;
@@ -73296,9 +73365,9 @@ async function fingerprint(root, paths) {
   for (const path4 of [...new Set(paths)].sort()) {
     const full = await regularPath(root, path4);
     try {
-      const stat3 = await (0, import_promises3.lstat)(full);
+      const stat3 = await (0, import_promises4.lstat)(full);
       if (!stat3.isFile()) throw new Error("NON_REGULAR_VALIDATION_PATH");
-      entries.push([path4, hash2((await (0, import_promises3.readFile)(full)).toString("base64")), stat3.mode & 73]);
+      entries.push([path4, hash2((await (0, import_promises4.readFile)(full)).toString("base64")), stat3.mode & 73]);
     } catch (e) {
       if (e && typeof e === "object" && "code" in e && e.code === "ENOENT") entries.push([path4, null]);
       else throw e;
@@ -73307,7 +73376,7 @@ async function fingerprint(root, paths) {
   return hash2(entries);
 }
 async function runCodingValidation(options) {
-  const { artifact, command } = options, plan = validationPlanSchema.parse(options.plan), root = await (0, import_promises3.realpath)((0, import_node_path3.resolve)(options.target));
+  const { artifact, command } = options, plan = validationPlanSchema.parse(options.plan), root = await (0, import_promises4.realpath)((0, import_node_path4.resolve)(options.target));
   const report = {
     version: 1,
     executionId: artifact.result.executionId,
@@ -73338,10 +73407,10 @@ async function runCodingValidation(options) {
   try {
     if (plan.profile === "npm-docker" && !options.hosted) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
     if (plan.profile === "maven") {
-      if (!(await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "pom.xml"))).isFile()) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
-      const wrapper = await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "mvnw")).then((s) => s.isFile() && (s.mode & 64) !== 0, () => false);
+      if (!(await (0, import_promises4.lstat)((0, import_node_path4.join)(root, "pom.xml"))).isFile()) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
+      const wrapper = await (0, import_promises4.lstat)((0, import_node_path4.join)(root, "mvnw")).then((s) => s.isFile() && (s.mode & 64) !== 0, () => false);
       const mvn = [wrapper ? "./mvnw" : "mvn", "--batch-mode", "--no-transfer-progress"];
-      const listed = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1e6 });
+      const listed = (0, import_node_child_process5.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1e6 });
       paths = [...listed.split("\0").filter(Boolean), ...artifact.changes.map((c) => c.path)];
       before = await fingerprint(root, paths);
       report.status = "failed";
@@ -73351,10 +73420,10 @@ async function runCodingValidation(options) {
         await check2("test", [...mvn, "verify"], 1500);
       }
     } else {
-      const packageFile = JSON.parse(await (0, import_promises3.readFile)((0, import_node_path3.join)(root, "package.json"), "utf8"));
-      await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "package-lock.json"));
+      const packageFile = JSON.parse(await (0, import_promises4.readFile)((0, import_node_path4.join)(root, "package.json"), "utf8"));
+      await (0, import_promises4.lstat)((0, import_node_path4.join)(root, "package-lock.json"));
       if (!packageFile.scripts?.test || !packageFile.scripts?.build) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
-      const listed = (0, import_node_child_process4.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1e6 });
+      const listed = (0, import_node_child_process5.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1e6 });
       paths = [...listed.split("\0").filter(Boolean), ...artifact.changes.map((c) => c.path)];
       before = await fingerprint(root, paths);
       report.status = "failed";
@@ -73366,7 +73435,7 @@ async function runCodingValidation(options) {
         if (packageFile.scripts["test:e2e"]) {
           if (built) {
             try {
-              await (0, import_promises3.lstat)((0, import_node_path3.join)(root, "node_modules/playwright/cli.js"));
+              await (0, import_promises4.lstat)((0, import_node_path4.join)(root, "node_modules/playwright/cli.js"));
               await check2("browser-install", ["node", "node_modules/playwright/cli.js", "install", "chromium"], 180);
             } catch {
             }
@@ -73414,13 +73483,13 @@ function runnerDockerHost(env = process.env) {
 }
 function hostedValidationCommand(target, logs) {
   return async (name, args, seconds, values) => {
-    await (0, import_promises3.mkdir)(logs, { recursive: true });
+    await (0, import_promises4.mkdir)(logs, { recursive: true });
     const docker = runnerDockerHost();
     const tool = (value) => value && /^\/[\w./-]+$/.test(value) && !value.includes("..") ? value : void 0;
     const java = tool(process.env.JAVA_HOME), maven = tool(process.env.SF_MAVEN_HOME);
-    const path4 = [java && `${java}/bin`, maven && `${maven}/bin`, (0, import_node_path3.dirname)(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].filter(Boolean).join(":");
+    const path4 = [java && `${java}/bin`, maven && `${maven}/bin`, (0, import_node_path4.dirname)(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].filter(Boolean).join(":");
     return new Promise((resolveExit) => {
-      const child = (0, import_node_child_process4.spawn)(
+      const child = (0, import_node_child_process5.spawn)(
         "sudo",
         [
           "-n",
@@ -73450,16 +73519,16 @@ function hostedValidationCommand(target, logs) {
       child.stderr.on("data", consume);
       child.once("error", () => resolveExit(-1));
       child.once("exit", (code) => {
-        void (0, import_promises3.writeFile)((0, import_node_path3.join)(logs, `${name}.log`), text).finally(() => resolveExit(code ?? -1));
+        void (0, import_promises4.writeFile)((0, import_node_path4.join)(logs, `${name}.log`), text).finally(() => resolveExit(code ?? -1));
       });
     });
   };
 }
 
 // src/cli.ts
-var import_promises5 = require("node:fs/promises");
-var import_node_path4 = require("node:path");
-var import_node_child_process5 = require("node:child_process");
+var import_promises6 = require("node:fs/promises");
+var import_node_path5 = require("node:path");
+var import_node_child_process6 = require("node:child_process");
 async function main(args = process.argv.slice(2)) {
   const { values, positionals } = (0, import_node_util.parseArgs)({ args, allowPositionals: true, options: {
     repository: { type: "string" },
@@ -73477,20 +73546,24 @@ async function main(args = process.argv.slice(2)) {
   if (command === "validate-coding-execution") {
     let request2 = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ""));
     if (Buffer.byteLength(JSON.stringify(request2)) > 6e4 || !process.env.GITHUB_OUTPUT) throw new Error("Invalid coding executor request");
+    let credential2 = "api-key";
     if (request2.fallbacks) {
       const chosen = await selectAgent(request2, providerProbe(process.env));
-      await (0, import_promises4.writeFile)(values.output ?? "coding-agent.json", JSON.stringify(chosen.selection));
-      for (const skipped of chosen.selection.skipped) console.log(`Skipped ${skipped.worker} (${skipped.model}): ${skipped.reason}`);
-      if (!chosen.request) throw new Error("No coding agent can run: every provider reported used-up credit or refused the key");
-      console.log(`Selected ${chosen.request.worker} (${chosen.request.model})`);
+      await (0, import_promises5.writeFile)(values.output ?? "coding-agent.json", JSON.stringify(chosen.selection));
+      const label2 = (a) => `${a.worker}${a.credential === "subscription" ? " subscription" : ""}`;
+      for (const skipped of chosen.selection.skipped) console.log(`Skipped ${label2(skipped)} (${skipped.model}): ${skipped.reason}`);
+      if (!chosen.request || !chosen.selection.selected) throw new Error("No coding agent can run: every provider reported used-up credit or refused the key");
+      console.log(`Selected ${label2(chosen.selection.selected)} (${chosen.request.model})`);
+      if (chosen.selection.selected.credential === "subscription") credential2 = "subscription";
       request2 = chosen.request;
     }
     const text = JSON.stringify(request2);
     const validation = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN || "{}"));
-    await (0, import_promises4.appendFile)(process.env.GITHUB_OUTPUT, `request=${text}
+    await (0, import_promises5.appendFile)(process.env.GITHUB_OUTPUT, `request=${text}
 execution-id=${request2.executionId}
 base-sha=${request2.baseSha}
 validation=${JSON.stringify(validation)}
+credential=${credential2}
 `);
     return;
   }
@@ -73498,29 +73571,29 @@ validation=${JSON.stringify(validation)}
     if (process.platform !== "linux" || process.env.GITHUB_ACTIONS !== "true" || !await isFreshValidationRunner() || process.env.GITHUB_RUN_ATTEMPT !== "1") throw new Error("Validation requires a fresh hosted job");
     if (!/^[1-9][0-9]{0,15}$/.test(process.env.GITHUB_RUN_ID ?? "") || !/^[1-9][0-9]{0,15}$/.test(process.env.SF_SOURCE_RUN_ID ?? "")) throw new Error("Invalid validation run identity");
     for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AI_API_KEY", "GITHUB_APP_PRIVATE_KEY", "FACTORY_MANAGER_TOKEN"]) if (process.env[key]) throw new Error("Validation secret boundary violation");
-    if (!values.file || !values.source || !values.output || (await (0, import_promises5.stat)(values.file)).size > 7e6) throw new Error("Invalid validation files");
+    if (!values.file || !values.source || !values.output || (await (0, import_promises6.stat)(values.file)).size > 7e6) throw new Error("Invalid validation files");
     const request2 = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ""));
     const plan = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN ?? "{}"));
-    const artifact = await materializeCodingArtifact(values.source, JSON.parse(await (0, import_promises4.readFile)(values.file, "utf8")), request2);
-    (0, import_node_child_process5.execFileSync)("sudo", ["-n", "chown", "-R", "sf-validator:sf-validator", (0, import_node_path4.resolve)(values.source)]);
-    const output2 = (0, import_node_path4.resolve)(values.output);
-    await (0, import_promises5.mkdir)((0, import_node_path4.dirname)(output2), { recursive: true });
+    const artifact = await materializeCodingArtifact(values.source, JSON.parse(await (0, import_promises5.readFile)(values.file, "utf8")), request2);
+    (0, import_node_child_process6.execFileSync)("sudo", ["-n", "chown", "-R", "sf-validator:sf-validator", (0, import_node_path5.resolve)(values.source)]);
+    const output2 = (0, import_node_path5.resolve)(values.output);
+    await (0, import_promises6.mkdir)((0, import_node_path5.dirname)(output2), { recursive: true });
     const report = await runCodingValidation({
-      target: (0, import_node_path4.resolve)(values.source),
+      target: (0, import_node_path5.resolve)(values.source),
       artifact,
       plan,
       workflowRunId: Number(process.env.GITHUB_RUN_ID),
       sourceRunId: Number(process.env.SF_SOURCE_RUN_ID),
       hosted: true,
-      command: hostedValidationCommand((0, import_node_path4.resolve)(values.source), (0, import_node_path4.resolve)((0, import_node_path4.dirname)(output2), "logs"))
+      command: hostedValidationCommand((0, import_node_path5.resolve)(values.source), (0, import_node_path5.resolve)((0, import_node_path5.dirname)(output2), "logs"))
     });
-    await (0, import_promises4.writeFile)(output2, JSON.stringify(report, null, 2));
+    await (0, import_promises5.writeFile)(output2, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ validation: report.status, executionId: report.executionId, originalModelStatus: artifact.result.status }));
     return;
   }
   if (command === "validate") {
     if (!values.file) throw new Error("validate requires --file");
-    loadConfig(await (0, import_promises4.readFile)(values.file, "utf8"));
+    loadConfig(await (0, import_promises5.readFile)(values.file, "utf8"));
     console.log("Configuration valid");
     return;
   }
@@ -73530,7 +73603,7 @@ validation=${JSON.stringify(validation)}
   let config2 = loadConfig(await github.readConfig(values["config-path"]));
   if (values["dry-run"]) config2 = configSchema.parse({ ...config2, execution: { ...config2.execution, dryRun: true } });
   if (!config2.factory.enabled) {
-    if (values["dry-run"] && process.env.SF_SANITY_REPORT) await (0, import_promises4.writeFile)(
+    if (values["dry-run"] && process.env.SF_SANITY_REPORT) await (0, import_promises5.writeFile)(
       process.env.SF_SANITY_REPORT,
       JSON.stringify({
         formatVersion: 1,
@@ -73543,7 +73616,7 @@ validation=${JSON.stringify(validation)}
       })
     );
     console.log(JSON.stringify({ outcome: "disabled" }));
-    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises4.appendFile)(process.env.GITHUB_STEP_SUMMARY, "# Software Factory\n\nGlobally disabled. No repository changes.\n");
+    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises5.appendFile)(process.env.GITHUB_STEP_SUMMARY, "# Software Factory\n\nGlobally disabled. No repository changes.\n");
     return;
   }
   if (process.env.GITHUB_ACTIONS !== "true" && !values["allow-local-writes"] && !config2.execution.dryRun && config2.autonomy.profile !== "advisory") {
@@ -73562,7 +73635,7 @@ validation=${JSON.stringify(validation)}
       const mutationFree = config2.execution.dryRun || config2.autonomy.profile === "advisory";
       const target = decision.deploy ? resolveTarget(config2) : null;
       const writeSummary = async (text) => {
-        if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises4.appendFile)(process.env.GITHUB_STEP_SUMMARY, text);
+        if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises5.appendFile)(process.env.GITHUB_STEP_SUMMARY, text);
       };
       if (command === "deploy-plan") {
         let reason = decision.deploy ? mutationFree ? "mutation-free" : null : decision.reason;
@@ -73571,7 +73644,7 @@ validation=${JSON.stringify(validation)}
           console.log(`::warning title=Software Factory deploy::Deployment skipped: missing ${target.missing.join(", ")} (Actions secrets or deploy.* configuration).`);
         }
         const ready = decision.deploy && !reason;
-        if (process.env.GITHUB_OUTPUT) await (0, import_promises4.appendFile)(process.env.GITHUB_OUTPUT, `deploy=${ready}
+        if (process.env.GITHUB_OUTPUT) await (0, import_promises5.appendFile)(process.env.GITHUB_OUTPUT, `deploy=${ready}
 sha=${decision.deploy ? decision.sha : ""}
 `);
         if (!ready) await writeSummary(deploySummary(null, decision.deploy ? { deploy: false, reason, sha: decision.sha } : decision, config2.deploy.environment));
@@ -73655,7 +73728,7 @@ sha=${decision.deploy ? decision.sha : ""}
       if (!/^[1-9]\d*$/.test(issue2) || !/^[a-f0-9]{32}$/.test(id)) throw new Error("Invalid worker issue or execution ID");
       if (command === "prepare-coding") {
         const prepared = await prepareCoding(github, config2, new CodingRepository(repository, process.env.GITHUB_TOKEN ?? ""), Number(issue2), id, correlationId);
-        if (process.env.GITHUB_OUTPUT) await (0, import_promises4.appendFile)(process.env.GITHUB_OUTPUT, prepared ? `ready=true
+        if (process.env.GITHUB_OUTPUT) await (0, import_promises5.appendFile)(process.env.GITHUB_OUTPUT, prepared ? `ready=true
 request=${JSON.stringify(prepared.request)}
 base-sha=${prepared.base.sha}
 base-branch=${prepared.base.branch}
@@ -73666,7 +73739,7 @@ base-branch=${prepared.base.branch}
       if (command === "publish-coding") {
         let artifact = null;
         if (process.env.SF_ARTIFACT) {
-          const source = await (0, import_promises4.readFile)(process.env.SF_ARTIFACT, "utf8").catch(() => "null");
+          const source = await (0, import_promises5.readFile)(process.env.SF_ARTIFACT, "utf8").catch(() => "null");
           if (Buffer.byteLength(source) <= 7e6) {
             try {
               artifact = JSON.parse(source);
@@ -73709,7 +73782,7 @@ base-branch=${prepared.base.branch}
       ) : void 0,
       notifications: new SlackSink(process.env.SLACK_BOT_TOKEN ?? "")
     }).run();
-    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises4.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));
+    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises5.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));
     console.log(JSON.stringify({
       correlationId,
       outcome: report.outcome,
@@ -73718,7 +73791,7 @@ base-branch=${prepared.base.branch}
       errors: report.errors,
       nextSteps: report.nextSteps
     }));
-    if (config2.execution.dryRun && process.env.SF_SANITY_REPORT) await (0, import_promises4.writeFile)(process.env.SF_SANITY_REPORT, JSON.stringify({
+    if (config2.execution.dryRun && process.env.SF_SANITY_REPORT) await (0, import_promises5.writeFile)(process.env.SF_SANITY_REPORT, JSON.stringify({
       formatVersion: 1,
       mutationFree: true,
       passed: report.errors.length === 0,
@@ -73737,7 +73810,7 @@ base-branch=${prepared.base.branch}
 }
 var runnerPoolMarker = "/etc/sf-runner-pool";
 var runnerPoolMarkerContent = "software-factory ephemeral runner pool\n";
-async function isFreshValidationRunner(env = process.env, readMarker = () => (0, import_promises4.readFile)(runnerPoolMarker, "utf8")) {
+async function isFreshValidationRunner(env = process.env, readMarker = () => (0, import_promises5.readFile)(runnerPoolMarker, "utf8")) {
   if (env.RUNNER_ENVIRONMENT === "github-hosted") return true;
   if (env.RUNNER_ENVIRONMENT !== "self-hosted") return false;
   return readMarker().then((content) => content === runnerPoolMarkerContent, () => false);
@@ -73748,7 +73821,7 @@ async function handleError(error62) {
   const httpStatus2 = error62 instanceof Error && "status" in error62 && typeof error62.status === "number" ? error62.status : null;
   const category = error62 instanceof Error ? error62.name.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UnknownError";
   console.error(JSON.stringify({ error: safe2, category, httpStatus: httpStatus2 }));
-  if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises4.appendFile)(process.env.GITHUB_STEP_SUMMARY, `# Software Factory failed
+  if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises5.appendFile)(process.env.GITHUB_STEP_SUMMARY, `# Software Factory failed
 
 ${safe2.replace(/[<>`]/g, "")}
 

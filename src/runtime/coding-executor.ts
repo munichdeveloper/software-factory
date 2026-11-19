@@ -16,8 +16,8 @@ import { failedChecksEntry, escalated, loopbackEntry, maxContextRefs, namedRefs,
 export const codingWorkflow = 'factory-temporal-executor.yml';
 export function executorWrapper(factorySha: string, harnessSha: string, validated = false) {
   for (const sha of [factorySha, harnessSha]) if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('INVALID_EXECUTOR_RELEASE');
-  if (!validated) return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\npermissions:\n  contents: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}\n`;
-  return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\n      validation:\n        type: string\n        required: true\npermissions:\n  contents: read\n  actions: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n      actions: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n      validation: \${{ inputs.validation }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}\n`;
+  if (!validated) return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\npermissions:\n  contents: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}\n      CLAUDE_CODE_OAUTH_TOKEN: \${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}\n`;
+  return `name: Factory Temporal executor\nrun-name: SF Temporal \${{ fromJSON(inputs.request).executionId }} \${{ inputs.binding }}\non:\n  workflow_dispatch:\n    inputs:\n      request:\n        type: string\n        required: true\n      binding:\n        type: string\n        required: true\n      validation:\n        type: string\n        required: true\npermissions:\n  contents: read\n  actions: read\nconcurrency:\n  group: sf-temporal-\${{ fromJSON(inputs.request).executionId }}\n  cancel-in-progress: false\njobs:\n  code:\n    permissions:\n      contents: read\n      actions: read\n    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@${factorySha}\n    with:\n      factory-ref: ${factorySha}\n      harness-ref: ${harnessSha}\n      request: \${{ inputs.request }}\n      validation: \${{ inputs.validation }}\n    secrets:\n      OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}\n      CLAUDE_CODE_OAUTH_TOKEN: \${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}\n`;
 }
 /**
  * The executor's agent choice of one execution, stored once as an effect: the first call reads it (a completed run's
@@ -107,9 +107,13 @@ export const codingRouterState = (input: { description: string; acceptanceCriter
 /** The routed agent first, then the configured agents that differ from it; at most three, as the request allows. */
 export function routedAgents(routed: CodingAgent | null, listed: CodingAgent[]): CodingAgent[] {
   if (!routed) return listed;
-  const same = (a: CodingAgent) => a.agent === routed.agent && a.model === routed.model && a.reasoningEffort === routed.reasoningEffort;
+  const same = (a: CodingAgent) => a.agent === routed.agent && a.model === routed.model && a.reasoningEffort === routed.reasoningEffort && !a.credential;
   return [routed, ...listed.filter(a => !same(a))].slice(0, 3);
 }
+/** The broker-wide daily cap of runs on the Claude subscription; allowed() may report, it must not throw. */
+export interface SubscriptionGate { allowed(repository: string): Promise<boolean> }
+/** Agents with credential subscription leave the list when the daily cap is reached; the subscription is never first. */
+export const withoutSubscription = (agents: CodingAgent[]) => agents.filter(a => !a.credential);
 export class ActionsCodingExecutor implements CodingExecutionPort {
   constructor(private api: Octokit, private effects: (snapshot: RunSnapshot, binding: string) => EffectPort,
     private authorize: (snapshot: RunSnapshot, binding: string) => Promise<unknown>,
@@ -122,7 +126,9 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     /** The model router (router.coding): picks the first attempt's agent among the configured candidates. */
     private routing?: Routing,
     /** Called with the token usage of each completed run (UsageAlerts); must not throw. */
-    private onUsage?: (entry: UsageEntry) => Promise<void>) {}
+    private onUsage?: (entry: UsageEntry) => Promise<void>,
+    /** Whether the Claude subscription may still take runs today (broker-wide daily cap); without it always. */
+    private subscription?: SubscriptionGate) {}
   private async download(target: { owner: string; repo: string }, artifactId: number, limit: number, error: string) {
     const response = await this.api.actions.downloadArtifact({ ...target, artifact_id: artifactId, archive_format: 'zip', request: { parseSuccessResponseBody: false } });
     const reader = (response.data as ReadableStream<Uint8Array>).getReader(); const chunks: Uint8Array[] = []; let size = 0;
@@ -213,12 +219,12 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
    * agent that ran and the broker alerts once about agents skipped for used-up credit. Absent or unreadable: null.
    */
   /** Hands the run's usage record (coding-usage-<id>, uploaded also for failed runs) to onUsage; never fails the poll. */
-  private async usage(snapshot: RunSnapshot, target: { owner: string; repo: string }, runId: number, artifacts: { id: number; name: string; size_in_bytes: number; expired: boolean }[]) {
+  private async usage(snapshot: RunSnapshot, target: { owner: string; repo: string }, runId: number, artifacts: { id: number; name: string; size_in_bytes: number; expired: boolean }[], billing: 'api' | 'subscription') {
     if (!this.onUsage) return;
     try {
       const match = artifacts.filter(a => a.name === `coding-usage-${snapshot.admission.input.executionId}`);
       if (match.length !== 1 || match[0]!.expired || match[0]!.size_in_bytes > 100000) return;
-      const entry = usageEntry(snapshot, runId, decodeSingleJson(await this.download(target, match[0]!.id, 100000, 'USAGE_ARCHIVE_LIMIT'), 'usage.json'));
+      const entry = usageEntry(snapshot, runId, decodeSingleJson(await this.download(target, match[0]!.id, 100000, 'USAGE_ARCHIVE_LIMIT'), 'usage.json'), billing);
       if (entry) await this.onUsage(entry);
     } catch (error) {
       console.warn(JSON.stringify({ event: 'factory-usage', repository: snapshot.repository, executionId: snapshot.admission.input.executionId,
@@ -294,7 +300,16 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     // An escalated attempt (see escalationMarker) uses retryAgents when configured: a cheap first attempt escalates to a
     // stronger model only after the agent itself failed, not after a runner failure. A routed agent goes first, the
     // configured list stays behind it as the fallbacks.
-    const [first, ...others] = routedAgents(routed.agent, attemptAgents(coding, escalated(input)));
+    let agents = routedAgents(routed.agent, attemptAgents(coding, escalated(input)));
+    // The Claude subscription's daily cap, decided once per execution and stored like the budget below, so later polls
+    // rebuild the identical request; only asked when the list names the subscription at all.
+    if (agents.some(a => a.credential)) {
+      const gate = await effects.perform({ key: 'coding-subscription', payload: { baseSha: snapshot.baseSha }, authorize, contentAddressed: true,
+        validate: z.strictObject({ allowed: z.boolean() }).parse, reconcile: async () => null,
+        apply: async () => ({ allowed: this.subscription ? await this.subscription.allowed(snapshot.repository) : true }) });
+      if (!gate.allowed) agents = withoutSubscription(agents);
+    }
+    const [first, ...others] = agents;
     // The spend cap, resolved once and stored like the scope above: an execution dispatched before caps existed keeps
     // its request without one, and a later configuration change does not alter a dispatched request.
     const budget = (await effects.perform({ key: 'coding-budget', payload: { baseSha: snapshot.baseSha }, authorize, contentAddressed: true,
@@ -309,7 +324,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
         acceptanceCriteria: input.acceptanceCriteria, contextReferences: [...input.contextReferences, ...extra.entries] }, baseSha: snapshot.baseSha,
       allowedActions: ['edit_workspace', 'run_commands'], model: first!.model, effort: first!.reasoningEffort,
       limits: { timeoutMinutes: input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5000000, ...(budget === null ? {} : { maxCostUsd: budget }) },
-      ...(others.length ? { fallbacks: others.map(a => ({ worker: a.agent, model: a.model, effort: a.reasoningEffort })) } : {}) });
+      ...(others.length ? { fallbacks: others.map(a => ({ worker: a.agent, model: a.model, effort: a.reasoningEffort, ...(a.credential ? { credential: a.credential } : {}) })) } : {}) });
     const serialized = JSON.stringify(request); if (Buffer.byteLength(serialized) > 60000) throw new Error('EXECUTOR_REQUEST_LIMIT');
     const ref = `sf-temporal-executor/${input.executionId}`, name = `SF Temporal ${input.executionId} ${binding}`;
     await effects.perform({ key: 'executor-ref', payload: { ref, sha: snapshot.baseSha }, authorize,
@@ -337,8 +352,8 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     }
     if (!run || run.status !== 'completed') return null;
     const artifacts = run.conclusion === 'success' || request.fallbacks || this.onUsage ? await this.api.paginate(this.api.actions.listWorkflowRunArtifacts, { ...target, run_id: run.id, per_page: 100 }) : [];
-    await this.usage(snapshot, target, run.id, artifacts);
     const selection = request.fallbacks ? await this.selection(snapshot, binding, target, artifacts) : null;
+    await this.usage(snapshot, target, run.id, artifacts, selection?.selected?.credential === 'subscription' ? 'subscription' : 'api');
     if (run.conclusion !== 'success') {
       // No agent could run because every provider reported used-up credit: nothing started, so no attempt is spent.
       const noAgent = !!selection && !selection.selected;

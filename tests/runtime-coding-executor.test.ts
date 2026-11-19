@@ -36,7 +36,7 @@ class Effects implements EffectPort {
     const receipt = evidence ?? await r.apply(); claim.receipt = receipt; return r.validate(receipt);
   }
 }
-function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>, onSelection?: (s: RunSnapshot, selection: AgentSelection) => Promise<void>, routing?: Routing, onUsage?: (entry: UsageEntry) => Promise<void>) {
+function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>, onSelection?: (s: RunSnapshot, selection: AgentSelection) => Promise<void>, routing?: Routing, onUsage?: (entry: UsageEntry) => Promise<void>, subscription?: { allowed(repository: string): Promise<boolean> }) {
   const requests: { task: { description: string; contextReferences: string[] } }[] = [], calls: string[] = [];
   const cfg = config(); cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false, smallPullRequests: true };
   let ref = false, dispatches = 0, lost = false, before = false, complete = false, wrongHead = false, duplicate = false, badWrapper = false;
@@ -69,7 +69,7 @@ function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, 
     const response = status === 204 ? new Response(null, { status }) : Response.json(data, { status }); Object.defineProperty(response, 'url', { value: String(input) }); return response;
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
-  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation, onSelection, routing, onUsage);
+  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation, onSelection, routing, onUsage, subscription);
   return { effects, cfg, requests, calls, poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
     lose: () => { lost = true; }, before: () => { before = true; }, wrong: () => { wrongHead = true; }, duplicate: () => { duplicate = true; },
     badWrapper: () => { badWrapper = true; }, unrelated: () => { source = { ...source, baseSha: '9'.repeat(40) }; },missingValidation:()=>{missingValidation=true;},forgeValidation:()=>{forgedValidation=true;},blocked:()=>{source.result.status='blocked';} };
@@ -195,7 +195,7 @@ it('names the repository\'s coding agent, model and effort in the request and pa
   expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'max' });
   for (const validated of [false, true]) {
     const wrapper = executorWrapper('a'.repeat(40), 'b'.repeat(40), validated);
-    expect(wrapper).toContain('      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}\n');
+    expect(wrapper).toContain('      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}\n      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}\n      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}\n');
   }
 });
 it('sends a priority list as the first agent with fallbacks and keeps a single agent\'s request unchanged', async () => {
@@ -204,6 +204,26 @@ it('sends a priority list as the first agent with fallbacks and keeps a single a
   await f.poll();
   expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'high', fallbacks: [{ worker: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' }] });
   const single = fixture(); await single.poll(); expect(single.requests[0]).not.toHaveProperty('fallbacks');
+});
+it('sends the Claude subscription as a fallback with its credential and drops it once the daily cap is reached', async () => {
+  const agents = [{ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' }, { agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' },
+    { agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium', credential: 'subscription' }];
+  let allowed = true; const asked: string[] = [];
+  const gate = { allowed: async (repository: string) => { asked.push(repository); return allowed; } };
+  const f = fixture(snapshot, undefined, undefined, undefined, undefined, undefined, gate);
+  f.cfg.workers.coding = { ...(f.cfg.workers.coding as object), agent: undefined, agents } as typeof f.cfg.workers.coding;
+  await f.poll(); await f.poll();
+  expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', fallbacks: [{ worker: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+    { worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium', credential: 'subscription' }] });
+  expect(f.requests[0]!).not.toHaveProperty('fallbacks.0.credential');
+  expect(asked).toEqual(['owner/target']); // decided once per execution
+  allowed = false;
+  const g = fixture(snapshot, undefined, undefined, undefined, undefined, undefined, gate);
+  g.cfg.workers.coding = { ...(g.cfg.workers.coding as object), agent: undefined, agents } as typeof g.cfg.workers.coding;
+  await g.poll();
+  expect((g.requests[0] as { fallbacks: unknown[] }).fallbacks).toEqual([{ worker: 'codex', model: 'gpt-6.1-sol', effort: 'high' }]);
+  const plain = fixture(snapshot, undefined, undefined, undefined, undefined, undefined, gate); await plain.poll();
+  expect(asked).toHaveLength(2); // a list without the subscription never asks
 });
 it('sends retryAgents for an escalated attempt and the regular list otherwise', async () => {
   const lists = { agent: undefined, agents: [{ agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' }, { agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' }],
@@ -313,7 +333,7 @@ describe('spend cap and token usage', () => {
     const seen: UsageEntry[] = [];
     const f = fixture(snapshot, withUsage(usage()), undefined, undefined, undefined, async entry => { seen.push(entry); });
     await f.poll(); f.finish(); expect(await f.poll()).toEqual({ artifact: artifact() });
-    expect(seen).toEqual([{ repositoryId: 42, repository: 'owner/target', issueNumber: 2, runId: 12, record: usage() }]);
+    expect(seen).toEqual([{ repositoryId: 42, repository: 'owner/target', issueNumber: 2, runId: 12, record: usage(), billing: 'api' }]);
     const failed: UsageEntry[] = [];
     const g = fixture(snapshot, withUsage(usage(), 'failure'), undefined, undefined, undefined, async entry => { failed.push(entry); });
     expect(await g.poll()).toMatchObject({ failed: true });
