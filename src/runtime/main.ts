@@ -24,7 +24,7 @@ import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { startReconcileSchedule } from './schedule.js';
 import { QueueBoard } from './queue.js';
 import { AnalyticsIssueSync } from './analytics.js';
-import { modelPrices, setLlmCallSink, setModelPrices } from '../llm/analytics.js';
+import { configurePrices, setLlmCallSink } from '../llm/analytics.js';
 import { SanityMonitor } from './sanity.js';
 import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
 import { CreditAlerts } from './credit-alerts.js';
@@ -151,7 +151,7 @@ export async function main(args = process.argv.slice(2)) {
   const usageAlerts = new UsageAlerts(store, usageSink, usageChannel, usageThresholds(process.env));
   // Cost analytics: the broker's own model calls (review, risk, planner) are stored with their step, pull request and
   // issue; prices are list prices, FACTORY_MODEL_PRICES adds or overrides models (e.g. OpenAI fallbacks).
-  setModelPrices(modelPrices(process.env));
+  configurePrices(process.env);
   setLlmCallSink(store);
   setLlmCallMeter(new LlmCallMeter(usageSink, usageChannel, z.coerce.number().int().min(1).max(10000).parse(process.env.FACTORY_LLM_CALLS_ALERT_PER_HOUR ?? '20')));
   const routerChannel = process.env.FACTORY_ROUTER_ALERT_CHANNEL;

@@ -18,6 +18,8 @@ export interface AnalyticsCall {
   selection: 'router' | 'configured' | 'escalation'; routerChoice: string | null; routerProbability: number | null;
   /** The coding agent (claude, codex, claude-subscription) or the broker's provider (claude, openai). */
   agent: string; model: string; effort: string | null; tokens: AnalyticsTokens | null; costUsd: number | null; outcome: string | null; at: string;
+  /** Where the price came from: live (price list at the time of the call), table, configured, agent (the coding agent's own estimate); null for older rows. */
+  priceSource?: string | null;
 }
 export interface AnalyticsIssue {
   issueNumber: number; title: string; state: 'open' | 'closed'; prNumber: number | null; mergedAt: string | null; mergedBy: 'factory' | 'human' | null;

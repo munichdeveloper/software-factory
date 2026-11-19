@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { RunSnapshot } from './contract.js';
+import { priceCall, type PriceSource } from '../llm/analytics.js';
 
 /**
  * Token usage of coding runs (Johannes, 2026-11-19: "Ich möchte genau wissen, wenn wir irgendwo Lecks haben und Aufrufe
@@ -27,7 +28,13 @@ export const defaultCodingBudgetUsd = 10;
  * One stored run with where it belongs. billing subscription: the run used the Claude subscription (OAuth token), so its
  * costUsd is Claude Code's list-price estimate, not a charge; spend sums and daily thresholds leave it out.
  */
-export interface UsageEntry { repositoryId: number; repository: string; issueNumber: number; runId: number; record: UsageRecord; billing: 'api' | 'subscription' }
+export interface UsageEntry {
+  repositoryId: number; repository: string; issueNumber: number; runId: number; record: UsageRecord; billing: 'api' | 'subscription';
+  /** Where record.costUsd comes from: the price of the run's tokens at recording time (live list, table, configured) or agent (the agent's own estimate). */
+  priceSource?: PriceSource | 'agent' | null;
+  /** The agent's own estimate (Claude Code), kept when the tokens were priced instead. */
+  agentEstimateUsd?: number | null;
+}
 
 /** Thresholds of the usage alerts; from the broker's environment, so no repository configuration hash changes. */
 export interface UsageThresholds { runUsd: number; dayUsd: number; runOutputTokens: number }
@@ -59,7 +66,8 @@ export function logUsage(entry: UsageEntry, inserted: boolean) {
   const r = entry.record;
   console.log(JSON.stringify({ event: 'factory-usage', repository: entry.repository, issue: entry.issueNumber, executionId: r.executionId, runId: entry.runId,
     worker: r.worker, model: r.model, effort: r.effort, requests: r.requests, tokens: r.tokens, costUsd: r.costUsd, turns: r.turns,
-    durationMs: r.durationMs, outcome: r.outcome, budgetUsd: r.budgetUsd, budgetReached: r.budgetReached, repeated: !inserted }));
+    durationMs: r.durationMs, outcome: r.outcome, budgetUsd: r.budgetUsd, budgetReached: r.budgetReached, priceSource: entry.priceSource ?? null,
+    agentEstimateUsd: entry.agentEstimateUsd ?? null, repeated: !inserted }));
 }
 
 /**
@@ -95,11 +103,17 @@ export class UsageAlerts {
   }
 }
 
-/** The usage entry of a polled run: the record must belong to the execution of the snapshot. */
+/**
+ * The usage entry of a polled run: the record must belong to the execution of the snapshot. Its cost is the price of its
+ * tokens at this moment (same prices as the broker's own calls); the agent's estimate stays as the fallback and is kept.
+ */
 export function usageEntry(snapshot: RunSnapshot, runId: number, value: unknown, billing: UsageEntry['billing'] = 'api'): UsageEntry | null {
   const parsed = usageRecordSchema.safeParse(value);
   if (!parsed.success || parsed.data.executionId !== snapshot.admission.input.executionId) return null;
-  return { repositoryId: snapshot.repositoryId, repository: snapshot.repository, issueNumber: snapshot.admission.input.issueNumber, runId, record: parsed.data, billing };
+  const priced = priceCall(parsed.data.model, parsed.data.tokens);
+  const record = priced.costUsd === null ? parsed.data : { ...parsed.data, costUsd: Math.min(100000, Math.round(priced.costUsd * 1e6) / 1e6) };
+  return { repositoryId: snapshot.repositoryId, repository: snapshot.repository, issueNumber: snapshot.admission.input.issueNumber, runId, record, billing,
+    priceSource: priced.priceSource ?? (parsed.data.costUsd === null ? null : 'agent'), agentEstimateUsd: parsed.data.costUsd };
 }
 
 /** One English line for the status comment: what the latest attempt cost. */
