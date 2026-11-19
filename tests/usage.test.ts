@@ -14,7 +14,7 @@ class Store implements UsageStore {
   async usageDay() { const known = this.rows.filter(r => r.record.costUsd !== null);
     return { costUsd: known.reduce((s, r) => s + r.record.costUsd!, 0), runs: this.rows.length, unknownCost: this.rows.length - known.length }; }
   async claimUsageAlert(key: string, kind: string) { const k = `${kind}:${key}`; if (this.alerts.has(k)) return false; this.alerts.add(k); return true; }
-  async usageReport() { return [{ repository: 'owner/repo', runs: 3, costUsd: 12.5, unknownCost: 1, maxCostUsd: 6.1, budgetStops: 1 }]; }
+  async usageReport() { return [{ repository: 'owner/repo', runs: 3, costUsd: 12.5, unknownCost: 1, maxCostUsd: 6.1, budgetStops: 1, subscriptionRuns: 0, subscriptionCostUsd: 0 }]; }
 }
 const thresholds = { runUsd: 6, dayUsd: 30, runOutputTokens: 200000 };
 const setup = () => { const store = new Store(), posts: string[] = [];
@@ -65,7 +65,8 @@ describe('usage records and reports', () => {
       limits: { timeoutMinutes: 5, maxOutputBytes: 16000 }, operation: 'sha256', worker: 'codex' } },
     baseSha: '2'.repeat(40), specHash: 'f'.repeat(64), configHash: '3'.repeat(64), requireHumanGate: true });
   it('accepts only a valid record of the polled execution', () => {
-    expect(usageEntry(snapshot, 5, record())).toEqual({ repositoryId: 42, repository: 'owner/target', issueNumber: 2, runId: 5, record: record() });
+    expect(usageEntry(snapshot, 5, record())).toEqual({ repositoryId: 42, repository: 'owner/target', issueNumber: 2, runId: 5, record: record(), billing: 'api' });
+    expect(usageEntry(snapshot, 5, record(), 'subscription')?.billing).toBe('subscription');
     expect(usageEntry(snapshot, 5, record({ executionId: 'b'.repeat(32) }))).toBeNull();
     expect(usageEntry(snapshot, 5, { ...record(), extra: 1 })).toBeNull();
   });
@@ -79,6 +80,8 @@ describe('usage records and reports', () => {
     expect(await dailyUsageReport(store, sink, 'C1', new Date('2026-11-19T06:05:00Z'))).toBe(true);
     expect(await dailyUsageReport(store, sink, 'C1', new Date('2026-11-19T07:05:00Z'))).toBe(false);
     expect(posts).toEqual(['SF Verbrauch 2026-11-18 (UTC): 12.50 $ für 3 Coding-Läufe.\n• owner/repo: 12.50 $ in 3 Läufen, teuerster 6.10 $, 1 ohne Kostenangabe, 1× Kostendeckel']);
+    expect(usageReportText('2026-11-18', [{ repository: 'owner/repo', runs: 5, costUsd: 12.5, unknownCost: 0, maxCostUsd: 6.1, budgetStops: 0, subscriptionRuns: 2, subscriptionCostUsd: 4.2 }]))
+      .toBe('SF Verbrauch 2026-11-18 (UTC): 12.50 $ für 3 Coding-Läufe. Dazu 2 Läufe über das Claude-Abo (rechnerisch 4.20 $, nicht abgerechnet).\n• owner/repo: 12.50 $ in 3 Läufen, teuerster 6.10 $, 2 über das Abo');
   });
 });
 describe('broker model call counting', () => {

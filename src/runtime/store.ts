@@ -56,20 +56,21 @@ export class RuntimeStore implements SanityStore {
         run_id bigint NOT NULL, record jsonb NOT NULL, cost_usd double precision, recorded_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY(repository_id,execution_id));
       CREATE INDEX IF NOT EXISTS factory_runtime_usage_day ON factory_runtime_usage(repository_id, recorded_at);
+      ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS billing text NOT NULL DEFAULT 'api';
       CREATE TABLE IF NOT EXISTS factory_runtime_usage_alerts (
         key text NOT NULL, kind text NOT NULL, sent_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(key,kind));`);
   }
   /** Token usage of coding runs (UsageAlerts): stored once per execution. */
   async recordUsage(entry: UsageEntry): Promise<boolean> {
-    const { rowCount } = await this.pool.query(`INSERT INTO factory_runtime_usage(repository_id,execution_id,repository,issue_number,run_id,record,cost_usd)
-      VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`, [entry.repositoryId, entry.record.executionId, entry.repository, entry.issueNumber,
-      entry.runId, JSON.stringify(entry.record), entry.record.costUsd]);
+    const { rowCount } = await this.pool.query(`INSERT INTO factory_runtime_usage(repository_id,execution_id,repository,issue_number,run_id,record,cost_usd,billing)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`, [entry.repositoryId, entry.record.executionId, entry.repository, entry.issueNumber,
+      entry.runId, JSON.stringify(entry.record), entry.record.costUsd, entry.billing]);
     return (rowCount ?? 0) > 0;
   }
   async usageDay(repositoryId: number, day: string): Promise<{ costUsd: number; runs: number; unknownCost: number }> {
     const { rows } = await this.pool.query<{ cost: number | null; runs: string; unknown: string }>(
       `SELECT sum(cost_usd) AS cost, count(*) AS runs, count(*) FILTER (WHERE cost_usd IS NULL) AS unknown FROM factory_runtime_usage
-        WHERE repository_id=$1 AND recorded_at >= $2::date AND recorded_at < $2::date + 1`, [repositoryId, day]);
+        WHERE repository_id=$1 AND billing='api' AND recorded_at >= $2::date AND recorded_at < $2::date + 1`, [repositoryId, day]);
     return { costUsd: Number(rows[0]?.cost ?? 0), runs: Number(rows[0]?.runs ?? 0), unknownCost: Number(rows[0]?.unknown ?? 0) };
   }
   async claimUsageAlert(key: string, kind: string): Promise<boolean> {
@@ -83,13 +84,20 @@ export class RuntimeStore implements SanityStore {
     return parsed?.success ? parsed.data : null;
   }
   /** Spend per repository between two instants, for the daily report. */
-  async usageReport(from: Date, to: Date): Promise<{ repository: string; runs: number; costUsd: number; unknownCost: number; maxCostUsd: number; budgetStops: number }[]> {
-    const { rows } = await this.pool.query<{ repository: string; runs: string; cost: number | null; unknown: string; max: number | null; stops: string }>(
-      `SELECT repository, count(*) AS runs, sum(cost_usd) AS cost, count(*) FILTER (WHERE cost_usd IS NULL) AS unknown, max(cost_usd) AS max,
-        count(*) FILTER (WHERE (record->>'budgetReached')::boolean) AS stops
+  async usageReport(from: Date, to: Date): Promise<{ repository: string; runs: number; costUsd: number; unknownCost: number; maxCostUsd: number; budgetStops: number; subscriptionRuns: number; subscriptionCostUsd: number }[]> {
+    const { rows } = await this.pool.query<{ repository: string; runs: string; cost: number | null; unknown: string; max: number | null; stops: string; abo: string; abo_cost: number | null }>(
+      `SELECT repository, count(*) AS runs, sum(cost_usd) FILTER (WHERE billing='api') AS cost,
+        count(*) FILTER (WHERE cost_usd IS NULL AND billing='api') AS unknown, max(cost_usd) FILTER (WHERE billing='api') AS max,
+        count(*) FILTER (WHERE (record->>'budgetReached')::boolean) AS stops,
+        count(*) FILTER (WHERE billing='subscription') AS abo, sum(cost_usd) FILTER (WHERE billing='subscription') AS abo_cost
         FROM factory_runtime_usage WHERE recorded_at >= $1 AND recorded_at < $2 GROUP BY repository ORDER BY repository`, [from, to]);
     return rows.map(r => ({ repository: r.repository, runs: Number(r.runs), costUsd: Number(r.cost ?? 0), unknownCost: Number(r.unknown),
-      maxCostUsd: Number(r.max ?? 0), budgetStops: Number(r.stops) }));
+      maxCostUsd: Number(r.max ?? 0), budgetStops: Number(r.stops), subscriptionRuns: Number(r.abo), subscriptionCostUsd: Number(r.abo_cost ?? 0) }));
+  }
+  /** Runs on the Claude subscription across all repositories since an instant, for the daily cap (SubscriptionCap). */
+  async subscriptionRunsSince(from: Date): Promise<number> {
+    const { rows } = await this.pool.query<{ runs: string }>(`SELECT count(*) AS runs FROM factory_runtime_usage WHERE billing='subscription' AND recorded_at >= $1`, [from]);
+    return Number(rows[0]?.runs ?? 0);
   }
   /** Claims the next credit alert of an agent (CreditAlerts); null at the limit or when this execution already had one. */
   async claimCreditAlert(agent: string, kind: string, executionId: string, limit: number): Promise<number | null> {

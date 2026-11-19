@@ -29,3 +29,18 @@ it('announces used-up credit at most three times per agent and again after the a
   expect(posts[3]).toContain('konnte nicht starten');
   expect(posts[3]).toContain('Meldung 1 von 3');
 });
+it('announces every run the Claude subscription takes over and keeps its limit apart from the API key', async () => {
+  const posts: string[] = [], store = new MemoryStore();
+  const alerts = new CreditAlerts(store, { post: async (_channel, text) => { posts.push(text); } }, 'C1');
+  const sub = { worker: 'claude' as const, model: 'claude-sonnet-5-5', effort: 'medium' as const, credential: 'subscription' as const };
+  await alerts.observe('o/r', { version: 1, executionId: '8'.repeat(32), selected: sub, skipped: [{ worker: 'claude', model: 'claude-opus-5-5', effort: 'high', reason: 'exhausted' }, { worker: 'codex', model: 'gpt-6.1-sol', effort: 'high', reason: 'missing-key' }] });
+  expect(posts).toHaveLength(2);
+  expect(posts[0]).toContain('läuft stattdessen mit das Claude-Abo');
+  expect(posts[1]).toContain('SF Claude-Abo springt ein');
+  expect(posts[1]).toContain('Claude (kein Guthaben) und Codex (kein Schlüssel)');
+  // The subscription running does not reset the API key's alerts.
+  expect(store.rows.get('claude:exhausted')?.sent).toBe(1);
+  await alerts.observe('o/r', { version: 1, executionId: '9'.repeat(32), selected: null, skipped: [{ ...sub, reason: 'exhausted' }] });
+  expect(posts[2]).toContain('das Claude-Abo hat sein Nutzungslimit erreicht');
+  expect(store.rows.get('claude-subscription:exhausted')?.sent).toBe(1);
+});

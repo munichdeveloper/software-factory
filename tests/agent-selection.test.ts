@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it } from 'vitest';
-import { probeClaude, probeCodex, selectAgent, type ProbeOutcome } from '../src/runtime/agent-selection.js';
+import { probeClaude, probeClaudeSubscription, probeCodex, providerProbe, selectAgent, type CommandRunner, type ProbeOutcome } from '../src/runtime/agent-selection.js';
 import { codingExecutionSchema, type CodingExecutionRequest } from '../src/runtime/coding-contract.js';
 
 const request = (fallbacks?: CodingExecutionRequest['fallbacks']): CodingExecutionRequest => codingExecutionSchema.parse({
@@ -28,6 +28,35 @@ describe('selectAgent', () => {
     expect(none.request).toBeNull();
     expect(none.selection.selected).toBeNull();
     expect(none.selection.skipped.map(s => s.reason)).toEqual(['missing-key', 'exhausted']);
+  });
+  it('records the subscription credential in the choice but hands the Harness a plain request', async () => {
+    const sub = { worker: 'claude' as const, model: 'claude-sonnet-5-5', effort: 'medium' as const, credential: 'subscription' as const };
+    const result = await selectAgent(request([codex, sub]), async agent => agent.credential ? 'available' : 'exhausted');
+    expect(result.request).toMatchObject({ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
+    expect(result.request).not.toHaveProperty('credential');
+    expect(result.selection.selected).toEqual(sub);
+    expect(result.selection.skipped.map(s => s.worker)).toEqual(['claude', 'codex']);
+  });
+});
+describe('probeClaudeSubscription', () => {
+  const runner = (stdout: string, seen?: { args: string[]; env: Record<string, string> }[]): CommandRunner => async (_c, args, env) => { seen?.push({ args, env }); return { code: 0, stdout }; };
+  it('runs the pinned Claude Code with only the OAuth token and reads the API status of its result', async () => {
+    const seen: { args: string[]; env: Record<string, string> }[] = [];
+    expect(await probeClaudeSubscription('tok', 'claude-sonnet-5-5', '2.1.318', runner('{"is_error":false,"api_error_status":null}', seen))).toBe('available');
+    expect(seen[0]!.args.slice(0, 2)).toEqual(['--yes', '@anthropic-ai/claude-code@2.1.318']);
+    expect(seen[0]!.args).toContain('claude-sonnet-5-5');
+    expect(seen[0]!.env).toMatchObject({ CLAUDE_CODE_OAUTH_TOKEN: 'tok', CLAUDE_CODE_MAX_RETRIES: '0' });
+    expect(seen[0]!.env).not.toHaveProperty('ANTHROPIC_API_KEY');
+    expect(await probeClaudeSubscription(undefined, 'claude-sonnet-5-5', '2.1.318')).toBe('missing-key');
+    expect(await probeClaudeSubscription('tok', 'claude-sonnet-5-5', '2.1.318', runner('{"is_error":true,"api_error_status":429}'))).toBe('exhausted');
+    expect(await probeClaudeSubscription('tok', 'claude-sonnet-5-5', '2.1.318', runner('{"is_error":true,"api_error_status":401}'))).toBe('rejected');
+    expect(await probeClaudeSubscription('tok', 'claude-sonnet-5-5', '2.1.318', runner('{"is_error":true,"api_error_status":529}'))).toBe('available');
+    expect(await probeClaudeSubscription('tok', 'claude-sonnet-5-5', '2.1.318', runner('npm ERR! network'))).toBe('available');
+    expect(await probeClaudeSubscription('tok', 'claude-sonnet-5-5', 'latest', runner('{"api_error_status":429}'))).toBe('available');
+  });
+  it('probes the subscription only with the OAuth token', async () => {
+    const probe = providerProbe({ ANTHROPIC_API_KEY: 'k' });
+    expect(await probe({ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium', credential: 'subscription' })).toBe('missing-key');
   });
 });
 

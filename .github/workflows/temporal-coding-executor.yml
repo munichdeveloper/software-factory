@@ -22,6 +22,10 @@ on:
         required: false
       ANTHROPIC_API_KEY:
         required: false
+      # OAuth token of a Claude subscription (claude setup-token) for an agent with credential subscription: probed and
+      # handed to the harness only when the agents before it in the list had no credit.
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
 permissions: {}
 jobs:
   validate:
@@ -34,6 +38,7 @@ jobs:
       execution-id: ${{ steps.request.outputs.execution-id }}
       base-sha: ${{ steps.request.outputs.base-sha }}
       validation: ${{ steps.request.outputs.validation }}
+      credential: ${{ steps.request.outputs.credential }}
     steps:
       - name: Validate immutable runtime references
         shell: bash
@@ -58,6 +63,8 @@ jobs:
           SF_VALIDATION_PLAN: ${{ inputs.validation }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDE_CODE_VERSION: '2.1.318' # keep equal to the harness's Claude Code version
         run: node bundle/factory.cjs validate-coding-execution --output coding-agent.json
       # The broker reads the choice to name the agent and to alert on used-up credit, also when no agent could run.
       - if: ${{ always() && hashFiles('coding-agent.json') != '' }}
@@ -151,7 +158,9 @@ jobs:
           execution-id: ${{ needs.validate.outputs.execution-id }}
           workspace: ${{ github.workspace }}/target
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Exactly one Claude credential: the subscription's OAuth token when the validate job chose it, else the API key.
+          anthropic-api-key: ${{ needs.validate.outputs.credential != 'subscription' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude-oauth-token: ${{ needs.validate.outputs.credential == 'subscription' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
           trusted-bot-users: munichdeveloper-sf-manager-local[bot]
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

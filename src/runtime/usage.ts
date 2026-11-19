@@ -23,8 +23,11 @@ export type UsageRecord = z.infer<typeof usageRecordSchema>;
 /** Spend cap per coding attempt when workers.coding.maxCostUsd is not set (Claude Code --max-budget-usd). */
 export const defaultCodingBudgetUsd = 10;
 
-/** One stored run with where it belongs. */
-export interface UsageEntry { repositoryId: number; repository: string; issueNumber: number; runId: number; record: UsageRecord }
+/**
+ * One stored run with where it belongs. billing subscription: the run used the Claude subscription (OAuth token), so its
+ * costUsd is Claude Code's list-price estimate, not a charge; spend sums and daily thresholds leave it out.
+ */
+export interface UsageEntry { repositoryId: number; repository: string; issueNumber: number; runId: number; record: UsageRecord; billing: 'api' | 'subscription' }
 
 /** Thresholds of the usage alerts; from the broker's environment, so no repository configuration hash changes. */
 export interface UsageThresholds { runUsd: number; dayUsd: number; runOutputTokens: number }
@@ -37,7 +40,7 @@ export const usageThresholds = (env: Record<string, string | undefined>): UsageT
 export interface UsageStore {
   /** Stores the record once; false when this execution was already recorded (a repeated poll). */
   recordUsage(entry: UsageEntry): Promise<boolean>;
-  /** Sum of the known dollar cost and number of runs of a repository on one UTC day (YYYY-MM-DD). */
+  /** Sum of the known dollar cost and number of runs billed to an API key of a repository on one UTC day (YYYY-MM-DD). */
   usageDay(repositoryId: number, day: string): Promise<{ costUsd: number; runs: number; unknownCost: number }>;
   /** Claims one alert of this kind for the key; false when it was already sent. */
   claimUsageAlert(key: string, kind: string): Promise<boolean>;
@@ -72,8 +75,9 @@ export class UsageAlerts {
     logUsage(entry, inserted);
     if (!inserted || !this.sink || !this.channel) return;
     const r = entry.record, link = `https://github.com/${entry.repository}/actions/runs/${entry.runId}`;
-    const where = `${entry.repository}#${entry.issueNumber} (${r.worker}, ${r.model}, ${r.effort})`;
-    const cost = r.costUsd === null ? 'Kosten unbekannt' : usd(r.costUsd);
+    const subscription = entry.billing === 'subscription';
+    const where = `${entry.repository}#${entry.issueNumber} (${r.worker}${subscription ? ' über das Claude-Abo' : ''}, ${r.model}, ${r.effort})`;
+    const cost = r.costUsd === null ? 'Kosten unbekannt' : subscription ? `rechnerisch ${usd(r.costUsd)} (Abo, nicht abgerechnet)` : usd(r.costUsd);
     const facts = `${cost}, ${tokenSummary(r)}${r.turns === null ? '' : `, ${r.turns} Runden`}${r.durationMs === null ? '' : `, ${Math.round(r.durationMs / 60000)} min`}.`;
     const reasons: string[] = [];
     if (r.budgetReached) reasons.push(`Der Kostendeckel von ${usd(r.budgetUsd ?? 0)} hat den Lauf gestoppt.`);
@@ -82,6 +86,7 @@ export class UsageAlerts {
     if (r.outcome === null && (r.requests ?? 0) > 0) reasons.push('Der Agent hat Tokens verbraucht, aber kein Ergebnis gemeldet (abgebrochen, Zeitlimit oder Absturz).');
     if (reasons.length && await this.store.claimUsageAlert(r.executionId, 'run'))
       await this.sink.post(this.channel, [`SF Verbrauch: auffälliger Lauf in ${where}`, ...reasons, facts, link].join('\n'));
+    if (subscription) return; // not billed: the daily spend threshold counts API runs only
     const day = this.now().toISOString().slice(0, 10), total = await this.store.usageDay(entry.repositoryId, day);
     if (total.costUsd >= this.thresholds.dayUsd && await this.store.claimUsageAlert(`${entry.repositoryId}:${day}`, 'day'))
       await this.sink.post(this.channel, [`SF Verbrauch: ${entry.repository} hat heute (UTC) schon ${usd(total.costUsd)} für ${total.runs} Coding-Läufe ausgegeben` +
@@ -91,10 +96,10 @@ export class UsageAlerts {
 }
 
 /** The usage entry of a polled run: the record must belong to the execution of the snapshot. */
-export function usageEntry(snapshot: RunSnapshot, runId: number, value: unknown): UsageEntry | null {
+export function usageEntry(snapshot: RunSnapshot, runId: number, value: unknown, billing: UsageEntry['billing'] = 'api'): UsageEntry | null {
   const parsed = usageRecordSchema.safeParse(value);
   if (!parsed.success || parsed.data.executionId !== snapshot.admission.input.executionId) return null;
-  return { repositoryId: snapshot.repositoryId, repository: snapshot.repository, issueNumber: snapshot.admission.input.issueNumber, runId, record: parsed.data };
+  return { repositoryId: snapshot.repositoryId, repository: snapshot.repository, issueNumber: snapshot.admission.input.issueNumber, runId, record: parsed.data, billing };
 }
 
 /** One English line for the status comment: what the latest attempt cost. */
@@ -110,13 +115,17 @@ const thousandsEn = (value: number) => value >= 1e6 ? `${(value / 1e6).toFixed(1
 /** The daily Slack report: spend per repository of the previous UTC day. */
 export function usageReportText(day: string, rows: Awaited<ReturnType<UsageReportStore['usageReport']>>): string {
   if (!rows.length) return `SF Verbrauch ${day} (UTC): keine Coding-Läufe.`;
-  const total = rows.reduce((sum, r) => sum + r.costUsd, 0), runs = rows.reduce((sum, r) => sum + r.runs, 0);
-  return [`SF Verbrauch ${day} (UTC): ${usd(total)} für ${runs} Coding-Läufe.`,
-    ...rows.map(r => `• ${r.repository}: ${usd(r.costUsd)} in ${r.runs} Läufen, teuerster ${usd(r.maxCostUsd)}` +
-      `${r.unknownCost ? `, ${r.unknownCost} ohne Kostenangabe` : ''}${r.budgetStops ? `, ${r.budgetStops}× Kostendeckel` : ''}`)].join('\n');
+  const total = rows.reduce((sum, r) => sum + r.costUsd, 0), runs = rows.reduce((sum, r) => sum + r.runs - r.subscriptionRuns, 0);
+  const abo = rows.reduce((sum, r) => sum + r.subscriptionRuns, 0), aboCost = rows.reduce((sum, r) => sum + r.subscriptionCostUsd, 0);
+  return [`SF Verbrauch ${day} (UTC): ${usd(total)} für ${runs} Coding-Läufe.` +
+    (abo ? ` Dazu ${abo} Läufe über das Claude-Abo (rechnerisch ${usd(aboCost)}, nicht abgerechnet).` : ''),
+    ...rows.map(r => `• ${r.repository}: ${usd(r.costUsd)} in ${r.runs - r.subscriptionRuns} Läufen, teuerster ${usd(r.maxCostUsd)}` +
+      `${r.unknownCost ? `, ${r.unknownCost} ohne Kostenangabe` : ''}${r.budgetStops ? `, ${r.budgetStops}× Kostendeckel` : ''}` +
+      `${r.subscriptionRuns ? `, ${r.subscriptionRuns} über das Abo` : ''}`)].join('\n');
 }
 export interface UsageReportStore {
-  usageReport(from: Date, to: Date): Promise<{ repository: string; runs: number; costUsd: number; unknownCost: number; maxCostUsd: number; budgetStops: number }[]>;
+  /** runs counts every run; costUsd, unknownCost and maxCostUsd only those billed to an API key. */
+  usageReport(from: Date, to: Date): Promise<{ repository: string; runs: number; costUsd: number; unknownCost: number; maxCostUsd: number; budgetStops: number; subscriptionRuns: number; subscriptionCostUsd: number }[]>;
   claimUsageAlert(key: string, kind: string): Promise<boolean>;
 }
 /** Posts yesterday's report once, at the first check after `hourUtc` o'clock UTC. */
