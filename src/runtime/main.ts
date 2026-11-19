@@ -23,6 +23,8 @@ import { RuntimeStore, type Registration } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { startReconcileSchedule } from './schedule.js';
 import { QueueBoard } from './queue.js';
+import { AnalyticsIssueSync } from './analytics.js';
+import { modelPrices, setLlmCallSink, setModelPrices } from '../llm/analytics.js';
 import { SanityMonitor } from './sanity.js';
 import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
 import { CreditAlerts } from './credit-alerts.js';
@@ -143,6 +145,10 @@ export async function main(args = process.argv.slice(2)) {
   // a report of the previous day is posted each morning. The broker's own model calls are counted against loops.
   const usageChannel = process.env.FACTORY_USAGE_ALERT_CHANNEL, usageSink = process.env.SLACK_BOT_TOKEN && usageChannel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;
   const usageAlerts = new UsageAlerts(store, usageSink, usageChannel, usageThresholds(process.env));
+  // Cost analytics: the broker's own model calls (review, risk, planner) are stored with their step, pull request and
+  // issue; prices are list prices, FACTORY_MODEL_PRICES adds or overrides models (e.g. OpenAI fallbacks).
+  setModelPrices(modelPrices(process.env));
+  setLlmCallSink(store);
   setLlmCallMeter(new LlmCallMeter(usageSink, usageChannel, z.coerce.number().int().min(1).max(10000).parse(process.env.FACTORY_LLM_CALLS_ALERT_PER_HOUR ?? '20')));
   const routerChannel = process.env.FACTORY_ROUTER_ALERT_CHANNEL;
   const endpoint = routerEndpoint(process.env);
@@ -276,14 +282,16 @@ export async function main(args = process.argv.slice(2)) {
     const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '180');
     // The job queue view for software-factory-monitor; FACTORY_MONITOR_TOKEN opens it read-only (unset: manager token only).
     const queue = new QueueBoard(undefined, interval || null);
-    const serverOptions = { monitor, queue, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
+    // Cost analytics (GET /v1/analytics, same token as the queue): issue titles and merges from each reconciliation.
+    const analytics = new AnalyticsIssueSync(store);
+    const serverOptions = { monitor, queue, analytics, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
       monitorToken: process.env.FACTORY_MONITOR_TOKEN ?? '', ...(notifications ? { notifications } : {}) };
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     const addresses = await listenAddresses(process.env.FACTORY_RUNTIME_LISTEN_ALIAS);
     // One server per address; they share the options, so a registration through either is served by both.
     const servers = addresses.map(() => runtimeServer(serverOptions));
     await Promise.all(servers.map((server, i) => new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, addresses[i], resolve); })));
-    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, queue, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
+    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, queue, analytics, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
     // Off unless the deployment turns it on: the App needs Administration and Variables write for it.
     const stopRunners = process.env.FACTORY_RUNNER_FALLBACK === 'on' ? (() => {
       const channel = process.env.FACTORY_RUNNER_ALERT_CHANNEL, slack = process.env.SLACK_BOT_TOKEN && channel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;

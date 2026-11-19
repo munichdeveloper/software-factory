@@ -7,6 +7,9 @@ import { codingArtifactSchema, type CodingArtifact } from '../workers/coding.js'
 import { hash } from '../state/identity.js';
 import { validationReportSchema, type ValidationReport } from './validation-contract.js';
 import type { Finding, FindingKind, SanityStore } from './sanity.js';
+import type { LlmCallRecord } from '../llm/analytics.js';
+import { tokensOf, type AnalyticsCall, type AnalyticsIssue } from './analytics.js';
+import { escalationMarker } from './coding-context.js';
 
 export interface Registration { repositoryId: number; repository: string; githubInstallationId: number }
 export interface StoredRun {
@@ -57,7 +60,61 @@ export class RuntimeStore implements SanityStore {
         PRIMARY KEY(repository_id,execution_id));
       CREATE INDEX IF NOT EXISTS factory_runtime_usage_day ON factory_runtime_usage(repository_id, recorded_at);
       CREATE TABLE IF NOT EXISTS factory_runtime_usage_alerts (
-        key text NOT NULL, kind text NOT NULL, sent_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(key,kind));`);
+        key text NOT NULL, kind text NOT NULL, sent_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(key,kind));
+      CREATE TABLE IF NOT EXISTS factory_analytics_calls (
+        id bigserial PRIMARY KEY, repository text NOT NULL, step text NOT NULL, pr_number integer, issue_number integer,
+        selection text NOT NULL, router_choice text, router_probability double precision, provider text NOT NULL, model text NOT NULL,
+        effort text, tokens jsonb, cost_usd double precision, outcome text NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now());
+      CREATE INDEX IF NOT EXISTS factory_analytics_calls_time ON factory_analytics_calls(recorded_at);
+      CREATE TABLE IF NOT EXISTS factory_analytics_issues (
+        repository text NOT NULL, issue_number integer NOT NULL, title text NOT NULL, state text NOT NULL, pr_number integer,
+        merged_at timestamptz, merged_by text, updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(repository,issue_number));`);
+  }
+  /** One broker model call (merge review, risk assessment, planner) for the cost analytics. */
+  async recordLlmCall(r: LlmCallRecord): Promise<void> {
+    await this.pool.query(`INSERT INTO factory_analytics_calls(repository,step,pr_number,issue_number,selection,router_choice,router_probability,provider,model,effort,tokens,cost_usd,outcome)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, [r.repository, r.step, r.prNumber, r.issueNumber, r.selection, r.routerChoice, r.routerProbability,
+      r.provider, r.model, r.effort, r.tokens === null ? null : JSON.stringify(r.tokens), r.costUsd, r.outcome]);
+  }
+  /** Title, state and merge of the issues the analytics name; written only when they changed. */
+  async upsertAnalyticsIssues(repository: string, issues: AnalyticsIssue[]): Promise<void> {
+    for (const i of issues) await this.pool.query(`INSERT INTO factory_analytics_issues(repository,issue_number,title,state,pr_number,merged_at,merged_by) VALUES($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (repository,issue_number) DO UPDATE SET title=EXCLUDED.title, state=EXCLUDED.state, pr_number=EXCLUDED.pr_number,
+        merged_at=EXCLUDED.merged_at, merged_by=EXCLUDED.merged_by, updated_at=now()`,
+      [repository, i.issueNumber, i.title, i.state, i.prNumber, i.mergedAt, i.mergedBy]);
+  }
+  async analyticsIssues(): Promise<(AnalyticsIssue & { repository: string })[]> {
+    const { rows } = await this.pool.query<{ repository: string; issue_number: number; title: string; state: string; pr_number: number | null; merged_at: Date | null; merged_by: string | null }>(
+      'SELECT repository,issue_number,title,state,pr_number,merged_at,merged_by FROM factory_analytics_issues');
+    return rows.map(r => ({ repository: r.repository, issueNumber: r.issue_number, title: r.title, state: r.state === 'closed' ? 'closed' : 'open',
+      prNumber: r.pr_number, mergedAt: r.merged_at?.toISOString() ?? null, mergedBy: r.merged_by === 'human' ? 'human' : r.merged_by === 'factory' ? 'factory' : null }));
+  }
+  /**
+   * Every priced model call since `since`: the coding runs (factory_runtime_usage, with the stored routing decision and
+   * whether the attempt was an escalation) and the broker's own calls.
+   */
+  async analyticsCalls(since: Date): Promise<AnalyticsCall[]> {
+    const { rows } = await this.pool.query<{ repository: string; step: string; issue_number: number | null; pr_number: number | null; execution_id: string | null;
+      selection: string; router_choice: string | null; router_probability: number | null; agent: string; model: string; effort: string | null;
+      tokens: unknown; cost_usd: number | null; outcome: string | null; recorded_at: Date }>(`
+      SELECT u.repository, 'coding' AS step, u.issue_number, NULL::integer AS pr_number, u.execution_id,
+        CASE WHEN jsonb_exists(r.snapshot->'admission'->'input'->'contextReferences', $2) THEN 'escalation'
+          WHEN jsonb_typeof(e.receipt->'agent') = 'object' THEN 'router' ELSE 'configured' END AS selection,
+        e.receipt->'route'->>'choice' AS router_choice, (e.receipt->'route'->>'confidence')::double precision AS router_probability,
+        u.record->>'worker' AS agent, u.record->>'model' AS model, u.record->>'effort' AS effort, u.record->'tokens' AS tokens,
+        u.cost_usd, u.record->>'outcome' AS outcome, u.recorded_at
+      FROM factory_runtime_usage u
+        LEFT JOIN factory_runtime_effects e ON e.repository_id=u.repository_id AND e.execution_id=u.execution_id AND e.effect='coding-route' AND e.phase='confirmed'
+        LEFT JOIN factory_runtime_runs r ON r.repository_id=u.repository_id AND r.execution_id=u.execution_id
+      WHERE u.recorded_at >= $1
+      UNION ALL
+      SELECT repository, step, issue_number, pr_number, NULL, selection, router_choice, router_probability, provider, model, effort, tokens,
+        cost_usd, outcome, recorded_at FROM factory_analytics_calls WHERE recorded_at >= $1
+      ORDER BY recorded_at LIMIT 50000`, [since, escalationMarker]);
+    return rows.map(r => ({ repository: r.repository, step: r.step as AnalyticsCall['step'], issueNumber: r.issue_number, prNumber: r.pr_number, executionId: r.execution_id,
+      selection: r.selection as AnalyticsCall['selection'], routerChoice: r.router_choice, routerProbability: r.router_probability,
+      agent: r.agent, model: r.model, effort: r.effort, tokens: tokensOf(r.tokens), costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
+      outcome: r.outcome, at: r.recorded_at.toISOString() }));
   }
   /** Token usage of coding runs (UsageAlerts): stored once per execution. */
   async recordUsage(entry: UsageEntry): Promise<boolean> {

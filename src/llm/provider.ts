@@ -3,6 +3,7 @@ import { codingAgents, type Config } from '../config/index.js';
 import { planSchema, type Action, type Plan } from '../types.js';
 import type { Task } from '../state/reconstruct.js';
 import { claudeCode, claudeEffort, type ClaudeCall } from './claude.js';
+import { openaiTokens, recordLlmCall } from './analytics.js';
 
 export interface Planner { plan(tasks: Task[], config: Config): Promise<Plan> }
 export const proposal = (task: Task, kind: Action['kind'], reason: string, values: Partial<Action> = {}): Action => ({
@@ -85,6 +86,7 @@ export class OpenAIPlanner implements Planner {
         });
         if (!response.ok) throw new Error(`OpenAI HTTP ${response.status}`); // Never log provider bodies or credentials.
         const body = await response.json() as { status?: string; output?: { content?: { type: string; text?: string }[] }[] };
+        recordLlmCall('openai', config.llm.model, config.llm.reasoningEffort, openaiTokens(body), body.status === 'completed' ? 'success' : 'failed');
         if (body.status !== 'completed') throw new Error('OpenAI response incomplete or refused');
         const output = body.output?.flatMap(o => o.content ?? []).filter(c => c.type === 'output_text').map(c => c.text ?? '').join('') ?? '';
         if (output.length > 100000) throw new Error('OpenAI response too large');
