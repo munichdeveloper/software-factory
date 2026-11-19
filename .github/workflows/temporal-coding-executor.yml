@@ -159,6 +159,14 @@ jobs:
           path: ${{ steps.agent.outputs.artifact }}
           if-no-files-found: error
           retention-days: 7
+      # Token usage of the run (harness usage.json), also when the agent failed, timed out or hit its spend cap.
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coding-usage-${{ needs.validate.outputs.execution-id }}
+          path: ${{ runner.temp }}/harness-${{ needs.validate.outputs.execution-id }}/usage.json
+          if-no-files-found: ignore
+          retention-days: 30
   independent-validation:
     needs: [validate, code]
     if: inputs.validation != ''

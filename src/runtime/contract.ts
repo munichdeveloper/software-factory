@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { workerInputSchema, workerResultSchema } from '../workers/contract.js';
 import { validationPlanSchema } from './validation-contract.js';
 import { routeRecordSchema } from '../llm/router.js';
+import { usageRecordSchema } from './usage.js';
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -53,6 +54,8 @@ export const observationSchema = z.strictObject({
    * HTTP API leaves it out, so clients of earlier releases keep parsing their observations.
    */
   route: z.strictObject({ record: routeRecordSchema, agent: routedAgentSchema.nullable() }).optional(),
+  /** Token usage and cost of this execution's agent run, once recorded; broker-internal like route. */
+  usage: usageRecordSchema.optional(),
 });
 export type RuntimeObservation = z.infer<typeof observationSchema>;
 /**

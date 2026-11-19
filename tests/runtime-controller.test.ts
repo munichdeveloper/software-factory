@@ -32,6 +32,8 @@ class MemoryStore extends RuntimeStore {
   override async saveArtifact(_repo: number, _id: string, artifact: CodingArtifact) { this.codingArtifact = artifact; }
   override async validation() { return this.validationState; }
   routeReceipt: unknown = null;
+  usageRecord: unknown = null;
+  override async usage() { if (this.usageRecord === 'broken') throw new Error('db down'); return this.usageRecord as never; }
   override async effectReceipt(_repo: number, _id: string, effect: string) { return effect === 'coding-route' ? this.routeReceipt : null; }
   override async saveValidation(_repo: number, _id: string, report: ValidationReport) { this.validationState = report; }
   override async cancel() { this.row!.cancelled = true; this.row!.approved = false; }
@@ -211,6 +213,14 @@ describe('durable result outbox', () => {
     expect((await f.controller.observations([id]))[0]!.route).toEqual({ record, agent });
     f.store.routeReceipt = { route: { used: 'maybe' }, agent };
     expect((await f.controller.observations([id]))[0]).not.toHaveProperty('route');
+  });
+  it('reports the recorded token usage of a run, and leaves it out when none is stored or the store fails', async () => {
+    const f = await fixture(false, true); await f.controller.start(f.admission); const id = f.admission.input.executionId;
+    expect((await f.controller.observations([id]))[0]).not.toHaveProperty('usage');
+    f.store.usageRecord = { executionId: id, costUsd: 2 };
+    expect((await f.controller.observations([id]))[0]!.usage).toEqual({ executionId: id, costUsd: 2 });
+    f.store.usageRecord = 'broken';
+    expect((await f.controller.observations([id]))[0]).not.toHaveProperty('usage');
   });
   it('persists a correlated coding artifact, publishes a draft result and reuses it after restart', async () => {
     const f = await fixture(true, true); await f.controller.start(f.admission); const row = f.store.row!;

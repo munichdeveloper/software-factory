@@ -108,5 +108,13 @@ describe('status comment: the model router of a coding run', () => {
       .toContain("the model router was not used (Jev's confidence was below the minimum, 31 %).");
     expect(statusComment(task, cfg, context)).not.toContain('**Model:**');
   });
+  it('shows what the latest attempt cost once the broker recorded it', async () => {
+    const { task, cfg } = await blockedTask('Done.', []);
+    const usage = { contractVersion: '1.0' as const, executionId: 'a'.repeat(32), worker: 'claude' as const, model: 'claude-opus-5-5', effort: 'high' as const, source: 'proxy' as const,
+      requests: 12, tokens: { input: 2000, output: 8000, cacheRead: 300000, cacheWrite: 20000 }, costUsd: 1.234, turns: 11, durationMs: 200000, outcome: 'success', budgetUsd: 10, budgetReached: false };
+    const text = statusComment({ ...task, latest: { ...task.latest!, runtime: { ...task.latest!.runtime!, usage } } }, cfg, context);
+    expect(text).toContain('**Usage:** $1.23, 322k input / 8k output tokens, 11 turns.');
+    expect(statusComment(task, cfg, context)).not.toContain('**Usage:**');
+  });
 });
 

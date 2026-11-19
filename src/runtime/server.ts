@@ -52,7 +52,7 @@ const send = (response: ServerResponse, code: number, body: unknown) => { respon
  * broker's own schedule and, while it still sends them, the SF Manager. The actor of a Manager call never grants execution.
  */
 /** Observations as the HTTP API answers them: without the broker-internal routing decision (see observationSchema). */
-const wire = <T extends { route?: unknown }>(observation: T): Omit<T, 'route'> => { const { route: _route, ...rest } = observation; void _route; return rest; };
+const wire = <T extends { route?: unknown; usage?: unknown }>(observation: T): Omit<T, 'route' | 'usage'> => { const { route: _route, usage: _usage, ...rest } = observation; void _route; void _usage; return rest; };
 export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor' | 'queue'>) {
   const config = await binding.repository.config();
   if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { countLlmCall } from './meter.js';
 
 /**
  * Model router (Johannes, 2026-11-19): before a model does the work, a decision model (TypeSafe Jev through the
@@ -153,6 +154,7 @@ export async function routedCall<C extends RouterOption & { model: string; reaso
   configured: () => Promise<T>; fatal?: (error: unknown) => boolean;
 }): Promise<T> {
   const { routing, router, candidates } = options;
+  countLlmCall(options.repository, options.purpose);
   if (!routing || !router?.enabled || !candidates?.length) return options.configured();
   const record = await routing.route(options.repository, options.purpose, options.state(), candidates, router);
   const candidate = record.used ? candidates.find(c => c.id === record.choice) : undefined;

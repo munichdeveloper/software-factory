@@ -53,9 +53,10 @@ describe('private runtime HTTP boundaries', () => {
     expect((await f.call('/v1/repositories/42/reconcile', { actor: 'attacker' })).status).toBe(409);
     expect((await f.call('/v1/repositories/42/reconcile', { actor: 'maintainer', shell: 'id' })).status).toBe(400);
   });
-  it('leaves the broker-internal routing decision out of observations it answers over HTTP', async () => {
+  it('leaves the broker-internal routing decision and usage out of observations it answers over HTTP', async () => {
     const f = await fixture(), observation = { issueNumber: 1, executionId: 'a'.repeat(32), status: 'running',
-      route: { record: { used: false, purpose: 'coding', reason: 'no-key', code: null, choice: null, confidence: null, model: 'typesafe/jev-1.14' }, agent: null } };
+      route: { record: { used: false, purpose: 'coding', reason: 'no-key', code: null, choice: null, confidence: null, model: 'typesafe/jev-1.14' }, agent: null },
+      usage: { executionId: 'a'.repeat(32), costUsd: 1 } };
     f.controller.observations.mockResolvedValue([observation] as never);
     const answered = await (await f.call('/v1/repositories/42/observations', { executionIds: ['a'.repeat(32)] })).json();
     expect(answered).toEqual([{ issueNumber: 1, executionId: 'a'.repeat(32), status: 'running' }]);
