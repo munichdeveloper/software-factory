@@ -65133,6 +65133,38 @@ function agentRules(entry, context2) {
   }
 }
 var codingAgentSchema = external_exports.strictObject({ agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort.default("high") }).superRefine((entry, context2) => agentRules(entry, context2));
+var routerOptionId = external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
+var routerDescription = external_exports.string().min(1).max(300);
+var codingCandidateSchema = external_exports.strictObject({
+  id: routerOptionId,
+  agent: codingAgentName,
+  model: codingModel,
+  reasoningEffort: codingEffort,
+  description: routerDescription
+}).superRefine((entry, context2) => agentRules(entry, context2));
+var llmCandidateSchema = external_exports.strictObject({
+  id: routerOptionId,
+  provider: external_exports.enum(["claude", "openai"]),
+  model: codingModel,
+  reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh"]),
+  description: routerDescription
+}).superRefine((entry, context2) => {
+  if (entry.provider === "claude" !== /^claude-/.test(entry.model)) context2.addIssue({ code: "custom", path: ["model"], message: "provider claude needs a Claude model, provider openai a non-Claude model" });
+});
+var routerCandidates = (candidate) => external_exports.strictObject({ candidates: external_exports.array(candidate).min(2).max(6) }).superRefine((value, context2) => {
+  if (new Set(value.candidates.map((c) => c.id)).size !== value.candidates.length) context2.addIssue({ code: "custom", path: ["candidates"], message: "candidate ids must be unique" });
+});
+var routerSchema = external_exports.strictObject({
+  enabled: external_exports.boolean().default(true),
+  model: external_exports.string().regex(/^~?[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]{0,80}$/).default("typesafe/jev-1.14"),
+  minConfidence: external_exports.number().min(0).max(1).default(0.5),
+  timeoutSeconds: bounded(1, 30, 10),
+  /** First attempts of coding runs (Temporal engine); escalated attempts keep retryAgents. */
+  coding: routerCandidates(codingCandidateSchema).optional(),
+  review: routerCandidates(llmCandidateSchema).optional(),
+  risk: routerCandidates(llmCandidateSchema).optional(),
+  planner: routerCandidates(llmCandidateSchema).optional()
+});
 var configSchema = external_exports.strictObject({
   version: external_exports.literal(1),
   factory: external_exports.strictObject({ enabled: external_exports.boolean().default(true), scope: external_exports.string().min(1).max(4e3) }),
@@ -65336,8 +65368,10 @@ var configSchema = external_exports.strictObject({
       pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
   }).prefault({}) }).prefault({}),
-  monitoring: monitoringSchema.partial().optional()
+  monitoring: monitoringSchema.partial().optional(),
+  router: routerSchema.optional()
 }).superRefine((config2, context2) => {
+  if (config2.router?.coding && config2.execution.engine !== "temporal") context2.addIssue({ code: "custom", path: ["router", "coding"], message: "router.coding requires execution.engine temporal" });
   if (config2.workers.coding && config2.execution.engine !== "temporal") {
     if (config2.workers.coding.retryAgents) context2.addIssue({ code: "custom", path: ["workers", "coding", "retryAgents"], message: "retryAgents requires execution.engine temporal" });
     if (config2.workers.coding.agents) context2.addIssue({ code: "custom", path: ["workers", "coding", "agents"], message: "agents requires execution.engine temporal" });
