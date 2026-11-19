@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertCanaryConfig, canaryRepository, runCanary, type CanaryPorts } from '../src/runtime/canary.js';
+import { assertCanaryConfig, bindCanaryRepository, canaryRepository, runCanary, type CanaryPorts } from '../src/runtime/canary.js';
 import { marker, type HarnessEvent } from '../src/state/events.js';
 import type { RuntimeObservation } from '../src/runtime/contract.js';
 import type { Comment, Issue } from '../src/types.js';
@@ -75,10 +75,21 @@ describe('deployment canary (software-factory#27)', () => {
     twice.ports.comments = async n => { const c = twice.w.comments.get(n) ?? []; return c.map((x, i) => i === 1 ? { ...x, body: x.body.replace(id, 'f'.repeat(32)) } : x); };
     expect(await runCanary(twice.ports, { release: 'e'.repeat(40), timeoutMs: 60000 })).toMatchObject({ ok: false, stage: 'intent', detail: '2 intents instead of exactly one' });
   });
+  it('asks the App for the installation when none is configured and refuses one that is not allow-listed', async () => {
+    const asked: string[] = [];
+    const lookup = async (owner: string, repo: string) => { asked.push(`${owner}/${repo}`); return 7; };
+    expect(await bindCanaryRepository({ repositoryId: 1, repository: 'o/r' }, '5,7', lookup)).toEqual({ repositoryId: 1, repository: 'o/r', githubInstallationId: 7 });
+    expect(asked).toEqual(['o/r']);
+    expect(await bindCanaryRepository({ repositoryId: 1, repository: 'o/r', githubInstallationId: 5 }, '5', lookup)).toMatchObject({ githubInstallationId: 5 });
+    expect(asked).toHaveLength(1);
+    await expect(bindCanaryRepository({ repositoryId: 1, repository: 'o/r' }, '5', lookup)).rejects.toThrow('CANARY_INSTALLATION_NOT_ALLOWLISTED');
+    await expect(bindCanaryRepository({ repositoryId: 1, repository: 'o/r', githubInstallationId: 5 }, undefined, lookup)).rejects.toThrow('CANARY_INSTALLATION_NOT_ALLOWLISTED');
+  });
   it('is configured through FACTORY_CANARY_REPOSITORY and runs the test worker only', () => {
     expect(canaryRepository(undefined)).toBeNull(); expect(canaryRepository(' ')).toBeNull();
     expect(canaryRepository('{"repositoryId":1,"repository":"o/r","githubInstallationId":2}')).toEqual({ repositoryId: 1, repository: 'o/r', githubInstallationId: 2 });
-    expect(() => canaryRepository('{"repositoryId":1,"repository":"o/r"}')).toThrow();
+    expect(canaryRepository('{"repositoryId":1,"repository":"o/r"}')).toEqual({ repositoryId: 1, repository: 'o/r' });
+    expect(() => canaryRepository('{"repositoryId":1}')).toThrow();
     const cfg = config();
     expect(assertCanaryConfig(cfg)).toBe(cfg);
     expect(() => assertCanaryConfig({ ...cfg, workers: { ...cfg.workers, coding: { enabled: true } as never } })).toThrow('CANARY_CODING_FORBIDDEN');

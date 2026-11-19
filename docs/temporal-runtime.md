@@ -160,3 +160,32 @@ Where a repository enables `merge`, the broker reviews and merges the pull reque
 **Token usage (0.17.0).** Every coding run that reaches the agent leaves a usage record: the harness's Claude credential proxy counts the tokens the API reports in each response (also for runs that are killed or fail), Claude Code adds its dollar estimate, turns and outcome, and for Codex the session log's token counts are read. The executor uploads it as `coding-usage-<executionId>` for every run (30 days), the broker stores it in `factory_runtime_usage`, logs one `factory-usage` line and shows it in the status comment (`**Usage:**`). Each attempt is capped at `workers.coding.maxCostUsd` (default 10 $; Claude Code `--max-budget-usd`, Codex has no cap). With `FACTORY_USAGE_ALERT_CHANNEL` Slack hears about a run at or above `FACTORY_USAGE_RUN_ALERT_USD` (default 6 $) or `FACTORY_USAGE_RUN_ALERT_OUTPUT_TOKENS` output tokens (default 200000), a run stopped by its cap, a run that used tokens without reporting a result, a repository whose spend of the UTC day reaches `FACTORY_USAGE_DAY_ALERT_USD` (default 30 $, once a day), and the broker's own model calls (planner, merge review, risk) when one repository and purpose reaches `FACTORY_LLM_CALLS_ALERT_PER_HOUR` calls in an hour (default 20; a loop). Each morning from 06:00 UTC the previous day's spend per repository is posted. Broker Claude calls log their tokens as `factory-llm-usage`.
 
 **Failure diagnosis (0.17.3).** When Claude Code exits non-zero or ends without a clean structured message, the `code / code` job log of the executor run shows `diagnosis:` lines: `is_error`, `subtype`, whether `structured_output` is present, Claude Code's error text (for example an API credit or rate-limit error) and the credential proxy's non-2xx upstream answers (`Upstream <status> <path>: <type>: <message>`). A rejected result names its reason (`Coding request or artifact rejected: <field>: <problem>`). Lines are bounded and contain no tool inputs, outputs or credentials (dev-agent-harness#15).
+
+## Deployment canary
+
+A healthy broker is not yet a working chain: on 2026-11-11 a freshly deployed broker was healthy while every new start was
+denied. After each runtime deployment the docker-ssh deployment therefore runs `operations/temporal-runtime/canary.sh`
+(`deploy.verify.script`) on the host (software-factory#27). It runs `node dist/runtime/main.js canary` inside the broker
+container, which
+
+1. closes canary issues (`sf:canary`) left over from earlier deployments,
+2. creates one canary task (`harness:managed`, `sf:canary`) in the acceptance repository,
+3. waits, within `SF_CANARY_TIMEOUT_SECONDS` (default 840), for exactly one intent, exactly one Temporal run, a journaled
+   successful result and a lifecycle label that matches the reconstructed facts; the broker's own reconciliation
+   schedule picks the task up,
+4. closes the canary issue, passed or not.
+
+The script then checks that the broker logged no reconciliation error for the acceptance repository meanwhile. A failure
+or time-out fails the deployment job and names the stage that did not complete (`create`, `intent`, `temporal-run`,
+`result`, `lifecycle` or `reconcile`). `deploy.verify.rollback` decides whether it also restarts the previous release.
+
+The acceptance repository is configured through the deployment, never on the host: `FACTORY_CANARY_REPOSITORY`
+(`{"repositoryId": …, "repository": "owner/name"}`, optionally with `"githubInstallationId": …`) in the broker's
+deployment environment; this host sets it in `compose.production.yaml`. Without an installation id the broker asks its
+GitHub App for the repository's installation; a canary that cannot be bound is logged (`"outcome":"unbound"`) and never
+stops the broker from serving the other repositories.
+The broker binds it like a static registry entry, but without a ready-label grant and without a manual gate, so the canary
+needs no person; its configuration must enable the test worker and must not enable coding (`CANARY_CODING_FORBIDDEN`), so
+it needs no model secret and changes no code. Its installation must be in `GITHUB_ALLOWED_INSTALLATION_IDS` and its
+`manager.trustedActors` must name the broker's App bot. Without the variable the canary is skipped and the deployment
+passes as before.

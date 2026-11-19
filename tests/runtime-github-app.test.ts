@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { appCommitIdentity, scopedRuntimeGitHub } from '../src/runtime/github-app.js';
+import { appCommitIdentity, appInstallationId, scopedRuntimeGitHub } from '../src/runtime/github-app.js';
 import { Octokit } from '@octokit/rest';
 
 describe('runtime GitHub App scope', () => {
@@ -36,6 +36,16 @@ describe('runtime GitHub App scope', () => {
       return Response.json({ message: 'Repository not allowed' }, { status: 403 });
     });
     await expect(api.repos.get({ owner: 'test', repo: 'repo-a' })).rejects.toThrow(); expect(requests).toBe(1);
+  });
+  it('finds a repository\'s installation with the App JWT and creates no installation token', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+    const urls: string[] = [];
+    const id = await appInstallationId({ appId: '1', privateKey }, 'test', 'repo-a', async (input, init) => {
+      urls.push(String(input)); expect(new Headers(init?.headers).get('authorization')).toMatch(/^bearer /i);
+      return Response.json({ id: 77 });
+    });
+    expect(id).toBe(77);
+    expect(urls).toEqual(['https://api.github.com/repos/test/repo-a/installation']);
   });
   it('asks with the last ETag and serves an unchanged answer from the cache, as a copy', async () => {
     const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });

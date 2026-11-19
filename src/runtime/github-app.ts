@@ -51,6 +51,13 @@ export class ConditionalCache {
 }
 const conditional = new ConditionalCache();
 setInterval(() => { const summary = usage.flush(); if (summary) console.log(JSON.stringify(summary)); }, 60000).unref();
+/** The App's installation on one repository, asked with the App's own JWT (no installation token is created). */
+export async function appInstallationId(options: { appId: string; privateKey: string }, owner: string, repo: string, fetcher: typeof fetch = fetch): Promise<number> {
+  const silent = { debug() {}, info() {}, warn() {}, error() {} };
+  const app = new Octokit({ authStrategy: createAppAuth, auth: { appId: options.appId, privateKey: options.privateKey.replaceAll('\\n', '\n') }, request: { timeout: 20000, fetch: fetcher }, log: silent });
+  const { data } = await app.apps.getRepoInstallation({ owner, repo });
+  return z.number().int().positive().safe().parse(data.id);
+}
 /** The App key stays in the broker; EVERY installation token is limited to one numeric repository. */
 /** What the broker's coding, publishing and merge paths ask for. Other uses name their own, narrower permissions. */
 export const runtimePermissions = { contents: 'write', issues: 'write', pull_requests: 'write', actions: 'write' } as const;
