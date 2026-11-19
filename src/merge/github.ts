@@ -1,5 +1,5 @@
 import { Octokit } from '@octokit/rest';
-import type { MergeFacts, MergePort, ReviewInput } from './contract.js';
+import { needsHumanLabel, type MergeFacts, type MergePort, type ReviewInput } from './contract.js';
 
 const forbidden = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && error.status === 403;
 
@@ -153,6 +153,24 @@ export class GitHubMergePort implements MergePort {
     }
     // GitHub creates a missing label when it is added to an issue or pull request.
     if (!labels.some(l => l.name === label)) await this.api.issues.addLabels({ ...this.target, issue_number: number, labels: [label] });
+  }
+  async pushedSince(from: string, head: string) {
+    const commits: { author?: { login?: string } | null; committer?: { login?: string } | null }[] = [];
+    let status: string | undefined;
+    for (let page = 1; ; page++) {
+      const { data } = await this.api.repos.compareCommitsWithBasehead({ ...this.target, basehead: `${from}...${head}`, per_page: 100, page });
+      status = data.status; commits.push(...data.commits);
+      if (data.commits.length < 100 || commits.length >= data.total_commits) break;
+    }
+    // 'ahead': head is from plus commits; anything else (diverged, rewritten history) is no continuation of the published commit.
+    if (status !== 'ahead') return null;
+    return commits.map(c => c.author?.login ?? c.committer?.login ?? '');
+  }
+  async needsHuman(number: number, on: boolean) {
+    if (on) { await this.api.issues.addLabels({ ...this.target, issue_number: number, labels: [needsHumanLabel] }); return; }
+    await this.api.issues.removeLabel({ ...this.target, issue_number: number, name: needsHumanLabel }).catch((error: unknown) => {
+      if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error;
+    });
   }
   async canApprove(login: string) {
     try { return ['admin', 'maintain', 'write'].includes((await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login })).data.permission); }

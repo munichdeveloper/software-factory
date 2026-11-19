@@ -146,3 +146,29 @@ it('reads check states from the Actions jobs of the exact head where the token h
   expect(facts.checks).toEqual([{ name: 'test-and-build (24)', state: 'success' }, { name: 'docker', state: 'in_progress' }]);
   expect(x.calls.some(c => c.path.endsWith('/actions/runs/8/jobs'))).toBe(false);
 });
+it.each([
+  ['ahead', ['maintainer', 'web-flow-person', '']],
+  ['diverged', null]
+] as const)('lists the authors of commits pushed after a published head (%s)', async (status, expected) => {
+  const paths: string[] = [];
+  const fetcher = (async input => {
+    const path = decodeURIComponent(new URL(String(input)).pathname); paths.push(path);
+    return new Response(JSON.stringify({ status, total_commits: 3, commits: [
+      { author: { login: 'maintainer' }, committer: { login: 'web-flow' } },
+      { author: null, committer: { login: 'web-flow-person' } },
+      { author: null, committer: null }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  expect(await new GitHubMergePort('owner/target', 'token', 'Community', 'sf:automerge', fetcher).pushedSince(base, head)).toEqual(expected);
+  expect(paths).toEqual([`/repos/owner/target/compare/${base}...${head}`]);
+});
+it('adds and removes the hand-over label, tolerating a label that is already gone', async () => {
+  const calls: string[] = [];
+  const fetcher = (async (input, init) => {
+    const path = decodeURIComponent(new URL(String(input)).pathname); calls.push(`${init?.method ?? 'GET'} ${path}`);
+    if (init?.method === 'DELETE') return new Response('{"message":"Label does not exist"}', { status: 404, headers: { 'content-type': 'application/json' } });
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  const api = new GitHubMergePort('owner/target', 'token', 'Community', 'sf:automerge', fetcher);
+  await api.needsHuman(52, true); await api.needsHuman(52, false);
+  expect(calls).toEqual(['POST /repos/owner/target/issues/52/labels', 'DELETE /repos/owner/target/issues/52/labels/sf:needs-human']);
+});

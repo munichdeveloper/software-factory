@@ -31,6 +31,9 @@ notifications:
       grant_required: # Optional; leave it out to keep it off.
         enabled: true
         channel: null
+      handover_required: # Optional; leave it out to keep it off.
+        enabled: true
+        channel: null
       issue_created:
         enabled: true
         channel: null # Optional override; null inherits the default channel.
@@ -88,6 +91,15 @@ authorization. Existing installations continue with notifications disabled.
   waiting for the grant and is not announced. `since` does not apply: when the event
   is turned on, the tasks waiting at that moment are announced once (within
   `maxPerRun`). Leaving it out keeps it off and the configuration hash unchanged.
+- `handover_required`: the independent merge review handed a Factory pull request over
+  to a person, because it asked for changes while `execution.rework` is off, or because
+  it deferred the decision (`defer`, with or without rework). The broker records a
+  trusted `merge_handover` event on the PR and labels it `sf:needs-human`; the message
+  names the repository, PR number and title and what is needed, and links the PR. Each
+  review is announced once; a hand-over for a head the PR no longer has, or for a closed
+  PR, is not announced. Commits that people with write access push to fix the findings
+  are adopted (see `execution.rework` in the configuration reference). Leaving it out
+  keeps it off and the configuration hash unchanged.
   Requires Factory 0.10.2 in the repository, since older releases reject the key.
 - `issue_created`: a follow-up actually created by the SF bot, correlated with a
   mandatory trusted creation intent on the parent Issue. No notifications for

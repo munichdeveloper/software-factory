@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { Comment } from '../types.js';
 
+/** A Factory pull request the review sent back to a person (no automatic rework, or a decision that needs a human). */
+export const needsHumanLabel = 'sf:needs-human';
 export const mergeReviewSchema = z.strictObject({ decision: z.enum(['merge', 'update_branch', 'request_changes', 'defer']),
   reason: z.string().min(1).max(3000), findings: z.array(z.strictObject({
     path: z.string().max(500), severity: z.enum(['blocking', 'warning']), explanation: z.string().min(1).max(2000)
@@ -39,4 +41,11 @@ export interface MergePort {
    * Returns how many runs were re-run.
    */
   rerunFailed?(number: number, head: string, checks: string[]): Promise<number>;
+  /**
+   * Logins of the authors of the commits `head` adds on top of `from` (the committer where GitHub knows no author account,
+   * '' where it knows neither); null when `head` does not contain `from`.
+   */
+  pushedSince?(from: string, head: string): Promise<string[] | null>;
+  /** Adds (`on`) or removes the pull request's `sf:needs-human` label (display and filter only; never read as authorization). */
+  needsHuman?(number: number, on: boolean): Promise<void>;
 }

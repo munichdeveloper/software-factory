@@ -277,6 +277,8 @@ export const configSchema = z.strictObject({
       approval_required: notificationRule.optional(),
       // A task that waits for nothing but a person's `harness:ready` grant (ready-label repositories); optional for the same reason.
       grant_required: notificationRule.optional(),
+      // A Factory PR the review handed over to a person (merge_handover); optional for the same reason.
+      handover_required: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})

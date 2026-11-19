@@ -65438,6 +65438,8 @@ var configSchema = external_exports.strictObject({
       approval_required: notificationRule.optional(),
       // A task that waits for nothing but a person's `harness:ready` grant (ready-label repositories); optional for the same reason.
       grant_required: notificationRule.optional(),
+      // A Factory PR the review handed over to a person (merge_handover); optional for the same reason.
+      handover_required: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
@@ -69811,6 +69813,7 @@ async function authorizeManagedLabel(issue2, events, canApprove, trustedActors, 
 }
 
 // src/merge/contract.ts
+var needsHumanLabel = "sf:needs-human";
 var mergeReviewSchema = external_exports.strictObject({
   decision: external_exports.enum(["merge", "update_branch", "request_changes", "defer"]),
   reason: external_exports.string().min(1).max(3e3),
@@ -69874,6 +69877,15 @@ var eventSchema = external_exports.strictObject({
       executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
       reviewKey: external_exports.string().length(64),
       review: mergeReviewSchema
+    }),
+    // Written once per review that hands a Factory pull request over to a person; the Slack notice handover_required reads it.
+    external_exports.strictObject({
+      type: external_exports.literal("merge_handover"),
+      prNumber: external_exports.number().int().positive(),
+      head: external_exports.string().length(40),
+      base: external_exports.string().length(40),
+      reviewKey: external_exports.string().length(64),
+      decision: external_exports.enum(["request_changes", "defer"])
     }),
     external_exports.strictObject({ type: external_exports.literal("merge_status"), head: external_exports.string().length(40), base: external_exports.string().length(40), reason: external_exports.string().max(3e3) }),
     external_exports.strictObject({ type: external_exports.literal("decision"), action: external_exports.string().max(3e4), outcome: external_exports.enum(["allow", "deny", "approval", "executed"]), reason: external_exports.string().max(2e3) })
@@ -70597,7 +70609,8 @@ var labels = {
   issue_created: "SF: Issue autonom angelegt",
   pr_merged: "SF: PR durch Bot gemergt",
   approval_required: "SF: PR wartet auf Freigabe (Risiko \xFCber Schwelle)",
-  grant_required: "SF: Issue wartet auf Freigabe (harness:ready)"
+  grant_required: "SF: Issue wartet auf Freigabe (harness:ready)",
+  handover_required: "SF: PR braucht einen Menschen (KI-Review)"
 };
 var runStartWindowMs = 24 * 60 * 60 * 1e3;
 var lateStartMs = 10 * 60 * 1e3;
@@ -70734,6 +70747,7 @@ async function deliverNotifications(github, config2, snapshot, sink2, correlatio
       channel,
       ...notification.executionId ? { executionId: notification.executionId } : {},
       ...notification.approvalId ? { approvalId: notification.approvalId } : {},
+      ...notification.reviewKey ? { reviewKey: notification.reviewKey } : {},
       ...notification.event === "grant_required" ? { after: notification.after ?? null } : {}
     });
     const deliveries = (await github.comments(journal)).flatMap((c) => {
@@ -70838,6 +70852,30 @@ Decision: ${intent.actionId}
         repository: github.repository,
         approvalId: e.data.approvalId,
         detail: `Risiko ${e.data.riskClass} liegt \xFCber der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}`
+      });
+    }
+  }
+  if (settings.events.handover_required?.enabled) for (const pr of snapshot.prs) {
+    if (pr.state !== "open" || !pr.headSha) continue;
+    let comments;
+    try {
+      comments = await github.comments(pr.number);
+    } catch (error62) {
+      if (error62 instanceof Error && error62.message === "ISSUE_OUTSIDE_RUNTIME_SCOPE") continue;
+      throw error62;
+    }
+    for (const c of comments) {
+      const e = decodeEvent(c, config2.manager.trustedActors);
+      if (e?.data.type !== "merge_handover" || e.data.prNumber !== pr.number || e.data.head !== pr.headSha || !afterStart(e.at)) continue;
+      await deliver(pr.number, {
+        event: "handover_required",
+        number: pr.number,
+        title: pr.title ?? `PR #${pr.number}`,
+        actor: "Software Factory",
+        url: `https://github.com/${github.repository}/pull/${pr.number}`,
+        repository: github.repository,
+        reviewKey: e.data.reviewKey,
+        detail: e.data.decision === "defer" ? "Das KI-Review \xFCberl\xE4sst die Entscheidung einem Menschen (defer). Begr\xFCndung im PR." : "Das KI-Review verlangt \xC4nderungen, automatische Nacharbeit (execution.rework) ist aus. Bitte nachbessern; Commits mit Schreibrecht \xFCbernimmt die Factory."
       });
     }
   }
@@ -72217,6 +72255,27 @@ var GitHubMergePort = class {
     }
     if (!labels2.some((l) => l.name === label2)) await this.api.issues.addLabels({ ...this.target, issue_number: number4, labels: [label2] });
   }
+  async pushedSince(from, head) {
+    const commits = [];
+    let status;
+    for (let page = 1; ; page++) {
+      const { data } = await this.api.repos.compareCommitsWithBasehead({ ...this.target, basehead: `${from}...${head}`, per_page: 100, page });
+      status = data.status;
+      commits.push(...data.commits);
+      if (data.commits.length < 100 || commits.length >= data.total_commits) break;
+    }
+    if (status !== "ahead") return null;
+    return commits.map((c) => c.author?.login ?? c.committer?.login ?? "");
+  }
+  async needsHuman(number4, on) {
+    if (on) {
+      await this.api.issues.addLabels({ ...this.target, issue_number: number4, labels: [needsHumanLabel] });
+      return;
+    }
+    await this.api.issues.removeLabel({ ...this.target, issue_number: number4, name: needsHumanLabel }).catch((error62) => {
+      if (!(error62 && typeof error62 === "object" && "status" in error62 && error62.status === 404)) throw error62;
+    });
+  }
   async canApprove(login) {
     try {
       return ["admin", "maintain", "write"].includes((await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login })).data.permission);
@@ -72290,7 +72349,7 @@ var safe = (s) => s.replaceAll("@", "@\u200B").replaceAll("<", "&lt;").replaceAl
 var factsKey = (f) => ({
   ...f,
   comments: [],
-  labels: f.labels.filter((l) => !l.startsWith("sf:risk-")).sort(),
+  labels: f.labels.filter((l) => !l.startsWith("sf:risk-") && l !== needsHumanLabel).sort(),
   nativeRequiredChecks: [...f.nativeRequiredChecks].sort(),
   checks: [...f.checks].sort((a, b) => `${a.name}:${a.state}`.localeCompare(`${b.name}:${b.state}`))
 });
@@ -72379,6 +72438,25 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
 ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${next}`)}`);
     await this.api.comment(task.number, journal + summary2.subarray(0, Math.max(0, 6e4 - Buffer.byteLength(journal) - 4)).toString("utf8"));
   }
+  /**
+   * Commits pushed onto a Factory pull request after it was published (a person fixed review findings, or updated the
+   * branch). They are adopted when every one of them comes from an account that may write to the repository, which could
+   * merge the pull request itself anyway: the new head then goes through the required checks, the validation workflow
+   * and a fresh review like any other head. Returns why the head is refused, or null when it is adopted.
+   */
+  async laterCommits(f, publishedHead) {
+    const refused = "Der Head entspricht nicht dem ver\xF6ffentlichten, validierten Commit; die Factory mergt keine fremden \xC4nderungen.";
+    if (!this.api.pushedSince) return refused;
+    const authors = await this.api.pushedSince(publishedHead, f.head);
+    if (!authors?.length) return `${refused} Der Head setzt den ver\xF6ffentlichten Commit nicht fort (umgeschriebene Historie).`;
+    const unique = [...new Set(authors)];
+    const trusted = await Promise.all(unique.map((a) => !!a && (this.config.manager.trustedActors.includes(a) || this.api.canApprove(a))));
+    const outsiders = unique.filter((_, i) => !trusted[i]).map((a) => a || "unbekannt");
+    if (outsiders.length) return `${refused} Nachtr\xE4gliche Commits ohne Schreibrecht im Repository: ${outsiders.join(", ")}.`;
+    await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
+    await this.explain(f, `Nachtr\xE4gliche Commits von ${unique.join(", ")} (Schreibrecht im Repository) werden \xFCbernommen: der neue Head durchl\xE4uft Pflichtpr\xFCfungen, Validierung und ein neues KI-Review.`);
+    return null;
+  }
   ownership(f, snapshot) {
     const url2 = `https://github.com/${this.api.repository}/pull/${f.number}`;
     for (const task of snapshot.issues) {
@@ -72447,8 +72525,12 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
             continue;
           }
           if (ownership.publishedHead && f.head !== ownership.publishedHead && !this.events(f).some((e) => e.data.type === "branch_update")) {
-            await this.explain(f, "Der Head entspricht nicht dem ver\xF6ffentlichten, validierten Commit; die Factory mergt keine fremden \xC4nderungen.");
-            continue;
+            phase = "Nachtr\xE4gliche Commits pr\xFCfen";
+            const refusal = await this.laterCommits(f, ownership.publishedHead);
+            if (refusal) {
+              await this.explain(f, refusal);
+              continue;
+            }
           }
           if (f.draft && f.state === "open" && this.api.ready && !f.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
             phase = "Entwurf freigeben";
@@ -72593,6 +72675,20 @@ ${riskNote ? `${riskNote}
         if (owner && !adopted && (review.decision === "request_changes" || review.findings.some((x) => x.severity === "blocking"))) {
           phase = "Nacharbeit an der Aufgabe vermerken";
           await this.changesRequested(f, owner, snapshot, reviewKey, review);
+        }
+        const blocked2 = review.decision === "request_changes" || review.findings.some((x) => x.severity === "blocking");
+        const handOver = !!owner && !adopted && (blocked2 && !this.config.execution.rework || review.decision === "defer");
+        if (handOver) await this.event(f, `merge-handover:${reviewKey}`, {
+          type: "merge_handover",
+          prNumber: number4,
+          head: f.head,
+          base: f.base,
+          reviewKey,
+          decision: review.decision === "defer" ? "defer" : "request_changes"
+        });
+        if (this.api.needsHuman && handOver !== f.labels.includes(needsHumanLabel)) {
+          phase = "\xDCbergabe-Label setzen";
+          await this.api.needsHuman(number4, handOver);
         }
         if (rejects(review)) continue;
         const live = await this.api.facts(number4);
