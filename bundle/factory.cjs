@@ -16470,8 +16470,8 @@ __export(node_exports2, {
   resolvePath: () => resolvePath,
   setupSkills: () => setupSkills
 });
-function resolveMaxBytes(configured) {
-  return configured === void 0 ? DEFAULT_MAX_FILE_BYTES : configured;
+function resolveMaxBytes(configured2) {
+  return configured2 === void 0 ? DEFAULT_MAX_FILE_BYTES : configured2;
 }
 function rejectUnrestrictedPaths(value) {
   if (value === void 0)
@@ -29367,7 +29367,7 @@ function withoutCompactionIncompatibleParams(params) {
     kept.output_config = withoutFormat(kept.output_config);
   }
   if (Array.isArray(kept.fallbacks)) {
-    kept.fallbacks = kept.fallbacks.map((fallback) => fallback.output_config ? { ...fallback, output_config: withoutFormat(fallback.output_config) } : fallback);
+    kept.fallbacks = kept.fallbacks.map((fallback2) => fallback2.output_config ? { ...fallback2, output_config: withoutFormat(fallback2.output_config) } : fallback2);
   }
   return kept;
 }
@@ -64907,11 +64907,40 @@ var defaultModelPrices = {
   "claude-haiku-5-5": [0.1, 0.5, 0.01, 0.125],
   "claude-haiku-4-5": [1, 5, 0.1, 1.25]
 };
-var prices = defaultModelPrices;
-function priceOf(model2, tokens, table = prices) {
-  const price = table[model2];
-  if (!price || !tokens) return null;
-  return (tokens.input * price[0] + tokens.output * price[1] + tokens.cacheRead * price[2] + tokens.cacheWrite * price[3]) / 1e6;
+function modelKey(model2) {
+  return model2.trim().toLowerCase().replace(/\[[^\]]*\]$/, "").replace(/^.*\//, "").replace(/:.*$/, "").replace(/-\d{8}$/, "").replace(/\./g, "-");
+}
+var validPrice = (value) => Array.isArray(value) && value.length === 4 && value.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0);
+function configuredModelPrices(env) {
+  const prices = {};
+  if (!env.FACTORY_MODEL_PRICES) return prices;
+  try {
+    const parsed = JSON.parse(env.FACTORY_MODEL_PRICES);
+    for (const [model2, value] of Object.entries(parsed)) if (validPrice(value)) prices[modelKey(model2)] = value;
+  } catch {
+    console.warn(JSON.stringify({ event: "factory-analytics", code: "INVALID_MODEL_PRICES" }));
+  }
+  return prices;
+}
+function modelPrices(env) {
+  const table = {};
+  for (const [model2, price] of Object.entries(defaultModelPrices)) table[modelKey(model2)] = price;
+  return { ...table, ...configuredModelPrices(env) };
+}
+var configured = {};
+var fallback = modelPrices({});
+var live;
+var costAt = (price, tokens) => (tokens.input * price[0] + tokens.output * price[1] + tokens.cacheRead * price[2] + tokens.cacheWrite * price[3]) / 1e6;
+function currentPrice(model2) {
+  const key = modelKey(model2);
+  if (configured[key]) return { price: configured[key], source: "configured" };
+  const fromList = live?.price(key);
+  if (fromList) return { price: fromList, source: "live" };
+  return fallback[key] ? { price: fallback[key], source: "table" } : null;
+}
+function priceCall(model2, tokens) {
+  const current = tokens ? currentPrice(model2) : null;
+  return current && tokens ? { costUsd: costAt(current.price, tokens), priceSource: current.source } : { costUsd: null, priceSource: null };
 }
 function recordLlmCall(provider, model2, effort2, tokens, outcome = "success") {
   try {
@@ -64929,7 +64958,7 @@ function recordLlmCall(provider, model2, effort2, tokens, outcome = "success") {
       model: model2,
       effort: effort2 ?? null,
       tokens,
-      costUsd: priceOf(model2, tokens),
+      ...priceCall(model2, tokens),
       outcome
     };
     void sink.recordLlmCall(record2).catch(() => console.warn(JSON.stringify({ event: "factory-analytics", code: "RECORD_FAILED", step: record2.step })));
@@ -71228,48 +71257,48 @@ var Manager = class {
     await this.event(action.issueNumber, `decision:${id}:${outcome}`, { type: "decision", action: JSON.stringify(action), outcome, reason });
   }
   async execute(action, task, snapshot) {
-    const live = await this.github.getIssue(task.issue.number);
-    if (taskVersion(live) !== action.taskVersion || !live.labels.includes(managedLabel)) throw new Error("Task changed during execution; deferred to next run");
-    if (live.labels.includes("harness:blocked") && (!task.issue.labels.includes("harness:blocked") || lastBlockLabelEventId(live) !== lastBlockLabelEventId(task.issue))) throw new Error("Block changed during execution; deferred to next run");
+    const live2 = await this.github.getIssue(task.issue.number);
+    if (taskVersion(live2) !== action.taskVersion || !live2.labels.includes(managedLabel)) throw new Error("Task changed during execution; deferred to next run");
+    if (live2.labels.includes("harness:blocked") && (!task.issue.labels.includes("harness:blocked") || lastBlockLabelEventId(live2) !== lastBlockLabelEventId(task.issue))) throw new Error("Block changed during execution; deferred to next run");
     switch (action.kind) {
       case "transition": {
         let journaled = false;
         for (const execution of task.executions) {
           if (execution.result && !task.events.some((e) => e.data.type === "result" && e.data.result.executionId === execution.input.executionId)) {
-            await this.event(live.number, `result:${execution.input.executionId}`, { type: "result", result: execution.result });
+            await this.event(live2.number, `result:${execution.input.executionId}`, { type: "result", result: execution.result });
             journaled = true;
           }
         }
-        if (action.status === "ready" && snapshot.readyIsGrant && !live.labels.includes("harness:ready")) return journaled;
-        const labels2 = withStatus(live, action.status);
-        if ([...live.labels].sort().join("\0") === [...labels2].sort().join("\0")) return journaled;
-        if (action.status === "blocked" && !live.labels.includes("harness:blocked")) {
-          const floor = lastBlockLabelEventId(live);
+        if (action.status === "ready" && snapshot.readyIsGrant && !live2.labels.includes("harness:ready")) return journaled;
+        const labels2 = withStatus(live2, action.status);
+        if ([...live2.labels].sort().join("\0") === [...labels2].sort().join("\0")) return journaled;
+        if (action.status === "blocked" && !live2.labels.includes("harness:blocked")) {
+          const floor = lastBlockLabelEventId(live2);
           const id = hash2({ actionId: actionId(action, policyVersion(this.config)), floor });
-          await this.event(live.number, `block:${id}`, {
+          await this.event(live2.number, `block:${id}`, {
             type: "block_intent",
             taskVersion: task.version,
             cause: task.automaticBlockCause ?? "planner",
             afterLabelEventId: floor
           });
         }
-        await this.github.updateIssue(live.number, { labels: labels2 });
+        await this.github.updateIssue(live2.number, { labels: labels2 });
         return true;
       }
       case "close_issue":
-        await this.github.updateIssue(live.number, { state: "closed", labels: withStatus(live, "done") });
+        await this.github.updateIssue(live2.number, { state: "closed", labels: withStatus(live2, "done") });
         return true;
       case "approve_task": {
         if (snapshot.readyIsGrant) return false;
-        const labels2 = withStatus(live, "ready");
-        if ([...live.labels].sort().join("\0") === [...labels2].sort().join("\0")) return false;
-        await this.github.updateIssue(live.number, { labels: labels2 });
+        const labels2 = withStatus(live2, "ready");
+        if ([...live2.labels].sort().join("\0") === [...labels2].sort().join("\0")) return false;
+        await this.github.updateIssue(live2.number, { labels: labels2 });
         return true;
       }
       case "prioritize": {
         const label2 = `harness:priority-${action.priority}`;
-        if (live.labels.includes(label2) && live.labels.filter((l) => priorityLabels.includes(l)).length === 1) return false;
-        await this.github.updateIssue(live.number, { labels: [...live.labels.filter((l) => !priorityLabels.includes(l)), label2] });
+        if (live2.labels.includes(label2) && live2.labels.filter((l) => priorityLabels.includes(l)).length === 1) return false;
+        await this.github.updateIssue(live2.number, { labels: [...live2.labels.filter((l) => !priorityLabels.includes(l)), label2] });
         return true;
       }
       case "create_followup": {
@@ -71277,7 +71306,7 @@ var Manager = class {
         const key = hash2({ repository: this.github.repository.toLowerCase(), key: f.key });
         const marker2 = `<!-- harness:followup:${key} -->`;
         if (snapshot.issues.some((i) => i.body.includes(marker2))) return false;
-        await this.event(live.number, `issue-creation:${key}:${actionId(action, policyVersion(this.config))}`, {
+        await this.event(live2.number, `issue-creation:${key}:${actionId(action, policyVersion(this.config))}`, {
           type: "issue_creation_intent",
           followupKey: key,
           actionId: actionId(action, policyVersion(this.config))
@@ -71302,29 +71331,29 @@ ${marker2}`;
       case "start_worker":
       case "retry_worker": {
         const attempt = action.attempt;
-        const id = executionId(this.github.repository, live, attempt);
+        const id = executionId(this.github.repository, live2, attempt);
         const rework = action.kind === "retry_worker" && task.reworkable && this.config.execution.engine === "temporal";
         const retry = action.kind === "retry_worker" && !rework && task.latest?.result?.status === "failed" && this.config.execution.engine === "temporal";
         const previous = rework || retry ? task.latest.input.executionId : void 0;
         const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework && task.reworkCause !== "conflict" || task.executions.some((e) => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== "success" && e.result.error !== infrastructureFailureCode));
         if (this.config.execution.engine === "temporal" && this.options.workerRuntime?.preflight) {
           try {
-            await this.options.workerRuntime.preflight(live.number, previous);
+            await this.options.workerRuntime.preflight(live2.number, previous);
           } catch (error62) {
             if (!(error62 instanceof RuntimeAdmissionRejected)) throw error62;
-            this.rejections.push({ issueNumber: live.number, code: error62.code, recorded: false });
+            this.rejections.push({ issueNumber: live2.number, code: error62.code, recorded: false });
             return false;
           }
         }
         const input2 = workerInputSchema.parse({
           contractVersion: "1.0",
           repository: this.github.repository,
-          issueNumber: live.number,
+          issueNumber: live2.number,
           taskVersion: action.taskVersion,
-          description: live.body,
+          description: live2.body,
           acceptanceCriteria: task.criteria,
           contextReferences: [
-            `https://github.com/${this.github.repository}/issues/${live.number}`,
+            `https://github.com/${this.github.repository}/issues/${live2.number}`,
             ...previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : [],
             ...escalate ? [escalationMarker] : [],
             // A rework after a merge review hands the worker what the review asked to change.
@@ -71336,23 +71365,23 @@ ${marker2}`;
           operation: this.config.workers.test.operation,
           worker: this.config.workers.coding && this.config.workers.coding.enabled ? "codex" : "test"
         });
-        await this.event(live.number, `intent:${id}`, { type: "intent", input: input2, actionId: actionId(action, policyVersion(this.config)), attempt });
+        await this.event(live2.number, `intent:${id}`, { type: "intent", input: input2, actionId: actionId(action, policyVersion(this.config)), attempt });
         if (this.config.execution.engine === "temporal") {
           if (!this.options.workerRuntime) throw new Error("Temporal runtime is required; legacy dispatch is forbidden");
           const receipt = await this.admit(input2, actionId(action, policyVersion(this.config)));
           if (!receipt) return false;
-          const fresh2 = await this.github.getIssue(live.number);
+          const fresh2 = await this.github.getIssue(live2.number);
           if (taskVersion(fresh2) === action.taskVersion && fresh2.state === "open" && !fresh2.labels.includes("harness:blocked")) {
-            await this.github.updateIssue(live.number, { labels: withStatus(fresh2, receipt.phase === "awaiting-approval" ? "awaiting-approval" : "running") });
+            await this.github.updateIssue(live2.number, { labels: withStatus(fresh2, receipt.phase === "awaiting-approval" ? "awaiting-approval" : "running") });
           }
           return true;
         }
         const existing = (await this.github.runs(this.config.manager.workflow)).find((r) => r.title === `Factory worker ${id}`);
-        if (!existing) await this.github.dispatch(this.config.manager.workflow, snapshot.defaultBranch, id, live.number);
+        if (!existing) await this.github.dispatch(this.config.manager.workflow, snapshot.defaultBranch, id, live2.number);
         const run = existing ?? (await this.github.runs(this.config.manager.workflow)).find((r) => r.title === `Factory worker ${id}`);
-        if (run) await this.event(live.number, `receipt:${id}`, { type: "receipt", executionId: id, runId: run.id });
-        const fresh = await this.github.getIssue(live.number);
-        if (taskVersion(fresh) === action.taskVersion && fresh.state === "open" && !fresh.labels.includes("harness:blocked")) await this.github.updateIssue(live.number, { labels: withStatus(fresh, "running") });
+        if (run) await this.event(live2.number, `receipt:${id}`, { type: "receipt", executionId: id, runId: run.id });
+        const fresh = await this.github.getIssue(live2.number);
+        if (taskVersion(fresh) === action.taskVersion && fresh.state === "open" && !fresh.labels.includes("harness:blocked")) await this.github.updateIssue(live2.number, { labels: withStatus(fresh, "running") });
         return true;
       }
       case "cancel_worker": {
@@ -71894,8 +71923,8 @@ var CodingRepository = class {
     return { sha: ref.object.sha, branch: repository.default_branch };
   }
   async publish(base, artifact, issue2, validationWorkflow) {
-    const live = await this.base();
-    if (live.branch !== base.branch || live.sha !== base.sha) throw new Error("Default branch moved; retry from fresh base");
+    const live2 = await this.base();
+    if (live2.branch !== base.branch || live2.sha !== base.sha) throw new Error("Default branch moved; retry from fresh base");
     const { data: parent } = await this.api.git.getCommit({ ...this.target, commit_sha: base.sha });
     const { data: entries } = await this.api.git.getTree({ ...this.target, tree_sha: parent.tree.sha, recursive: "1" });
     if (entries.truncated) throw new Error("Base tree truncated");
@@ -72776,21 +72805,21 @@ ${riskNote ? `${riskNote}
           await this.api.needsHuman(number4, handOver);
         }
         if (rejects(review)) continue;
-        const live = await this.api.facts(number4);
-        if (hash2(factsKey(live)) !== hash2(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== "open" || live.draft || !live.sameRepository || live.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
-          await this.explain(live, "PR, Head, Basis oder Freigabe hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung erforderlich.");
+        const live2 = await this.api.facts(number4);
+        if (hash2(factsKey(live2)) !== hash2(factsKey(f)) || !this.eligible(live2, snapshot) || live2.state !== "open" || live2.draft || !live2.sameRepository || live2.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
+          await this.explain(live2, "PR, Head, Basis oder Freigabe hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung erforderlich.");
           continue;
         }
         if (owner) {
           const liveOwner = this.tasks ? await this.tasks.getIssue(owner.number) : owner;
           if (liveOwner.state !== "open" || liveOwner.labels.includes("harness:blocked") || !liveOwner.labels.includes("harness:managed") || taskVersion(liveOwner) !== taskVersion(owner) || untrustedEdit(liveOwner)) {
-            await this.explain(live, "Die zugeh\xF6rige Aufgabe wurde w\xE4hrend des Reviews geschlossen, blockiert, abgemeldet oder fachlich ver\xE4ndert.");
+            await this.explain(live2, "Die zugeh\xF6rige Aufgabe wurde w\xE4hrend des Reviews geschlossen, blockiert, abgemeldet oder fachlich ver\xE4ndert.");
             continue;
           }
         }
         const riskGate = !!riskKey && !!riskRecord && risk.mode === "enforce" && review.decision === "merge" && permission(this.config, "merge_pr") === "allow" && aboveThreshold(riskRecord.class, risk);
         if (riskGate && risk.aboveThreshold === "block") {
-          await this.explain(live, `Risiko ${riskRecord.class} liegt \xFCber der Schwelle ${risk.autoMergeUpTo}; die Factory mergt diesen PR nicht. Bitte selbst pr\xFCfen und mergen.`);
+          await this.explain(live2, `Risiko ${riskRecord.class} liegt \xFCber der Schwelle ${risk.autoMergeUpTo}; die Factory mergt diesen PR nicht. Bitte selbst pr\xFCfen und mergen.`);
           continue;
         }
         if (permission(this.config, "merge_pr") === "approval" || riskGate) {
@@ -72804,12 +72833,12 @@ ${riskNote ? `${riskNote}
             ...riskGate ? { riskKey, riskClass: riskRecord.class } : {}
           });
           let approved = false;
-          for (const c of live.comments) {
+          for (const c of live2.comments) {
             const match = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
             if (match?.[2] === approvalId && await this.api.canApprove(c.author)) approved = match[1] === "approve";
           }
           if (!approved) {
-            if (riskGate) await this.event(live, `merge-approval-required:${approvalId}`, {
+            if (riskGate) await this.event(live2, `merge-approval-required:${approvalId}`, {
               type: "merge_approval_required",
               prNumber: number4,
               head: f.head,
@@ -72818,38 +72847,38 @@ ${riskNote ? `${riskNote}
               riskClass: riskRecord.class,
               autoMergeUpTo: risk.autoMergeUpTo
             });
-            await this.explain(live, `${riskGate ? `Risiko ${riskRecord.class} liegt \xFCber der Schwelle ${risk.autoMergeUpTo}. ` : ""}Menschliche Freigabe erforderlich: /harness approve ${approvalId}`);
+            await this.explain(live2, `${riskGate ? `Risiko ${riskRecord.class} liegt \xFCber der Schwelle ${risk.autoMergeUpTo}. ` : ""}Menschliche Freigabe erforderlich: /harness approve ${approvalId}`);
             continue;
           }
         }
         if (review.decision === "update_branch") {
-          if (!this.config.merge.updateBranch || !behind(live, this.config) || live.unresolvedThreads.length || ["CHANGES_REQUESTED", "REVIEW_REQUIRED"].includes(live.reviewDecision ?? "")) {
-            await this.explain(live, "Branch-Aktualisierung ist nicht erlaubt oder durch offene Reviews blockiert.");
+          if (!this.config.merge.updateBranch || !behind(live2, this.config) || live2.unresolvedThreads.length || ["CHANGES_REQUESTED", "REVIEW_REQUIRED"].includes(live2.reviewDecision ?? "")) {
+            await this.explain(live2, "Branch-Aktualisierung ist nicht erlaubt oder durch offene Reviews blockiert.");
             continue;
           }
           phase = "Branch-Aktualisierung";
-          if (await this.updateBranch(live, snapshot, ownership, adopted, "KI hat eine Branch-Aktualisierung veranlasst. Neue Tests und eine neue KI-Entscheidung sind vor dem Merge erforderlich.")) report.updated++;
+          if (await this.updateBranch(live2, snapshot, ownership, adopted, "KI hat eine Branch-Aktualisierung veranlasst. Neue Tests und eine neue KI-Entscheidung sind vor dem Merge erforderlich.")) report.updated++;
           continue;
         }
-        const gate = mergeGate(live, this.config);
+        const gate = mergeGate(live2, this.config);
         if (gate) {
-          await this.explain(live, gate);
+          await this.explain(live2, gate);
           continue;
         }
-        await this.event(live, `merge-intent:${reviewKey}`, { type: "merge_intent", prNumber: number4, head: f.head, base: f.base, reviewKey });
+        await this.event(live2, `merge-intent:${reviewKey}`, { type: "merge_intent", prNumber: number4, head: f.head, base: f.base, reviewKey });
         phase = "GitHub-Merge";
         const sha4 = await this.api.merge(number4, f.head, this.config.merge.method);
         report.merged++;
         f.state = "closed";
         f.mergeSha = sha4;
         await this.event(
-          live,
+          live2,
           `merge-completed:${f.head}`,
           { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: sha4 },
           `**Gemergt.** Die KI hat den gepr\xFCften Commit freigegeben; GitHub hat den Merge best\xE4tigt: \`${sha4}\`.`
         );
         phase = "Workflows nach Merge";
-        await this.postMerge(live, sha4);
+        await this.postMerge(live2, sha4);
       } catch (error62) {
         const status = error62 instanceof Error && "status" in error62 ? String(error62.status) : "unavailable";
         report.errors.push(`PR #${number4}: review/update/merge not confirmed (${status}); no unreviewed merge performed`);
