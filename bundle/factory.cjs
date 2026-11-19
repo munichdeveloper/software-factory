@@ -65189,6 +65189,12 @@ var configSchema = external_exports.strictObject({
        * configurations that leave it out keep their hash and in-flight runs stay current.
        */
       agents: external_exports.array(codingAgentSchema).min(1).max(3).optional(),
+      /**
+       * Optional priority list for further attempts (a retry after a failed attempt or a rework after a failed validation
+       * or a merge review), Temporal engine only: lets a cheaper first attempt escalate to a stronger model. Without it every
+       * attempt uses agents (or agent). Optional without a default, so configurations that leave it out keep their hash.
+       */
+      retryAgents: external_exports.array(codingAgentSchema).min(1).max(3).optional(),
       /** The default is a Codex model; with agent claude name a Claude model such as claude-opus-5-5 or claude-sonnet-5-5. */
       model: codingModel.default("gpt-6.1-sol"),
       /** max is available for Claude only. */
@@ -65199,13 +65205,15 @@ var configSchema = external_exports.strictObject({
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
       smallPullRequests: external_exports.boolean().default(true)
     }).superRefine((coding, context2) => {
-      if (coding.agents) {
-        if (coding.agent) context2.addIssue({ code: "custom", path: ["agent"], message: "name either agent or agents, not both" });
+      for (const key of ["agents", "retryAgents"]) {
         const seen = /* @__PURE__ */ new Set();
-        coding.agents.forEach((entry, index) => {
-          if (seen.has(entry.agent)) context2.addIssue({ code: "custom", path: ["agents", index, "agent"], message: "each agent may appear once" });
+        coding[key]?.forEach((entry, index) => {
+          if (seen.has(entry.agent)) context2.addIssue({ code: "custom", path: [key, index, "agent"], message: "each agent may appear once" });
           seen.add(entry.agent);
         });
+      }
+      if (coding.agents) {
+        if (coding.agent) context2.addIssue({ code: "custom", path: ["agent"], message: "name either agent or agents, not both" });
         return;
       }
       if (!coding.agent) {
@@ -65331,6 +65339,7 @@ var configSchema = external_exports.strictObject({
   monitoring: monitoringSchema.partial().optional()
 }).superRefine((config2, context2) => {
   if (config2.workers.coding && config2.execution.engine !== "temporal") {
+    if (config2.workers.coding.retryAgents) context2.addIssue({ code: "custom", path: ["workers", "coding", "retryAgents"], message: "retryAgents requires execution.engine temporal" });
     if (config2.workers.coding.agents) context2.addIssue({ code: "custom", path: ["workers", "coding", "agents"], message: "agents requires execution.engine temporal" });
     else if (config2.workers.coding.agent === "claude") context2.addIssue({ code: "custom", path: ["workers", "coding", "agent"], message: "agent claude requires execution.engine temporal" });
   }

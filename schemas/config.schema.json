@@ -314,6 +314,43 @@
                     "additionalProperties": false
                   }
                 },
+                "retryAgents": {
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "agent": {
+                        "type": "string",
+                        "enum": [
+                          "codex",
+                          "claude"
+                        ]
+                      },
+                      "model": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9._-]{1,100}$"
+                      },
+                      "reasoningEffort": {
+                        "default": "high",
+                        "type": "string",
+                        "enum": [
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "agent",
+                      "model"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "model": {
                   "default": "gpt-6.1-sol",
                   "type": "string",

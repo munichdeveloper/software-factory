@@ -20,6 +20,8 @@ export function retryOf(input: { contextReferences: string[] }): string | null {
   const ids = input.contextReferences.flatMap(r => r.match(/^urn:sf-retry:([a-f0-9]{32})$/)?.[1] ?? []);
   return ids.length === 1 ? ids[0]! : null;
 }
+/** A retry or a rework: the Manager marked the intent with the execution it repeats or reworks. */
+export const furtherAttempt = (input: { contextReferences: string[] }) => reworkOf(input) !== null || retryOf(input) !== null;
 
 // Ref and branch names are echoed into a prompt and a shell-free git call: keep them to an inert alphabet.
 const label = (value: string) => value.replace(/[^A-Za-z0-9._/#-]/g, '').slice(0, 200);

@@ -95,6 +95,12 @@ export const configSchema = z.strictObject({
        * configurations that leave it out keep their hash and in-flight runs stay current.
        */
       agents: z.array(codingAgentSchema).min(1).max(3).optional(),
+      /**
+       * Optional priority list for further attempts (a retry after a failed attempt or a rework after a failed validation
+       * or a merge review), Temporal engine only: lets a cheaper first attempt escalate to a stronger model. Without it every
+       * attempt uses agents (or agent). Optional without a default, so configurations that leave it out keep their hash.
+       */
+      retryAgents: z.array(codingAgentSchema).min(1).max(3).optional(),
       /** The default is a Codex model; with agent claude name a Claude model such as claude-opus-5-5 or claude-sonnet-5-5. */
       model: codingModel.default('gpt-6.1-sol'),
       /** max is available for Claude only. */
@@ -104,13 +110,15 @@ export const configSchema = z.strictObject({
       loopback: z.boolean().default(false),
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
       smallPullRequests: z.boolean().default(true) }).superRefine((coding, context) => {
-      if (coding.agents) {
-        if (coding.agent) context.addIssue({ code: 'custom', path: ['agent'], message: 'name either agent or agents, not both' });
+      for (const key of ['agents', 'retryAgents'] as const) {
         const seen = new Set<string>();
-        coding.agents.forEach((entry, index) => {
-          if (seen.has(entry.agent)) context.addIssue({ code: 'custom', path: ['agents', index, 'agent'], message: 'each agent may appear once' });
+        coding[key]?.forEach((entry, index) => {
+          if (seen.has(entry.agent)) context.addIssue({ code: 'custom', path: [key, index, 'agent'], message: 'each agent may appear once' });
           seen.add(entry.agent);
         });
+      }
+      if (coding.agents) {
+        if (coding.agent) context.addIssue({ code: 'custom', path: ['agent'], message: 'name either agent or agents, not both' });
         return;
       }
       if (!coding.agent) { context.addIssue({ code: 'custom', path: ['agent'], message: 'name agent or agents' }); return; }
@@ -226,6 +234,7 @@ export const configSchema = z.strictObject({
 }).superRefine((config, context) => {
   // The Claude worker and the agent priority list exist only in the Temporal executor; the legacy Actions coding workflow runs Codex.
   if (config.workers.coding && config.execution.engine !== 'temporal') {
+    if (config.workers.coding.retryAgents) context.addIssue({ code: 'custom', path: ['workers', 'coding', 'retryAgents'], message: 'retryAgents requires execution.engine temporal' });
     if (config.workers.coding.agents) context.addIssue({ code: 'custom', path: ['workers', 'coding', 'agents'], message: 'agents requires execution.engine temporal' });
     else if (config.workers.coding.agent === 'claude') context.addIssue({ code: 'custom', path: ['workers', 'coding', 'agent'], message: 'agent claude requires execution.engine temporal' });
   }
@@ -234,6 +243,10 @@ export type Config = z.infer<typeof configSchema>;
 /** The repository's coding agents in priority order: agents, or the single agent with model and reasoningEffort. */
 export function codingAgents(coding: Exclude<Config['workers']['coding'], false>): CodingAgent[] {
   return coding.agents ?? [{ agent: coding.agent ?? 'codex', model: coding.model, reasoningEffort: coding.reasoningEffort }];
+}
+/** The agents of one attempt: retryAgents for a further attempt when configured, otherwise the regular list. */
+export function attemptAgents(coding: Exclude<Config['workers']['coding'], false>, furtherAttempt: boolean): CodingAgent[] {
+  return furtherAttempt && coding.retryAgents ? coding.retryAgents : codingAgents(coding);
 }
 export function loadConfig(source: string): Config {
   const doc = parseDocument(source, { uniqueKeys: true });

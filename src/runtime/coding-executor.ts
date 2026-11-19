@@ -4,12 +4,12 @@ import { z } from 'zod';
 import { codingExecutionSchema } from './coding-contract.js';
 import { agentSelectionSchema, type AgentSelection } from './agent-selection.js';
 import { codingArtifactSchema, smallPullRequestGuidance, validateChanges, type CodingArtifact } from '../workers/coding.js';
-import { codingAgents, type Config } from '../config/index.js';
+import { attemptAgents, type Config } from '../config/index.js';
 import type { RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
 import { bindValidation, validationReportSchema, type ValidationReport } from './validation-contract.js';
-import { failedChecksEntry, loopbackEntry, maxContextRefs, namedRefs, outputEntries, refEntry, reworkEntry, reworkOf, unavailableEntry } from './coding-context.js';
+import { failedChecksEntry, furtherAttempt, loopbackEntry, maxContextRefs, namedRefs, outputEntries, refEntry, reworkEntry, reworkOf, unavailableEntry } from './coding-context.js';
 
 export const codingWorkflow = 'factory-temporal-executor.yml';
 export function executorWrapper(factorySha: string, harnessSha: string, validated = false) {
@@ -249,7 +249,8 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
       } });
     // The admission's worker "codex" names the isolated coding worker; which agent runs comes from workers.coding: the
     // first agent of the list, with the others as fallbacks the executor tries when a provider reports used-up credit.
-    const [first, ...others] = codingAgents(coding);
+    // A retry or rework uses retryAgents when configured, so a cheap first attempt can escalate to a stronger model.
+    const [first, ...others] = attemptAgents(coding, furtherAttempt(input));
     const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: first!.agent,
       task: { id: `github:${snapshot.repository}#${input.issueNumber}`, version: input.taskVersion, description,
         acceptanceCriteria: input.acceptanceCriteria, contextReferences: [...input.contextReferences, ...extra.entries] }, baseSha: snapshot.baseSha,
