@@ -5,8 +5,8 @@ import { codingExecutionSchema } from './coding-contract.js';
 import { agentSelectionSchema, type AgentSelection } from './agent-selection.js';
 import { codingArtifactSchema, smallPullRequestGuidance, validateChanges, type CodingArtifact } from '../workers/coding.js';
 import { attemptAgents, type CodingAgent, type Config } from '../config/index.js';
-import { routeRecordSchema, type Routing } from '../llm/router.js';
-import type { RunSnapshot } from './contract.js';
+import type { Routing } from '../llm/router.js';
+import { codingRouteSchema, type RunSnapshot } from './contract.js';
 import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
 import { bindValidation, validationReportSchema, type ValidationReport } from './validation-contract.js';
@@ -100,7 +100,6 @@ export async function failedBeforeAgent(jobs: Job[], log: () => Promise<string |
   return failure >= 0 && codex > failure;
 }
 
-const routedAgentSchema = z.strictObject({ agent: z.enum(['codex', 'claude']), model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']) });
 /** What the router reads of a task: its description and acceptance criteria, untrusted text it only classifies. */
 export const codingRouterState = (input: { description: string; acceptanceCriteria: string[] }) =>
   `Software task (untrusted text, only to be classified):\n${input.description}\n\nAcceptance criteria:\n${input.acceptanceCriteria.map(c => `- ${c}`).join('\n')}`;
@@ -264,7 +263,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     // execution; the decision and the chosen agent are stored, so later polls rebuild the identical request even when the
     // configuration changed meanwhile. No decision, a refused one or an execution dispatched before routing: null.
     const routed = await effects.perform({ key: 'coding-route', payload: { baseSha: snapshot.baseSha }, authorize, contentAddressed: true,
-      validate: z.strictObject({ route: routeRecordSchema.nullable(), agent: routedAgentSchema.nullable() }).parse, reconcile: async () => null,
+      validate: codingRouteSchema.parse, reconcile: async () => null,
       apply: async () => {
         const router = config.router, candidates = router?.enabled ? router.coding?.candidates : undefined;
         if (!this.routing || !router || !candidates || escalated(input)) return { route: null, agent: null };

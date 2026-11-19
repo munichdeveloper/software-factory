@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { decisionsUrl, ModelRouter, RouterAlerts, routedCall, Routing, type RouteRecord } from '../src/llm/router.js';
+import { decisionsUrl, ModelRouter, RouterAlerts, routedCall, routeNoteDe, routeOutcome, Routing, type RouteRecord } from '../src/llm/router.js';
 import { loadConfig } from '../src/config/index.js';
 
 const settings = { model: 'typesafe/jev-1.14', minConfidence: 0.5, timeoutSeconds: 5 };
@@ -71,6 +71,19 @@ describe('routedCall', () => {
     expect(await routedCall({ ...base, routing: routing('strong'), configured, run: () => async () => { throw new Error('HTTP 529'); } })).toBe('configured');
     expect(await routedCall({ ...base, routing: routing('strong'), configured, candidates: undefined, run: () => async () => 'routed' })).toBe('configured');
     expect(await routedCall({ ...base, routing: routing('strong'), configured, router: { ...router, enabled: false }, run: () => async () => 'routed' })).toBe('configured');
+  });
+  it('records which model did the work, for the merge comments', async () => {
+    const candidates = [{ id: 'cheap', description: 'Small', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' },
+      { id: 'strong', description: 'Hard', model: 'claude-opus-5-5', reasoningEffort: 'high' }];
+    const result = () => ({ decision: 'merge' });
+    const routedResult = await routedCall({ ...base, candidates, routing: routing('strong'), configured: async () => result(), run: () => async () => result() });
+    expect(routeNoteDe(routeOutcome(routedResult))).toBe('Modellwahl: Der Model Router (Jev) wählte `strong` (claude-opus-5-5, high) mit 90 % Konfidenz.');
+    const failed = await routedCall({ ...base, candidates, routing: routing('strong'), configured: async () => result(), run: () => async () => { throw new Error('HTTP 529'); } });
+    expect(routeNoteDe(routeOutcome(failed))).toBe('Modellwahl: Der Model Router wählte `strong`, der Kandidat konnte nicht laufen; geprüft haben die konfigurierten Modelle.');
+    const skipped = await routedCall({ ...base, candidates, routing: routing(null), configured: async () => result(), run: () => async () => result() });
+    expect(routeNoteDe(routeOutcome(skipped))).toBe('Modellwahl: ohne Model Router (kein OpenRouter-Schlüssel im Broker); geprüft haben die konfigurierten Modelle.');
+    const unrouted = await routedCall({ ...base, candidates: undefined, routing: routing('strong'), configured: async () => result(), run: () => async () => result() });
+    expect(routeNoteDe(routeOutcome(unrouted))).toBe('');
   });
   it('never retries a configuration guard with the configured models', async () => {
     const configured = vi.fn(async () => 'configured');

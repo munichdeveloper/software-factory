@@ -219,7 +219,9 @@ options where a cheap answer is not acceptable (e.g. no `low` effort for reviews
 
 The router never blocks. Without the broker's `OPENROUTER_API_KEY` (deploy secret `BROKER_OPENROUTER_API_KEY` in the
 environment `production`), when Jev is unreachable or answers something unusable, and when its confidence stays below
-`minConfidence`, the configured models run as before. Each decision is logged as one `factory-router` line (purpose,
+`minConfidence`, the configured models run as before. Since 0.16.1 the task's status comment names the agent of its
+coding run (`**Model:**`, chosen by the router or the configured agents and why), and the merge review and risk
+comments name the model that did the review (`Modellwahl: …`). Each decision is also logged as one `factory-router` line (purpose,
 choice, confidence or reason and a fixed code). With `FACTORY_ROUTER_ALERT_CHANNEL` on the broker, every case in which
 the configured models ran instead goes to Slack, at most once per repository, purpose and reason every six hours; the
 next message counts the cases in between. Issue and pull request text reaches Jev as untrusted data it only classifies:

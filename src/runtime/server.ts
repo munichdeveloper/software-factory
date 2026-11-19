@@ -51,6 +51,8 @@ const send = (response: ServerResponse, code: number, body: unknown) => { respon
  * One reconciliation of a repository: picks up ready tasks, starts and advances runs, then the merge pass. Callers are the
  * broker's own schedule and, while it still sends them, the SF Manager. The actor of a Manager call never grants execution.
  */
+/** Observations as the HTTP API answers them: without the broker-internal routing decision (see observationSchema). */
+const wire = <T extends { route?: unknown }>(observation: T): Omit<T, 'route'> => { const { route: _route, ...rest } = observation; void _route; return rest; };
 export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor' | 'queue'>) {
   const config = await binding.repository.config();
   if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
@@ -135,15 +137,15 @@ export function runtimeServer(options: ServerOptions) {
       }
       if (request.method === 'GET' && resource === 'runs' && !id) {
         const rows = await options.store.list(binding.repository.repositoryId);
-        send(response, 200, await binding.controller.observations(rows.map(r => r.snapshot.admission.input.executionId))); return;
+        send(response, 200, (await binding.controller.observations(rows.map(r => r.snapshot.admission.input.executionId))).map(wire)); return;
       }
       if (request.method !== 'POST') throw new Error('METHOD');
       const body = await read(request);
       if (resource === 'observations' && !id) {
         const input = z.strictObject({ executionIds: executionKey.array().max(1000) }).parse(body);
-        send(response, 200, await binding.controller.observations(input.executionIds)); return;
+        send(response, 200, (await binding.controller.observations(input.executionIds)).map(wire)); return;
       }
-      if (resource === 'runs' && !id) { send(response, 200, await binding.controller.start(admissionSchema.parse(body))); return; }
+      if (resource === 'runs' && !id) { send(response, 200, wire(await binding.controller.start(admissionSchema.parse(body)))); return; }
       if (resource === 'reconcile' && !id) {
         const input = z.strictObject({ actor: actorSchema }).parse(body);
         if (!await binding.repository.github.canApprove(input.actor)) throw new Error('ACTOR_NOT_AUTHORIZED');

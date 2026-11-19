@@ -114,12 +114,38 @@ export class Routing {
   }
 }
 
+/** What a routed broker call did: the decision, the candidate it named, and who did the work. */
+export interface RouteOutcome { record: RouteRecord; candidate: { id: string; model: string; reasoningEffort: string | null } | null; ran: 'candidate' | 'configured' }
+const outcomes = new WeakMap<object, RouteOutcome>();
+/** The outcome routedCall recorded for a result it returned, so the comment reporting that result can name the model. */
+export const routeOutcome = (value: unknown): RouteOutcome | undefined => value && typeof value === 'object' ? outcomes.get(value) : undefined;
+const pct = (confidence: number) => `${Math.round(confidence * 100)} %`;
+const skipDe: Record<RouterSkip, string> = { 'no-key': 'kein OpenRouter-Schlüssel im Broker', unavailable: 'Jev nicht erreichbar',
+  'invalid-answer': 'keine verwertbare Antwort von Jev', 'low-confidence': 'Jevs Konfidenz unter dem Minimum' };
+const skipEn: Record<RouterSkip, string> = { 'no-key': 'no OpenRouter key on the broker', unavailable: 'Jev was unreachable',
+  'invalid-answer': 'Jev gave no usable answer', 'low-confidence': "Jev's confidence was below the minimum" };
+/** One German line for the merge comments (review, risk): which model did the work and why. */
+export function routeNoteDe(outcome: RouteOutcome | undefined): string {
+  if (!outcome) return '';
+  const { record, candidate } = outcome;
+  if (outcome.ran === 'candidate' && record.used && candidate)
+    return `Modellwahl: Der Model Router (Jev) wählte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ''}) mit ${pct(record.confidence)} Konfidenz.`;
+  if (record.used) return `Modellwahl: Der Model Router wählte \`${record.choice}\`, der Kandidat konnte nicht laufen; geprüft haben die konfigurierten Modelle.`;
+  return `Modellwahl: ohne Model Router (${skipDe[record.reason]}${record.reason === 'low-confidence' && record.confidence !== null ? `, ${pct(record.confidence)}` : ''}); geprüft haben die konfigurierten Modelle.`;
+}
+/** One English line for a task's status comment: which agent a coding execution runs and why. */
+export function routeNoteEn(record: RouteRecord, agent: { agent: string; model: string; reasoningEffort: string } | null): string {
+  if (record.used && agent) return `**Model:** chosen by the model router (Jev): \`${record.choice}\` (${agent.agent}, ${agent.model}, ${agent.reasoningEffort}), ${pct(record.confidence)} confidence.`;
+  if (record.used) return `**Model:** the model router chose \`${record.choice}\`; the configured agents run.`;
+  return `**Model:** the configured agents; the model router was not used (${skipEn[record.reason]}${record.reason === 'low-confidence' && record.confidence !== null ? `, ${pct(record.confidence)}` : ''}).`;
+}
+
 /**
  * A broker-side model call through the router: the routed candidate does the work when the router picked one and that
  * candidate can run; otherwise, and when the routed candidate fails, `configured` (the repository's configured models)
  * does it. `fatal` errors (a configuration guard) are never retried with the configured models.
  */
-export async function routedCall<C extends RouterOption, T>(options: {
+export async function routedCall<C extends RouterOption & { model: string; reasoningEffort?: string | null }, T>(options: {
   routing: Routing | undefined; repository: string; purpose: Exclude<RouterPurpose, 'coding'>; state: () => string;
   router: (RouterSettings & { enabled: boolean }) | undefined; candidates: C[] | undefined;
   /** The routed candidate's call, or null when it cannot run here (e.g. a Claude candidate without the broker's key). */
@@ -130,15 +156,17 @@ export async function routedCall<C extends RouterOption, T>(options: {
   if (!routing || !router?.enabled || !candidates?.length) return options.configured();
   const record = await routing.route(options.repository, options.purpose, options.state(), candidates, router);
   const candidate = record.used ? candidates.find(c => c.id === record.choice) : undefined;
+  const named = candidate ? { id: candidate.id, model: candidate.model, reasoningEffort: candidate.reasoningEffort ?? null } : null;
+  const noted = (value: T, ran: RouteOutcome['ran']): T => { if (value && typeof value === 'object') outcomes.set(value, { record, candidate: named, ran }); return value; };
   const call = candidate ? options.run(candidate) : null;
   if (!call) {
     if (candidate) console.warn(JSON.stringify({ event: 'factory-router-candidate', repository: options.repository, purpose: options.purpose, choice: candidate.id, outcome: 'unavailable' }));
-    return options.configured();
+    return noted(await options.configured(), 'configured');
   }
-  try { return await call(); }
+  try { return noted(await call(), 'candidate'); }
   catch (error) {
     if (options.fatal?.(error)) throw error;
     console.warn(JSON.stringify({ event: 'factory-router-candidate', repository: options.repository, purpose: options.purpose, choice: candidate!.id, outcome: 'failed' }));
-    return options.configured();
+    return noted(await options.configured(), 'configured');
   }
 }
