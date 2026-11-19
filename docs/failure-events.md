@@ -1,6 +1,6 @@
 # Konzept: Ereignisse für gescheiterte Prüfschritte und abgelehnte Starts
 
-Status: **Konzept, nicht umgesetzt.** Offene Entscheidungen stehen in Abschnitt 8.
+Status: **Konzept, nicht umgesetzt.** Alle Entscheidungen sind getroffen (Abschnitt 8). Umsetzung: Issue folgt.
 
 Dieses Dokument beschreibt, wie der Broker einen gescheiterten Prüfschritt, einen abgelehnten Start oder einen
 festhängenden Lauf als **Ereignis** veröffentlicht. Wer will, kann es abonnieren: Slack, der Factory-Monitor, ein
@@ -47,6 +47,10 @@ abgelehnter Start erholt sich nicht von selbst, sobald die Ursache weg ist.
 2. Ereignisse lassen sich pro Repository (optional pro Issue) abonnieren: Slack, Webhook, Monitor.
 3. Ein abgelehnter Start läuft sofort weiter, sobald seine Ursache nachweislich behoben ist.
 4. Ein manueller Neustart verwirft keine vorgemerkte Nachbesserung mehr unbemerkt.
+
+5. **Leitlinie (Johannes, 19.11.2026): Die Factory reagiert selbst auf die Ereignisse und löst Probleme möglichst
+   autonom.** Ein Ereignis ist in erster Linie ein Auslöser für den nächsten automatischen Schritt, erst in zweiter
+   Linie eine Meldung. Ein Mensch wird nur gebraucht, wenn alle automatischen Stufen (Abschnitt 6.5) erschöpft sind.
 
 Nicht Ziel: eine neue Warteschlange, ein zweiter Planer oder Modelltext in Ereignissen.
 
@@ -115,19 +119,17 @@ Rollout-PRs gelaufen.
 ### 6.2 Manueller Neustart bei offener Nachbesserung
 
 Wird der Issue-Text geändert, während eine Nachbesserung vorgemerkt ist und der zugehörige PR offen ist, verwirft der
-Broker die Nachbesserung nicht still. Möglichkeiten (Entscheidung 4):
-
-- **A:** Die neue Task-Version übernimmt den offenen PR als Ausgangspunkt einer Nachbesserung (wie heute bei
-  `retry_worker` mit `reworkMarker`).
-- **B:** Das Issue bleibt auf `awaiting-pr`, aber es entsteht `attention_required` mit
-  `awaiting_pr_without_progress`, damit jemand entscheidet.
+Broker die Nachbesserung nicht still. **Entschieden: Variante A.** Die neue Task-Version übernimmt den offenen PR
+als Ausgangspunkt einer Nachbesserung (wie heute bei `retry_worker` mit `reworkMarker`): der Worker bekommt die neue
+Aufgabe plus den letzten Validierungsbericht und baut auf dem Branch weiter. Das Stehenbleiben auf `awaiting-pr`
+(früher Variante B) gibt es nur noch, wenn der PR nicht mehr zum Issue passt (geschlossen, fremder Head).
 
 ### 6.3 Claude als Abonnent
 
 Mit dem Webhook (5.2) kann ein Claude-Thread `validation_failed` und `attention_required` abonnieren. Er greift dann
-ein wie heute von Hand: Ursache lesen, Test reparieren, PR aktualisieren. Ob er das selbst darf oder nur meldet, ist
-Entscheidung 2. Die Regel „wenn das Agenten-Kontingent aufgebraucht ist, übernimmt Claude“ ließe sich so
-automatisieren.
+ein wie heute von Hand: Ursache lesen, Test reparieren, PR aktualisieren. **Entschieden: Er darf kleine Fixes selbst
+pushen**, setzt `sf:automerge` und meldet es; der Merge läuft über das normale KI-Review und die Pflicht-Checks. Die
+Regel „wenn das Agenten-Kontingent aufgebraucht ist, übernimmt Claude“ wird damit automatisch.
 
 ### 6.4 „blocked“-PR nach behobenem Fehler
 
@@ -140,29 +142,39 @@ unabhängige Validierung für den neuen Head erneut. Besteht sie, gilt der PR al
 den normalen Merge-Ablauf (KI-Review, Pflicht-Checks, Risiko). Das erzeugt `validation_passed` bzw. erneut
 `validation_failed`. Ersatz-PRs aus Claude-Threads bekommen bis dahin `sf:automerge` (Regel seit 19.11.2026).
 
+### 6.5 Reaktionsstufen
+
+Jedes Ereignis durchläuft dieselbe Kette. Die nächste Stufe greift erst, wenn die vorige nichts mehr tun kann:
+
+| Stufe | Wer | Was |
+|---|---|---|
+| 1 | Broker | Nachbesserung mit Validierungskontext (`validation_failed`), Wiederholung bei Infrastrukturfehler (`run_failed`), Aufheben einer Ablehnung nach behobener Ursache (6.1), Neuvalidierung nach neuem Head (6.4) |
+| 2 | Broker | Eskalation auf `workers.coding.retryAgents` (stärkeres Modell) für die nächste Nachbesserung |
+| 3 | Claude-Abonnent (6.3) | Ursache analysieren, kleinen Fix selbst pushen, `sf:automerge` setzen |
+| 4 | Mensch | erst jetzt `attention_required` in Slack |
+
+Jede Stufe erzeugt ihr eigenes Ereignis, damit Monitor und Analytics sehen, welche Stufe ein Problem gelöst hat.
+
 ## 7. Umsetzung in Schritten
 
 1. Ereignistabelle, Erzeugung an den vier Stellen, `GET …/events`. Nur Broker, kein Worker-Pin, kein Repo-Rollout.
 2. Slack-Regeln (5.1) und Monitor-Anzeige (5.3).
 3. Aufheben von Ablehnungen nach behobener Ursache (6.1). Ändert `reconstruct.ts`, also Factory-Release mit Rollout.
 4. Webhook (5.2), danach optional der Claude-Abonnent (6.3).
-5. Verhalten beim manuellen Neustart (6.2).
+5. Verhalten beim manuellen Neustart (6.2, Variante A).
 6. Erneute Validierung eines „blocked“-PRs nach neuem Head (6.4).
+7. Reaktionsstufen mit Eskalation (6.5).
 
 ## 8. Entscheidungen
 
-Entschieden:
+Alle am 19.11.2026 entschieden, unter der Leitlinie aus Abschnitt 3: möglichst autonom.
 
-1. **Kanal (entschieden 19.11.2026):** Problem-Ereignisse (`validation_failed`, `start_refused`, `attention_required`)
-   gehen in einen **eigenen Slack-Kanal für Probleme**, nicht in `ki-notification`. `run_started` bleibt in
-   `ki-notification`. Umsetzung über das `channel`-Feld je Regel (Abschnitt 5); der Kanal wird vor der Aktivierung
-   angelegt und die Slack-App eingeladen.
-
-Noch offen:
-
-2. **Claude-Abonnent:** Darf ein Claude-Thread auf ein Ereignis hin selbst Code im PR ändern (wie heute bei #76),
-   oder nur melden und fragen?
-3. **Lärm:** Soll `validation_failed` auch dann melden, wenn die Factory sowieso selbst nachbessert, oder erst, wenn
-   keine Nachbesserung mehr möglich ist (`attention_required`)? Vorschlag: im Monitor immer, in Slack nur
-   `attention_required` und repo-weite `start_refused`.
-4. **Manueller Neustart (6.2):** Variante A oder B?
+1. **Kanal:** Problem-Ereignisse (`validation_failed`, `start_refused`, `attention_required`) gehen in einen
+   **eigenen Slack-Kanal für Probleme**, nicht in `ki-notification`. `run_started` bleibt in `ki-notification`.
+   Umsetzung über das `channel`-Feld je Regel (Abschnitt 5); der Kanal wird vor der Aktivierung angelegt und die
+   Slack-App eingeladen.
+2. **Claude-Abonnent:** darf kleine Fixes selbst pushen, mit `sf:automerge`; Merge über KI-Review und Pflicht-Checks
+   (6.3).
+3. **Lärm:** Slack meldet nur, wenn nichts mehr automatisch geht (`attention_required`) und repo-weite
+   `start_refused`. Jeder Fehlschlag steht trotzdem im Monitor.
+4. **Manueller Neustart:** Variante A, auf dem offenen PR weiterbauen (6.2).
