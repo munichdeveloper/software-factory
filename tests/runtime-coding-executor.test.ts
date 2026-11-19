@@ -269,7 +269,7 @@ describe('the model router for coding', () => {
     expect(JSON.stringify(asked[0])).toContain('Implement a safe change');
   });
   it('keeps the configured agents below the minimum confidence and without a key', async () => {
-    const low = fixture(snapshot, undefined, undefined, undefined, jev('opus-high', 0.3).routing); configure(low); await low.poll();
+    const low = fixture(snapshot, undefined, undefined, undefined, jev('opus-high', 0.3).routing); configure(low); low.cfg.router = { ...router, minConfidence: 0.7 }; await low.poll();
     expect(low.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
     const keyless = fixture(snapshot, undefined, undefined, undefined, new Routing(new ModelRouter(undefined))); configure(keyless); await keyless.poll();
     expect(keyless.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
