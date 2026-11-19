@@ -129,6 +129,17 @@ ein wie heute von Hand: Ursache lesen, Test reparieren, PR aktualisieren. Ob er 
 Entscheidung 2. Die Regel „wenn das Agenten-Kontingent aufgebraucht ist, übernimmt Claude“ ließe sich so
 automatisieren.
 
+### 6.4 „blocked“-PR nach behobenem Fehler
+
+Heute bleibt ein PR, dessen Lauf als `blocked` veröffentlicht wurde, für immer vom Merge ausgeschlossen
+(`src/merge/manager.ts`: „nicht als erfolgreich validiert“). Das gilt auch, wenn der Fehler später auf dem Branch
+behoben wird und die CI grün ist (Backofficer#76 am 19.11.2026; gelöst nur durch das Label `sf:automerge`).
+
+Vorschlag: Ändert sich der Head eines solchen PRs (Nachbesserung oder Fix von Hand), startet der Broker die
+unabhängige Validierung für den neuen Head erneut. Besteht sie, gilt der PR als erfolgreich validiert und geht in
+den normalen Merge-Ablauf (KI-Review, Pflicht-Checks, Risiko). Das erzeugt `validation_passed` bzw. erneut
+`validation_failed`. Ersatz-PRs aus Claude-Threads bekommen bis dahin `sf:automerge` (Regel seit 19.11.2026).
+
 ## 7. Umsetzung in Schritten
 
 1. Ereignistabelle, Erzeugung an den vier Stellen, `GET …/events`. Nur Broker, kein Worker-Pin, kein Repo-Rollout.
@@ -136,6 +147,7 @@ automatisieren.
 3. Aufheben von Ablehnungen nach behobener Ursache (6.1). Ändert `reconstruct.ts`, also Factory-Release mit Rollout.
 4. Webhook (5.2), danach optional der Claude-Abonnent (6.3).
 5. Verhalten beim manuellen Neustart (6.2).
+6. Erneute Validierung eines „blocked“-PRs nach neuem Head (6.4).
 
 ## 8. Offene Entscheidungen
 
