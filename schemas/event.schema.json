@@ -683,6 +683,11 @@
                 "findings"
               ],
               "additionalProperties": false
+            },
+            "verdictKey": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
             }
           },
           "required": [
