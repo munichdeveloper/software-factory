@@ -24,13 +24,22 @@ export const routeRecordSchema = z.discriminatedUnion('used', [
 export type RouteRecord = z.infer<typeof routeRecordSchema>;
 
 export interface RouterSettings { model: string; minConfidence: number; timeoutSeconds: number }
-export interface RouterOption { id: string; description: string }
+export interface RouterOption { id: string; description?: string; agent?: string; provider?: string; model?: string; reasoningEffort?: string | null }
+/**
+ * What Jev reads of an option: the actual model, who runs it and its reasoning effort, then the repository's optional
+ * note. Jev judges the concrete configurations, not a purpose hidden behind an id (Johannes, 2026-11-19).
+ */
+export function describeOption(option: RouterOption): string {
+  const runner = option.agent ? `${option.agent} coding agent` : option.provider ? `${option.provider} API` : undefined;
+  const facts = [option.model && `Model ${option.model}`, runner && `run by the ${runner}`, option.reasoningEffort && `reasoning effort ${option.reasoningEffort}`].filter(Boolean).join(', ');
+  return [facts && `${facts}.`, option.description].filter(Boolean).join(' ') || option.id;
+}
 
 const questions: Record<RouterPurpose, string> = {
-  coding: 'Which coding agent configuration should implement this software task? Each option is a model with a reasoning effort. Pick the cheapest option that will still complete the task correctly; pick a stronger one only when the task needs deep reasoning, broad changes or careful design.',
-  review: 'Which model configuration should review this pull request before it is merged? Pick the cheapest option that can still find real correctness and security problems in a change of this size and kind.',
-  risk: 'Which model configuration should assess the merge risk of this pull request? Pick the cheapest option that can still judge the consequences of a mistake in a change of this size and kind.',
-  planner: 'Which model configuration should plan the next actions for these tasks? Pick the cheapest option that can still plan them correctly.'
+  coding: 'Which coding agent configuration should implement this software task? Pick the cheapest option that will still complete the task correctly; pick a stronger one only when the task needs deep reasoning, broad changes or careful design. Each option names a concrete model and reasoning effort. Judge every combination on its own: a smaller model at a higher effort can do better than a larger model at a lower effort, and the reverse.',
+  review: 'Which model configuration should review this pull request before it is merged? Pick the cheapest option that can still find real correctness and security problems in a change of this size and kind. Each option names a concrete model and reasoning effort. Judge every combination on its own: a smaller model at a higher effort can do better than a larger model at a lower effort, and the reverse.',
+  risk: 'Which model configuration should assess the merge risk of this pull request? Pick the cheapest option that can still judge the consequences of a mistake in a change of this size and kind. Each option names a concrete model and reasoning effort. Judge every combination on its own: a smaller model at a higher effort can do better than a larger model at a lower effort, and the reverse.',
+  planner: 'Which model configuration should plan the next actions for these tasks? Pick the cheapest option that can still plan them correctly. Each option names a concrete model and reasoning effort. Judge every combination on its own: a smaller model at a higher effort can do better than a larger model at a lower effort, and the reverse.'
 };
 const decisionSchema = z.object({ answers: z.object({ route: z.object({ choice: z.string(), confidence: z.number().min(0).max(1).optional(),
   probabilities: z.record(z.string(), z.number()).optional() }) }) });
@@ -83,7 +92,7 @@ export class ModelRouter {
       response = await this.fetcher(this.api === 'typesafe' ? typesafeUrl : decisionsUrl, { method: 'POST', signal: AbortSignal.timeout(settings.timeoutSeconds * 1000),
         headers: { authorization: `Bearer ${this.key}`, 'content-type': 'application/json' },
         body: JSON.stringify({ model: endpointModel(this.api, settings.model), state: state.slice(0, maxRouterState),
-          questions: { route: { type: 'choice', instructions: questions[purpose], criteria: Object.fromEntries(options.map(o => [o.id, o.description])) } } }) });
+          questions: { route: { type: 'choice', instructions: questions[purpose], criteria: Object.fromEntries(options.map(o => [o.id, describeOption(o)])) } } }) });
     } catch (error) {
       return skip('unavailable', error instanceof Error && error.name === 'TimeoutError' ? 'TIMEOUT' : 'TRANSPORT');
     }

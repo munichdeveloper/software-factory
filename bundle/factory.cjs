@@ -65200,7 +65200,7 @@ var codingAgentSchema = external_exports.strictObject({
   if (entry.credential && entry.agent !== "claude") context2.addIssue({ code: "custom", path: ["credential"], message: "credential subscription is available for agent claude only" });
 });
 var routerOptionId = external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
-var routerDescription = external_exports.string().min(1).max(300);
+var routerDescription = external_exports.string().min(1).max(300).optional();
 var codingCandidateSchema = external_exports.strictObject({
   id: routerOptionId,
   agent: codingAgentName,
@@ -65217,7 +65217,8 @@ var llmCandidateSchema = external_exports.strictObject({
 }).superRefine((entry, context2) => {
   if (entry.provider === "claude" !== /^claude-/.test(entry.model)) context2.addIssue({ code: "custom", path: ["model"], message: "provider claude needs a Claude model, provider openai a non-Claude model" });
 });
-var routerCandidates = (candidate) => external_exports.strictObject({ candidates: external_exports.array(candidate).min(2).max(6) }).superRefine((value, context2) => {
+var maxRouterCandidates = 16;
+var routerCandidates = (candidate) => external_exports.strictObject({ candidates: external_exports.array(candidate).min(2).max(maxRouterCandidates) }).superRefine((value, context2) => {
   if (new Set(value.candidates.map((c) => c.id)).size !== value.candidates.length) context2.addIssue({ code: "custom", path: ["candidates"], message: "candidate ids must be unique" });
 });
 var routerSchema = external_exports.strictObject({

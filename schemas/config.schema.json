@@ -1162,7 +1162,7 @@
           "properties": {
             "candidates": {
               "minItems": 2,
-              "maxItems": 6,
+              "maxItems": 16,
               "type": "array",
               "items": {
                 "type": "object",
@@ -1202,8 +1202,7 @@
                   "id",
                   "agent",
                   "model",
-                  "reasoningEffort",
-                  "description"
+                  "reasoningEffort"
                 ],
                 "additionalProperties": false
               }
@@ -1219,7 +1218,7 @@
           "properties": {
             "candidates": {
               "minItems": 2,
-              "maxItems": 6,
+              "maxItems": 16,
               "type": "array",
               "items": {
                 "type": "object",
@@ -1258,8 +1257,7 @@
                   "id",
                   "provider",
                   "model",
-                  "reasoningEffort",
-                  "description"
+                  "reasoningEffort"
                 ],
                 "additionalProperties": false
               }
@@ -1275,7 +1273,7 @@
           "properties": {
             "candidates": {
               "minItems": 2,
-              "maxItems": 6,
+              "maxItems": 16,
               "type": "array",
               "items": {
                 "type": "object",
@@ -1314,8 +1312,7 @@
                   "id",
                   "provider",
                   "model",
-                  "reasoningEffort",
-                  "description"
+                  "reasoningEffort"
                 ],
                 "additionalProperties": false
               }
@@ -1331,7 +1328,7 @@
           "properties": {
             "candidates": {
               "minItems": 2,
-              "maxItems": 6,
+              "maxItems": 16,
               "type": "array",
               "items": {
                 "type": "object",
@@ -1370,8 +1367,7 @@
                   "id",
                   "provider",
                   "model",
-                  "reasoningEffort",
-                  "description"
+                  "reasoningEffort"
                 ],
                 "additionalProperties": false
               }
