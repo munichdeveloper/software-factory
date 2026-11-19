@@ -1,3 +1,4 @@
+import type { MergeObserver } from '../src/runtime/merge.js';
 import type { NotificationSink } from '../src/notifications/slack.js';
 import { Pool, type PoolClient } from 'pg';
 import type { Client } from '@temporalio/client';
@@ -278,7 +279,7 @@ export class World {
   moveBase() { this.base = hash({ base: this.base }).slice(0, 40); this.log.push('base moved'); }
   /** The checks of an updated pull request finish. */
   completeChecks(number: number, state = 'success') { const p = this.pulls.get(number); if (p) p.checks = [{ name: 'test', state }]; this.log.push(`checks of PR ${number}: ${state}`); }
-  async mergePass() {
+  async mergePass(observe?: MergeObserver) {
     const port: MergePort = { repository: this.github.repository,
       candidates: async () => this.github.state.prs.filter(p => p.headRefName?.startsWith('sf/issue-') && this.pulls.has(p.number)).map(p => p.number),
       facts: async number => {
@@ -320,7 +321,7 @@ export class World {
         findings: [{ path: 'src/change.txt', severity: 'blocking' as const, explanation: 'AVV-Angabe ohne Quelle.' }] };
       return { decision: input.facts.behindBy ? 'update_branch' as const : 'merge' as const, reason: 'Geprüft.', findings: [] };
     } };
-    try { await new MergeManager(port, this.cfg, reviewer, 'merge', this.github, { ownedOnly: true }).run(await this.github.snapshot()); }
+    try { await new MergeManager(port, this.cfg, reviewer, 'merge', this.github, { ownedOnly: true, ...(observe ? { observe } : {}) }).run(await this.github.snapshot()); }
     catch (error) { this.log.push(`merge pass threw ${error instanceof Error ? error.message : String(error)}`); }
   }
   /** The workflow dies without publishing (worker lost, timeout on the Temporal side). */

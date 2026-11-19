@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import { Manager } from '../src/manager/index.js';
 import { MockPlanner } from '../src/llm/provider.js';
 import { QueueBoard } from '../src/runtime/queue.js';
+import type { MergeObserver, MergeProgress } from '../src/runtime/merge.js';
 import { runtimeServer, type RuntimeBinding } from '../src/runtime/server.js';
 import type { RuntimeStore } from '../src/runtime/store.js';
 import { World } from './scenario-world.js';
@@ -49,6 +50,38 @@ describe('queue view', () => {
     const blocked = repository(board, w).entries.find(e => e.issueNumber === 2)!;
     expect(blocked.stage).toBe('blocked');
     expect(blocked.reason).toMatch(/^Missing Acceptance/);
+  });
+
+  it('shows each attempt with its purpose and validation, the merge step of its pull request and the merged task for a day', async () => {
+    const w = new World({ merging: true, rework: true }), board = new QueueBoard(() => w.now);
+    const progress = new Map<number, MergeProgress>();
+    const observe: MergeObserver = (pullRequest, step, detail = null, risk = null) => { progress.set(pullRequest, { pullRequest, step, detail, risk, at: w.now.toISOString() }); };
+    const observed = async () => {
+      const manager = new Manager(w.github, w.cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => w.now, workerRuntime: w.controller });
+      const report = await manager.run();
+      board.observed(w.repo, w.cfg, manager.settledSnapshot, report, manager.lastRejections, progress);
+      return repository(board, w).entries.find(e => e.issueNumber === 1)!;
+    };
+    w.open(1); await w.tick();
+    expect((await observed()).runs).toEqual([expect.objectContaining({ kind: 'first', active: true, outcome: null, validation: null })]);
+    const first = w.running()[0]!.snapshot.admission.input.executionId;
+    await w.finishCoding(first, 'passed'); await w.tick(); await w.tick();
+    const pr = w.github.state.prs[0]!.number; w.refusedHeads.add(w.pulls.get(pr)!.head);
+    await w.mergePass(observe); expect(progress.get(pr)).toMatchObject({ step: 'checks' });
+    await w.mergePass(observe); expect(progress.get(pr)).toMatchObject({ step: 'review-rejected', detail: 'KI-Entscheidung: request_changes.' });
+    await w.tick(); await w.tick();
+    const reworking = await observed();
+    expect(reworking.runs.map(r => [r.kind, r.outcome, r.validation])).toEqual([['first', 'success', 'passed'], ['review', null, null]]);
+    const second = w.running()[0]!.snapshot.admission.input.executionId;
+    await w.finishCoding(second, 'passed'); await w.tick(); await w.tick();
+    const next = w.github.state.prs[1]!.number;
+    await w.mergePass(observe); await w.mergePass(observe);
+    expect(progress.get(next)).toMatchObject({ step: 'merged' });
+    w.issue(1).updatedAt = w.now.toISOString(); // GitHub closed the issue with the merge
+    const done = await observed();
+    expect(done).toMatchObject({ stage: 'closed', mergedAt: w.now.toISOString(), merge: { pullRequest: next, step: 'merged' } });
+    expect(done.runs.map(r => [r.kind, r.outcome, r.validation])).toEqual([['first', 'success', 'passed'], ['review', 'success', 'passed']]);
+    w.advance(25 * 60); expect((await observed())).toBeUndefined();
   });
 
   it('keeps the last view when a reconciliation fails and lists repositories never reconciled', async () => {

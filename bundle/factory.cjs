@@ -72575,6 +72575,12 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
     }
     return void 0;
   }
+  note(n, step, detail, risk) {
+    try {
+      this.options.observe?.(n, step, detail, risk);
+    } catch {
+    }
+  }
   owned(f, snapshot) {
     return this.ownership(f, snapshot)?.task;
   }
@@ -72611,6 +72617,7 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
         f = await this.api.facts(number4);
         if (!this.eligible(f, snapshot)) continue;
         if (f.state === "closed") {
+          this.note(number4, f.mergeSha ? "merged" : "stopped", f.mergeSha ? null : "PR wurde ohne Merge geschlossen.");
           if (f.mergeSha && f.mergeActorType === "Bot" && this.events(f).some((e) => e.data.type === "merge_intent" && e.data.head === f.head)) {
             await this.event(f, `merge-completed:${f.head}`, { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: f.mergeSha });
             await this.postMerge(f, f.mergeSha);
@@ -72619,12 +72626,14 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
         }
         const ownership = this.ownership(f, snapshot), owner = ownership?.task;
         if (owner && (owner.state === "closed" || owner.labels.includes("harness:blocked"))) {
+          this.note(number4, "stopped", "Die zugeh\xF6rige Aufgabe wurde geschlossen oder blockiert.");
           await this.explain(f, "Die zugeh\xF6rige Aufgabe wurde geschlossen oder blockiert.");
           continue;
         }
         const adopted = !this.options.ownedOnly && f.labels.includes(this.config.merge.adoptLabel);
         if (ownership && !adopted) {
           if (ownership.status !== "success") {
+            this.note(number4, "stopped", `Lauf mit Status ${ownership.status} ver\xF6ffentlicht, nicht als erfolgreich validiert.`);
             await this.explain(f, `Der Lauf wurde mit Status ${ownership.status} ver\xF6ffentlicht, nicht als erfolgreich validiert; die Factory mergt ihn nicht.`);
             continue;
           }
@@ -72632,6 +72641,7 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
             phase = "Nachtr\xE4gliche Commits pr\xFCfen";
             const refusal = await this.laterCommits(f, ownership.publishedHead);
             if (refusal) {
+              this.note(number4, "stopped", refusal);
               await this.explain(f, refusal);
               continue;
             }
@@ -72639,12 +72649,14 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
           if (f.draft && f.state === "open" && this.api.ready && !f.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
             phase = "Entwurf freigeben";
             await this.api.ready(number4, f.head);
+            this.note(number4, "checks", "Entwurf zur Pr\xFCfung freigegeben.");
             await this.explain(f, "Der validierte Entwurf wurde zur Pr\xFCfung freigegeben; Review und Merge folgen im n\xE4chsten Durchlauf.");
             continue;
           }
         }
         if (f.state === "open" && !f.draft && f.sameRepository && !blockedLabel(f) && f.mergeState === "DIRTY") {
           phase = "Merge-Konflikt behandeln";
+          this.note(number4, "conflict");
           await this.conflict(f, snapshot, ownership, adopted);
           continue;
         }
@@ -72654,19 +72666,23 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
           if (failed.length) {
             phase = "Fehlgeschlagene Pflichtpr\xFCfung wiederholen";
             if (this.api.rerunFailed && await this.api.rerunFailed(number4, f.head, required2)) {
+              this.note(number4, "checks", `Pflichtpr\xFCfung ${failed.map((c) => c.name).join(", ")} wird einmal wiederholt.`);
               await this.explain(f, "Eine Pflichtpr\xFCfung ist fehlgeschlagen und wird einmal wiederholt, falls die Ursache die Ausf\xFChrungsumgebung war (z. B. Netzwerk bei der Installation).");
               continue;
             }
+            this.note(number4, "checks-failed", `Pflichtpr\xFCfung ${failed.map((c) => c.name).join(", ")} ist fehlgeschlagen.`);
             await this.explain(f, `Pflichtpr\xFCfung ${failed.map((c) => c.name).join(", ")} ist fehlgeschlagen; kein Review und kein Merge f\xFCr diesen Stand.`);
             continue;
           }
           const pending = required2.filter((name) => !f.checks.some((c) => c.name === name) || f.checks.some((c) => c.name === name && !["success", "neutral", "skipped"].includes(c.state)));
           if (pending.length && !f.checks.some((c) => c.state === "action_required")) {
+            this.note(number4, "checks", `Pflichtpr\xFCfung ${pending.join(", ")} fehlt oder l\xE4uft noch.`);
             await this.explain(f, `Pflichtpr\xFCfung ${pending.join(", ")} fehlt oder l\xE4uft noch; Review und Merge folgen danach.`);
             continue;
           }
         }
         if (f.state !== "open" || f.draft || !f.sameRepository || f.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
+          this.note(number4, "stopped", "PR ist nicht offen/freigegeben oder wurde ausdr\xFCcklich blockiert.");
           await this.explain(f, "PR ist nicht offen/freigegeben, stammt aus einem Fork/falschen Zielbranch oder wurde ausdr\xFCcklich blockiert.");
           continue;
         }
@@ -72697,6 +72713,7 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
         const rejected = cached2 ? void 0 : this.events(f).find((e) => e.data.type === "merge_review" && e.data.verdictKey === verdictKey && rejects(e.data.review));
         if (rejected?.data.type === "merge_review") {
           const earlier = rejected.data;
+          this.note(number4, "review-rejected", `KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}).`);
           await this.event(
             f,
             `merge-status:${hash2({ head: f.head, verdictKey })}`,
@@ -72714,6 +72731,7 @@ Gepr\xFCfter Head: \`${f.head}\`.`
         }
         if (this.config.merge.updateBranch && behind(f, this.config) && !f.unresolvedThreads.length && !["CHANGES_REQUESTED", "REVIEW_REQUIRED"].includes(f.reviewDecision ?? "")) {
           phase = "Branch-Aktualisierung";
+          this.note(number4, "branch-update", `Branch lag ${f.behindBy ?? "einige"} Commit(s) hinter der Basis.`);
           if (await this.updateBranch(f, snapshot, ownership, adopted, `Der Branch enthielt ${f.behindBy ?? "einige"} neuere Commit(s) der Basis nicht und wurde von der Factory aktualisiert. Pflichtpr\xFCfungen, Validierung und KI-Review folgen f\xFCr den neuen Stand.`)) report.updated++;
           continue;
         }
@@ -72744,6 +72762,7 @@ Gepr\xFCfter Head: \`${f.head}\`.`
           if (sourceTask) input2.sourceTask = sourceTask;
           if (Buffer.byteLength(JSON.stringify({ ...input2, facts: factsKey(current) })) > this.config.merge.review.maxContextBytes) throw new Error("Review context exceeds limit; no truncated approval");
           phase = "KI-Review";
+          this.note(number4, "review");
           const reviewed = await this.reviewer.review(input2);
           reviewNote = routeNoteDe(routeOutcome(reviewed));
           return mergeReviewSchema.parse(reviewed);
@@ -72764,6 +72783,7 @@ ${reviewNote ? `${reviewNote}
 
 ` : ""}Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         );
+        this.note(number4, "review", null, riskRecord && riskRecord.source !== "error" ? riskRecord.class : null);
         if (riskKey && riskRecord) {
           if (riskRecord.source === "error") await this.explain(f, describeRisk(riskRecord, risk));
           else await this.event(
@@ -72783,6 +72803,7 @@ ${riskNote ? `${riskNote}
           }
         }
         if (f.checks.some((c) => c.state === "action_required")) {
+          this.note(number4, "gate", "GitHub verlangt eine Workflow-Freigabe am PR.");
           await this.explain(f, mergeGate(f, this.config));
           continue;
         }
@@ -72804,21 +72825,27 @@ ${riskNote ? `${riskNote}
           phase = "\xDCbergabe-Label setzen";
           await this.api.needsHuman(number4, handOver);
         }
-        if (rejects(review)) continue;
+        if (rejects(review)) {
+          this.note(number4, handOver ? "handover" : "review-rejected", `KI-Entscheidung: ${review.decision}.`);
+          continue;
+        }
         const live2 = await this.api.facts(number4);
         if (hash2(factsKey(live2)) !== hash2(factsKey(f)) || !this.eligible(live2, snapshot) || live2.state !== "open" || live2.draft || !live2.sameRepository || live2.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
+          this.note(number4, "review", "Stand hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung folgt.");
           await this.explain(live2, "PR, Head, Basis oder Freigabe hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung erforderlich.");
           continue;
         }
         if (owner) {
           const liveOwner = this.tasks ? await this.tasks.getIssue(owner.number) : owner;
           if (liveOwner.state !== "open" || liveOwner.labels.includes("harness:blocked") || !liveOwner.labels.includes("harness:managed") || taskVersion(liveOwner) !== taskVersion(owner) || untrustedEdit(liveOwner)) {
+            this.note(number4, "stopped", "Die zugeh\xF6rige Aufgabe wurde w\xE4hrend des Reviews ver\xE4ndert.");
             await this.explain(live2, "Die zugeh\xF6rige Aufgabe wurde w\xE4hrend des Reviews geschlossen, blockiert, abgemeldet oder fachlich ver\xE4ndert.");
             continue;
           }
         }
         const riskGate = !!riskKey && !!riskRecord && risk.mode === "enforce" && review.decision === "merge" && permission(this.config, "merge_pr") === "allow" && aboveThreshold(riskRecord.class, risk);
         if (riskGate && risk.aboveThreshold === "block") {
+          this.note(number4, "handover", `Risiko ${riskRecord.class} \xFCber der Schwelle ${risk.autoMergeUpTo}; bitte selbst mergen.`);
           await this.explain(live2, `Risiko ${riskRecord.class} liegt \xFCber der Schwelle ${risk.autoMergeUpTo}; die Factory mergt diesen PR nicht. Bitte selbst pr\xFCfen und mergen.`);
           continue;
         }
@@ -72838,6 +72865,7 @@ ${riskNote ? `${riskNote}
             if (match?.[2] === approvalId && await this.api.canApprove(c.author)) approved = match[1] === "approve";
           }
           if (!approved) {
+            this.note(number4, "approval-required", riskGate ? `Risiko ${riskRecord.class} \xFCber der Schwelle ${risk.autoMergeUpTo}: menschliche Freigabe n\xF6tig.` : "Menschliche Freigabe n\xF6tig.");
             if (riskGate) await this.event(live2, `merge-approval-required:${approvalId}`, {
               type: "merge_approval_required",
               prNumber: number4,
@@ -72853,22 +72881,27 @@ ${riskNote ? `${riskNote}
         }
         if (review.decision === "update_branch") {
           if (!this.config.merge.updateBranch || !behind(live2, this.config) || live2.unresolvedThreads.length || ["CHANGES_REQUESTED", "REVIEW_REQUIRED"].includes(live2.reviewDecision ?? "")) {
+            this.note(number4, "gate", "Branch-Aktualisierung ist nicht erlaubt oder durch offene Reviews blockiert.");
             await this.explain(live2, "Branch-Aktualisierung ist nicht erlaubt oder durch offene Reviews blockiert.");
             continue;
           }
           phase = "Branch-Aktualisierung";
+          this.note(number4, "branch-update", "KI hat eine Branch-Aktualisierung veranlasst.");
           if (await this.updateBranch(live2, snapshot, ownership, adopted, "KI hat eine Branch-Aktualisierung veranlasst. Neue Tests und eine neue KI-Entscheidung sind vor dem Merge erforderlich.")) report.updated++;
           continue;
         }
         const gate = mergeGate(live2, this.config);
         if (gate) {
+          this.note(number4, "gate", gate);
           await this.explain(live2, gate);
           continue;
         }
         await this.event(live2, `merge-intent:${reviewKey}`, { type: "merge_intent", prNumber: number4, head: f.head, base: f.base, reviewKey });
         phase = "GitHub-Merge";
+        this.note(number4, "merging");
         const sha4 = await this.api.merge(number4, f.head, this.config.merge.method);
         report.merged++;
+        this.note(number4, "merged");
         f.state = "closed";
         f.mergeSha = sha4;
         await this.event(
@@ -72882,6 +72915,7 @@ ${riskNote ? `${riskNote}
       } catch (error62) {
         const status = error62 instanceof Error && "status" in error62 ? String(error62.status) : "unavailable";
         report.errors.push(`PR #${number4}: review/update/merge not confirmed (${status}); no unreviewed merge performed`);
+        this.note(number4, "error", `${phase} konnte nicht best\xE4tigt werden (${status}).`);
         const reasons = {
           "Change set exceeds review file limit": "Die \xC4nderung \xFCberschreitet das konfigurierte Dateilimit f\xFCr einen vollst\xE4ndigen KI-Review.",
           "Review context exceeds limit; no truncated approval": "Der vollst\xE4ndige Review-Kontext \xFCberschreitet das konfigurierte Gr\xF6\xDFenlimit; eine gek\xFCrzte Pr\xFCfung gen\xFCgt nicht.",

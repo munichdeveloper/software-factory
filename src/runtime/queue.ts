@@ -4,6 +4,9 @@ import { statusView, type QueueStage } from '../manager/status.js';
 import { reconstruct, type Task } from '../state/reconstruct.js';
 import { dependencies, priorityLabels } from '../state/lifecycle.js';
 import type { Snapshot, Status } from '../types.js';
+import type { Execution } from '../state/reconstruct.js';
+import { reworkOf, retryOf } from './coding-context.js';
+import type { MergeProgress } from './merge.js';
 
 /**
  * The Factory's job queue as the broker last saw it: every open managed task of every bound repository, with where it
@@ -31,6 +34,33 @@ export interface QueueEntry {
   waitsForSlot: boolean;
   dependsOn: number[];
   pullRequests: string[];
+  /**
+   * The coding attempts of the current task version, oldest first (at most 10): what each one was for, how far it got
+   * and how its independent validation ended. Refused starts are no attempt and are left out.
+   */
+  runs: QueueRun[];
+  /** Where the broker's merge pass last left the task's pull request; null without a pull request or merge pass. */
+  merge: MergeProgress | null;
+  /** When the task's pull request was merged, from the reconciliation's own pull request list. */
+  mergedAt: string | null;
+}
+/**
+ * One coding attempt. kind: first, retry (after a failed run), rework (after a failed validation), review (after the
+ * merge review asked for changes) or conflict (after the branch conflicted with its base).
+ */
+export interface QueueRun {
+  executionId: string; kind: 'first' | 'retry' | 'rework' | 'review' | 'conflict'; startedAt: string;
+  /** The runtime phase while it runs, else null. */
+  phase: string | null; active: boolean;
+  outcome: 'success' | 'blocked' | 'failed' | 'cancelled' | 'needs_approval' | null;
+  /** The independent validation: passed for a published success, else the broker's bound report of a blocked run. */
+  validation: 'passed' | 'failed' | 'unsupported' | 'invalid' | null;
+  /** A fixed error code of a failed run. */
+  error: string | null;
+  /** Failed while setting up the runner, before any agent started (costs no attempt). */
+  infrastructure: boolean;
+  /** The agent model the run used, where the broker recorded it. */
+  model: string | null;
 }
 export interface QueueRepository {
   repositoryId: number; repository: string;
@@ -50,12 +80,44 @@ const stageOrder: Record<QueueStage, number> = { starting: 0, running: 1, 'await
   refused: 6, blocked: 7, 'awaiting-pr': 8, failed: 9, closed: 10 };
 const priorityOrder = { high: 0, normal: 1, low: 2 } as const;
 const fixedCode = (value: string | null | undefined) => value && /^[A-Z][A-Z0-9_]{1,63}$/.test(value) ? value : null;
+/** A closed task stays in the view this long, so a merged run can be seen at its end. */
+const closedWindowMs = 24 * 3600000;
+const pullNumber = (url: string) => Number(url.split('/').pop());
 
-function entry(task: Task, config: Config, snapshot: Snapshot, repository: string, rejection: string | undefined, waitsForSlot: boolean): QueueEntry {
+function runKind(task: Task, execution: Execution): QueueRun['kind'] {
+  if (retryOf(execution.input)) return 'retry';
+  const previous = reworkOf(execution.input);
+  if (!previous) return 'first';
+  const source = task.executions.find(e => e.input.executionId === previous);
+  if (source?.result?.status !== 'success') return 'rework';
+  const requested = task.events.flatMap(e => e.data.type === 'merge_changes_requested' && e.data.executionId === previous ? [e.data] : []).at(-1);
+  return requested?.cause === 'conflict' ? 'conflict' : 'review';
+}
+function runs(task: Task): QueueRun[] {
+  return task.executions.filter(e => e.input.taskVersion === task.version && !e.rejected).sort((a, b) => a.attempt - b.attempt).slice(-10).map(e => {
+    const result = e.result, validated = result?.artifacts.some(a => a.startsWith('urn:sf-validation:'));
+    return {
+      executionId: e.input.executionId, kind: runKind(task, e), startedAt: e.runtime?.createdAt ?? e.run?.createdAt ?? e.at,
+      phase: e.active ? e.runtime?.phase ?? null : null, active: e.active, outcome: result?.status ?? null,
+      validation: e.runtime?.validation?.status ?? (result?.status === 'success' && validated ? 'passed' : null),
+      error: result && ['failed', 'cancelled'].includes(result.status) ? fixedCode(result.error) : null,
+      infrastructure: !!e.infrastructure, model: e.runtime?.usage?.model ?? e.runtime?.route?.agent?.model ?? null,
+    };
+  });
+}
+
+function entry(task: Task, config: Config, snapshot: Snapshot, repository: string, rejection: string | undefined, waitsForSlot: boolean,
+  merges: ReadonlyMap<number, MergeProgress>): QueueEntry {
   const { stage } = statusView(task, config, { repository, readyIsGrant: !!snapshot.readyIsGrant, rejection, queued: waitsForSlot });
   const active = task.executions.find(e => e.active), result = task.latest?.result;
   const label = task.issue.labels.find(l => priorityLabels.includes(l));
   const startedAt = active ? active.runtime?.createdAt ?? active.run?.createdAt ?? active.at : null;
+  const pullRequests = (result?.artifacts ?? []).filter(a => /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/.test(a));
+  // The pull request of the latest attempt, else a merged one that closes the task (a person may have merged it).
+  const prs = snapshot.prs.filter(p => pullRequests.some(u => pullNumber(u) === p.number) || (p.merged && p.closingIssues.includes(task.issue.number)));
+  const merged = prs.filter(p => p.merged && p.mergedAt).sort((a, b) => (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
+  const tracked = [...pullRequests.map(pullNumber), ...prs.map(p => p.number)].flatMap(n => merges.get(n) ?? [])
+    .sort((a, b) => b.at.localeCompare(a.at))[0] ?? null;
   const reason = stage === 'blocked' && task.blockReason ? task.blockReason
     : stage === 'refused' || stage === 'awaiting-grant' ? fixedCode(rejection ?? (task.refusal?.waiting ? task.refusal.code : null))
     : ['retry', 'failed', 'blocked'].includes(stage) ? fixedCode(task.latest?.runtime?.validation?.reason) ?? fixedCode(result?.error) ?? (result ? result.status.toUpperCase() : null)
@@ -64,19 +126,24 @@ function entry(task: Task, config: Config, snapshot: Snapshot, repository: strin
     issueNumber: task.issue.number, title: task.issue.title, url: `https://github.com/${repository}/issues/${task.issue.number}`, stage,
     status: task.desiredStatus, priority: label ? label.replace('harness:priority-', '') as QueueEntry['priority'] : null,
     attempts: { used: task.attemptsUsed, max: config.execution.maxRetries + 1 },
-    since: startedAt ?? (stage === 'queued' || stage === 'awaiting-grant' ? task.issue.readyAt ?? task.issue.updatedAt : task.latest?.at ?? task.issue.updatedAt),
+    since: startedAt ?? (stage === 'closed' ? merged?.mergedAt ?? task.issue.updatedAt : stage === 'queued' || stage === 'awaiting-grant' ? task.issue.readyAt ?? task.issue.updatedAt : task.latest?.at ?? task.issue.updatedAt),
     run: active && startedAt ? { executionId: active.input.executionId, phase: active.runtime?.phase ?? null, startedAt } : null,
     reason, retryAt: stage === 'refused' && task.refusal?.waiting ? task.refusal.until : null, waitsForSlot: stage === 'queued' && waitsForSlot,
     dependsOn: dependencies(task.issue.body),
-    pullRequests: (result?.artifacts ?? []).filter(a => /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/.test(a)),
+    pullRequests, runs: runs(task), merge: tracked, mergedAt: merged?.mergedAt ?? null,
   };
 }
 
-/** The open managed tasks of one reconciliation, in queue order. */
-export function queueEntries(snapshot: Snapshot, config: Config, report: RunReport, repository: string, rejections: ReadonlyMap<number, string> = new Map(), now = new Date()): QueueEntry[] {
+/**
+ * The open managed tasks of one reconciliation, in queue order, followed by the tasks closed within the last day that
+ * ran at least once (so a finished run can be seen with its merge).
+ */
+export function queueEntries(snapshot: Snapshot, config: Config, report: RunReport, repository: string, rejections: ReadonlyMap<number, string> = new Map(), now = new Date(),
+  merges: ReadonlyMap<number, MergeProgress> = new Map()): QueueEntry[] {
   const slotWaits = new Set(report.decisions.filter(d => d.decision.reason === 'Maximum parallel workers reached').map(d => d.action.issueNumber));
-  return reconstruct(snapshot, config, now).filter(t => t.issue.state === 'open')
-    .map(t => entry(t, config, snapshot, repository, rejections.get(t.issue.number), slotWaits.has(t.issue.number)))
+  const recent = (t: Task) => t.issue.state === 'open' || (now.getTime() - Date.parse(t.issue.updatedAt) < closedWindowMs && t.executions.some(e => !e.rejected));
+  return reconstruct(snapshot, config, now).filter(recent)
+    .map(t => entry(t, config, snapshot, repository, rejections.get(t.issue.number), slotWaits.has(t.issue.number), merges))
     .sort((a, b) => stageOrder[a.stage] - stageOrder[b.stage] || (priorityOrder[a.priority ?? 'normal'] - priorityOrder[b.priority ?? 'normal'])
       || a.since.localeCompare(b.since) || a.issueNumber - b.issueNumber);
 }
@@ -90,10 +157,11 @@ export class QueueBoard {
       outcome: null, failure: null, slots: null, entries: [] };
   }
   /** After a reconciliation that completed. Never throws: the queue view must not fail a reconciliation. */
-  observed(target: Target, config: Config, snapshot: Snapshot | undefined, report: RunReport, rejections?: ReadonlyMap<number, string>) {
+  observed(target: Target, config: Config, snapshot: Snapshot | undefined, report: RunReport, rejections?: ReadonlyMap<number, string>,
+    merges?: ReadonlyMap<number, MergeProgress>) {
     try {
       const now = this.now();
-      const entries = snapshot ? queueEntries(snapshot, config, report, target.repository, rejections, now) : [];
+      const entries = snapshot ? queueEntries(snapshot, config, report, target.repository, rejections, now, merges) : [];
       const active = snapshot ? reconstruct(snapshot, config, now).reduce((n, t) => n + t.executions.filter(e => e.active).length, 0) : 0;
       this.repositories.set(target.repositoryId, { repositoryId: target.repositoryId, repository: target.repository, observedAt: now.toISOString(),
         outcome: report.outcome, failure: null, slots: snapshot ? { active, max: config.execution.maxParallelWorkers } : null, entries });
