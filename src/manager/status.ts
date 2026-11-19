@@ -2,6 +2,7 @@ import type { Config } from '../config/index.js';
 import type { Task } from '../state/reconstruct.js';
 import { routeNoteEn } from '../llm/router.js';
 import { usageNoteEn } from '../runtime/usage.js';
+import { protectedPathBlockPrefix } from '../state/protected-paths.js';
 
 export const statusMarker = '<!-- software-factory:status -->';
 
@@ -83,6 +84,7 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
     state = [`**Blocked: ${task.blockReason}.**`]; stage = 'blocked';
     needs = task.blockReason.startsWith('Unresolved dependencies') ? 'Close the issues this task depends on, or remove them from its `Depends on:` line.'
       : task.blockReason.startsWith('Missing Acceptance') ? 'Add a section `## Acceptance criteria` with at least one list item to the task text.'
+      : task.blockReason.startsWith(protectedPathBlockPrefix) ? 'The coding worker may not change CI workflows (`.github/`), agent instruction files or CODEOWNERS. A maintainer makes that part of the change, then removes it from the task text (or moves it to a section `## Out of scope` / `## Nicht enthalten`); the task then starts normally.'
       : 'Remove the label `harness:blocked` when the task may continue.';
   } else if (rejection) {
     const ready = rejection.startsWith('READY_');

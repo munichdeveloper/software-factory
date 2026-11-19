@@ -241,3 +241,21 @@ it('names the model the router picked in the review comment, without journaling 
   expect(comment.body).toContain('Modellwahl: Der Model Router (Jev) wählte `opus-high` (claude-opus-5-5, high) mit 88 % Wahrscheinlichkeit.');
   expect(decodeEvent(comment, x.cfg.manager.trustedActors)!.data).toEqual(expect.objectContaining({ review: x.review }));
 });
+it.each(['request_changes', 'defer'] as const)('does not review an unchanged head again when only the base moves after %s (controla#123)', async decision => {
+  const x = fixture(decision);
+  await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
+  for (const base of ['e', 'f', '1']) { x.f.base = base.repeat(40); await x.run(); }
+  expect(x.reviewer.review).toHaveBeenCalledTimes(1); expect(x.api.merge).not.toHaveBeenCalled();
+  // One explanation per head, not one per base.
+  expect(x.f.comments.filter(c => c.body.includes('bereits abgelehnt'))).toHaveLength(1);
+  x.f.head = '2'.repeat(40); await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(2);
+});
+it('reviews an unchanged head again after a rejection when the configuration changes', async () => {
+  const x = fixture('request_changes'); await x.run();
+  x.f.base = 'e'.repeat(40); x.cfg.merge.review.maxFiles += 1; await x.run();
+  expect(x.reviewer.review).toHaveBeenCalledTimes(2);
+});
+it('reviews a new base again after an approval that could not merge yet', async () => {
+  const x = fixture(); x.f.mergeState = 'BLOCKED'; await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
+  x.f.base = 'e'.repeat(40); await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(2);
+});
