@@ -185,6 +185,13 @@ describe('durable result outbox', () => {
     expect(publish).toHaveBeenCalledWith(row.snapshot,row.binding,artifact,row.createdAt,report);expect(f.store.codingArtifact?.result.status).toBe('blocked');
     expect(await f.controller.publish(row.snapshot,row.binding,result)).toEqual(final);expect(publish).toHaveBeenCalledOnce();
   });
+  it('keeps a run blocked that stopped at a protected path, although its validation passed (controla#123)', async () => {
+    const f=await fixture(false,true),plan=defaultValidationPlan();f.repo.validationPlan=async()=>plan;
+    await f.controller.start(f.admission);const row=f.store.row!;
+    const artifact:CodingArtifact={contractVersion:'3.0',baseSha:row.snapshot.baseSha,result:{contractVersion:'2.0',executionId:f.admission.input.executionId,taskId:`github:${f.github.repository}#1`,taskVersion:f.admission.input.taskVersion,status:'blocked',summary:'Blocker: the CI job must go in .github/workflows/test.yml, and I am not allowed to edit .github/.',artifacts:[],error:null},changes:[{path:'result.txt',content:'eA==',mode:'100644'}]};
+    f.repo.coding={executor:{poll:async()=>({artifact,validation:reportFor(artifact,plan,'passed')}),cancel:async()=>{}},publish:vi.fn(async()=>({url:'https://github.com/owner/target/pull/3'}))};
+    expect((await f.controller.executeCoding(row.snapshot,row.binding))!.status).toBe('blocked');
+  });
   it('blocks missing independent evidence before storing or publishing new-mode code', async()=>{
     const f=await fixture(false,true);f.repo.validationPlan=async()=>defaultValidationPlan();await f.controller.start(f.admission);const row=f.store.row!;
     const artifact:CodingArtifact={contractVersion:'3.0',baseSha:row.snapshot.baseSha,result:{contractVersion:'2.0',executionId:f.admission.input.executionId,taskId:`github:${f.github.repository}#1`,taskVersion:f.admission.input.taskVersion,status:'success',summary:'Code',artifacts:[],error:null},changes:[{path:'result.txt',content:'eA==',mode:'100644'}]};

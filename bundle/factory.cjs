@@ -65438,8 +65438,6 @@ var configSchema = external_exports.strictObject({
       approval_required: notificationRule.optional(),
       // A task that waits for nothing but a person's `harness:ready` grant (ready-label repositories); optional for the same reason.
       grant_required: notificationRule.optional(),
-      // A Factory PR the review handed over to a person (merge_handover); optional for the same reason.
-      handover_required: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
@@ -69813,7 +69811,6 @@ async function authorizeManagedLabel(issue2, events, canApprove, trustedActors, 
 }
 
 // src/merge/contract.ts
-var needsHumanLabel = "sf:needs-human";
 var mergeReviewSchema = external_exports.strictObject({
   decision: external_exports.enum(["merge", "update_branch", "request_changes", "defer"]),
   reason: external_exports.string().min(1).max(3e3),
@@ -69845,7 +69842,15 @@ var eventSchema = external_exports.strictObject({
     external_exports.strictObject({ type: external_exports.literal("notification_sent"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/), channel: external_exports.string().max(100), timestamp: external_exports.string().max(100) }),
     external_exports.strictObject({ type: external_exports.literal("notification_attempt"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
     external_exports.strictObject({ type: external_exports.literal("notification_rejected"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
-    external_exports.strictObject({ type: external_exports.literal("merge_review"), head: external_exports.string().length(40), base: external_exports.string().length(40), reviewKey: external_exports.string().length(64), review: mergeReviewSchema }),
+    // verdictKey: the review's inputs without the base; a rejection under it stands for every base (controla#123).
+    external_exports.strictObject({
+      type: external_exports.literal("merge_review"),
+      head: external_exports.string().length(40),
+      base: external_exports.string().length(40),
+      reviewKey: external_exports.string().length(64),
+      review: mergeReviewSchema,
+      verdictKey: external_exports.string().length(64).optional()
+    }),
     external_exports.strictObject({ type: external_exports.literal("merge_risk"), head: external_exports.string().length(40), base: external_exports.string().length(40), riskKey: external_exports.string().length(64), risk: riskRecordSchema }),
     external_exports.strictObject({ type: external_exports.literal("merge_intent"), prNumber: external_exports.number().int().positive(), head: external_exports.string().length(40), base: external_exports.string().length(40), reviewKey: external_exports.string().length(64) }),
     external_exports.strictObject({ type: external_exports.literal("merge_completed"), prNumber: external_exports.number().int().positive(), head: external_exports.string().length(40), mergeSha: external_exports.string().length(40) }),
@@ -69869,15 +69874,6 @@ var eventSchema = external_exports.strictObject({
       executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
       reviewKey: external_exports.string().length(64),
       review: mergeReviewSchema
-    }),
-    // Written once per review that hands a Factory pull request over to a person; the Slack notice handover_required reads it.
-    external_exports.strictObject({
-      type: external_exports.literal("merge_handover"),
-      prNumber: external_exports.number().int().positive(),
-      head: external_exports.string().length(40),
-      base: external_exports.string().length(40),
-      reviewKey: external_exports.string().length(64),
-      decision: external_exports.enum(["request_changes", "defer"])
     }),
     external_exports.strictObject({ type: external_exports.literal("merge_status"), head: external_exports.string().length(40), base: external_exports.string().length(40), reason: external_exports.string().max(3e3) }),
     external_exports.strictObject({ type: external_exports.literal("decision"), action: external_exports.string().max(3e4), outcome: external_exports.enum(["allow", "deny", "approval", "executed"]), reason: external_exports.string().max(2e3) })
@@ -69953,6 +69949,44 @@ function dependencies(body) {
 function acceptanceCriteria(body) {
   const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien|Abnahmekriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
   return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
+}
+
+// src/state/protected-paths.ts
+var pathPatterns = [
+  // `.github`, `.github/workflows/test.yml`, `.gitmodules`; `.gitignore`/`.gitattributes` are ordinary files (controla#124).
+  /(?<![\w.-])\.git(?:hub|modules)(?:\/[\w./*-]*)?(?![\w-])/gi,
+  /(?<![\w.-])\.(?:codex|agents|squad|copilot|claude)\/[\w./*-]*/gi,
+  /(?<![\w.-])(?:AGENTS\.md|CODEOWNERS)(?![\w.-])/gi
+];
+var ciPatterns = [
+  /\b(?:neue[nrs]?|eigene[nrs]?|zusätzliche[nrs]?|separate[nrs]?|weitere[nrs]?)\s+(?:CI|GitHub[- ]Actions)[- ](?:Job|Workflow)s?\b/gi,
+  /\b(?:new|separate|dedicated|additional|own)\s+(?:CI|GitHub Actions)[- ](?:job|workflow)s?\b/gi,
+  /\b(?:add|create|extend|change|modify|edit)(?:s|ing)?\s+(?:a\s+|an\s+|the\s+)?(?:CI|GitHub Actions)[- ](?:job|workflow)s?\b/gi
+];
+var outOfScopeHeading = /^#{1,6}\s*(?:Nicht enthalten|Nicht Teil|Außerhalb des Umfangs|Out of scope|Not in scope|Non-goals|Not included)\b/i;
+var outOfScopeLine = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:Nicht enthalten|Nicht Teil|Out of scope|Not in scope|Not included)\b/i;
+var prohibitionLine = /(?<![\p{L}\d_])(?:nicht ändern|nicht anfassen|nicht verändern|keine (?:Änderungen|Änderung)|unverändert|ändern wir|ergänzen wir|von Hand|beachten|befolgen|do not (?:change|edit|touch|modify)|don't (?:change|edit|touch|modify)|must not (?:change|edit|touch|modify)|never (?:change|edit|touch|modify)|no changes? (?:to|in)|leave [^.]* unchanged|follow)(?![\p{L}\d_])/iu;
+function inScope(text) {
+  const kept = [];
+  let skipping = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^#{1,6}\s/.test(line)) skipping = outOfScopeHeading.test(line);
+    if (!skipping && !outOfScopeLine.test(line) && !prohibitionLine.test(line)) kept.push(line);
+  }
+  return kept.join("\n");
+}
+function protectedPathRequests(text) {
+  const scoped = inScope(text);
+  const found = [];
+  for (const pattern of [...pathPatterns, ...ciPatterns]) for (const m of scoped.matchAll(pattern)) found.push({ at: m.index, value: m[0] });
+  const seen = /* @__PURE__ */ new Set();
+  return found.sort((a, b) => a.at - b.at).map((f) => f.value).filter((v) => !seen.has(v.toLowerCase()) && !!seen.add(v.toLowerCase())).slice(0, 5);
+}
+var protectedPathBlockPrefix = "Task requires changes to protected paths";
+function protectedPathBlockReason(title, body) {
+  const found = protectedPathRequests(`${title}
+${body}`);
+  return found.length ? `${protectedPathBlockPrefix} the coding worker may not edit (${found.map((f) => `\`${f.replaceAll("`", "")}\``).join(", ")})` : void 0;
 }
 
 // src/policies/engine.ts
@@ -70121,8 +70155,9 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     const automaticBlock = currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
     const explicitBlock = issue2.labels.includes("harness:blocked") && !automaticBlock;
     const semanticBlock = automaticBlock?.cause === "planner" && automaticBlock.taskVersion === version2;
-    const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map((n) => `#${n}`).join(", ")}` : !criteria.length ? "Missing Acceptance criteria section" : explicitBlock ? "Issue explicitly marked blocked; clear the blocked label to resume" : semanticBlock ? "Planner marked task blocked; revise the task or clear the blocked label" : void 0;
-    const automaticBlockCause = executions.some((e) => e.ambiguous) ? "dispatch" : unresolved.length ? "dependencies" : !criteria.length ? "specification" : semanticBlock ? "planner" : latest?.result?.status === "blocked" ? "worker" : void 0;
+    const protectedPaths = issue2.state === "open" ? protectedPathBlockReason(issue2.title, issue2.body) : void 0;
+    const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map((n) => `#${n}`).join(", ")}` : !criteria.length ? "Missing Acceptance criteria section" : protectedPaths ? protectedPaths : explicitBlock ? "Issue explicitly marked blocked; clear the blocked label to resume" : semanticBlock ? "Planner marked task blocked; revise the task or clear the blocked label" : void 0;
+    const automaticBlockCause = executions.some((e) => e.ambiguous) ? "dispatch" : unresolved.length ? "dependencies" : !criteria.length || protectedPaths ? "specification" : semanticBlock ? "planner" : latest?.result?.status === "blocked" ? "worker" : void 0;
     const linked = snapshot.prs.filter((p) => p.closingIssues.includes(issue2.number) || p.referencedIssues.includes(issue2.number));
     const hasOpenPR = linked.some((p) => p.state === "open");
     const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
@@ -70562,8 +70597,7 @@ var labels = {
   issue_created: "SF: Issue autonom angelegt",
   pr_merged: "SF: PR durch Bot gemergt",
   approval_required: "SF: PR wartet auf Freigabe (Risiko \xFCber Schwelle)",
-  grant_required: "SF: Issue wartet auf Freigabe (harness:ready)",
-  handover_required: "SF: PR braucht einen Menschen (KI-Review)"
+  grant_required: "SF: Issue wartet auf Freigabe (harness:ready)"
 };
 var runStartWindowMs = 24 * 60 * 60 * 1e3;
 var lateStartMs = 10 * 60 * 1e3;
@@ -70700,7 +70734,6 @@ async function deliverNotifications(github, config2, snapshot, sink2, correlatio
       channel,
       ...notification.executionId ? { executionId: notification.executionId } : {},
       ...notification.approvalId ? { approvalId: notification.approvalId } : {},
-      ...notification.reviewKey ? { reviewKey: notification.reviewKey } : {},
       ...notification.event === "grant_required" ? { after: notification.after ?? null } : {}
     });
     const deliveries = (await github.comments(journal)).flatMap((c) => {
@@ -70808,30 +70841,6 @@ Decision: ${intent.actionId}
       });
     }
   }
-  if (settings.events.handover_required?.enabled) for (const pr of snapshot.prs) {
-    if (pr.state !== "open" || !pr.headSha) continue;
-    let comments;
-    try {
-      comments = await github.comments(pr.number);
-    } catch (error62) {
-      if (error62 instanceof Error && error62.message === "ISSUE_OUTSIDE_RUNTIME_SCOPE") continue;
-      throw error62;
-    }
-    for (const c of comments) {
-      const e = decodeEvent(c, config2.manager.trustedActors);
-      if (e?.data.type !== "merge_handover" || e.data.prNumber !== pr.number || e.data.head !== pr.headSha || !afterStart(e.at)) continue;
-      await deliver(pr.number, {
-        event: "handover_required",
-        number: pr.number,
-        title: pr.title ?? `PR #${pr.number}`,
-        actor: "Software Factory",
-        url: `https://github.com/${github.repository}/pull/${pr.number}`,
-        repository: github.repository,
-        reviewKey: e.data.reviewKey,
-        detail: e.data.decision === "defer" ? "Das KI-Review \xFCberl\xE4sst die Entscheidung einem Menschen (defer). Begr\xFCndung im PR." : "Das KI-Review verlangt \xC4nderungen, automatische Nacharbeit (execution.rework) ist aus. Bitte nachbessern; Commits mit Schreibrecht \xFCbernimmt die Factory."
-      });
-    }
-  }
   if (settings.events.grant_required?.enabled) for (const wait of grantWaits) {
     await deliver(wait.number, {
       event: "grant_required",
@@ -70928,7 +70937,7 @@ function statusView(task, config2, context2) {
   } else if (task.blockReason && !(result?.status === "blocked" && task.automaticBlockCause === "worker")) {
     state = [`**Blocked: ${task.blockReason}.**`];
     stage = "blocked";
-    needs = task.blockReason.startsWith("Unresolved dependencies") ? "Close the issues this task depends on, or remove them from its `Depends on:` line." : task.blockReason.startsWith("Missing Acceptance") ? "Add a section `## Acceptance criteria` with at least one list item to the task text." : "Remove the label `harness:blocked` when the task may continue.";
+    needs = task.blockReason.startsWith("Unresolved dependencies") ? "Close the issues this task depends on, or remove them from its `Depends on:` line." : task.blockReason.startsWith("Missing Acceptance") ? "Add a section `## Acceptance criteria` with at least one list item to the task text." : task.blockReason.startsWith(protectedPathBlockPrefix) ? "The coding worker may not change CI workflows (`.github/`), agent instruction files or CODEOWNERS. A maintainer makes that part of the change, then removes it from the task text (or moves it to a section `## Out of scope` / `## Nicht enthalten`); the task then starts normally." : "Remove the label `harness:blocked` when the task may continue.";
   } else if (rejection) {
     const ready = rejection.startsWith("READY_");
     const previous = result && ["failed", "cancelled"].includes(result.status) ? `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}). ` : "";
@@ -72208,27 +72217,6 @@ var GitHubMergePort = class {
     }
     if (!labels2.some((l) => l.name === label2)) await this.api.issues.addLabels({ ...this.target, issue_number: number4, labels: [label2] });
   }
-  async pushedSince(from, head) {
-    const commits = [];
-    let status;
-    for (let page = 1; ; page++) {
-      const { data } = await this.api.repos.compareCommitsWithBasehead({ ...this.target, basehead: `${from}...${head}`, per_page: 100, page });
-      status = data.status;
-      commits.push(...data.commits);
-      if (data.commits.length < 100 || commits.length >= data.total_commits) break;
-    }
-    if (status !== "ahead") return null;
-    return commits.map((c) => c.author?.login ?? c.committer?.login ?? "");
-  }
-  async needsHuman(number4, on) {
-    if (on) {
-      await this.api.issues.addLabels({ ...this.target, issue_number: number4, labels: [needsHumanLabel] });
-      return;
-    }
-    await this.api.issues.removeLabel({ ...this.target, issue_number: number4, name: needsHumanLabel }).catch((error62) => {
-      if (!(error62 && typeof error62 === "object" && "status" in error62 && error62.status === 404)) throw error62;
-    });
-  }
   async canApprove(login) {
     try {
       return ["admin", "maintain", "write"].includes((await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login })).data.permission);
@@ -72302,7 +72290,7 @@ var safe = (s) => s.replaceAll("@", "@\u200B").replaceAll("<", "&lt;").replaceAl
 var factsKey = (f) => ({
   ...f,
   comments: [],
-  labels: f.labels.filter((l) => !l.startsWith("sf:risk-") && l !== needsHumanLabel).sort(),
+  labels: f.labels.filter((l) => !l.startsWith("sf:risk-")).sort(),
   nativeRequiredChecks: [...f.nativeRequiredChecks].sort(),
   checks: [...f.checks].sort((a, b) => `${a.name}:${a.state}`.localeCompare(`${b.name}:${b.state}`))
 });
@@ -72323,6 +72311,7 @@ function mergeGate(f, config2) {
   if (f.checks.some((c) => !["success", "neutral", "skipped"].includes(c.state))) return "Mindestens eine weitere Pr\xFCfung ist offen oder fehlgeschlagen.";
   return null;
 }
+var rejects = (review) => review.findings.some((x) => x.severity === "blocking") || ["request_changes", "defer"].includes(review.decision);
 var failedCheck = (state) => ["failure", "timed_out", "cancelled", "startup_failure", "error"].includes(state);
 var behind = (f, config2) => config2.merge.protection === "factory" ? !!f.behindBy : f.mergeState === "BEHIND";
 var MergeManager = class {
@@ -72389,25 +72378,6 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
 
 ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${next}`)}`);
     await this.api.comment(task.number, journal + summary2.subarray(0, Math.max(0, 6e4 - Buffer.byteLength(journal) - 4)).toString("utf8"));
-  }
-  /**
-   * Commits pushed onto a Factory pull request after it was published (a person fixed review findings, or updated the
-   * branch). They are adopted when every one of them comes from an account that may write to the repository, which could
-   * merge the pull request itself anyway: the new head then goes through the required checks, the validation workflow
-   * and a fresh review like any other head. Returns why the head is refused, or null when it is adopted.
-   */
-  async laterCommits(f, publishedHead) {
-    const refused = "Der Head entspricht nicht dem ver\xF6ffentlichten, validierten Commit; die Factory mergt keine fremden \xC4nderungen.";
-    if (!this.api.pushedSince) return refused;
-    const authors = await this.api.pushedSince(publishedHead, f.head);
-    if (!authors?.length) return `${refused} Der Head setzt den ver\xF6ffentlichten Commit nicht fort (umgeschriebene Historie).`;
-    const unique = [...new Set(authors)];
-    const trusted = await Promise.all(unique.map((a) => !!a && (this.config.manager.trustedActors.includes(a) || this.api.canApprove(a))));
-    const outsiders = unique.filter((_, i) => !trusted[i]).map((a) => a || "unbekannt");
-    if (outsiders.length) return `${refused} Nachtr\xE4gliche Commits ohne Schreibrecht im Repository: ${outsiders.join(", ")}.`;
-    await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
-    await this.explain(f, `Nachtr\xE4gliche Commits von ${unique.join(", ")} (Schreibrecht im Repository) werden \xFCbernommen: der neue Head durchl\xE4uft Pflichtpr\xFCfungen, Validierung und ein neues KI-Review.`);
-    return null;
   }
   ownership(f, snapshot) {
     const url2 = `https://github.com/${this.api.repository}/pull/${f.number}`;
@@ -72477,12 +72447,8 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
             continue;
           }
           if (ownership.publishedHead && f.head !== ownership.publishedHead && !this.events(f).some((e) => e.data.type === "branch_update")) {
-            phase = "Nachtr\xE4gliche Commits pr\xFCfen";
-            const refusal = await this.laterCommits(f, ownership.publishedHead);
-            if (refusal) {
-              await this.explain(f, refusal);
-              continue;
-            }
+            await this.explain(f, "Der Head entspricht nicht dem ver\xF6ffentlichten, validierten Commit; die Factory mergt keine fremden \xC4nderungen.");
+            continue;
           }
           if (f.draft && f.state === "open" && this.api.ready && !f.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
             phase = "Entwurf freigeben";
@@ -72527,6 +72493,34 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
           policy: policyVersion(this.config)
         });
         const cached2 = this.events(f).find((e) => e.data.type === "merge_review" && e.data.reviewKey === reviewKey);
+        const verdictKey = hash2({
+          protocol: "sf-merge-verdict-v1",
+          repository: this.api.repository.toLowerCase(),
+          sourceTask,
+          head: f.head,
+          checks: factsKey(f).checks,
+          labels: factsKey(f).labels,
+          merge: mergePolicy,
+          policy: policyVersion(this.config)
+        });
+        const rejected = cached2 ? void 0 : this.events(f).find((e) => e.data.type === "merge_review" && e.data.verdictKey === verdictKey && rejects(e.data.review));
+        if (rejected?.data.type === "merge_review") {
+          const earlier = rejected.data;
+          await this.event(
+            f,
+            `merge-status:${hash2({ head: f.head, verdictKey })}`,
+            {
+              type: "merge_status",
+              head: f.head,
+              base: f.base,
+              reason: `Das KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}, Basis ${earlier.base.slice(0, 7)}).`
+            },
+            `**Noch kein Merge.** Das KI-Review hat diesen Head bereits abgelehnt (**${earlier.review.decision}**). Eine neuere Basis allein \xE4ndert daran nichts; ein neues Review folgt erst nach einem neuen Commit, einer ge\xE4nderten Aufgabe oder Konfiguration.
+
+Gepr\xFCfter Head: \`${f.head}\`.`
+          );
+          continue;
+        }
         const risk = this.config.merge.risk;
         const riskKey = risk.enabled ? hash2({
           protocol: "sf-merge-risk-v1",
@@ -72563,7 +72557,7 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
         await this.event(
           f,
           `merge-review:${reviewKey}`,
-          { type: "merge_review", head: f.head, base: f.base, reviewKey, review },
+          { type: "merge_review", head: f.head, base: f.base, reviewKey, review, verdictKey },
           `**KI-Entscheidung: ${review.decision}**
 
 ${review.reason}
@@ -72600,21 +72594,7 @@ ${riskNote ? `${riskNote}
           phase = "Nacharbeit an der Aufgabe vermerken";
           await this.changesRequested(f, owner, snapshot, reviewKey, review);
         }
-        const blocked2 = review.decision === "request_changes" || review.findings.some((x) => x.severity === "blocking");
-        const handOver = !!owner && !adopted && (blocked2 && !this.config.execution.rework || review.decision === "defer");
-        if (handOver) await this.event(f, `merge-handover:${reviewKey}`, {
-          type: "merge_handover",
-          prNumber: number4,
-          head: f.head,
-          base: f.base,
-          reviewKey,
-          decision: review.decision === "defer" ? "defer" : "request_changes"
-        });
-        if (this.api.needsHuman && handOver !== f.labels.includes(needsHumanLabel)) {
-          phase = "\xDCbergabe-Label setzen";
-          await this.api.needsHuman(number4, handOver);
-        }
-        if (blocked2 || review.decision === "defer") continue;
+        if (rejects(review)) continue;
         const live = await this.api.facts(number4);
         if (hash2(factsKey(live)) !== hash2(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== "open" || live.draft || !live.sameRepository || live.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
           await this.explain(live, "PR, Head, Basis oder Freigabe hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung erforderlich.");
