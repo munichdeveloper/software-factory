@@ -8,6 +8,7 @@ import { permission, policyVersion } from '../policies/engine.js';
 import { mergeReviewSchema, type MergeFacts, type MergePort, type MergeReview, type MergeReviewer, type ReviewInput } from './contract.js';
 import { aboveThreshold, builtinCriticalPaths, classifyRisk, describeRisk, type RiskAssessor, type RiskRecord } from './risk.js';
 import { routeNoteDe, routeOutcome } from '../llm/router.js';
+import { setLlmSubject, withLlmContext } from '../llm/analytics.js';
 
 const safe = (s: string) => s.replaceAll('@', '@\u200b').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 // The broker's own display-only risk labels are no input of a review: setting them must not invalidate it.
@@ -106,11 +107,14 @@ export class MergeManager {
       if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha);
     }
   }
-  async run(snapshot: Snapshot) {
+  /** One merge pass; its model calls are recorded for analytics under the pull request (and issue) they review. */
+  run(snapshot: Snapshot) { return withLlmContext({}, () => this.pass(snapshot)); }
+  private async pass(snapshot: Snapshot) {
     const report: { reviewed: number; updated: number; merged: number; errors: string[] } = { reviewed: 0, updated: 0, merged: 0, errors: [] };
     if (!this.config.factory.enabled || !this.config.merge.enabled || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return report;
     if (permission(this.config, 'merge_pr') === 'deny') return report;
     for (const number of await this.api.candidates()) {
+      setLlmSubject({ repository: this.api.repository, prNumber: number, issueNumber: snapshot.prs.find(p => p.number === number)?.closingIssues[0] ?? null });
       if (report.reviewed >= this.config.merge.maxReviewsPerRun || report.updated + report.merged >= this.config.merge.maxActionsPerRun) break;
       let f: MergeFacts | undefined;
       let phase = 'GitHub-Zustand lesen';

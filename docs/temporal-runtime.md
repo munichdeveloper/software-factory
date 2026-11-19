@@ -37,6 +37,23 @@ manager token opens it. The view contains issue titles, so it is for authenticat
 the SF Manager. In production the token comes from the GitHub secret `BROKER_MONITOR_TOKEN` of this repository's
 `production` environment through the deploy wrapper's `deploy-env`.
 
+### Cost analytics (`GET /v1/analytics`)
+
+What each issue cost until its pull request was merged, cost per merged feature, cost per step and which models did the
+work. Coding runs come from `factory_runtime_usage` (with the stored `coding-route` decision and whether the attempt was
+an escalation); the broker's own calls (merge review, risk assessment, planner) are stored in `factory_analytics_calls`
+with repository, pull request, closing issue, step, provider, model, effort, tokens, list-price cost and whether the model
+router chose the model. Issue titles and merges (`factory_analytics_issues`) come from each reconciliation's snapshot and
+are written only when they change, so they cost no GitHub request. Every attempt of an issue counts towards it, also
+discarded ones; only inference cost is counted (Jev's routing requests and Actions minutes are not). Anthropic models are
+priced from a list in `src/llm/analytics.ts`; `FACTORY_MODEL_PRICES` (`{"model": [input, output, cacheRead, cacheWrite]}`,
+USD per million tokens) adds or overrides models, for example the OpenAI fallbacks, whose cost is unknown otherwise.
+
+`GET /v1/analytics?days=30&repository=owner/name` (days 1..365, repository optional) takes the same tokens as the job
+queue view. It returns the period's totals (cost, lost cost, merged features, mean and median cost per merged feature),
+cost per step and per week, a row per step, agent, model, effort and selection, and the features of the period with
+every recorded call. Calls are read back 120 days before the period so a merged feature's earlier attempts are included.
+
 Registry format: `{ "namespace": "software-factory-poc", "repositories": [{ "repositoryId": 123, "repository": "owner/repo", "githubTokenEnv": "SF_GH_TEST_REPO", "release": { "factorySha": "40hex", "harnessSha": "40hex", "workflowHash": "64hex", "deploymentName": "factory-runtime", "buildId": "BUILD", "taskQueue": "factory-runtime", "schemaVersion": 1 }, "retainedReleases": [], "requireHumanGate": true }] }`. The broker verifies the live numeric repository ID before serving. Tokens belong in private environment configuration, never the registry or workflow input.
 
 Repositories the SF Manager rolls out to Temporal need no entry here. The Manager registers them with `PUT /v1/repositories/{id}/registration` (`{ "repository": "owner/name", "githubInstallationId": 123 }`, manager token). The broker verifies the installation allowlist and the live repository ID, binds the repository at once and stores the registration in its database, so a restart binds it again. A registered repository is served with the PINNED worker release (`FACTORY_RELEASE_FILE`, required), the `harness:ready` label as grant without a manual gate, and independent validation. Repeating a registration is idempotent; another name for a registered ID is refused. A static entry for the same ID takes precedence. A registration that cannot be bound at startup is logged and skipped; the repositories of the static registry still start.

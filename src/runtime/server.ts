@@ -12,6 +12,7 @@ import type { RuntimeMerge } from './merge.js';
 import type { NotificationSink } from '../notifications/slack.js';
 import type { SanityMonitor } from './sanity.js';
 import type { QueueBoard } from './queue.js';
+import { loadAnalytics, type AnalyticsIssueSync } from './analytics.js';
 
 export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController;
   /** A planner, or a choice made from the repository configuration that is current at each reconciliation. */
@@ -27,8 +28,10 @@ export interface ServerOptions { managerToken: string; workerToken: string; bind
   monitor?: SanityMonitor;
   /** The job queue view, told about every reconciliation; served at GET /v1/queue. */
   queue?: QueueBoard;
-  /** Read-only credential for GET /v1/queue (software-factory-monitor); it grants nothing else. */
-  monitorToken?: string }
+  /** Read-only credential for GET /v1/queue and GET /v1/analytics (software-factory-monitor); it grants nothing else. */
+  monitorToken?: string;
+  /** Keeps issue titles and merges for the cost analytics, told about every reconciliation. */
+  analytics?: AnalyticsIssueSync }
 const registrationSchema = z.strictObject({ repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/), githubInstallationId: z.number().int().positive().safe() });
 const secureEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 const actorSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}(?:\[bot\])?$/);
@@ -53,7 +56,7 @@ const send = (response: ServerResponse, code: number, body: unknown) => { respon
  */
 /** Observations as the HTTP API answers them: without the broker-internal routing decision (see observationSchema). */
 const wire = <T extends { route?: unknown; usage?: unknown }>(observation: T): Omit<T, 'route' | 'usage'> => { const { route: _route, usage: _usage, ...rest } = observation; void _route; void _usage; return rest; };
-export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor' | 'queue'>) {
+export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor' | 'queue' | 'analytics'>) {
   const config = await binding.repository.config();
   if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
   // Runs the previous release still serves end after their retention, so the planner can retry them on this release.
@@ -75,6 +78,7 @@ export async function reconcileBinding(binding: RuntimeBinding, options: Pick<Se
     repositoryId: binding.repository.repositoryId, outcome: report.outcome, executed, errors: report.errors, blockers: report.blockers }));
   await options.monitor?.observed(binding.repository, config, manager.lastSnapshot, report);
   options.queue?.observed(binding.repository, config, manager.settledSnapshot, report, manager.lastRejections);
+  await options.analytics?.observed(binding.repository.repository, manager.settledSnapshot);
   return report;
 }
 
@@ -93,6 +97,14 @@ export function runtimeServer(options: ServerOptions) {
         if (request.method !== 'GET') throw new Error('METHOD');
         if (!options.queue) { send(response, 404, { code: 'NOT_FOUND' }); return; }
         send(response, 200, options.queue.view(options.bindings.map(b => b.repository))); return;
+      }
+      if (path === '/v1/analytics') {
+        // Read-only, like the queue: cost per issue, step and model (software-factory-monitor's analytics page).
+        if (!(monitorToken && secureEqual(token, monitorToken)) && !secureEqual(token, options.managerToken)) { send(response, 401, { code: 'UNAUTHORIZED' }); return; }
+        if (request.method !== 'GET') throw new Error('METHOD');
+        const query = new URL(request.url ?? '/', 'http://localhost').searchParams;
+        if (query.get('repository') && !/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(query.get('repository')!)) { send(response, 400, { code: 'INVALID_REPOSITORY' }); return; }
+        send(response, 200, await loadAnalytics(options.store, query)); return;
       }
       const worker = path.startsWith('/v1/worker/');
       if (!secureEqual(token, worker ? options.workerToken : options.managerToken)) { send(response, 401, { code: 'UNAUTHORIZED' }); return; }

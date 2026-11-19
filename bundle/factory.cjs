@@ -64886,6 +64886,63 @@ function date4(params) {
 // src/config/index.ts
 var import_yaml = __toESM(require_dist(), 1);
 
+// src/llm/analytics.ts
+var import_node_async_hooks = require("node:async_hooks");
+var storage = new import_node_async_hooks.AsyncLocalStorage();
+var sink;
+var withLlmContext = (values, work) => storage.run({ ...storage.getStore(), ...values }, work);
+var setLlmSubject = (values) => storage.enterWith({ ...storage.getStore(), ...values });
+var defaultModelPrices = {
+  "claude-fable-5-2": [8, 40, 0.2, 10],
+  "claude-fable-5-1": [10, 50, 1, 12.5],
+  "claude-fable-5": [10, 50, 1, 12.5],
+  "claude-opus-5-5": [4, 20, 0.2, 5],
+  "claude-opus-5": [5, 25, 0.5, 6.25],
+  "claude-opus-4-8": [5, 25, 0.5, 6.25],
+  "claude-opus-4-7": [5, 25, 0.5, 6.25],
+  "claude-opus-4-6": [5, 25, 0.5, 6.25],
+  "claude-sonnet-5-5": [2, 10, 0.1, 2.5],
+  "claude-sonnet-5": [2, 10, 0.2, 2.5],
+  "claude-sonnet-4-6": [3, 15, 0.3, 3.75],
+  "claude-haiku-5-5": [0.1, 0.5, 0.01, 0.125],
+  "claude-haiku-4-5": [1, 5, 0.1, 1.25]
+};
+var prices = defaultModelPrices;
+function priceOf(model2, tokens, table = prices) {
+  const price = table[model2];
+  if (!price || !tokens) return null;
+  return (tokens.input * price[0] + tokens.output * price[1] + tokens.cacheRead * price[2] + tokens.cacheWrite * price[3]) / 1e6;
+}
+function recordLlmCall(provider, model2, effort2, tokens, outcome = "success") {
+  try {
+    const context2 = storage.getStore();
+    if (!sink || !context2?.repository || !context2.step) return;
+    const record2 = {
+      repository: context2.repository,
+      step: context2.step,
+      prNumber: context2.prNumber ?? null,
+      issueNumber: context2.issueNumber ?? null,
+      selection: context2.selection ?? "configured",
+      routerChoice: context2.routerChoice ?? null,
+      routerProbability: context2.routerProbability ?? null,
+      provider,
+      model: model2,
+      effort: effort2 ?? null,
+      tokens,
+      costUsd: priceOf(model2, tokens),
+      outcome
+    };
+    void sink.recordLlmCall(record2).catch(() => console.warn(JSON.stringify({ event: "factory-analytics", code: "RECORD_FAILED", step: record2.step })));
+  } catch {
+  }
+}
+function openaiTokens(body) {
+  const usage = body?.usage;
+  if (!usage || typeof usage.input_tokens !== "number" || typeof usage.output_tokens !== "number") return null;
+  const cached2 = usage.input_tokens_details?.cached_tokens ?? 0;
+  return { input: Math.max(0, usage.input_tokens - cached2), output: usage.output_tokens, cacheRead: cached2, cacheWrite: 0 };
+}
+
 // src/merge/risk.ts
 var riskClasses = ["low", "medium", "high", "critical"];
 var riskClassSchema = external_exports.enum(riskClasses);
@@ -65055,6 +65112,7 @@ var OpenAIRiskAssessor = class {
     });
     if (!response.ok) throw Object.assign(new Error("Risk assessment provider unavailable"), { status: response.status });
     const body = await response.json();
+    recordLlmCall("openai", assessor.model, assessor.reasoningEffort, openaiTokens(body), body.status === "completed" ? "success" : "failed");
     if (body.status !== "completed") throw new Error("Risk assessment incomplete or refused");
     const text = body.output?.flatMap((o) => o.content ?? []).filter((c) => c.type === "output_text").map((c) => c.text ?? "").join("") ?? "";
     if (text.length > 2e4) throw new Error("Risk assessment output too large");
@@ -70442,6 +70500,7 @@ var OpenAIPlanner = class {
         });
         if (!response.ok) throw new Error(`OpenAI HTTP ${response.status}`);
         const body = await response.json();
+        recordLlmCall("openai", config2.llm.model, config2.llm.reasoningEffort, openaiTokens(body), body.status === "completed" ? "success" : "failed");
         if (body.status !== "completed") throw new Error("OpenAI response incomplete or refused");
         const output2 = body.output?.flatMap((o) => o.content ?? []).filter((c) => c.type === "output_text").map((c) => c.text ?? "").join("") ?? "";
         if (output2.length > 1e5) throw new Error("OpenAI response too large");
@@ -70602,7 +70661,7 @@ ${notification.detail ? `${notification.detail}
     }
   }
 };
-async function deliverNotifications(github, config2, snapshot, sink, correlationId, now, grantWaits = []) {
+async function deliverNotifications(github, config2, snapshot, sink2, correlationId, now, grantWaits = []) {
   const settings = config2.notifications.slack;
   if (!settings.enabled || !config2.factory.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") return [];
   const errors = [];
@@ -70616,7 +70675,7 @@ async function deliverNotifications(github, config2, snapshot, sink, correlation
     const rule = settings.events[notification.event];
     if (!rule?.enabled) return;
     const channel = rule.channel ?? settings.channel;
-    if (!channel || !sink) {
+    if (!channel || !sink2) {
       errors.push(`Slack ${notification.event}: channel or connection missing`);
       return;
     }
@@ -70655,7 +70714,7 @@ async function deliverNotifications(github, config2, snapshot, sink, correlation
     }
     let receipt;
     try {
-      receipt = await sink.send(channel, notification);
+      receipt = await sink2.send(channel, notification);
     } catch (error62) {
       if (error62 instanceof NotificationRejected) {
         try {
@@ -72170,6 +72229,7 @@ var OpenAIMergeReviewer = class {
     });
     if (!response.ok) throw Object.assign(new Error("Merge review provider unavailable"), { status: response.status });
     const body = await response.json();
+    recordLlmCall("openai", this.config.merge.review.model, this.config.merge.review.reasoningEffort, openaiTokens(body), body.status === "completed" ? "success" : "failed");
     if (body.status !== "completed") throw new Error("Merge review incomplete or refused");
     const text = body.output?.flatMap((o) => o.content ?? []).filter((c) => c.type === "output_text").map((c) => c.text ?? "").join("") ?? "";
     if (text.length > 5e4) throw new Error("Merge review output too large");
@@ -72303,11 +72363,16 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
       if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha4);
     }
   }
-  async run(snapshot) {
+  /** One merge pass; its model calls are recorded for analytics under the pull request (and issue) they review. */
+  run(snapshot) {
+    return withLlmContext({}, () => this.pass(snapshot));
+  }
+  async pass(snapshot) {
     const report = { reviewed: 0, updated: 0, merged: 0, errors: [] };
     if (!this.config.factory.enabled || !this.config.merge.enabled || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return report;
     if (permission(this.config, "merge_pr") === "deny") return report;
     for (const number4 of await this.api.candidates()) {
+      setLlmSubject({ repository: this.api.repository, prNumber: number4, issueNumber: snapshot.prs.find((p) => p.number === number4)?.closingIssues[0] ?? null });
       if (report.reviewed >= this.config.merge.maxReviewsPerRun || report.updated + report.merged >= this.config.merge.maxActionsPerRun) break;
       let f;
       let phase = "GitHub-Zustand lesen";
