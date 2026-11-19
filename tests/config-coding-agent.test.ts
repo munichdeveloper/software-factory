@@ -37,3 +37,18 @@ it('refuses a list with agent beside it, twice the same agent, mismatched models
   expect(issues(base({ agents: [] }))).toHaveLength(1);
   expect(issues(base({ agents: pair }, 'github-actions'))).toEqual(['workers.coding.agents: agents requires execution.engine temporal']);
 });
+it('accepts retryAgents for further attempts, Temporal only, and leaves configurations without it unchanged', async () => {
+  const { attemptAgents } = await import('../src/config/index.js');
+  const first = [{ agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' }, { agent: 'codex', model: 'gpt-6.1-sol' }];
+  const retry = [{ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' }, { agent: 'codex', model: 'gpt-6.1-sol' }];
+  const parsed = configSchema.parse(base({ agents: first, retryAgents: retry }));
+  const coding = parsed.workers.coding as Exclude<typeof parsed.workers.coding, false>;
+  expect(attemptAgents(coding, false)[0]).toEqual({ agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' });
+  expect(attemptAgents(coding, true)[0]).toEqual({ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' });
+  const plain = configSchema.parse(base({ agents: first })).workers.coding as Exclude<typeof parsed.workers.coding, false>;
+  expect(plain).not.toHaveProperty('retryAgents');
+  expect(attemptAgents(plain, true)).toEqual(attemptAgents(plain, false));
+  expect(issues(base({ agents: first, retryAgents: [retry[0], retry[0]] }))).toEqual(['workers.coding.retryAgents.1.agent: each agent may appear once']);
+  expect(issues(base({ agents: first, retryAgents: [{ agent: 'codex', model: 'claude-opus-5-5' }] }))).toEqual(['workers.coding.retryAgents.0.model: a Claude model needs agent claude']);
+  expect(issues(base({ agent: 'codex', retryAgents: [{ agent: 'codex', model: 'gpt-6.1-sol' }] }, 'github-actions'))).toEqual(['workers.coding.retryAgents: retryAgents requires execution.engine temporal']);
+});

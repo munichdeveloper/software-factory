@@ -8,7 +8,8 @@ import { Pool } from 'pg';
 import { Connection, Client } from '@temporalio/client';
 import { bundleWorkflowCode } from '@temporalio/worker';
 import { Octokit } from '@octokit/rest';
-import { codingAgents, loadConfig, type Config } from '../config/index.js';
+import { attemptAgents, loadConfig, type Config } from '../config/index.js';
+import { escalated } from './coding-context.js';
 import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
 import { ClaudePlanner, FallbackPlanner, MockPlanner, OpenAIPlanner } from '../llm/provider.js';
@@ -186,7 +187,7 @@ export async function main(args = process.argv.slice(2)) {
         publish: async (snapshot, binding, artifact, createdAt, validation) => { const config = await repository.config();
           // The agent that ran: the executor's stored choice for a priority list, otherwise the configured agent.
           const chosen = await storedSelection(effects(snapshot, binding), snapshot.admission.input.executionId, () => controller.authorize(snapshot, binding));
-          const agent = chosen?.selected?.worker ?? (config.workers.coding ? codingAgents(config.workers.coding)[0]!.agent : 'codex');
+          const agent = chosen?.selected?.worker ?? (config.workers.coding ? attemptAgents(config.workers.coding, escalated(snapshot.admission.input))[0]!.agent : 'codex');
           // Commits show the App's bot user as author; without it Vercel and GitHub see a stranger's noreply account.
           const identity = item.githubInstallationId ? await appCommitIdentity(z.string().regex(/^[0-9]+$/).parse(process.env.GITHUB_APP_ID),
             z.string().min(1).parse(process.env.GITHUB_APP_PRIVATE_KEY), api).catch(error => {

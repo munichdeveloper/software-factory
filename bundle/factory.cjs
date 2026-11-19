@@ -65189,6 +65189,12 @@ var configSchema = external_exports.strictObject({
        * configurations that leave it out keep their hash and in-flight runs stay current.
        */
       agents: external_exports.array(codingAgentSchema).min(1).max(3).optional(),
+      /**
+       * Optional priority list for escalated attempts, Temporal engine only: a further attempt after an earlier attempt
+       * failed for a reason the agent owns (failed validation, requested changes, failed or timed-out agent run). A retry
+       * after the runner failed before the agent started keeps agents. Without it every attempt uses agents (or agent). Optional without a default, so configurations that leave it out keep their hash.
+       */
+      retryAgents: external_exports.array(codingAgentSchema).min(1).max(3).optional(),
       /** The default is a Codex model; with agent claude name a Claude model such as claude-opus-5-5 or claude-sonnet-5-5. */
       model: codingModel.default("gpt-6.1-sol"),
       /** max is available for Claude only. */
@@ -65199,13 +65205,15 @@ var configSchema = external_exports.strictObject({
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
       smallPullRequests: external_exports.boolean().default(true)
     }).superRefine((coding, context2) => {
-      if (coding.agents) {
-        if (coding.agent) context2.addIssue({ code: "custom", path: ["agent"], message: "name either agent or agents, not both" });
+      for (const key of ["agents", "retryAgents"]) {
         const seen = /* @__PURE__ */ new Set();
-        coding.agents.forEach((entry, index) => {
-          if (seen.has(entry.agent)) context2.addIssue({ code: "custom", path: ["agents", index, "agent"], message: "each agent may appear once" });
+        coding[key]?.forEach((entry, index) => {
+          if (seen.has(entry.agent)) context2.addIssue({ code: "custom", path: [key, index, "agent"], message: "each agent may appear once" });
           seen.add(entry.agent);
         });
+      }
+      if (coding.agents) {
+        if (coding.agent) context2.addIssue({ code: "custom", path: ["agent"], message: "name either agent or agents, not both" });
         return;
       }
       if (!coding.agent) {
@@ -65331,6 +65339,7 @@ var configSchema = external_exports.strictObject({
   monitoring: monitoringSchema.partial().optional()
 }).superRefine((config2, context2) => {
   if (config2.workers.coding && config2.execution.engine !== "temporal") {
+    if (config2.workers.coding.retryAgents) context2.addIssue({ code: "custom", path: ["workers", "coding", "retryAgents"], message: "retryAgents requires execution.engine temporal" });
     if (config2.workers.coding.agents) context2.addIssue({ code: "custom", path: ["workers", "coding", "agents"], message: "agents requires execution.engine temporal" });
     else if (config2.workers.coding.agent === "claude") context2.addIssue({ code: "custom", path: ["workers", "coding", "agent"], message: "agent claude requires execution.engine temporal" });
   }
@@ -70307,6 +70316,7 @@ var OpenAIPlanner = class {
 // src/runtime/coding-context.ts
 var reworkMarker = (previousExecutionId) => `urn:sf-rework:${previousExecutionId}`;
 var retryMarker = (previousExecutionId) => `urn:sf-retry:${previousExecutionId}`;
+var escalationMarker = "urn:sf-escalate";
 var label = (value) => value.replace(/[^A-Za-z0-9._/#-]/g, "").slice(0, 200);
 function reviewEntries(review, limit3 = 8) {
   const inert = (s) => [...s].filter((c) => c === "\n" || c >= " " && c !== String.fromCharCode(127)).join("").replace(/\s+/g, " ").trim();
@@ -71001,6 +71011,7 @@ ${marker2}`;
         const rework = action.kind === "retry_worker" && task.reworkable && this.config.execution.engine === "temporal";
         const retry = action.kind === "retry_worker" && !rework && task.latest?.result?.status === "failed" && this.config.execution.engine === "temporal";
         const previous = rework || retry ? task.latest.input.executionId : void 0;
+        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework || task.executions.some((e) => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== "success" && e.result.error !== infrastructureFailureCode));
         if (this.config.execution.engine === "temporal" && this.options.workerRuntime?.preflight) {
           try {
             await this.options.workerRuntime.preflight(live.number, previous);
@@ -71020,6 +71031,7 @@ ${marker2}`;
           contextReferences: [
             `https://github.com/${this.github.repository}/issues/${live.number}`,
             ...previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : [],
+            ...escalate ? [escalationMarker] : [],
             // A rework after a merge review hands the worker what the review asked to change.
             ...rework && task.reworkReview ? reviewEntries(task.reworkReview) : []
           ],
