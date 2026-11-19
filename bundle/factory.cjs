@@ -69845,7 +69845,15 @@ var eventSchema = external_exports.strictObject({
     external_exports.strictObject({ type: external_exports.literal("notification_sent"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/), channel: external_exports.string().max(100), timestamp: external_exports.string().max(100) }),
     external_exports.strictObject({ type: external_exports.literal("notification_attempt"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
     external_exports.strictObject({ type: external_exports.literal("notification_rejected"), deliveryId: external_exports.string().regex(/^[a-f0-9]{64}$/) }),
-    external_exports.strictObject({ type: external_exports.literal("merge_review"), head: external_exports.string().length(40), base: external_exports.string().length(40), reviewKey: external_exports.string().length(64), review: mergeReviewSchema }),
+    // verdictKey: the review's inputs without the base; a rejection under it stands for every base (controla#123).
+    external_exports.strictObject({
+      type: external_exports.literal("merge_review"),
+      head: external_exports.string().length(40),
+      base: external_exports.string().length(40),
+      reviewKey: external_exports.string().length(64),
+      review: mergeReviewSchema,
+      verdictKey: external_exports.string().length(64).optional()
+    }),
     external_exports.strictObject({ type: external_exports.literal("merge_risk"), head: external_exports.string().length(40), base: external_exports.string().length(40), riskKey: external_exports.string().length(64), risk: riskRecordSchema }),
     external_exports.strictObject({ type: external_exports.literal("merge_intent"), prNumber: external_exports.number().int().positive(), head: external_exports.string().length(40), base: external_exports.string().length(40), reviewKey: external_exports.string().length(64) }),
     external_exports.strictObject({ type: external_exports.literal("merge_completed"), prNumber: external_exports.number().int().positive(), head: external_exports.string().length(40), mergeSha: external_exports.string().length(40) }),
@@ -69953,6 +69961,44 @@ function dependencies(body) {
 function acceptanceCriteria(body) {
   const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien|Abnahmekriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
   return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
+}
+
+// src/state/protected-paths.ts
+var pathPatterns = [
+  // `.github`, `.github/workflows/test.yml`, `.gitmodules`; `.gitignore`/`.gitattributes` are ordinary files (controla#124).
+  /(?<![\w.-])\.git(?:hub|modules)(?:\/[\w./*-]*)?(?![\w-])/gi,
+  /(?<![\w.-])\.(?:codex|agents|squad|copilot|claude)\/[\w./*-]*/gi,
+  /(?<![\w.-])(?:AGENTS\.md|CODEOWNERS)(?![\w.-])/gi
+];
+var ciPatterns = [
+  /\b(?:neue[nrs]?|eigene[nrs]?|zusätzliche[nrs]?|separate[nrs]?|weitere[nrs]?)\s+(?:CI|GitHub[- ]Actions)[- ](?:Job|Workflow)s?\b/gi,
+  /\b(?:new|separate|dedicated|additional|own)\s+(?:CI|GitHub Actions)[- ](?:job|workflow)s?\b/gi,
+  /\b(?:add|create|extend|change|modify|edit)(?:s|ing)?\s+(?:a\s+|an\s+|the\s+)?(?:CI|GitHub Actions)[- ](?:job|workflow)s?\b/gi
+];
+var outOfScopeHeading = /^#{1,6}\s*(?:Nicht enthalten|Nicht Teil|Außerhalb des Umfangs|Out of scope|Not in scope|Non-goals|Not included)\b/i;
+var outOfScopeLine = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:Nicht enthalten|Nicht Teil|Out of scope|Not in scope|Not included)\b/i;
+var prohibitionLine = /(?<![\p{L}\d_])(?:nicht ändern|nicht anfassen|nicht verändern|keine (?:Änderungen|Änderung)|unverändert|ändern wir|ergänzen wir|von Hand|beachten|befolgen|do not (?:change|edit|touch|modify)|don't (?:change|edit|touch|modify)|must not (?:change|edit|touch|modify)|never (?:change|edit|touch|modify)|no changes? (?:to|in)|leave [^.]* unchanged|follow)(?![\p{L}\d_])/iu;
+function inScope(text) {
+  const kept = [];
+  let skipping = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^#{1,6}\s/.test(line)) skipping = outOfScopeHeading.test(line);
+    if (!skipping && !outOfScopeLine.test(line) && !prohibitionLine.test(line)) kept.push(line);
+  }
+  return kept.join("\n");
+}
+function protectedPathRequests(text) {
+  const scoped = inScope(text);
+  const found = [];
+  for (const pattern of [...pathPatterns, ...ciPatterns]) for (const m of scoped.matchAll(pattern)) found.push({ at: m.index, value: m[0] });
+  const seen = /* @__PURE__ */ new Set();
+  return found.sort((a, b) => a.at - b.at).map((f) => f.value).filter((v) => !seen.has(v.toLowerCase()) && !!seen.add(v.toLowerCase())).slice(0, 5);
+}
+var protectedPathBlockPrefix = "Task requires changes to protected paths";
+function protectedPathBlockReason(title, body) {
+  const found = protectedPathRequests(`${title}
+${body}`);
+  return found.length ? `${protectedPathBlockPrefix} the coding worker may not edit (${found.map((f) => `\`${f.replaceAll("`", "")}\``).join(", ")})` : void 0;
 }
 
 // src/policies/engine.ts
@@ -70121,8 +70167,9 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     const automaticBlock = currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
     const explicitBlock = issue2.labels.includes("harness:blocked") && !automaticBlock;
     const semanticBlock = automaticBlock?.cause === "planner" && automaticBlock.taskVersion === version2;
-    const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map((n) => `#${n}`).join(", ")}` : !criteria.length ? "Missing Acceptance criteria section" : explicitBlock ? "Issue explicitly marked blocked; clear the blocked label to resume" : semanticBlock ? "Planner marked task blocked; revise the task or clear the blocked label" : void 0;
-    const automaticBlockCause = executions.some((e) => e.ambiguous) ? "dispatch" : unresolved.length ? "dependencies" : !criteria.length ? "specification" : semanticBlock ? "planner" : latest?.result?.status === "blocked" ? "worker" : void 0;
+    const protectedPaths = issue2.state === "open" ? protectedPathBlockReason(issue2.title, issue2.body) : void 0;
+    const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map((n) => `#${n}`).join(", ")}` : !criteria.length ? "Missing Acceptance criteria section" : protectedPaths ? protectedPaths : explicitBlock ? "Issue explicitly marked blocked; clear the blocked label to resume" : semanticBlock ? "Planner marked task blocked; revise the task or clear the blocked label" : void 0;
+    const automaticBlockCause = executions.some((e) => e.ambiguous) ? "dispatch" : unresolved.length ? "dependencies" : !criteria.length || protectedPaths ? "specification" : semanticBlock ? "planner" : latest?.result?.status === "blocked" ? "worker" : void 0;
     const linked = snapshot.prs.filter((p) => p.closingIssues.includes(issue2.number) || p.referencedIssues.includes(issue2.number));
     const hasOpenPR = linked.some((p) => p.state === "open");
     const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
@@ -70928,7 +70975,7 @@ function statusView(task, config2, context2) {
   } else if (task.blockReason && !(result?.status === "blocked" && task.automaticBlockCause === "worker")) {
     state = [`**Blocked: ${task.blockReason}.**`];
     stage = "blocked";
-    needs = task.blockReason.startsWith("Unresolved dependencies") ? "Close the issues this task depends on, or remove them from its `Depends on:` line." : task.blockReason.startsWith("Missing Acceptance") ? "Add a section `## Acceptance criteria` with at least one list item to the task text." : "Remove the label `harness:blocked` when the task may continue.";
+    needs = task.blockReason.startsWith("Unresolved dependencies") ? "Close the issues this task depends on, or remove them from its `Depends on:` line." : task.blockReason.startsWith("Missing Acceptance") ? "Add a section `## Acceptance criteria` with at least one list item to the task text." : task.blockReason.startsWith(protectedPathBlockPrefix) ? "The coding worker may not change CI workflows (`.github/`), agent instruction files or CODEOWNERS. A maintainer makes that part of the change, then removes it from the task text (or moves it to a section `## Out of scope` / `## Nicht enthalten`); the task then starts normally." : "Remove the label `harness:blocked` when the task may continue.";
   } else if (rejection) {
     const ready = rejection.startsWith("READY_");
     const previous = result && ["failed", "cancelled"].includes(result.status) ? `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}). ` : "";
@@ -72323,6 +72370,7 @@ function mergeGate(f, config2) {
   if (f.checks.some((c) => !["success", "neutral", "skipped"].includes(c.state))) return "Mindestens eine weitere Pr\xFCfung ist offen oder fehlgeschlagen.";
   return null;
 }
+var rejects = (review) => review.findings.some((x) => x.severity === "blocking") || ["request_changes", "defer"].includes(review.decision);
 var failedCheck = (state) => ["failure", "timed_out", "cancelled", "startup_failure", "error"].includes(state);
 var behind = (f, config2) => config2.merge.protection === "factory" ? !!f.behindBy : f.mergeState === "BEHIND";
 var MergeManager = class {
@@ -72527,6 +72575,34 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
           policy: policyVersion(this.config)
         });
         const cached2 = this.events(f).find((e) => e.data.type === "merge_review" && e.data.reviewKey === reviewKey);
+        const verdictKey = hash2({
+          protocol: "sf-merge-verdict-v1",
+          repository: this.api.repository.toLowerCase(),
+          sourceTask,
+          head: f.head,
+          checks: factsKey(f).checks,
+          labels: factsKey(f).labels,
+          merge: mergePolicy,
+          policy: policyVersion(this.config)
+        });
+        const rejected = cached2 ? void 0 : this.events(f).find((e) => e.data.type === "merge_review" && e.data.verdictKey === verdictKey && rejects(e.data.review));
+        if (rejected?.data.type === "merge_review") {
+          const earlier = rejected.data;
+          await this.event(
+            f,
+            `merge-status:${hash2({ head: f.head, verdictKey })}`,
+            {
+              type: "merge_status",
+              head: f.head,
+              base: f.base,
+              reason: `Das KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}, Basis ${earlier.base.slice(0, 7)}).`
+            },
+            `**Noch kein Merge.** Das KI-Review hat diesen Head bereits abgelehnt (**${earlier.review.decision}**). Eine neuere Basis allein \xE4ndert daran nichts; ein neues Review folgt erst nach einem neuen Commit, einer ge\xE4nderten Aufgabe oder Konfiguration.
+
+Gepr\xFCfter Head: \`${f.head}\`.`
+          );
+          continue;
+        }
         const risk = this.config.merge.risk;
         const riskKey = risk.enabled ? hash2({
           protocol: "sf-merge-risk-v1",
@@ -72563,7 +72639,7 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
         await this.event(
           f,
           `merge-review:${reviewKey}`,
-          { type: "merge_review", head: f.head, base: f.base, reviewKey, review },
+          { type: "merge_review", head: f.head, base: f.base, reviewKey, review, verdictKey },
           `**KI-Entscheidung: ${review.decision}**
 
 ${review.reason}
@@ -72614,7 +72690,7 @@ ${riskNote ? `${riskNote}
           phase = "\xDCbergabe-Label setzen";
           await this.api.needsHuman(number4, handOver);
         }
-        if (blocked2 || review.decision === "defer") continue;
+        if (rejects(review)) continue;
         const live = await this.api.facts(number4);
         if (hash2(factsKey(live)) !== hash2(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== "open" || live.draft || !live.sameRepository || live.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
           await this.explain(live, "PR, Head, Basis oder Freigabe hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung erforderlich.");

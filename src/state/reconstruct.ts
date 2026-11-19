@@ -5,6 +5,7 @@ import { decodeEvent, type BlockCause, type HarnessEvent } from './events.js';
 import { currentAutomaticBlock } from './blocks.js';
 import { acceptanceCriteria, dependencies, issueStatus } from './lifecycle.js';
 import { taskVersion } from './identity.js';
+import { protectedPathBlockReason } from './protected-paths.js';
 import { policyVersion } from '../policies/engine.js';
 import type { MergeReview } from '../merge/contract.js';
 
@@ -119,12 +120,15 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     const automaticBlock = currentAutomaticBlock(issue, events, config.manager.trustedActors);
     const explicitBlock = issue.labels.includes('harness:blocked') && !automaticBlock;
     const semanticBlock = automaticBlock?.cause === 'planner' && automaticBlock.taskVersion === version;
+    // A task asking for changes the coding worker may not make (CI workflows, agent files) is never started.
+    const protectedPaths = issue.state === 'open' ? protectedPathBlockReason(issue.title, issue.body) : undefined;
     const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map(n => `#${n}`).join(', ')}`
       : !criteria.length ? 'Missing Acceptance criteria section'
+      : protectedPaths ? protectedPaths
       : explicitBlock ? 'Issue explicitly marked blocked; clear the blocked label to resume'
       : semanticBlock ? 'Planner marked task blocked; revise the task or clear the blocked label' : undefined;
     const automaticBlockCause: BlockCause | undefined = executions.some(e => e.ambiguous) ? 'dispatch'
-      : unresolved.length ? 'dependencies' : !criteria.length ? 'specification'
+      : unresolved.length ? 'dependencies' : !criteria.length || protectedPaths ? 'specification'
       : semanticBlock ? 'planner' : latest?.result?.status === 'blocked' ? 'worker' : undefined;
     const linked = snapshot.prs.filter(p => p.closingIssues.includes(issue.number) || p.referencedIssues.includes(issue.number));
     const hasOpenPR = linked.some(p => p.state === 'open');

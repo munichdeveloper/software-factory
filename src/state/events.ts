@@ -22,7 +22,9 @@ export const eventSchema = z.strictObject({
     z.strictObject({ type: z.literal('notification_sent'), deliveryId: z.string().regex(/^[a-f0-9]{64}$/), channel: z.string().max(100), timestamp: z.string().max(100) }),
     z.strictObject({ type: z.literal('notification_attempt'), deliveryId: z.string().regex(/^[a-f0-9]{64}$/) }),
     z.strictObject({ type: z.literal('notification_rejected'), deliveryId: z.string().regex(/^[a-f0-9]{64}$/) }),
-    z.strictObject({ type: z.literal('merge_review'), head: z.string().length(40), base: z.string().length(40), reviewKey: z.string().length(64), review: mergeReviewSchema }),
+    // verdictKey: the review's inputs without the base; a rejection under it stands for every base (controla#123).
+    z.strictObject({ type: z.literal('merge_review'), head: z.string().length(40), base: z.string().length(40), reviewKey: z.string().length(64), review: mergeReviewSchema,
+      verdictKey: z.string().length(64).optional() }),
     z.strictObject({ type: z.literal('merge_risk'), head: z.string().length(40), base: z.string().length(40), riskKey: z.string().length(64), risk: riskRecordSchema }),
     z.strictObject({ type: z.literal('merge_intent'), prNumber: z.number().int().positive(), head: z.string().length(40), base: z.string().length(40), reviewKey: z.string().length(64) }),
     z.strictObject({ type: z.literal('merge_completed'), prNumber: z.number().int().positive(), head: z.string().length(40), mergeSha: z.string().length(40) }),

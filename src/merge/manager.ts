@@ -34,6 +34,8 @@ export function mergeGate(f: MergeFacts, config: Config): string | null {
   return null;
 }
 
+/** A review that stops the merge of its head: changes requested, deferred to a person, or a blocking finding. */
+const rejects = (review: MergeReview) => review.findings.some(x => x.severity === 'blocking') || ['request_changes', 'defer'].includes(review.decision);
 const failedCheck = (state: string) => ['failure', 'timed_out', 'cancelled', 'startup_failure', 'error'].includes(state);
 const behind = (f: MergeFacts, config: Config) => config.merge.protection === 'factory' ? !!f.behindBy : f.mergeState === 'BEHIND';
 export interface MergeOptions {
@@ -194,6 +196,18 @@ export class MergeManager {
         const reviewKey = hash({ protocol: 'sf-merge-review-v1', repository: this.api.repository.toLowerCase(), sourceTask,
           facts: factsKey(f), merge: mergePolicy, policy: policyVersion(this.config) });
         const cached = this.events(f).find(e => e.data.type === 'merge_review' && e.data.reviewKey === reviewKey);
+        // The same head, task, checks and policy without the base: a newer base alone does not change a rejection. Only
+        // a new commit, a revised task or a changed configuration earns a new review (controla#123: 16 reviews of one head).
+        const verdictKey = hash({ protocol: 'sf-merge-verdict-v1', repository: this.api.repository.toLowerCase(), sourceTask, head: f.head,
+          checks: factsKey(f).checks, labels: factsKey(f).labels, merge: mergePolicy, policy: policyVersion(this.config) });
+        const rejected = cached ? undefined : this.events(f).find(e => e.data.type === 'merge_review' && e.data.verdictKey === verdictKey && rejects(e.data.review));
+        if (rejected?.data.type === 'merge_review') {
+          const earlier = rejected.data;
+          await this.event(f, `merge-status:${hash({ head: f.head, verdictKey })}`, { type: 'merge_status', head: f.head, base: f.base,
+            reason: `Das KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}, Basis ${earlier.base.slice(0, 7)}).` },
+            `**Noch kein Merge.** Das KI-Review hat diesen Head bereits abgelehnt (**${earlier.review.decision}**). Eine neuere Basis allein ändert daran nichts; ein neues Review folgt erst nach einem neuen Commit, einer geänderten Aufgabe oder Konfiguration.\n\nGeprüfter Head: \`${f.head}\`.`);
+          continue;
+        }
         const risk = this.config.merge.risk;
         // One assessment per head, base and risk configuration; the built-in list is part of the protocol.
         const riskKey = risk.enabled ? hash({ protocol: 'sf-merge-risk-v1', repository: this.api.repository.toLowerCase(), head: f.head, base: f.base,
@@ -222,7 +236,7 @@ export class MergeManager {
         const assessing: Promise<RiskRecord | null> = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === 'merge_risk' ? Promise.resolve(cachedRisk.data.risk)
           : load().then(input => classifyRisk(input.changes, risk, assessor), () => classifyRisk([], risk, { assess: () => Promise.reject(new Error('No context')) }));
         const [review, riskRecord] = await Promise.all([reviewing, assessing]);
-        await this.event(f, `merge-review:${reviewKey}`, { type: 'merge_review', head: f.head, base: f.base, reviewKey, review },
+        await this.event(f, `merge-review:${reviewKey}`, { type: 'merge_review', head: f.head, base: f.base, reviewKey, review, verdictKey },
           `**KI-Entscheidung: ${review.decision}**\n\n${review.reason}\n\n${review.findings.map(x => `- ${x.severity}: ${x.path} – ${x.explanation}`).join('\n')}\n\n${reviewNote ? `${reviewNote}\n\n` : ''}Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
         if (riskKey && riskRecord) {
           // A failed assessment is not journaled, so the next pass assesses again; until then it counts as critical.
@@ -246,7 +260,7 @@ export class MergeManager {
         if (handOver) await this.event(f, `merge-handover:${reviewKey}`, { type: 'merge_handover', prNumber: number, head: f.head, base: f.base,
           reviewKey, decision: review.decision === 'defer' ? 'defer' : 'request_changes' });
         if (this.api.needsHuman && handOver !== f.labels.includes(needsHumanLabel)) { phase = 'Übergabe-Label setzen'; await this.api.needsHuman(number, handOver); }
-        if (blocked || review.decision === 'defer') continue;
+        if (rejects(review)) continue;
         const live = await this.api.facts(number);
         if (hash(factsKey(live)) !== hash(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== 'open' || live.draft || !live.sameRepository ||
           live.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) { await this.explain(live, 'PR, Head, Basis oder Freigabe hat sich während der KI-Prüfung geändert; erneute Prüfung erforderlich.'); continue; }

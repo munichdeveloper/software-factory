@@ -83,6 +83,18 @@ describe('status comment of other waiting tasks', () => {
     expect(w.statusComments(1)[0]).toContain('Add a section `## Acceptance criteria` with at least one list item');
   });
 });
+describe('status comment of a task that needs a protected path (controla#123)', () => {
+  it('does not start it and says what a maintainer does, then starts it once the text is revised', async () => {
+    const w = new World({}); w.open(1); w.issue(1).body = 'Add a contract test.\n\nEigener CI-Job in `.github/workflows/test.yml`.\n\n## Acceptance criteria\n- green';
+    await w.tick(); await w.tick();
+    expect(w.running()).toHaveLength(0);
+    expect(w.statusComments(1).at(-1)).toContain('**Blocked: Task requires changes to protected paths the coding worker may not edit (`Eigener CI-Job`, `.github/workflows/test.yml`).**');
+    expect(w.statusComments(1).at(-1)).toContain('A maintainer makes that part of the change');
+    w.issue(1).body = 'Add a contract test.\n\n## Nicht enthalten\n- Eigener CI-Job in `.github/workflows/test.yml`\n\n## Acceptance criteria\n- green';
+    await w.tick(); await w.tick();
+    expect(w.running()).toHaveLength(1);
+  });
+});
 describe('status comment of a harness:ready that is no grant (software-factory#109)', () => {
   it('says that the label is there but does not count, and that a person applies it again', async () => {
     const w = new World({ readyLabel: true }); w.open(1); w.grant(1, 'factory-app[bot]'); await w.tick();
