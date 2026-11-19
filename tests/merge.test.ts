@@ -238,6 +238,6 @@ it('names the model the router picked in the review comment, without journaling 
     router: { enabled: true, model: 'typesafe/jev-1.14', minConfidence: 0.5, timeoutSeconds: 5 }, configured: () => x.reviewer.review(input), run: () => () => x.reviewer.review(input) }) };
   await new MergeManager(x.api, x.cfg, reviewer, 'test').run(structuredClone(x.snapshot));
   const comment = x.f.comments.find(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data.type === 'merge_review')!;
-  expect(comment.body).toContain('Modellwahl: Der Model Router (Jev) wählte `opus-high` (claude-opus-5-5, high) mit 75 % Konfidenz.');
+  expect(comment.body).toContain('Modellwahl: Der Model Router (Jev) wählte `opus-high` (claude-opus-5-5, high) mit 88 % Wahrscheinlichkeit.');
   expect(decodeEvent(comment, x.cfg.manager.trustedActors)!.data).toEqual(expect.objectContaining({ review: x.review }));
 });

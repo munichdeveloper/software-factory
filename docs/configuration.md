@@ -177,7 +177,7 @@ Each repository needs the secret of every agent in both lists.
 router:
   enabled: true                 # default true
   model: typesafe/jev-1.14      # decision model (default; jev-1.14.0 at TypeSafe)
-  minConfidence: 0.5            # below this the configured models run
+  minConfidence: 0.5            # minimum probability of Jev's choice; below it the configured models run
   timeoutSeconds: 10
   coding:                       # first attempts of coding runs (Temporal engine)
     candidates:
@@ -212,7 +212,7 @@ secret `BROKER_OPENROUTER_API_KEY`). The broker setting `FACTORY_ROUTER_API` (`t
 it a TypeSafe key wins. `router.model` keeps OpenRouter's id: for TypeSafe, `typesafe/jev-1.14` becomes `jev-1.14.0`,
 and TypeSafe's own names (`jev-latest`, `jev-preview`) pass unchanged. The question: the options are the candidates' ids with their descriptions, the
 state is the request in short (a coding task's description and acceptance criteria; a pull request's title, body and
-file list with changed lines, never its patches). Jev answers with a choice and its confidence; the chosen candidate
+file list with changed lines, never its patches). Jev answers with a choice and a probability per candidate; the chosen candidate
 then does the actual work with the same instructions, input and schema as the configured model, only model and effort
 differ. A routed coding agent runs first, the configured `agents` stay behind it as the credit fallbacks; the decision
 is stored per execution, so later polls send the identical request. Escalated attempts are not routed: they run
@@ -223,12 +223,16 @@ routed, and each purpose takes 2 to 6 candidates with unique ids; the candidates
 options where a cheap answer is not acceptable (e.g. no `low` effort for reviews).
 
 The router never blocks. Without the broker's key for the chosen endpoint (deploy secrets in the environment
-`production`), when Jev is unreachable or answers something unusable, and when its confidence stays below
-`minConfidence`, the configured models run as before. Since 0.16.1 the task's status comment names the agent of its
+`production`), when Jev is unreachable or answers something unusable, and when the probability of its choice stays below
+`minConfidence`, the configured models run as before. Since 0.17.1 `minConfidence` is compared with the probability Jev
+gives its choice, not with TypeSafe's `confidence` ((p − 1/n) / (1 − 1/n), 0 for an even split): with two candidates a
+66 % lean is only 32 % confidence. With two candidates the default 0.5 therefore always follows Jev's lean; set e.g.
+0.65 to follow only clear leans. Since 0.16.1 the task's status comment names the agent of its
 coding run (`**Model:**`, chosen by the router or the configured agents and why), and the merge review and risk
 comments name the model that did the review (`Modellwahl: …`). Each decision is also logged as one `factory-router` line (purpose,
-choice, confidence or reason and a fixed code). With `FACTORY_ROUTER_ALERT_CHANNEL` on the broker, every case in which
-the configured models ran instead goes to Slack, at most once per repository, purpose and reason every six hours; the
+choice, confidence or reason and a fixed code). With `FACTORY_ROUTER_ALERT_CHANNEL` on the broker, every decision Jev made
+goes to Slack (since 0.17.2: purpose, repository, chosen candidate with agent, model and effort, probability), and every
+case in which the configured models ran instead too, at most once per repository, purpose and reason every six hours; the
 next message counts the cases in between. Issue and pull request text reaches Jev as untrusted data it only classifies:
 at worst it picks another of the configured candidates. `router` is optional without a default: a configuration without
 it keeps its hash.

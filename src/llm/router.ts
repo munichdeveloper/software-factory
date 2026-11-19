@@ -5,7 +5,7 @@ import { countLlmCall } from './meter.js';
  * Model router (Johannes, 2026-11-19): before a model does the work, a decision model (TypeSafe Jev through the
  * OpenRouter Decisions API) picks which of the configured candidates (model and effort) fits the request best. The
  * candidate it picks then does the actual work. The router never blocks: without a key, on any failure and when Jev's
- * confidence stays below the configured minimum, the caller uses its configured models as before, and the broker
+ * probability for its choice stays below the configured minimum, the caller uses its configured models as before, and the broker
  * reports that the router was not used.
  */
 export type RouterPurpose = 'coding' | 'review' | 'risk' | 'planner';
@@ -91,7 +91,13 @@ export class ModelRouter {
     try { answer = decisionSchema.parse(await response.json()).answers.route; }
     catch { return skip('invalid-answer', 'INVALID_JSON'); }
     if (!options.some(o => o.id === answer.choice)) return skip('invalid-answer', 'UNKNOWN_CHOICE');
-    const confidence = answer.confidence ?? answer.probabilities?.[answer.choice] ?? null;
+    // The threshold applies to the probability Jev gives the chosen candidate. Jev's own `confidence` is a different
+    // measure, (p_max - 1/n) / (1 - 1/n): 0 for an even split, so with two candidates a clear 66 % lean is only 32 %
+    // confidence (docs.typesafe.ai/confidence; Johannes, 2026-11-19: constant "low confidence" fallbacks). Without
+    // probabilities the probability is recovered from that formula.
+    const n = options.length, probability = answer.probabilities?.[answer.choice]
+      ?? (answer.confidence === undefined ? undefined : answer.confidence * (1 - 1 / n) + 1 / n);
+    const confidence = probability === undefined || !Number.isFinite(probability) ? null : Math.min(1, Math.max(0, probability));
     if (confidence === null) return skip('invalid-answer', 'NO_CONFIDENCE', answer.choice);
     if (confidence < settings.minConfidence) return skip('low-confidence', null, answer.choice, confidence);
     return { used: true, purpose, choice: answer.choice, confidence, model: settings.model };
@@ -109,20 +115,30 @@ const skipTexts: Record<RouterSkip, string> = {
   'no-key': 'Der Broker hat keinen Schlüssel für Jev (TYPESAFE_API_KEY oder OPENROUTER_API_KEY).',
   unavailable: 'Jev war nicht erreichbar',
   'invalid-answer': 'Jev hat keine verwertbare Antwort geliefert',
-  'low-confidence': 'Jevs Konfidenz lag unter dem konfigurierten Minimum'
+  'low-confidence': 'Jev war sich zu unsicher: die Wahrscheinlichkeit seiner Wahl lag unter router.minConfidence'
 };
 /** At most one message per repository, purpose and reason in this window; the next one counts the skipped cases. */
 export const routerAlertWindowMs = 6 * 3600000;
 
 /**
- * Slack messages when the router was not used and the configured models ran instead (Johannes, 2026-11-19). Throttled in
- * memory: one message per repository, purpose and reason every six hours, naming how often it happened meanwhile.
+ * Slack messages about the router (Johannes, 2026-11-19): every decision Jev made, and when the router was not used and
+ * the configured models ran instead. The latter are throttled in memory: one message per repository, purpose and reason
+ * every six hours, naming how often it happened meanwhile.
  */
+/** What a candidate names beyond its id, when the caller's candidates carry it (coding: agent, model, effort). */
+export interface ChosenDetails { agent?: unknown; model?: unknown; reasoningEffort?: unknown }
+
 export class RouterAlerts {
   private last = new Map<string, { at: number; suppressed: number }>();
   constructor(private sink: RouterAlertSink, private channel: string, private now: () => number = Date.now, private windowMs = routerAlertWindowMs) {}
-  async observe(repository: string, record: RouteRecord): Promise<void> {
-    if (record.used) return;
+  async observe(repository: string, record: RouteRecord, chosen?: RouterOption & ChosenDetails): Promise<void> {
+    if (record.used) {
+      // Every decision Jev made gets its own message, unthrottled (Johannes, 2026-11-19: "welche Entscheidung Jev
+      // erfolgreich getroffen hat"): one per coding execution, merge review or risk assessment.
+      const details = chosen ? [chosen.agent, chosen.model, chosen.reasoningEffort].filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
+      await this.sink.post(this.channel, `SF Model Router: Jev hat für ${purposeNames[record.purpose]} in ${repository} \`${record.choice}\`${details.length ? ` (${details.join(', ')})` : ''} gewählt, mit ${Math.round(record.confidence * 100)} % Wahrscheinlichkeit.`);
+      return;
+    }
     const key = `${repository}|${record.purpose}|${record.reason}`, prior = this.last.get(key), now = this.now();
     if (prior && now - prior.at < this.windowMs) { prior.suppressed++; return; }
     this.last.set(key, { at: now, suppressed: 0 });
@@ -141,7 +157,8 @@ export class Routing {
   async route(repository: string, purpose: RouterPurpose, state: string, options: RouterOption[], settings: RouterSettings): Promise<RouteRecord> {
     const record = await this.router.route(purpose, state, options, settings);
     logRoute(repository, record);
-    try { await this.alerts?.observe(repository, record); } catch { /* an alert never fails the work */ }
+    const chosen = record.used ? options.find(o => o.id === record.choice) as (RouterOption & ChosenDetails) | undefined : undefined;
+    try { await this.alerts?.observe(repository, record, chosen); } catch { /* an alert never fails the work */ }
     return record;
   }
 }
@@ -153,21 +170,21 @@ const outcomes = new WeakMap<object, RouteOutcome>();
 export const routeOutcome = (value: unknown): RouteOutcome | undefined => value && typeof value === 'object' ? outcomes.get(value) : undefined;
 const pct = (confidence: number) => `${Math.round(confidence * 100)} %`;
 const skipDe: Record<RouterSkip, string> = { 'no-key': 'kein Jev-Schlüssel im Broker', unavailable: 'Jev nicht erreichbar',
-  'invalid-answer': 'keine verwertbare Antwort von Jev', 'low-confidence': 'Jevs Konfidenz unter dem Minimum' };
+  'invalid-answer': 'keine verwertbare Antwort von Jev', 'low-confidence': 'Jev zu unsicher' };
 const skipEn: Record<RouterSkip, string> = { 'no-key': 'no Jev key on the broker', unavailable: 'Jev was unreachable',
-  'invalid-answer': 'Jev gave no usable answer', 'low-confidence': "Jev's confidence was below the minimum" };
+  'invalid-answer': 'Jev gave no usable answer', 'low-confidence': "Jev's choice was below the minimum probability" };
 /** One German line for the merge comments (review, risk): which model did the work and why. */
 export function routeNoteDe(outcome: RouteOutcome | undefined): string {
   if (!outcome) return '';
   const { record, candidate } = outcome;
   if (outcome.ran === 'candidate' && record.used && candidate)
-    return `Modellwahl: Der Model Router (Jev) wählte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ''}) mit ${pct(record.confidence)} Konfidenz.`;
+    return `Modellwahl: Der Model Router (Jev) wählte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ''}) mit ${pct(record.confidence)} Wahrscheinlichkeit.`;
   if (record.used) return `Modellwahl: Der Model Router wählte \`${record.choice}\`, der Kandidat konnte nicht laufen; geprüft haben die konfigurierten Modelle.`;
   return `Modellwahl: ohne Model Router (${skipDe[record.reason]}${record.reason === 'low-confidence' && record.confidence !== null ? `, ${pct(record.confidence)}` : ''}); geprüft haben die konfigurierten Modelle.`;
 }
 /** One English line for a task's status comment: which agent a coding execution runs and why. */
 export function routeNoteEn(record: RouteRecord, agent: { agent: string; model: string; reasoningEffort: string } | null): string {
-  if (record.used && agent) return `**Model:** chosen by the model router (Jev): \`${record.choice}\` (${agent.agent}, ${agent.model}, ${agent.reasoningEffort}), ${pct(record.confidence)} confidence.`;
+  if (record.used && agent) return `**Model:** chosen by the model router (Jev): \`${record.choice}\` (${agent.agent}, ${agent.model}, ${agent.reasoningEffort}), ${pct(record.confidence)} probability.`;
   if (record.used) return `**Model:** the model router chose \`${record.choice}\`; the configured agents run.`;
   return `**Model:** the configured agents; the model router was not used (${skipEn[record.reason]}${record.reason === 'low-confidence' && record.confidence !== null ? `, ${pct(record.confidence)}` : ''}).`;
 }

@@ -165,6 +165,8 @@ export function runtimeServer(options: ServerOptions) {
     } catch (error) {
       const reason = blockedReason(error);
       console.warn(JSON.stringify({ event: 'factory-runtime-blocked', reason,
+        // Only the error's class (e.g. ZodError, DataCloneError, TypeError), never its message: an untyped failure stays traceable.
+        ...(reason === 'OPERATION_FAILED' && error instanceof Error ? { errorType: error.name.slice(0, 64) } : {}),
         httpStatus: error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' ? error.status : undefined }));
       // Never serialize external API/PG errors, request bodies or connection strings.
       const code = error instanceof z.ZodError || error instanceof SyntaxError ? 'INVALID_REQUEST' : 'RUNTIME_OPERATION_BLOCKED';

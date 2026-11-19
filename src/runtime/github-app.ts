@@ -75,7 +75,10 @@ export function scopedRuntimeGitHub(options: { appId: string; privateKey: string
     // Hooks share the original options object; inner hooks may ignore a replacement object.
     parameters.headers.authorization = `token ${authentication.token}`;
     const route = `${parameters.method} ${parameters.url}`;
-    const key = parameters.method === 'GET' ? `${options.repositoryId} ${scoped.request.endpoint(parameters).url}` : undefined;
+    // Streamed answers (artifact and log downloads, parseSuccessResponseBody: false) are neither cacheable nor clonable:
+    // structuredClone of their ReadableStream threw DataCloneError, and every coding result failed as OPERATION_FAILED.
+    const streamed = (parameters.request as { parseSuccessResponseBody?: boolean } | undefined)?.parseSuccessResponseBody === false;
+    const key = parameters.method === 'GET' && !streamed ? `${options.repositoryId} ${scoped.request.endpoint(parameters).url}` : undefined;
     const etag = key ? conditional.etag(key) : undefined;
     if (etag) parameters.headers['if-none-match'] = etag;
     try {

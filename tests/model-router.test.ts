@@ -47,8 +47,14 @@ describe('ModelRouter', () => {
     const fetcher = vi.fn();
     expect(await new ModelRouter(undefined, fetcher).route('coding', 's', options, settings)).toMatchObject({ used: false, reason: 'no-key', code: null });
     expect(fetcher).not.toHaveBeenCalled();
-    expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.4 } } })).route('coding', 's', options, settings))
-      .toMatchObject({ used: false, reason: 'low-confidence', choice: 'strong', confidence: 0.4 });
+    // Jev's confidence is (p - 1/n) / (1 - 1/n): with two candidates 0.32 means a 66 % lean, which clears 0.5 ...
+    expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.32 } } })).route('coding', 's', options, settings))
+      .toMatchObject({ used: true, choice: 'strong', confidence: 0.66 });
+    // ... the threshold applies to the chosen candidate's probability, given or recovered.
+    expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.4 } } })).route('coding', 's', options, { ...settings, minConfidence: 0.8 }))
+      .toMatchObject({ used: false, reason: 'low-confidence', choice: 'strong', confidence: 0.7 });
+    expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.9, probabilities: { cheap: 0.4, strong: 0.6 } } } })).route('coding', 's', options, { ...settings, minConfidence: 0.65 }))
+      .toMatchObject({ used: false, reason: 'low-confidence', confidence: 0.6 });
     expect(await new ModelRouter('key', answering({ error: { message: 'secret detail' } }, 503)).route('coding', 's', options, settings))
       .toEqual({ used: false, purpose: 'coding', reason: 'unavailable', code: 'HTTP_503', choice: null, confidence: null, model: 'typesafe/jev-1.14' });
     expect(await new ModelRouter('key', answering({ answers: { route: { choice: 'other', confidence: 0.9 } } })).route('coding', 's', options, settings))
@@ -68,7 +74,6 @@ describe('RouterAlerts', () => {
     await alerts.observe('owner/repo', skipped);
     await alerts.observe('owner/repo', skipped);
     await alerts.observe('owner/repo', { ...skipped, purpose: 'review' });
-    await alerts.observe('owner/repo', { used: true, purpose: 'coding', choice: 'cheap', confidence: 0.9, model: 'm' });
     expect(posts).toHaveLength(2);
     expect(posts[0]).toContain('Coding in owner/repo lief ohne Router, direkt mit den konfigurierten Modellen.');
     expect(posts[0]).toContain('OPENROUTER_API_KEY');
@@ -77,6 +82,24 @@ describe('RouterAlerts', () => {
     expect(posts[2]).toContain('Seit der letzten Meldung 1-mal ohne eigene Nachricht.');
     await alerts.observe('owner/repo', { ...skipped, reason: 'low-confidence', choice: 'strong', confidence: 0.31 });
     expect(posts[3]).toContain('gewählt hätte er strong mit 31 %');
+  });
+  it('reports every decision Jev made, with the chosen candidate', async () => {
+    const posts: string[] = [];
+    const alerts = new RouterAlerts({ post: async (_channel, text) => { posts.push(text); } }, 'C123');
+    const decided: RouteRecord = { used: true, purpose: 'coding', choice: 'sonnet-medium', confidence: 0.724, model: 'typesafe/jev-1.14' };
+    await alerts.observe('owner/repo', decided, { id: 'sonnet-medium', description: 'd', agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' });
+    await alerts.observe('owner/repo', { ...decided, purpose: 'risk', choice: 'opus-high', confidence: 0.81 });
+    expect(posts).toEqual([
+      'SF Model Router: Jev hat für Coding in owner/repo `sonnet-medium` (claude, claude-sonnet-5-5, medium) gewählt, mit 72 % Wahrscheinlichkeit.',
+      'SF Model Router: Jev hat für Risikobewertung in owner/repo `opus-high` gewählt, mit 81 % Wahrscheinlichkeit.']);
+  });
+  it('passes the chosen candidate from Routing to the alerts', async () => {
+    const posts: string[] = [];
+    const routing = new Routing(new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.9 } } })),
+      new RouterAlerts({ post: async (_channel, text) => { posts.push(text); } }, 'C123'));
+    await routing.route('owner/repo', 'review', 'pr', options.map(o => ({ ...o, model: `model-${o.id}`, reasoningEffort: 'high' })), settings);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toContain('Merge-Review in owner/repo `strong` (model-strong, high) gewählt');
   });
 });
 
@@ -98,7 +121,7 @@ describe('routedCall', () => {
       { id: 'strong', description: 'Hard', model: 'claude-opus-5-5', reasoningEffort: 'high' }];
     const result = () => ({ decision: 'merge' });
     const routedResult = await routedCall({ ...base, candidates, routing: routing('strong'), configured: async () => result(), run: () => async () => result() });
-    expect(routeNoteDe(routeOutcome(routedResult))).toBe('Modellwahl: Der Model Router (Jev) wählte `strong` (claude-opus-5-5, high) mit 90 % Konfidenz.');
+    expect(routeNoteDe(routeOutcome(routedResult))).toBe('Modellwahl: Der Model Router (Jev) wählte `strong` (claude-opus-5-5, high) mit 95 % Wahrscheinlichkeit.');
     const failed = await routedCall({ ...base, candidates, routing: routing('strong'), configured: async () => result(), run: () => async () => { throw new Error('HTTP 529'); } });
     expect(routeNoteDe(routeOutcome(failed))).toBe('Modellwahl: Der Model Router wählte `strong`, der Kandidat konnte nicht laufen; geprüft haben die konfigurierten Modelle.');
     const skipped = await routedCall({ ...base, candidates, routing: routing(null), configured: async () => result(), run: () => async () => result() });
