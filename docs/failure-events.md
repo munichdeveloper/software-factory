@@ -1,6 +1,6 @@
 # Konzept: Ereignisse für gescheiterte Prüfschritte und abgelehnte Starts
 
-Status: **Konzept, nicht umgesetzt.** Alle Entscheidungen sind getroffen (Abschnitt 8). Umsetzung: Issue folgt.
+Status: **Konzept, nicht umgesetzt.** Alle Entscheidungen sind getroffen (Abschnitt 8). Umsetzung: Issue #188.
 
 Dieses Dokument beschreibt, wie der Broker einen gescheiterten Prüfschritt, einen abgelehnten Start oder einen
 festhängenden Lauf als **Ereignis** veröffentlicht. Wer will, kann es abonnieren: Slack, der Factory-Monitor, ein
