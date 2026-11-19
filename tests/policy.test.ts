@@ -80,3 +80,20 @@ describe('independent autonomy policy engine', () => {
     expect(evaluate(action, { config: f.cfg, ...f, source: 'planner', approved: true }).outcome).toBe('deny');
   });
 });
+describe('harness:ready stays a person\'s grant in ready-label repositories (software-factory#109)', () => {
+  const ready = (task: Task): Action => proposal(task, 'transition', 'Looks ready', { status: 'ready' });
+  const backlog = () => { const cfg = config(), api = new MemoryGitHub(); api.state.issues.push(issue(1, ['harness:managed', 'harness:backlog']));
+    return { cfg, task: reconstruct(api.state, cfg, clock)[0]!, budget: { actions: 0, newIssues: 0, activeWorkers: 0 } }; };
+  it('denies a planner transition to ready where the label is the grant', () => {
+    const f = backlog(), ctx = { config: f.cfg, budget: f.budget, task: f.task, source: 'planner' as const, approved: true };
+    const denied = evaluate(ready(f.task), { ...ctx, readyIsGrant: true });
+    expect(denied.outcome).toBe('deny');
+    expect(denied.reason).toContain('only an authorized person applies it');
+    expect(evaluate(ready(f.task), ctx).outcome).toBe('allow');
+  });
+  it('leaves a ready status alone that a person already granted', () => {
+    const f = fixture(), task = { ...f.task, issue: { ...f.task.issue, labels: [...f.task.issue.labels, 'harness:ready'] } };
+    expect(evaluate(ready(task), { config: f.cfg, budget: f.budget, task, source: 'planner', approved: true, readyIsGrant: true }).reason)
+      .not.toContain('only an authorized person');
+  });
+});

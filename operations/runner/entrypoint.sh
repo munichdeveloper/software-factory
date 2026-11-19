@@ -28,8 +28,24 @@ clear_job_accounts() {
     "$filter" -w -F HARNESS_CLAUDE 2>/dev/null; "$filter" -w -X HARNESS_CLAUDE 2>/dev/null
   done
 }
+# Nothing of one job reaches the next: workspace, tool caches, home directory files, job accounts and everything the
+# job left in the slot's Docker daemon. `docker system prune` keeps running containers, so a job's service containers
+# (a database publishing its port) are removed first: a slot restarted in the middle of a job (a runtime deploy
+# recreates the runner, not its Docker daemon) left them running, and the next job's service container then failed
+# with "port is already allocated".
+reset_slot() {
+  find "$work" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
+  rm -rf /home/runner/.cache /home/runner/.npm /home/runner/.m2 /home/runner/.docker /tmp/* 2>/dev/null
+  clear_job_accounts
+  if [[ -n "${DOCKER_HOST:-}" ]]; then
+    local -a containers
+    mapfile -t containers < <(docker ps --all --quiet 2>/dev/null)
+    if (( ${#containers[@]} )); then docker rm --force --volumes "${containers[@]}" >/dev/null 2>&1 || true; fi
+    docker system prune --all --volumes --force >/dev/null 2>&1 || true
+  fi
+}
 # A slot restarted in the middle of a job starts clean as well.
-clear_job_accounts
+reset_slot
 while true; do
   if [[ ! -s "$slot/jitconfig" ]]; then sleep 5; continue; fi
   # 'busy' first, so the broker never sees the slot idle between taking the file and the end of the job.
@@ -57,12 +73,6 @@ while true; do
   done
   wait "$pid"; echo "sf-runner: job ended with $?"
   rm -f "$log"
-  # Nothing of one job reaches the next: workspace, tool caches and home directory files are reset.
-  find "$work" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
-  rm -rf /home/runner/.cache /home/runner/.npm /home/runner/.m2 /home/runner/.docker /tmp/* 2>/dev/null
-  clear_job_accounts
-  if [[ -n "${DOCKER_HOST:-}" ]]; then
-    docker system prune --all --volumes --force >/dev/null 2>&1 || true
-  fi
+  reset_slot
   rm -f "$slot/busy"
 done

@@ -609,8 +609,8 @@ var require_Node = __commonJS({
         };
         const res = toJS.toJS(this, "", ctx);
         if (typeof onAnchor === "function")
-          for (const { count, res: res2 } of ctx.anchors.values())
-            onAnchor(res2, count);
+          for (const { count: count2, res: res2 } of ctx.anchors.values())
+            onAnchor(res2, count2);
         return typeof reviver === "function" ? applyReviver.applyReviver(reviver, { "": res }, "", res) : res;
       }
     };
@@ -718,13 +718,13 @@ var require_Alias = __commonJS({
         const anchor2 = anchors2 && source && anchors2.get(source);
         return anchor2 ? anchor2.count * anchor2.aliasCount : 0;
       } else if (identity.isCollection(node2)) {
-        let count = 0;
+        let count2 = 0;
         for (const item of node2.items) {
           const c = getAliasCount(doc, item, anchors2);
-          if (c > count)
-            count = c;
+          if (c > count2)
+            count2 = c;
         }
-        return count;
+        return count2;
       } else if (identity.isPair(node2)) {
         const kc = getAliasCount(doc, node2.key, anchors2);
         const vc = getAliasCount(doc, node2.value, anchors2);
@@ -3677,8 +3677,8 @@ var require_Document = __commonJS({
         };
         const res = toJS.toJS(this.contents, jsonArg ?? "", ctx);
         if (typeof onAnchor === "function")
-          for (const { count, res: res2 } of ctx.anchors.values())
-            onAnchor(res2, count);
+          for (const { count: count2, res: res2 } of ctx.anchors.values())
+            onAnchor(res2, count2);
         return typeof reviver === "function" ? applyReviver.applyReviver(reviver, { "": res }, "", res) : res;
       }
       /**
@@ -3755,12 +3755,12 @@ var require_errors = __commonJS({
         lineStr = prev + lineStr;
       }
       if (/[^ ]/.test(lineStr)) {
-        let count = 1;
+        let count2 = 1;
         const end = error62.linePos[1];
         if (end?.line === line && end.col > col) {
-          count = Math.max(1, Math.min(end.col - col, 80 - ci));
+          count2 = Math.max(1, Math.min(end.col - col, 80 - ci));
         }
-        const pointer = " ".repeat(ci) + "^".repeat(count);
+        const pointer = " ".repeat(ci) + "^".repeat(count2);
         error62.message += `:
 
 ${lineStr}
@@ -10849,9 +10849,9 @@ function recordMessagesCreateResponse(client, call, body, data) {
     loggerFor(client).debug("could not record the response on its span", problem);
   }
 }
-function recordCountTokensResponse(client, call, count) {
+function recordCountTokensResponse(client, call, count2) {
   try {
-    call?.span.setAttribute(ATTR_ANTHROPIC_MESSAGE_COUNT_TOKENS_INPUT_TOKENS, count.input_tokens);
+    call?.span.setAttribute(ATTR_ANTHROPIC_MESSAGE_COUNT_TOKENS_INPUT_TOKENS, count2.input_tokens);
   } catch (problem) {
     loggerFor(client).debug("could not record the response on its span", problem);
   }
@@ -16702,15 +16702,15 @@ function betaEditTool(ctx) {
           throw e;
         throw new ToolError(`edit: ${fsErrorMessage(e, file_path)}`);
       }
-      const count = data.split(old_string).length - 1;
-      if (count === 0)
+      const count2 = data.split(old_string).length - 1;
+      if (count2 === 0)
         throw new ToolError(`edit: old_string not found in ${file_path}`);
       let updated;
       if (replace_all) {
         updated = data.split(old_string).join(new_string);
       } else {
-        if (count > 1)
-          throw new ToolError(`edit: old_string appears ${count} times in ${file_path} (must be unique)`);
+        if (count2 > 1)
+          throw new ToolError(`edit: old_string appears ${count2} times in ${file_path} (must be unique)`);
         updated = data.replace(old_string, () => new_string);
       }
       try {
@@ -16718,7 +16718,7 @@ function betaEditTool(ctx) {
       } catch (e) {
         throw new ToolError(`edit: write: ${fsErrorMessage(e, file_path)}`);
       }
-      return `edited ${file_path} (${replace_all ? count : 1} replacement(s))`;
+      return `edited ${file_path} (${replace_all ? count2 : 1} replacement(s))`;
     }
   });
 }
@@ -30543,9 +30543,9 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
             __span: call,
             headers
           });
-          return call ? request2._thenUnwrap((count) => {
-            recordCountTokensResponse(this._client, call, count);
-            return count;
+          return call ? request2._thenUnwrap((count2) => {
+            recordCountTokensResponse(this._client, call, count2);
+            return count2;
           }) : request2;
         }
         /**
@@ -31892,9 +31892,9 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
             __span: call,
             headers
           });
-          return call ? request2._thenUnwrap((count) => {
-            recordCountTokensResponse(this._client, call, count);
-            return count;
+          return call ? request2._thenUnwrap((count2) => {
+            recordCountTokensResponse(this._client, call, count2);
+            return count2;
           }) : request2;
         }
       }
@@ -39867,20 +39867,20 @@ var require_resolve = __commonJS({
       return false;
     }
     function countKeys(schema) {
-      let count = 0;
+      let count2 = 0;
       for (const key in schema) {
         if (key === "$ref")
           return Infinity;
-        count++;
+        count2++;
         if (SIMPLE_INLINED.has(key))
           continue;
         if (typeof schema[key] == "object") {
-          (0, util_1.eachItem)(schema[key], (sch) => count += countKeys(sch));
+          (0, util_1.eachItem)(schema[key], (sch) => count2 += countKeys(sch));
         }
-        if (count === Infinity)
+        if (count2 === Infinity)
           return Infinity;
       }
-      return count;
+      return count2;
     }
     function getFullPath(resolver, id = "", normalize) {
       if (normalize !== false)
@@ -43418,8 +43418,8 @@ var require_contains = __commonJS({
         cxt.result(valid, () => cxt.reset());
         function validateItemsWithCount() {
           const schValid = gen.name("_valid");
-          const count = gen.let("count", 0);
-          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count)));
+          const count2 = gen.let("count", 0);
+          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count2)));
         }
         function validateItems(_valid, block) {
           gen.forRange("i", 0, len, (i) => {
@@ -43432,16 +43432,16 @@ var require_contains = __commonJS({
             block();
           });
         }
-        function checkLimits(count) {
-          gen.code((0, codegen_1._)`${count}++`);
+        function checkLimits(count2) {
+          gen.code((0, codegen_1._)`${count2}++`);
           if (max === void 0) {
-            gen.if((0, codegen_1._)`${count} >= ${min}`, () => gen.assign(valid, true).break());
+            gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true).break());
           } else {
-            gen.if((0, codegen_1._)`${count} > ${max}`, () => gen.assign(valid, false).break());
+            gen.if((0, codegen_1._)`${count2} > ${max}`, () => gen.assign(valid, false).break());
             if (min === 1)
               gen.assign(valid, true);
             else
-              gen.if((0, codegen_1._)`${count} >= ${min}`, () => gen.assign(valid, true));
+              gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true));
           }
         }
       }
@@ -46393,14 +46393,14 @@ function codePointLength(str) {
   const units = str.length;
   if (!highSurrogate.test(str))
     return units;
-  let count = units;
+  let count2 = units;
   for (let i = 0; i < units - 1; i++) {
     if ((str.charCodeAt(i) & 64512) === 55296 && (str.charCodeAt(i + 1) & 64512) === 56320) {
-      count--;
+      count2--;
       i++;
     }
   }
-  return count;
+  return count2;
 }
 function getLengthableOrigin(input2) {
   if (Array.isArray(input2))
@@ -50783,8 +50783,8 @@ function az_default() {
 }
 
 // node_modules/zod/v4/locales/be.js
-function getBelarusianPlural(count, one, few, many) {
-  const absCount = Math.abs(count);
+function getBelarusianPlural(count2, one, few, many) {
+  const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -53431,8 +53431,8 @@ function hu_default() {
 }
 
 // node_modules/zod/v4/locales/hy.js
-function getArmenianPlural(count, one, many) {
-  return Math.abs(count) === 1 ? one : many;
+function getArmenianPlural(count2, one, many) {
+  return Math.abs(count2) === 1 ? one : many;
 }
 function withDefiniteArticle(word) {
   if (!word)
@@ -56170,8 +56170,8 @@ function ro_default() {
 }
 
 // node_modules/zod/v4/locales/ru.js
-function getRussianPlural(count, one, few, many) {
-  const absCount = Math.abs(count);
+function getRussianPlural(count2, one, few, many) {
+  const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -65133,6 +65133,38 @@ function agentRules(entry, context2) {
   }
 }
 var codingAgentSchema = external_exports.strictObject({ agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort.default("high") }).superRefine((entry, context2) => agentRules(entry, context2));
+var routerOptionId = external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
+var routerDescription = external_exports.string().min(1).max(300);
+var codingCandidateSchema = external_exports.strictObject({
+  id: routerOptionId,
+  agent: codingAgentName,
+  model: codingModel,
+  reasoningEffort: codingEffort,
+  description: routerDescription
+}).superRefine((entry, context2) => agentRules(entry, context2));
+var llmCandidateSchema = external_exports.strictObject({
+  id: routerOptionId,
+  provider: external_exports.enum(["claude", "openai"]),
+  model: codingModel,
+  reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh"]),
+  description: routerDescription
+}).superRefine((entry, context2) => {
+  if (entry.provider === "claude" !== /^claude-/.test(entry.model)) context2.addIssue({ code: "custom", path: ["model"], message: "provider claude needs a Claude model, provider openai a non-Claude model" });
+});
+var routerCandidates = (candidate) => external_exports.strictObject({ candidates: external_exports.array(candidate).min(2).max(6) }).superRefine((value, context2) => {
+  if (new Set(value.candidates.map((c) => c.id)).size !== value.candidates.length) context2.addIssue({ code: "custom", path: ["candidates"], message: "candidate ids must be unique" });
+});
+var routerSchema = external_exports.strictObject({
+  enabled: external_exports.boolean().default(true),
+  model: external_exports.string().regex(/^~?[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]{0,80}$/).default("typesafe/jev-1.14"),
+  minConfidence: external_exports.number().min(0).max(1).default(0.5),
+  timeoutSeconds: bounded(1, 30, 10),
+  /** First attempts of coding runs (Temporal engine); escalated attempts keep retryAgents. */
+  coding: routerCandidates(codingCandidateSchema).optional(),
+  review: routerCandidates(llmCandidateSchema).optional(),
+  risk: routerCandidates(llmCandidateSchema).optional(),
+  planner: routerCandidates(llmCandidateSchema).optional()
+});
 var configSchema = external_exports.strictObject({
   version: external_exports.literal(1),
   factory: external_exports.strictObject({ enabled: external_exports.boolean().default(true), scope: external_exports.string().min(1).max(4e3) }),
@@ -65146,7 +65178,14 @@ var configSchema = external_exports.strictObject({
   }).prefault({}),
   autonomy: external_exports.strictObject({
     profile: external_exports.enum(["advisory", "supervised", "autonomous"]).default("supervised"),
-    overrides: external_exports.partialRecord(external_exports.enum(actionKinds), permissionSchema).default({})
+    overrides: external_exports.partialRecord(external_exports.enum(actionKinds), permissionSchema).default({}),
+    /**
+     * What admits a run in a repository the SF Manager registered with the ready label as grant. `ready-label`: only
+     * `harness:ready` applied by a person with write access. `managed-label`: `harness:managed` applied by a person
+     * with write access is the grant, and the Factory's own follow-ups inherit it. `none`: no grant; every managed, runnable task starts
+     * within the autonomy policy and the execution limits.
+     */
+    startGrant: external_exports.enum(["ready-label", "managed-label", "none"]).default("ready-label")
   }).prefault({}),
   execution: external_exports.strictObject({
     engine: external_exports.enum(["github-actions", "temporal"]).default("github-actions"),
@@ -65182,6 +65221,12 @@ var configSchema = external_exports.strictObject({
        * configurations that leave it out keep their hash and in-flight runs stay current.
        */
       agents: external_exports.array(codingAgentSchema).min(1).max(3).optional(),
+      /**
+       * Optional priority list for escalated attempts, Temporal engine only: a further attempt after an earlier attempt
+       * failed for a reason the agent owns (failed validation, requested changes, failed or timed-out agent run). A retry
+       * after the runner failed before the agent started keeps agents. Without it every attempt uses agents (or agent). Optional without a default, so configurations that leave it out keep their hash.
+       */
+      retryAgents: external_exports.array(codingAgentSchema).min(1).max(3).optional(),
       /** The default is a Codex model; with agent claude name a Claude model such as claude-opus-5-5 or claude-sonnet-5-5. */
       model: codingModel.default("gpt-6.1-sol"),
       /** max is available for Claude only. */
@@ -65190,15 +65235,22 @@ var configSchema = external_exports.strictObject({
       /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
       loopback: external_exports.boolean().default(false),
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
-      smallPullRequests: external_exports.boolean().default(true)
+      smallPullRequests: external_exports.boolean().default(true),
+      /**
+       * Spend cap per coding attempt in US dollars, Temporal engine only: Claude Code stops at it (--max-budget-usd; Codex
+       * has no such limit). Without it the broker uses 10 $. Optional without a default, so configurations keep their hash.
+       */
+      maxCostUsd: external_exports.number().positive().max(1e3).optional()
     }).superRefine((coding, context2) => {
-      if (coding.agents) {
-        if (coding.agent) context2.addIssue({ code: "custom", path: ["agent"], message: "name either agent or agents, not both" });
+      for (const key of ["agents", "retryAgents"]) {
         const seen = /* @__PURE__ */ new Set();
-        coding.agents.forEach((entry, index) => {
-          if (seen.has(entry.agent)) context2.addIssue({ code: "custom", path: ["agents", index, "agent"], message: "each agent may appear once" });
+        coding[key]?.forEach((entry, index) => {
+          if (seen.has(entry.agent)) context2.addIssue({ code: "custom", path: [key, index, "agent"], message: "each agent may appear once" });
           seen.add(entry.agent);
         });
+      }
+      if (coding.agents) {
+        if (coding.agent) context2.addIssue({ code: "custom", path: ["agent"], message: "name either agent or agents, not both" });
         return;
       }
       if (!coding.agent) {
@@ -65321,9 +65373,12 @@ var configSchema = external_exports.strictObject({
       pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
   }).prefault({}) }).prefault({}),
-  monitoring: monitoringSchema.partial().optional()
+  monitoring: monitoringSchema.partial().optional(),
+  router: routerSchema.optional()
 }).superRefine((config2, context2) => {
+  if (config2.router?.coding && config2.execution.engine !== "temporal") context2.addIssue({ code: "custom", path: ["router", "coding"], message: "router.coding requires execution.engine temporal" });
   if (config2.workers.coding && config2.execution.engine !== "temporal") {
+    if (config2.workers.coding.retryAgents) context2.addIssue({ code: "custom", path: ["workers", "coding", "retryAgents"], message: "retryAgents requires execution.engine temporal" });
     if (config2.workers.coding.agents) context2.addIssue({ code: "custom", path: ["workers", "coding", "agents"], message: "agents requires execution.engine temporal" });
     else if (config2.workers.coding.agent === "claude") context2.addIssue({ code: "custom", path: ["workers", "coding", "agent"], message: "agent claude requires execution.engine temporal" });
   }
@@ -69494,6 +69549,89 @@ var validationReportSchema = external_exports.strictObject({
   workspaceUnchanged: external_exports.boolean()
 });
 
+// src/llm/router.ts
+var routeRecordSchema = external_exports.discriminatedUnion("used", [
+  external_exports.strictObject({
+    used: external_exports.literal(true),
+    purpose: external_exports.enum(["coding", "review", "risk", "planner"]),
+    choice: external_exports.string().max(40),
+    confidence: external_exports.number().min(0).max(1),
+    model: external_exports.string().max(100)
+  }),
+  external_exports.strictObject({
+    used: external_exports.literal(false),
+    purpose: external_exports.enum(["coding", "review", "risk", "planner"]),
+    reason: external_exports.enum(["no-key", "low-confidence", "unavailable", "invalid-answer"]),
+    /** HTTP status or a fixed transport code when Jev could not be asked. */
+    code: external_exports.string().regex(/^[A-Z0-9_]{1,40}$/).nullable(),
+    choice: external_exports.string().max(40).nullable(),
+    confidence: external_exports.number().min(0).max(1).nullable(),
+    model: external_exports.string().max(100)
+  })
+]);
+var decisionSchema = external_exports.object({ answers: external_exports.object({ route: external_exports.object({
+  choice: external_exports.string(),
+  confidence: external_exports.number().min(0).max(1).optional(),
+  probabilities: external_exports.record(external_exports.string(), external_exports.number()).optional()
+}) }) });
+var routerAlertWindowMs = 6 * 36e5;
+var outcomes = /* @__PURE__ */ new WeakMap();
+var routeOutcome = (value) => value && typeof value === "object" ? outcomes.get(value) : void 0;
+var pct = (confidence) => `${Math.round(confidence * 100)} %`;
+var skipDe = {
+  "no-key": "kein Jev-Schl\xFCssel im Broker",
+  unavailable: "Jev nicht erreichbar",
+  "invalid-answer": "keine verwertbare Antwort von Jev",
+  "low-confidence": "Jevs Konfidenz unter dem Minimum"
+};
+var skipEn = {
+  "no-key": "no Jev key on the broker",
+  unavailable: "Jev was unreachable",
+  "invalid-answer": "Jev gave no usable answer",
+  "low-confidence": "Jev's confidence was below the minimum"
+};
+function routeNoteDe(outcome) {
+  if (!outcome) return "";
+  const { record: record2, candidate } = outcome;
+  if (outcome.ran === "candidate" && record2.used && candidate)
+    return `Modellwahl: Der Model Router (Jev) w\xE4hlte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ""}) mit ${pct(record2.confidence)} Konfidenz.`;
+  if (record2.used) return `Modellwahl: Der Model Router w\xE4hlte \`${record2.choice}\`, der Kandidat konnte nicht laufen; gepr\xFCft haben die konfigurierten Modelle.`;
+  return `Modellwahl: ohne Model Router (${skipDe[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}); gepr\xFCft haben die konfigurierten Modelle.`;
+}
+function routeNoteEn(record2, agent) {
+  if (record2.used && agent) return `**Model:** chosen by the model router (Jev): \`${record2.choice}\` (${agent.agent}, ${agent.model}, ${agent.reasoningEffort}), ${pct(record2.confidence)} confidence.`;
+  if (record2.used) return `**Model:** the model router chose \`${record2.choice}\`; the configured agents run.`;
+  return `**Model:** the configured agents; the model router was not used (${skipEn[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}).`;
+}
+
+// src/runtime/usage.ts
+var count = external_exports.number().int().min(0).max(1e12);
+var tokensSchema = external_exports.strictObject({ input: count, output: count, cacheRead: count, cacheWrite: count });
+var usageRecordSchema = external_exports.strictObject({
+  contractVersion: external_exports.literal("1.0"),
+  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  worker: external_exports.enum(["codex", "claude"]),
+  model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  effort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]),
+  source: external_exports.enum(["proxy", "codex-session"]).nullable(),
+  requests: count.nullable(),
+  tokens: tokensSchema.nullable(),
+  costUsd: external_exports.number().min(0).max(1e5).nullable(),
+  turns: count.nullable(),
+  durationMs: count.nullable(),
+  outcome: external_exports.string().regex(/^[a-z_]{1,60}$/).nullable(),
+  budgetUsd: external_exports.number().positive().max(1e3).nullable(),
+  budgetReached: external_exports.boolean()
+});
+function usageNoteEn(record2) {
+  const cost = record2.costUsd === null ? "cost unknown" : `$${record2.costUsd.toFixed(2)}`;
+  const tokens = record2.tokens ? `, ${thousandsEn(record2.tokens.input + record2.tokens.cacheRead + record2.tokens.cacheWrite)} input / ${thousandsEn(record2.tokens.output)} output tokens` : "";
+  const turns = record2.turns === null ? "" : `, ${record2.turns} turns`;
+  const stop = record2.budgetReached ? ` (stopped at the $${(record2.budgetUsd ?? 0).toFixed(2)} cap)` : "";
+  return `**Usage:** ${cost}${tokens}${turns}${stop}.`;
+}
+var thousandsEn = (value) => value >= 1e6 ? `${(value / 1e6).toFixed(1)}M` : value >= 1e3 ? `${Math.round(value / 1e3)}k` : String(value);
+
 // src/runtime/contract.ts
 var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
 var digest2 = external_exports.string().regex(/^[a-f0-9]{64}$/);
@@ -69527,6 +69665,8 @@ var snapshotSchema = external_exports.strictObject({
   configHash: digest2,
   requireHumanGate: external_exports.boolean()
 });
+var routedAgentSchema = external_exports.strictObject({ agent: external_exports.enum(["codex", "claude"]), model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]) });
+var codingRouteSchema = external_exports.strictObject({ route: routeRecordSchema.nullable(), agent: routedAgentSchema.nullable() });
 var observationSchema = external_exports.strictObject({
   issueNumber: external_exports.number().int().positive(),
   executionId: executionKey,
@@ -69543,7 +69683,14 @@ var observationSchema = external_exports.strictObject({
     reason: external_exports.string().regex(/^[A-Z_]{1,40}$/),
     failed: external_exports.strictObject({ name: external_exports.string().regex(/^[a-z-]{1,30}$/), exitCode: external_exports.number().int().nullable() }).array().max(10),
     runId: external_exports.number().int().positive().safe()
-  }).optional()
+  }).optional(),
+  /**
+   * The model router's decision for this coding execution (router.coding), for the status comment. Broker-internal: the
+   * HTTP API leaves it out, so clients of earlier releases keep parsing their observations.
+   */
+  route: external_exports.strictObject({ record: routeRecordSchema, agent: routedAgentSchema.nullable() }).optional(),
+  /** Token usage and cost of this execution's agent run, once recorded; broker-internal like route. */
+  usage: usageRecordSchema.optional()
 });
 var RuntimeAdmissionRejected = class extends Error {
   constructor(code) {
@@ -69580,35 +69727,18 @@ async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, ex
   if (later.length && !consumed && !carried || !issue2.labels.includes("harness:ready") && !consumed && !carried) throw new Error("READY_APPROVAL_REVOKED");
   return proof;
 }
-
-// src/state/lifecycle.ts
-var managedLabel = "harness:managed";
-var lifecycleLabels = statuses.map((s) => `harness:${s}`);
-var priorityLabels = ["harness:priority-high", "harness:priority-normal", "harness:priority-low"];
-var allLabels = [managedLabel, ...lifecycleLabels, ...priorityLabels, "sf:automerge", "sf:blocked"];
-var transitions = {
-  backlog: ["ready", "running", "failed", "awaiting-pr", "blocked", "awaiting-approval", "done"],
-  ready: ["running", "failed", "blocked", "awaiting-approval", "awaiting-pr", "done", "backlog"],
-  running: ["awaiting-pr", "failed", "blocked", "awaiting-approval", "done"],
-  "awaiting-pr": ["running", "failed", "blocked", "done", "backlog", "ready", "awaiting-approval"],
-  "awaiting-approval": ["ready", "running", "blocked", "backlog", "done", "awaiting-pr", "failed"],
-  blocked: ["ready", "running", "backlog", "awaiting-approval", "failed", "done", "awaiting-pr"],
-  failed: ["running", "ready", "blocked", "awaiting-approval", "done", "awaiting-pr"],
-  done: ["backlog"]
-};
-var issueStatus = (issue2) => statuses.find((s) => issue2.labels.includes(`harness:${s}`));
-var canTransition = (from, to) => from === void 0 || from === to || transitions[from].includes(to);
-function withStatus(issue2, to) {
-  if (!canTransition(issueStatus(issue2), to)) throw new Error(`Invalid lifecycle transition ${issueStatus(issue2)} -> ${to}`);
-  return [...issue2.labels.filter((l) => !lifecycleLabels.includes(l)), `harness:${to}`];
-}
-function dependencies(body) {
-  const lines = body.match(/^Depends on:\s*.+$/gim) ?? [];
-  return [...new Set(lines.flatMap((line) => [...line.matchAll(/#(\d+)/g)].map((m) => Number(m[1]))))];
-}
-function acceptanceCriteria(body) {
-  const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien|Abnahmekriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
-  return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
+async function authorizeManagedLabel(issue2, events, canApprove, trustedActors, origin) {
+  if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("MANAGED_GRANT_REQUIRED");
+  const grant = [...events].sort((a, b) => a.id - b.id).filter((e) => e.event === "labeled").at(-1);
+  if (!grant) throw new Error("MANAGED_GRANT_REQUIRED");
+  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (parsed.success && await canApprove(parsed.data.actor)) {
+    if (untrustedEdit(issue2) || untrustedEdit(issue2, parsed.data.createdAt)) throw new Error("MANAGED_CONTENT_CHANGED");
+    return parsed.data;
+  }
+  if (!origin || !trustedActors.includes(grant.actor)) throw new Error("MANAGED_ACTOR_NOT_AUTHORIZED");
+  if (untrustedEdit(issue2)) throw new Error("MANAGED_CONTENT_CHANGED");
+  return origin();
 }
 
 // src/merge/contract.ts
@@ -69695,6 +69825,269 @@ function decodeEvent(comment, trustedActors) {
   } catch {
     return;
   }
+}
+
+// src/state/blocks.ts
+var lastBlockLabelEventId = (issue2) => issue2.blockedLabelEvents?.at(-1)?.id ?? 0;
+function currentAutomaticBlock(issue2, events, trustedActors) {
+  if (!issue2.labels.includes("harness:blocked")) return;
+  const changes = issue2.blockedLabelEvents ?? [];
+  const current = changes.at(-1);
+  if (!current || current.event !== "labeled" || !trustedActors.includes(current.actor)) return;
+  for (const event of [...events].reverse()) {
+    if (event.data.type !== "block_intent") continue;
+    const floor = event.data.afterLabelEventId;
+    const boundary = floor === 0 ? -1 : changes.findIndex((change) => change.id === floor);
+    if (floor !== 0 && boundary === -1) continue;
+    const applied = changes[boundary + 1];
+    if (applied?.id === current.id) return event.data;
+  }
+}
+
+// src/state/lifecycle.ts
+var managedLabel = "harness:managed";
+var lifecycleLabels = statuses.map((s) => `harness:${s}`);
+var priorityLabels = ["harness:priority-high", "harness:priority-normal", "harness:priority-low"];
+var allLabels = [managedLabel, ...lifecycleLabels, ...priorityLabels, "sf:automerge", "sf:blocked"];
+var transitions = {
+  backlog: ["ready", "running", "failed", "awaiting-pr", "blocked", "awaiting-approval", "done"],
+  ready: ["running", "failed", "blocked", "awaiting-approval", "awaiting-pr", "done", "backlog"],
+  running: ["awaiting-pr", "failed", "blocked", "awaiting-approval", "done"],
+  "awaiting-pr": ["running", "failed", "blocked", "done", "backlog", "ready", "awaiting-approval"],
+  "awaiting-approval": ["ready", "running", "blocked", "backlog", "done", "awaiting-pr", "failed"],
+  blocked: ["ready", "running", "backlog", "awaiting-approval", "failed", "done", "awaiting-pr"],
+  failed: ["running", "ready", "blocked", "awaiting-approval", "done", "awaiting-pr"],
+  done: ["backlog"]
+};
+var issueStatus = (issue2) => statuses.find((s) => issue2.labels.includes(`harness:${s}`));
+var canTransition = (from, to) => from === void 0 || from === to || transitions[from].includes(to);
+function withStatus(issue2, to) {
+  if (!canTransition(issueStatus(issue2), to)) throw new Error(`Invalid lifecycle transition ${issueStatus(issue2)} -> ${to}`);
+  return [...issue2.labels.filter((l) => !lifecycleLabels.includes(l)), `harness:${to}`];
+}
+function dependencies(body) {
+  const lines = body.match(/^Depends on:\s*.+$/gim) ?? [];
+  return [...new Set(lines.flatMap((line) => [...line.matchAll(/#(\d+)/g)].map((m) => Number(m[1]))))];
+}
+function acceptanceCriteria(body) {
+  const section = body.match(/^#{1,3}\s+(?:Acceptance criteria|Akzeptanzkriterien|Abnahmekriterien)\s*\r?\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/im)?.[1] ?? "";
+  return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
+}
+
+// src/policies/engine.ts
+var defaults2 = {
+  advisory: { transition: "deny", close_issue: "deny", create_followup: "deny", prioritize: "deny", approve_task: "deny", start_worker: "deny", retry_worker: "deny", cancel_worker: "deny", expand_scope: "deny", merge_pr: "deny" },
+  supervised: { transition: "allow", close_issue: "allow", create_followup: "approval", prioritize: "allow", approve_task: "approval", start_worker: "approval", retry_worker: "approval", cancel_worker: "allow", expand_scope: "approval", merge_pr: "deny" },
+  autonomous: { transition: "allow", close_issue: "allow", create_followup: "allow", prioritize: "allow", approve_task: "allow", start_worker: "allow", retry_worker: "allow", cancel_worker: "allow", expand_scope: "deny", merge_pr: "deny" }
+};
+var policyVersion = (config2) => {
+  const { notifications: _notifications, merge: _merge, ...policy } = config2;
+  void _notifications;
+  void _merge;
+  return hash2(policy);
+};
+function permission(config2, kind) {
+  return config2.autonomy.overrides[kind] ?? defaults2[config2.autonomy.profile][kind];
+}
+function evaluate(action, ctx) {
+  const { config: config2, task, budget } = ctx;
+  const id = actionId(action, policyVersion(config2));
+  const decide = (outcome, reason) => ({ outcome, reason, actionId: id });
+  const deny = (reason) => decide("deny", reason);
+  if (!config2.factory.enabled) return deny("Harness globally disabled");
+  if (action.kind !== "transition" && action.status !== null || action.kind !== "prioritize" && action.priority !== null || action.kind !== "create_followup" && action.followup !== null || !["start_worker", "retry_worker"].includes(action.kind) && action.attempt !== null) return deny("Action contains fields belonging to a different operation");
+  if (config2.autonomy.profile === "advisory") return deny("Advisory profile prohibits repository changes");
+  if (action.kind === "merge_pr") return deny("Merge requires the dedicated PR workflow with a commit-bound AI review");
+  if (action.kind === "expand_scope") return deny("Standalone scope changes are unsupported; permission applies to follow-ups");
+  if (!task.issue.labels.includes("harness:managed")) return deny("Issue is not explicitly managed");
+  const edit = action.kind === "cancel_worker" ? void 0 : untrustedEdit(task.issue);
+  if (edit) return deny(untrustedEditReason(edit));
+  if (action.taskVersion !== task.version) return deny("Task changed since proposal or approval");
+  if (budget.actions >= config2.manager.maxActions) return deny("Maximum actions per run reached");
+  if (task.issue.state === "closed" && !(action.kind === "transition" && action.status === "done") && action.kind !== "cancel_worker") return deny("Issue is already closed");
+  if (action.kind === "transition") {
+    if (!action.status || !canTransition(task.status, action.status)) return deny("Invalid lifecycle transition");
+    if (ctx.source !== "reconcile" && (["running", "done", "failed", "awaiting-pr"].includes(action.status) || task.executions.some((e) => e.active))) return deny("Planner cannot assert execution or completion facts");
+    if (ctx.source === "reconcile" && action.status !== task.desiredStatus) return deny("Transition does not match reconstructed facts");
+    if (action.status === "ready" && task.blocked) return deny("Task has unresolved dependencies or missing acceptance criteria");
+    if (action.status === "ready" && ctx.readyIsGrant && !task.issue.labels.includes("harness:ready")) return deny("harness:ready is a person's grant in this repository; only an authorized person applies it");
+  }
+  if (action.kind === "close_issue" && (ctx.source !== "reconcile" || !task.hasClosingMerge || task.executions.some((e) => e.active))) return deny("Closing requires a verified native closing link to a merged PR and no active execution");
+  if (["start_worker", "retry_worker"].includes(action.kind)) {
+    if (!config2.workers.test.enabled && !(config2.workers.coding && config2.workers.coding.enabled)) return deny("All workers disabled");
+    if (task.blocked || task.issue.body.length > 2e4) return deny("Task is blocked or exceeds worker input limit");
+    if (task.executions.some((e) => e.active)) return deny("Task already has an active or uncertain execution");
+    const rework = action.kind === "retry_worker" && task.reworkable;
+    if (task.hasClosingMerge || task.hasOpenPR && !rework) return deny("Task already has implementation PRs");
+    if (budget.activeWorkers >= config2.execution.maxParallelWorkers) return deny("Maximum parallel workers reached");
+    if (task.refusal?.waiting) return deny(`Runtime refused the last start (${task.refusal.code}); waiting for a new grant, a policy or configuration change, or until ${task.refusal.until}`);
+    if (action.kind === "retry_worker") {
+      if (!task.latest?.result || !rework && !["failed", "cancelled"].includes(task.latest.result.status)) return deny("No failed execution to retry");
+      if (task.attemptsUsed > config2.execution.maxRetries) return deny("Maximum retries reached");
+      if (action.attempt !== task.nextAttempt) return deny("Retry proposal is not bound to the next concrete attempt");
+    } else {
+      if (task.latest) return deny("Current task version already executed; use retry for failures or revise the task");
+      if (action.attempt !== task.nextAttempt) return deny("Initial execution must use the next free attempt number");
+    }
+  }
+  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.orphaned || e.active && e.timedOut && (e.run || e.runtime))) return deny("No timed out or orphaned workflow to cancel");
+  if (action.kind === "create_followup") {
+    if (!action.followup) return deny("Follow-up details are required");
+    if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
+    if (!task.latest?.result || !["blocked", "success"].includes(task.latest.result.status)) return deny("Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself");
+    if (task.hasOpenPR) return deny("Task has an open pull request; follow-ups wait until it is merged or closed");
+    if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map((n) => `#${n}`).join(", ")}`);
+    if (action.followup.expandsScope) {
+      const scope = permission(config2, "expand_scope");
+      if (scope === "deny") return deny("Scope expansion forbidden");
+      if (scope === "approval" && !ctx.approved) return decide("approval", "Scope expansion needs approval for this action");
+    }
+  }
+  if (action.kind === "prioritize" && !action.priority) return deny("Priority is required");
+  if (action.kind === "approve_task" && (task.blocked || task.hasOpenPR || task.hasClosingMerge || task.latest?.result?.status === "success" || task.executions.some((e) => e.active))) return deny("Task cannot be made ready");
+  const rule = permission(config2, action.kind);
+  if (rule === "deny") return deny(`Policy forbids ${action.kind}`);
+  if (rule === "approval" && !ctx.approved) return decide("approval", "Maintainer approval required for this exact action and task version");
+  return decide("allow", ctx.approved ? "Concrete action approved by a repository maintainer" : "Permitted by configured autonomy policy");
+}
+
+// src/state/reconstruct.ts
+var admissionRejectedSummary = "Runtime admission rejected before start";
+var infrastructureFailureCode = "EXECUTOR_INFRASTRUCTURE_FAILURE";
+var infrastructureFailureSummary = "The coding run failed before the agent started";
+var freeInfrastructureFailures = 3;
+var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
+var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
+function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
+  return snapshot.issues.map((issue2) => {
+    const version2 = taskVersion(issue2);
+    const events = (snapshot.comments.get(issue2.number) ?? []).flatMap((c) => {
+      const event = decodeEvent(c, config2.manager.trustedActors);
+      return event ? [event] : [];
+    });
+    const executions = [];
+    for (const event of events) {
+      if (event.data.type !== "intent" || executions.some((e) => e.input.executionId === (event.data.type === "intent" ? event.data.input.executionId : ""))) continue;
+      const { input: input2, attempt, actionId: actionId2 } = event.data;
+      if (input2.issueNumber !== issue2.number) continue;
+      const matching = snapshot.runs.filter((r) => [`Factory worker ${input2.executionId}`, `Harness worker ${input2.executionId}`].includes(r.title));
+      const run = matching.find((r) => r.status !== "completed") ?? matching[0];
+      const runtime = snapshot.runtimeExecutions?.find((r) => r.executionId === input2.executionId);
+      const found = events.find((e) => e.data.type === "result" && e.data.result.executionId === input2.executionId && e.data.result.issueNumber === issue2.number);
+      let result = runtime?.result ?? (found?.data.type === "result" ? found.data.result : void 0);
+      if (!result && runtime && !["running"].includes(runtime.status)) result = {
+        contractVersion: "1.0",
+        executionId: input2.executionId,
+        issueNumber: issue2.number,
+        status: runtime.status === "cancelled" ? "cancelled" : "failed",
+        summary: "Temporal execution ended without a committed worker result",
+        artifacts: [],
+        error: runtime.status,
+        proposedActions: []
+      };
+      if (!result && run?.status === "completed") {
+        result = {
+          contractVersion: "1.0",
+          executionId: input2.executionId,
+          issueNumber: issue2.number,
+          status: run.conclusion === "cancelled" ? "cancelled" : "failed",
+          summary: "Workflow ended without a valid durable worker result",
+          artifacts: [run.url],
+          error: `Workflow conclusion: ${run.conclusion}`,
+          proposedActions: []
+        };
+      }
+      const elapsed = now.getTime() - new Date(runtime?.createdAt ?? run?.createdAt ?? event.at).getTime();
+      const active = runtime ? runtime.status === "running" : run ? run.status !== "completed" : !result;
+      const rejection = events.find((e) => e.data.type === "admission_rejected" && e.data.executionId === input2.executionId);
+      const rejected = result?.status === "cancelled" && !runtime && !run && result.summary.startsWith(admissionRejectedSummary) ? result.error ?? "UNKNOWN" : void 0;
+      executions.push({
+        input: input2,
+        attempt,
+        actionId: actionId2,
+        at: event.at,
+        run,
+        runtime,
+        result,
+        active,
+        ...rejected ? { rejected, ...rejection?.data.type === "admission_rejected" ? { rejectedPolicy: rejection.data.policyHash } : {} } : {},
+        orphaned: active && !!runtime && (issue2.state === "closed" || input2.taskVersion !== version2),
+        ambiguous: !runtime && !run && !result && elapsed > config2.execution.dispatchGraceMinutes * 6e4,
+        timedOut: runtime?.phase !== "awaiting-approval" && !!(run || runtime) && active && elapsed > input2.limits.timeoutMinutes * 6e4
+      });
+    }
+    const currentExecutions = executions.filter((e) => e.input.taskVersion === version2);
+    currentExecutions.sort((a, b) => a.attempt - b.attempt);
+    currentExecutions.filter((e) => !e.rejected && e.result?.status === "failed" && e.result.error === infrastructureFailureCode).slice(0, freeInfrastructureFailures).forEach((e) => {
+      e.infrastructure = true;
+    });
+    const real = currentExecutions.filter((e) => !e.rejected);
+    const latest = real.at(-1);
+    const attemptsUsed = real.filter((e) => !e.infrastructure).length;
+    const nextAttempt = (currentExecutions.at(-1)?.attempt ?? -1) + 1;
+    const refused = currentExecutions.filter((e) => e.rejected && (!latest || e.attempt > latest.attempt));
+    const lastRefused = refused.at(-1);
+    let refusal;
+    if (lastRefused) {
+      const at = (events.find((e) => e.data.type === "result" && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
+      const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 6e4).toISOString();
+      const changed = !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at || !!issue2.managedAt && issue2.managedAt > at;
+      refusal = { code: lastRefused.rejected, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
+    }
+    const criteria = acceptanceCriteria(issue2.body);
+    const deps = dependencies(issue2.body);
+    const unresolved = deps.filter((n) => snapshot.dependencyStates.get(n) !== true);
+    const automaticBlock = currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
+    const explicitBlock = issue2.labels.includes("harness:blocked") && !automaticBlock;
+    const semanticBlock = automaticBlock?.cause === "planner" && automaticBlock.taskVersion === version2;
+    const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map((n) => `#${n}`).join(", ")}` : !criteria.length ? "Missing Acceptance criteria section" : explicitBlock ? "Issue explicitly marked blocked; clear the blocked label to resume" : semanticBlock ? "Planner marked task blocked; revise the task or clear the blocked label" : void 0;
+    const automaticBlockCause = executions.some((e) => e.ambiguous) ? "dispatch" : unresolved.length ? "dependencies" : !criteria.length ? "specification" : semanticBlock ? "planner" : latest?.result?.status === "blocked" ? "worker" : void 0;
+    const linked = snapshot.prs.filter((p) => p.closingIssues.includes(issue2.number) || p.referencedIssues.includes(issue2.number));
+    const hasOpenPR = linked.some((p) => p.state === "open");
+    const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
+    const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
+    const failedValidation = latest?.runtime?.validation;
+    const requested = latest?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === latest.input.executionId ? [e.data.review] : []).at(-1) : void 0;
+    const repairable = latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" || !!requested;
+    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && repairable && attemptsUsed <= config2.execution.maxRetries;
+    const reworkReview = reworkable && latest?.result?.status === "success" ? requested : void 0;
+    let desiredStatus = issueStatus(issue2) ?? "backlog";
+    if (issue2.state === "closed") desiredStatus = "done";
+    else if (explicitBlock) desiredStatus = "blocked";
+    else if (issueStatus(issue2) === "done") desiredStatus = "backlog";
+    else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : executions.some((e) => e.runtime?.phase === "awaiting-approval") ? "awaiting-approval" : "running";
+    else if (hasClosingMerge) desiredStatus = "done";
+    else if (blockReason) desiredStatus = "blocked";
+    else if (reworkable) desiredStatus = "failed";
+    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed <= config2.execution.maxRetries) desiredStatus = "ready";
+    else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
+    else if (hasOpenPR) desiredStatus = "awaiting-pr";
+    else if (snapshot.readyIsGrant) {
+      if (["backlog", "ready", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = issue2.labels.includes("harness:ready") ? "ready" : "backlog";
+    } else if (["backlog", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = "ready";
+    const openFollowups = snapshot.issues.filter((i) => i.state === "open" && followupOrigin(i.body) === issue2.number).map((i) => i.number);
+    return {
+      issue: issue2,
+      version: version2,
+      status: issueStatus(issue2) ?? "backlog",
+      desiredStatus,
+      events,
+      executions,
+      latest,
+      attemptsUsed,
+      nextAttempt,
+      ...refusal ? { refusal } : {},
+      openFollowups,
+      blocked: !!blockReason,
+      blockReason,
+      automaticBlockCause: reworkable && automaticBlockCause === "worker" ? void 0 : automaticBlockCause,
+      hasOpenPR,
+      hasClosingMerge,
+      criteria,
+      reworkable,
+      ...reworkReview ? { reworkReview } : {}
+    };
+  });
 }
 
 // src/github/client.ts
@@ -69795,6 +70188,23 @@ var GitHubClient = class {
       return [{ id: e.id, event: e.event, actor: "actor" in e ? e.actor?.login ?? "" : "", createdAt: e.created_at }];
     });
     return authorizeReadyLabel(issue2, events, (actor) => this.canApprove(actor), trustedActors, expected, rework);
+  }
+  /** The `managed-label` grant: who applied `harness:managed`; Factory follow-ups inherit their origin's, at most three levels deep. */
+  async managedApproval(number4, trustedActors, depth = 0) {
+    const issue2 = await this.getIssue(number4);
+    const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number4, per_page: 100 });
+    const events = timeline.flatMap((e) => {
+      if (e.event !== "labeled" && e.event !== "unlabeled" || !("label" in e) || e.label?.name !== managedLabel || !("id" in e) || typeof e.id !== "number" || !("created_at" in e) || typeof e.created_at !== "string") return [];
+      return [{ id: e.id, event: e.event, actor: "actor" in e ? e.actor?.login ?? "" : "", createdAt: e.created_at }];
+    });
+    const origin = followupOrigin(issue2.body);
+    return authorizeManagedLabel(
+      issue2,
+      events,
+      (actor) => this.canApprove(actor),
+      trustedActors,
+      origin && origin !== number4 && depth < 3 ? () => this.managedApproval(origin, trustedActors, depth + 1) : void 0
+    );
   }
   async runs(workflow) {
     const rows = await this.api.paginate(this.api.actions.listWorkflowRuns, { ...this.target, workflow_id: workflow, event: "workflow_dispatch", per_page: 100 });
@@ -70034,241 +70444,10 @@ var OpenAIPlanner = class {
   }
 };
 
-// src/state/blocks.ts
-var lastBlockLabelEventId = (issue2) => issue2.blockedLabelEvents?.at(-1)?.id ?? 0;
-function currentAutomaticBlock(issue2, events, trustedActors) {
-  if (!issue2.labels.includes("harness:blocked")) return;
-  const changes = issue2.blockedLabelEvents ?? [];
-  const current = changes.at(-1);
-  if (!current || current.event !== "labeled" || !trustedActors.includes(current.actor)) return;
-  for (const event of [...events].reverse()) {
-    if (event.data.type !== "block_intent") continue;
-    const floor = event.data.afterLabelEventId;
-    const boundary = floor === 0 ? -1 : changes.findIndex((change) => change.id === floor);
-    if (floor !== 0 && boundary === -1) continue;
-    const applied = changes[boundary + 1];
-    if (applied?.id === current.id) return event.data;
-  }
-}
-
-// src/policies/engine.ts
-var defaults2 = {
-  advisory: { transition: "deny", close_issue: "deny", create_followup: "deny", prioritize: "deny", approve_task: "deny", start_worker: "deny", retry_worker: "deny", cancel_worker: "deny", expand_scope: "deny", merge_pr: "deny" },
-  supervised: { transition: "allow", close_issue: "allow", create_followup: "approval", prioritize: "allow", approve_task: "approval", start_worker: "approval", retry_worker: "approval", cancel_worker: "allow", expand_scope: "approval", merge_pr: "deny" },
-  autonomous: { transition: "allow", close_issue: "allow", create_followup: "allow", prioritize: "allow", approve_task: "allow", start_worker: "allow", retry_worker: "allow", cancel_worker: "allow", expand_scope: "deny", merge_pr: "deny" }
-};
-var policyVersion = (config2) => {
-  const { notifications: _notifications, merge: _merge, ...policy } = config2;
-  void _notifications;
-  void _merge;
-  return hash2(policy);
-};
-function permission(config2, kind) {
-  return config2.autonomy.overrides[kind] ?? defaults2[config2.autonomy.profile][kind];
-}
-function evaluate(action, ctx) {
-  const { config: config2, task, budget } = ctx;
-  const id = actionId(action, policyVersion(config2));
-  const decide = (outcome, reason) => ({ outcome, reason, actionId: id });
-  const deny = (reason) => decide("deny", reason);
-  if (!config2.factory.enabled) return deny("Harness globally disabled");
-  if (action.kind !== "transition" && action.status !== null || action.kind !== "prioritize" && action.priority !== null || action.kind !== "create_followup" && action.followup !== null || !["start_worker", "retry_worker"].includes(action.kind) && action.attempt !== null) return deny("Action contains fields belonging to a different operation");
-  if (config2.autonomy.profile === "advisory") return deny("Advisory profile prohibits repository changes");
-  if (action.kind === "merge_pr") return deny("Merge requires the dedicated PR workflow with a commit-bound AI review");
-  if (action.kind === "expand_scope") return deny("Standalone scope changes are unsupported; permission applies to follow-ups");
-  if (!task.issue.labels.includes("harness:managed")) return deny("Issue is not explicitly managed");
-  const edit = action.kind === "cancel_worker" ? void 0 : untrustedEdit(task.issue);
-  if (edit) return deny(untrustedEditReason(edit));
-  if (action.taskVersion !== task.version) return deny("Task changed since proposal or approval");
-  if (budget.actions >= config2.manager.maxActions) return deny("Maximum actions per run reached");
-  if (task.issue.state === "closed" && !(action.kind === "transition" && action.status === "done") && action.kind !== "cancel_worker") return deny("Issue is already closed");
-  if (action.kind === "transition") {
-    if (!action.status || !canTransition(task.status, action.status)) return deny("Invalid lifecycle transition");
-    if (ctx.source !== "reconcile" && (["running", "done", "failed", "awaiting-pr"].includes(action.status) || task.executions.some((e) => e.active))) return deny("Planner cannot assert execution or completion facts");
-    if (ctx.source === "reconcile" && action.status !== task.desiredStatus) return deny("Transition does not match reconstructed facts");
-    if (action.status === "ready" && task.blocked) return deny("Task has unresolved dependencies or missing acceptance criteria");
-  }
-  if (action.kind === "close_issue" && (ctx.source !== "reconcile" || !task.hasClosingMerge || task.executions.some((e) => e.active))) return deny("Closing requires a verified native closing link to a merged PR and no active execution");
-  if (["start_worker", "retry_worker"].includes(action.kind)) {
-    if (!config2.workers.test.enabled && !(config2.workers.coding && config2.workers.coding.enabled)) return deny("All workers disabled");
-    if (task.blocked || task.issue.body.length > 2e4) return deny("Task is blocked or exceeds worker input limit");
-    if (task.executions.some((e) => e.active)) return deny("Task already has an active or uncertain execution");
-    const rework = action.kind === "retry_worker" && task.reworkable;
-    if (task.hasClosingMerge || task.hasOpenPR && !rework) return deny("Task already has implementation PRs");
-    if (budget.activeWorkers >= config2.execution.maxParallelWorkers) return deny("Maximum parallel workers reached");
-    if (task.refusal?.waiting) return deny(`Runtime refused the last start (${task.refusal.code}); waiting for a new grant, a policy or configuration change, or until ${task.refusal.until}`);
-    if (action.kind === "retry_worker") {
-      if (!task.latest?.result || !rework && !["failed", "cancelled"].includes(task.latest.result.status)) return deny("No failed execution to retry");
-      if (task.attemptsUsed > config2.execution.maxRetries) return deny("Maximum retries reached");
-      if (action.attempt !== task.nextAttempt) return deny("Retry proposal is not bound to the next concrete attempt");
-    } else {
-      if (task.latest) return deny("Current task version already executed; use retry for failures or revise the task");
-      if (action.attempt !== task.nextAttempt) return deny("Initial execution must use the next free attempt number");
-    }
-  }
-  if (action.kind === "cancel_worker" && !task.executions.some((e) => e.orphaned || e.active && e.timedOut && (e.run || e.runtime))) return deny("No timed out or orphaned workflow to cancel");
-  if (action.kind === "create_followup") {
-    if (!action.followup) return deny("Follow-up details are required");
-    if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
-    if (!task.latest?.result || !["blocked", "success"].includes(task.latest.result.status)) return deny("Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself");
-    if (task.hasOpenPR) return deny("Task has an open pull request; follow-ups wait until it is merged or closed");
-    if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map((n) => `#${n}`).join(", ")}`);
-    if (action.followup.expandsScope) {
-      const scope = permission(config2, "expand_scope");
-      if (scope === "deny") return deny("Scope expansion forbidden");
-      if (scope === "approval" && !ctx.approved) return decide("approval", "Scope expansion needs approval for this action");
-    }
-  }
-  if (action.kind === "prioritize" && !action.priority) return deny("Priority is required");
-  if (action.kind === "approve_task" && (task.blocked || task.hasOpenPR || task.hasClosingMerge || task.latest?.result?.status === "success" || task.executions.some((e) => e.active))) return deny("Task cannot be made ready");
-  const rule = permission(config2, action.kind);
-  if (rule === "deny") return deny(`Policy forbids ${action.kind}`);
-  if (rule === "approval" && !ctx.approved) return decide("approval", "Maintainer approval required for this exact action and task version");
-  return decide("allow", ctx.approved ? "Concrete action approved by a repository maintainer" : "Permitted by configured autonomy policy");
-}
-
-// src/state/reconstruct.ts
-var admissionRejectedSummary = "Runtime admission rejected before start";
-var infrastructureFailureCode = "EXECUTOR_INFRASTRUCTURE_FAILURE";
-var infrastructureFailureSummary = "The coding run failed before the agent started";
-var freeInfrastructureFailures = 3;
-var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
-var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
-function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
-  return snapshot.issues.map((issue2) => {
-    const version2 = taskVersion(issue2);
-    const events = (snapshot.comments.get(issue2.number) ?? []).flatMap((c) => {
-      const event = decodeEvent(c, config2.manager.trustedActors);
-      return event ? [event] : [];
-    });
-    const executions = [];
-    for (const event of events) {
-      if (event.data.type !== "intent" || executions.some((e) => e.input.executionId === (event.data.type === "intent" ? event.data.input.executionId : ""))) continue;
-      const { input: input2, attempt, actionId: actionId2 } = event.data;
-      if (input2.issueNumber !== issue2.number) continue;
-      const matching = snapshot.runs.filter((r) => [`Factory worker ${input2.executionId}`, `Harness worker ${input2.executionId}`].includes(r.title));
-      const run = matching.find((r) => r.status !== "completed") ?? matching[0];
-      const runtime = snapshot.runtimeExecutions?.find((r) => r.executionId === input2.executionId);
-      const found = events.find((e) => e.data.type === "result" && e.data.result.executionId === input2.executionId && e.data.result.issueNumber === issue2.number);
-      let result = runtime?.result ?? (found?.data.type === "result" ? found.data.result : void 0);
-      if (!result && runtime && !["running"].includes(runtime.status)) result = {
-        contractVersion: "1.0",
-        executionId: input2.executionId,
-        issueNumber: issue2.number,
-        status: runtime.status === "cancelled" ? "cancelled" : "failed",
-        summary: "Temporal execution ended without a committed worker result",
-        artifacts: [],
-        error: runtime.status,
-        proposedActions: []
-      };
-      if (!result && run?.status === "completed") {
-        result = {
-          contractVersion: "1.0",
-          executionId: input2.executionId,
-          issueNumber: issue2.number,
-          status: run.conclusion === "cancelled" ? "cancelled" : "failed",
-          summary: "Workflow ended without a valid durable worker result",
-          artifacts: [run.url],
-          error: `Workflow conclusion: ${run.conclusion}`,
-          proposedActions: []
-        };
-      }
-      const elapsed = now.getTime() - new Date(runtime?.createdAt ?? run?.createdAt ?? event.at).getTime();
-      const active = runtime ? runtime.status === "running" : run ? run.status !== "completed" : !result;
-      const rejection = events.find((e) => e.data.type === "admission_rejected" && e.data.executionId === input2.executionId);
-      const rejected = result?.status === "cancelled" && !runtime && !run && result.summary.startsWith(admissionRejectedSummary) ? result.error ?? "UNKNOWN" : void 0;
-      executions.push({
-        input: input2,
-        attempt,
-        actionId: actionId2,
-        at: event.at,
-        run,
-        runtime,
-        result,
-        active,
-        ...rejected ? { rejected, ...rejection?.data.type === "admission_rejected" ? { rejectedPolicy: rejection.data.policyHash } : {} } : {},
-        orphaned: active && !!runtime && (issue2.state === "closed" || input2.taskVersion !== version2),
-        ambiguous: !runtime && !run && !result && elapsed > config2.execution.dispatchGraceMinutes * 6e4,
-        timedOut: runtime?.phase !== "awaiting-approval" && !!(run || runtime) && active && elapsed > input2.limits.timeoutMinutes * 6e4
-      });
-    }
-    const currentExecutions = executions.filter((e) => e.input.taskVersion === version2);
-    currentExecutions.sort((a, b) => a.attempt - b.attempt);
-    currentExecutions.filter((e) => !e.rejected && e.result?.status === "failed" && e.result.error === infrastructureFailureCode).slice(0, freeInfrastructureFailures).forEach((e) => {
-      e.infrastructure = true;
-    });
-    const real = currentExecutions.filter((e) => !e.rejected);
-    const latest = real.at(-1);
-    const attemptsUsed = real.filter((e) => !e.infrastructure).length;
-    const nextAttempt = (currentExecutions.at(-1)?.attempt ?? -1) + 1;
-    const refused = currentExecutions.filter((e) => e.rejected && (!latest || e.attempt > latest.attempt));
-    const lastRefused = refused.at(-1);
-    let refusal;
-    if (lastRefused) {
-      const at = (events.find((e) => e.data.type === "result" && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
-      const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 6e4).toISOString();
-      const changed = !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at;
-      refusal = { code: lastRefused.rejected, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
-    }
-    const criteria = acceptanceCriteria(issue2.body);
-    const deps = dependencies(issue2.body);
-    const unresolved = deps.filter((n) => snapshot.dependencyStates.get(n) !== true);
-    const automaticBlock = currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
-    const explicitBlock = issue2.labels.includes("harness:blocked") && !automaticBlock;
-    const semanticBlock = automaticBlock?.cause === "planner" && automaticBlock.taskVersion === version2;
-    const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map((n) => `#${n}`).join(", ")}` : !criteria.length ? "Missing Acceptance criteria section" : explicitBlock ? "Issue explicitly marked blocked; clear the blocked label to resume" : semanticBlock ? "Planner marked task blocked; revise the task or clear the blocked label" : void 0;
-    const automaticBlockCause = executions.some((e) => e.ambiguous) ? "dispatch" : unresolved.length ? "dependencies" : !criteria.length ? "specification" : semanticBlock ? "planner" : latest?.result?.status === "blocked" ? "worker" : void 0;
-    const linked = snapshot.prs.filter((p) => p.closingIssues.includes(issue2.number) || p.referencedIssues.includes(issue2.number));
-    const hasOpenPR = linked.some((p) => p.state === "open");
-    const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
-    const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
-    const failedValidation = latest?.runtime?.validation;
-    const requested = latest?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === latest.input.executionId ? [e.data.review] : []).at(-1) : void 0;
-    const repairable = latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" || !!requested;
-    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && repairable && attemptsUsed <= config2.execution.maxRetries;
-    const reworkReview = reworkable && latest?.result?.status === "success" ? requested : void 0;
-    let desiredStatus = issueStatus(issue2) ?? "backlog";
-    if (issue2.state === "closed") desiredStatus = "done";
-    else if (explicitBlock) desiredStatus = "blocked";
-    else if (issueStatus(issue2) === "done") desiredStatus = "backlog";
-    else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : executions.some((e) => e.runtime?.phase === "awaiting-approval") ? "awaiting-approval" : "running";
-    else if (hasClosingMerge) desiredStatus = "done";
-    else if (blockReason) desiredStatus = "blocked";
-    else if (reworkable) desiredStatus = "failed";
-    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed <= config2.execution.maxRetries) desiredStatus = "ready";
-    else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
-    else if (hasOpenPR) desiredStatus = "awaiting-pr";
-    else if (snapshot.readyIsGrant) {
-      if (["backlog", "ready", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = issue2.labels.includes("harness:ready") ? "ready" : "backlog";
-    } else if (["backlog", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = "ready";
-    const openFollowups = snapshot.issues.filter((i) => i.state === "open" && followupOrigin(i.body) === issue2.number).map((i) => i.number);
-    return {
-      issue: issue2,
-      version: version2,
-      status: issueStatus(issue2) ?? "backlog",
-      desiredStatus,
-      events,
-      executions,
-      latest,
-      attemptsUsed,
-      nextAttempt,
-      ...refusal ? { refusal } : {},
-      openFollowups,
-      blocked: !!blockReason,
-      blockReason,
-      automaticBlockCause: reworkable && automaticBlockCause === "worker" ? void 0 : automaticBlockCause,
-      hasOpenPR,
-      hasClosingMerge,
-      criteria,
-      reworkable,
-      ...reworkReview ? { reworkReview } : {}
-    };
-  });
-}
-
 // src/runtime/coding-context.ts
 var reworkMarker = (previousExecutionId) => `urn:sf-rework:${previousExecutionId}`;
 var retryMarker = (previousExecutionId) => `urn:sf-retry:${previousExecutionId}`;
+var escalationMarker = "urn:sf-escalate";
 var label = (value) => value.replace(/[^A-Za-z0-9._/#-]/g, "").slice(0, 200);
 function reviewEntries(review, limit3 = 8) {
   const inert = (s) => [...s].filter((c) => c === "\n" || c >= " " && c !== String.fromCharCode(127)).join("").replace(/\s+/g, " ").trim();
@@ -70648,7 +70827,9 @@ function statusView(task, config2, context2) {
     awaitsGrant = ready;
     stage = ready ? "awaiting-grant" : "refused";
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : "Ready to run. **Waiting only for the grant.**"] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
-    needs = ready ? grant : rejection === "EXECUTOR_WRAPPER_RELEASE_MISMATCH" ? "Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards." : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
+    if (rejection === "READY_ACTOR_NOT_AUTHORIZED" && task.issue.labels.includes("harness:ready")) state.push("", "The label `harness:ready` on this issue was applied by an account that cannot grant a run, for example the Factory's own App. It does not count as a grant.");
+    if (rejection === "MANAGED_ACTOR_NOT_AUTHORIZED") state.push("", "In this repository a person's `harness:managed` is the grant; this one was applied by an account that cannot grant a run.");
+    needs = rejection.startsWith("MANAGED_") && rejection !== "MANAGED_GRANT_UNSUPPORTED" ? "A person with write access removes the label `harness:managed` and applies it again. Nothing else is missing; the run starts on the next reconciliation." : rejection === "READY_ACTOR_NOT_AUTHORIZED" && task.issue.labels.includes("harness:ready") ? "An authorized person removes the label `harness:ready` and applies it again. Nothing else is missing; the run starts on the next reconciliation." : ready ? grant : rejection === "EXECUTOR_WRAPPER_RELEASE_MISMATCH" ? "Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards." : "Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.";
     if (task.refusal?.waiting) state.push("", `The next start waits for a new grant, a changed policy or configuration, or at the latest until ${task.refusal.until}.`);
   } else if (result?.status === "success" && task.reworkReview) {
     stage = "retry";
@@ -70689,11 +70870,16 @@ function statusView(task, config2, context2) {
     awaitsGrant = true;
     stage = "awaiting-grant";
   } else state = [context2.queued ? "Queued: all worker slots are in use. It starts when one is free." : "Queued; starts on the next reconciliation."];
+  const routed = (running ?? task.latest)?.runtime?.route;
+  const model2 = routed && task.issue.state === "open" ? ["", routeNoteEn(routed.record, routed.agent)] : [];
+  const spent = task.latest?.runtime?.usage;
+  if (spent && task.issue.state === "open") model2.push(...model2.length ? [] : [""], usageNoteEn(spent));
   return { awaitsGrant, stage, body: [
     statusMarker,
     `**Software Factory** \xB7 \`${task.desiredStatus}\``,
     "",
     ...state,
+    ...model2,
     "",
     `**Needed from you:** ${needs}`,
     ...links.length ? ["", `**Pull request:** ${links.join(", ")}`] : [],
@@ -70753,7 +70939,7 @@ var Manager = class {
         return event?.data.type === "intent" ? [event.data.input.executionId] : [];
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
-      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant;
+      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant === "ready-label";
     }
     return snapshot;
   }
@@ -70895,6 +71081,7 @@ var Manager = class {
             journaled = true;
           }
         }
+        if (action.status === "ready" && snapshot.readyIsGrant && !live.labels.includes("harness:ready")) return journaled;
         const labels2 = withStatus(live, action.status);
         if ([...live.labels].sort().join("\0") === [...labels2].sort().join("\0")) return journaled;
         if (action.status === "blocked" && !live.labels.includes("harness:blocked")) {
@@ -70960,6 +71147,7 @@ ${marker2}`;
         const rework = action.kind === "retry_worker" && task.reworkable && this.config.execution.engine === "temporal";
         const retry = action.kind === "retry_worker" && !rework && task.latest?.result?.status === "failed" && this.config.execution.engine === "temporal";
         const previous = rework || retry ? task.latest.input.executionId : void 0;
+        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework || task.executions.some((e) => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== "success" && e.result.error !== infrastructureFailureCode));
         if (this.config.execution.engine === "temporal" && this.options.workerRuntime?.preflight) {
           try {
             await this.options.workerRuntime.preflight(live.number, previous);
@@ -70979,6 +71167,7 @@ ${marker2}`;
           contextReferences: [
             `https://github.com/${this.github.repository}/issues/${live.number}`,
             ...previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : [],
+            ...escalate ? [escalationMarker] : [],
             // A rework after a merge review hands the worker what the review asked to change.
             ...rework && task.reworkReview ? reviewEntries(task.reworkReview) : []
           ],
@@ -71103,7 +71292,14 @@ ${marker2}`;
           continue;
         }
         budget.activeWorkers = tasks.reduce((n, t) => n + t.executions.filter((e) => e.active).length, 0);
-        const decision = evaluate(action, { config: this.config, task, budget, source: entry.source, approved: await this.hasApproval(action.issueNumber, id) });
+        const decision = evaluate(action, {
+          config: this.config,
+          task,
+          budget,
+          source: entry.source,
+          readyIsGrant: !!snapshot.readyIsGrant,
+          approved: await this.hasApproval(action.issueNumber, id)
+        });
         const record2 = { action, decision, executed: false };
         report.decisions.push(record2);
         await this.audit(action, decision.outcome, decision.reason);
@@ -71886,14 +72082,14 @@ var GitHubMergePort = class {
   }
   async rerunFailed(number4, head, checks) {
     const runs = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: head, event: "pull_request", per_page: 100 });
-    let count = 0;
+    let count2 = 0;
     for (const run of runs.filter((r) => r.head_sha === head && r.run_attempt === 1 && r.status === "completed" && ["failure", "timed_out", "cancelled", "startup_failure"].includes(r.conclusion ?? "") && r.pull_requests?.some((p) => p.number === number4))) {
       const jobs = await this.api.paginate(this.api.actions.listJobsForWorkflowRun, { ...this.target, run_id: run.id, filter: "latest", per_page: 100 });
       if (!jobs.some((j) => checks.includes(j.name) && j.conclusion !== "success")) continue;
       await this.api.actions.reRunWorkflowFailedJobs({ ...this.target, run_id: run.id });
-      count++;
+      count2++;
     }
-    return count;
+    return count2;
   }
   async riskLabel(number4, label2) {
     const { data: labels2 } = await this.api.issues.listLabelsOnIssue({ ...this.target, issue_number: number4, per_page: 100 });
@@ -72186,6 +72382,13 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
         let context2;
         const current = f;
         const load = () => context2 ??= this.api.context(current, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+        let reviewNote = "", riskNote = "";
+        const configuredAssessor = this.options.assessor;
+        const assessor = configuredAssessor && { assess: async (i) => {
+          const assessed = await configuredAssessor.assess(i);
+          riskNote = routeNoteDe(routeOutcome(assessed));
+          return assessed;
+        } };
         const reviewing = cached2?.data.type === "merge_review" ? Promise.resolve(cached2.data.review) : (async () => {
           report.reviewed++;
           phase = "Vollst\xE4ndigen \xC4nderungskontext laden";
@@ -72193,9 +72396,11 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
           if (sourceTask) input2.sourceTask = sourceTask;
           if (Buffer.byteLength(JSON.stringify({ ...input2, facts: factsKey(current) })) > this.config.merge.review.maxContextBytes) throw new Error("Review context exceeds limit; no truncated approval");
           phase = "KI-Review";
-          return mergeReviewSchema.parse(await this.reviewer.review(input2));
+          const reviewed = await this.reviewer.review(input2);
+          reviewNote = routeNoteDe(routeOutcome(reviewed));
+          return mergeReviewSchema.parse(reviewed);
         })();
-        const assessing = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === "merge_risk" ? Promise.resolve(cachedRisk.data.risk) : load().then((input2) => classifyRisk(input2.changes, risk, this.options.assessor), () => classifyRisk([], risk, { assess: () => Promise.reject(new Error("No context")) }));
+        const assessing = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === "merge_risk" ? Promise.resolve(cachedRisk.data.risk) : load().then((input2) => classifyRisk(input2.changes, risk, assessor), () => classifyRisk([], risk, { assess: () => Promise.reject(new Error("No context")) }));
         const [review, riskRecord] = await Promise.all([reviewing, assessing]);
         await this.event(
           f,
@@ -72207,7 +72412,9 @@ ${review.reason}
 
 ${review.findings.map((x) => `- ${x.severity}: ${x.path} \u2013 ${x.explanation}`).join("\n")}
 
-Head: \`${f.head}\`; Basis: \`${f.base}\`.`
+${reviewNote ? `${reviewNote}
+
+` : ""}Head: \`${f.head}\`; Basis: \`${f.base}\`.`
         );
         if (riskKey && riskRecord) {
           if (riskRecord.source === "error") await this.explain(f, describeRisk(riskRecord, risk));
@@ -72217,7 +72424,9 @@ Head: \`${f.head}\`; Basis: \`${f.base}\`.`
             { type: "merge_risk", head: f.head, base: f.base, riskKey, risk: riskRecord },
             `${describeRisk(riskRecord, risk)}
 
-Head: \`${f.head}\`; Basis: \`${f.base}\`.`
+${riskNote ? `${riskNote}
+
+` : ""}Head: \`${f.head}\`; Basis: \`${f.base}\`.`
           );
           const label2 = `sf:risk-${riskRecord.class}`;
           if (this.api.riskLabel && (!f.labels.includes(label2) || f.labels.some((l) => l.startsWith("sf:risk-") && l !== label2))) {
@@ -72894,7 +73103,13 @@ var codingExecutionSchema = external_exports.strictObject({
   allowedActions: external_exports.tuple([external_exports.literal("edit_workspace"), external_exports.literal("run_commands")]),
   model,
   effort,
-  limits: external_exports.strictObject({ timeoutMinutes: external_exports.number().int().min(1).max(30), maxFiles: external_exports.literal(100), maxPatchBytes: external_exports.literal(5e6) }),
+  limits: external_exports.strictObject({
+    timeoutMinutes: external_exports.number().int().min(1).max(30),
+    maxFiles: external_exports.literal(100),
+    maxPatchBytes: external_exports.literal(5e6),
+    /** Spend cap of the attempt (harness: Claude Code --max-budget-usd); absent for executions dispatched before caps existed. */
+    maxCostUsd: external_exports.number().positive().max(1e3).optional()
+  }),
   /**
    * Broker to executor only: the executor's agent selection removes it and may swap in the first fallback whose
    * provider still has credit, so the Harness always receives a plain 3.0 request. Absent for a single agent.

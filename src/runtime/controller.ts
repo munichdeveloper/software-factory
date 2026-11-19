@@ -8,7 +8,7 @@ import { authorizeDelegation } from '../workers/execute-delegation.js';
 import { decodeEvent } from '../state/events.js';
 import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
 import { RuntimeStore, type StoredRun } from './store.js';
-import { admissionCode, admissionSchema, RuntimeAdmissionRejected, snapshotSchema, workflowId, type Admission, type RunSnapshot, type RuntimeObservation, type RuntimeRelease, type RuntimeState, type WorkerRuntimePort } from './contract.js';
+import { admissionCode, admissionSchema, codingRouteSchema, RuntimeAdmissionRejected, snapshotSchema, workflowId, type Admission, type RunSnapshot, type RuntimeObservation, type RuntimeRelease, type RuntimeState, type WorkerRuntimePort } from './contract.js';
 import { executorWrapper, type CodingExecutionPort } from './coding-executor.js';
 import type { CodingArtifact } from '../workers/coding.js';
 import type { ReadyApproval } from './contract.js';
@@ -22,6 +22,8 @@ export interface RuntimeRepository {
   retainedRunMs?: number;
   baseRef?: string; executorWorkflow?: string; issueNumbers?: number[]; allowedPaths?: string[];
   readyApproval?(issueNumber: number, expected?: ReadyApproval, rework?: ReadyApproval): Promise<ReadyApproval>;
+  /** The `managed-label` grant of a task (autonomy.startGrant); used instead of readyApproval where configured. */
+  managedApproval?(issueNumber: number): Promise<ReadyApproval>;
   validationPlan?(): Promise<ValidationPlan>;
   github: GitHubPort; config(): Promise<Config>; baseSha(): Promise<string>;
   /** The executor workflow file at the current base, or null where it is missing. */
@@ -115,9 +117,10 @@ export class RuntimeController implements WorkerRuntimePort {
   private async current(snapshot: RunSnapshot) {
     const config = await this.repo.config();
     if (snapshot.validationPlan && !this.repo.validationPlan) throw new Error('VALIDATION_MODE_CHANGED');
-    if (Boolean(this.repo.readyApproval) !== Boolean(snapshot.readyApproval)) throw new Error('APPROVAL_MODE_CHANGED');
+    const ready = await this.readyGrant(config);
+    if (Boolean(ready) !== Boolean(snapshot.readyApproval)) throw new Error('APPROVAL_MODE_CHANGED');
     if (snapshot.readyApproval) {
-      if (snapshot.requireHumanGate || !this.repo.readyApproval || hash(await this.repo.readyApproval(snapshot.admission.input.issueNumber, snapshot.readyApproval, (await this.reworked(snapshot.admission.input))?.snapshot.readyApproval)) !== hash(snapshot.readyApproval)) throw new Error('READY_APPROVAL_CHANGED');
+      if (snapshot.requireHumanGate || !ready || hash(await ready(snapshot.admission.input.issueNumber, snapshot.readyApproval, (await this.reworked(snapshot.admission.input))?.snapshot.readyApproval)) !== hash(snapshot.readyApproval)) throw new Error('READY_APPROVAL_CHANGED');
     }
     if (this.repo.repositoryId !== snapshot.repositoryId || this.repo.repository !== snapshot.repository || this.repo.baseRef !== snapshot.baseRef || this.repo.executorWorkflow !== snapshot.executorWorkflow || hash(this.repo.allowedPaths ?? null) !== hash(snapshot.allowedPaths ?? null) ||
       ![this.repo.release, ...(this.repo.retainedReleases ?? [])].some(r => hash(r) === hash(snapshot.release)) || config.execution.engine !== 'temporal' ||
@@ -134,6 +137,18 @@ export class RuntimeController implements WorkerRuntimePort {
     return !snapshot.baseRef && !!this.repo.baseContains && await this.repo.baseContains(snapshot.baseSha);
   }
   get readyIsGrant() { return !!this.repo.readyApproval; }
+  /** The grant check, where this repository is registered with the ready label as grant: per its configuration the ready label, the managed label or none. */
+  private async readyGrant(config?: Config) {
+    if (!this.repo.readyApproval) return undefined;
+    const mode = (config ?? await this.repo.config()).autonomy.startGrant;
+    if (mode === 'none') return undefined;
+    if (mode === 'managed-label') {
+      const managed = this.repo.managedApproval;
+      if (!managed) throw new Error('MANAGED_GRANT_UNSUPPORTED');
+      return (issueNumber: number) => managed.call(this.repo, issueNumber);
+    }
+    return this.repo.readyApproval.bind(this.repo);
+  }
   async preflight(issueNumber: number, previousExecutionId?: string): Promise<void> {
     try {
       this.scope(issueNumber);
@@ -142,9 +157,10 @@ export class RuntimeController implements WorkerRuntimePort {
       const coding = this.repo.coding && this.repo.executorWrapper ? (await this.repo.config()).workers.coding : false;
       if (coding && coding.enabled && this.repo.executorWrapper &&
         await this.repo.executorWrapper() !== executorWrapper(this.repo.release.factorySha, this.repo.release.harnessSha, !!this.repo.validationPlan)) throw new Error('EXECUTOR_WRAPPER_RELEASE_MISMATCH');
-      if (this.repo.readyApproval) {
+      const ready = await this.readyGrant();
+      if (ready) {
         const previous = previousExecutionId ? await this.store.get(this.repo.repositoryId, previousExecutionId) : null;
-        await this.repo.readyApproval(issueNumber, undefined, previous?.snapshot.admission.input.issueNumber === issueNumber ? previous.snapshot.readyApproval : undefined);
+        await ready(issueNumber, undefined, previous?.snapshot.admission.input.issueNumber === issueNumber ? previous.snapshot.readyApproval : undefined);
       }
     } catch (error) { const code = admissionCode(error); throw code ? new RuntimeAdmissionRejected(code) : error; }
   }
@@ -159,6 +175,7 @@ export class RuntimeController implements WorkerRuntimePort {
       } else try {
         const config = await this.repo.config();
         if (policyVersion(config) !== admission.policyHash || config.execution.engine !== 'temporal') throw new Error('POLICY_MISMATCH');
+        const ready = await this.readyGrant(config);
         const comments = await this.repo.github.comments(admission.input.issueNumber);
         const intent = comments.map(c => decodeEvent(c, config.manager.trustedActors)).find(e => e?.data.type === 'intent' && e.data.input.executionId === id);
         if (intent?.data.type !== 'intent' || intent.data.actionId !== admission.actionId) throw new Error('NO_MATCHING_INTENT');
@@ -167,7 +184,7 @@ export class RuntimeController implements WorkerRuntimePort {
           release: this.repo.release, admission, baseSha: await this.repo.baseSha(), specHash: admission.input.taskVersion,
           ...(this.repo.baseRef ? { baseRef: this.repo.baseRef } : {}), ...(this.repo.executorWorkflow ? { executorWorkflow: this.repo.executorWorkflow } : {}),
           ...(this.repo.allowedPaths ? { allowedPaths: this.repo.allowedPaths } : {}),
-          ...(this.repo.readyApproval ? { readyApproval: await this.repo.readyApproval(admission.input.issueNumber, undefined, (await this.reworked(admission.input))?.snapshot.readyApproval) } : {}),
+          ...(ready ? { readyApproval: await ready(admission.input.issueNumber, undefined, (await this.reworked(admission.input))?.snapshot.readyApproval) } : {}),
           ...(admission.input.worker === 'codex' && this.repo.validationPlan ? { validationPlan: await this.repo.validationPlan() } : {}),
           configHash: hash(config), requireHumanGate: this.repo.requireHumanGate });
         await this.current(snapshot);
@@ -221,11 +238,25 @@ export class RuntimeController implements WorkerRuntimePort {
       const report = row.result?.status === 'blocked' && row.snapshot.validationPlan ? await this.store.validation(this.repo.repositoryId, id) : null;
       // A run that failed without committing a result says why, instead of the Manager's generic failure (software-factory#93).
       const stopped = !row.result && (status === 'failed' || status === 'timed_out') ? failedResult(row.snapshot, await workflowFailure(handle, status)) : null;
+      const route = await this.route(id), usage = await this.usage(id);
       result.push({ issueNumber: row.snapshot.admission.input.issueNumber, executionId: id, workflowId: row.workflowId, runId: row.runId, status, phase: state.phase, binding: row.binding, createdAt: row.createdAt, result: row.result ?? stopped,
         ...(report ? { validation: { status: report.status, reason: report.reason, runId: report.workflowRunId,
-          failed: report.checks.filter(c => c.status === 'failed').map(c => ({ name: c.name, exitCode: c.exitCode })) } } : {}) });
+          failed: report.checks.filter(c => c.status === 'failed').map(c => ({ name: c.name, exitCode: c.exitCode })) } } : {}),
+        ...(route ? { route } : {}), ...(usage ? { usage } : {}) });
     }
     return result;
+  }
+  /** The model router's stored decision for a coding execution; informational, so an unreadable one is left out. */
+  private async route(executionId: string): Promise<RuntimeObservation['route']> {
+    try {
+      const receipt = await this.store.effectReceipt(this.repo.repositoryId, executionId, 'coding-route');
+      const stored = receipt === null ? null : codingRouteSchema.parse(receipt);
+      return stored?.route ? { record: stored.route, agent: stored.agent } : undefined;
+    } catch { return undefined; }
+  }
+  /** The recorded token usage of an execution's agent run; informational, so an unreadable one is left out. */
+  private async usage(executionId: string): Promise<RuntimeObservation['usage']> {
+    try { return (await this.store.usage(this.repo.repositoryId, executionId)) ?? undefined; } catch { return undefined; }
   }
   async authorize(snapshot: RunSnapshot, binding: string): Promise<StoredRun> { return (await this.authorized(snapshot, binding)).stored; }
   /** One complete authorization, with the configuration it found current. */

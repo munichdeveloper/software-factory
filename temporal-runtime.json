@@ -1,11 +1,11 @@
 {
   "formatVersion": 1,
-  "factoryVersion": "0.12.1",
+  "factoryVersion": "0.17.0",
   "experimental": true,
   "snapshotSchemaVersion": 1,
   "harness": {
     "repository": "munichdeveloper/dev-agent-harness",
-    "ref": "b9b05462d83774011438ba66936b9cd1df441e3d",
+    "ref": "59d1364b337ed4e40d3beb12f4a0036078b12c59",
     "codingContractVersion": "3.0"
   },
   "dockerfile": "operations/temporal-runtime/Dockerfile",

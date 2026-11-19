@@ -46,6 +46,39 @@ function agentRules(entry: { agent: 'codex' | 'claude'; model: string; reasoning
 const codingAgentSchema = z.strictObject({ agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort.default('high') })
   .superRefine((entry, context) => agentRules(entry, context));
 export type CodingAgent = z.infer<typeof codingAgentSchema>;
+/** An option the model router may pick; id names it in the decision, description tells the router what it is for. */
+const routerOptionId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/), routerDescription = z.string().min(1).max(300);
+const codingCandidateSchema = z.strictObject({ id: routerOptionId, agent: codingAgentName, model: codingModel, reasoningEffort: codingEffort,
+  description: routerDescription }).superRefine((entry, context) => agentRules(entry, context));
+/** A broker-side model (merge review, risk assessment, planner): Claude with the broker's Anthropic key or OpenAI. */
+const llmCandidateSchema = z.strictObject({ id: routerOptionId, provider: z.enum(['claude', 'openai']), model: codingModel,
+  reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']), description: routerDescription }).superRefine((entry, context) => {
+  if ((entry.provider === 'claude') !== /^claude-/.test(entry.model)) context.addIssue({ code: 'custom', path: ['model'], message: 'provider claude needs a Claude model, provider openai a non-Claude model' });
+});
+const routerCandidates = <T extends z.ZodType<{ id: string }>>(candidate: T) => z.strictObject({ candidates: z.array(candidate).min(2).max(6) })
+  .superRefine((value, context) => {
+    if (new Set(value.candidates.map(c => c.id)).size !== value.candidates.length) context.addIssue({ code: 'custom', path: ['candidates'], message: 'candidate ids must be unique' });
+  });
+/**
+ * Model router: before a model works, a decision model (TypeSafe Jev via OpenRouter, the broker's OPENROUTER_API_KEY)
+ * picks one of the candidates of that purpose. Without an answer above minConfidence the configured models run as
+ * before, and the broker reports it. A purpose without candidates is not routed. Optional without a default, so
+ * configurations that leave it out keep their hash.
+ */
+export const routerSchema = z.strictObject({
+  enabled: z.boolean().default(true),
+  model: z.string().regex(/^~?[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]{0,80}$/).default('typesafe/jev-1.14'),
+  minConfidence: z.number().min(0).max(1).default(0.5),
+  timeoutSeconds: bounded(1, 30, 10),
+  /** First attempts of coding runs (Temporal engine); escalated attempts keep retryAgents. */
+  coding: routerCandidates(codingCandidateSchema).optional(),
+  review: routerCandidates(llmCandidateSchema).optional(),
+  risk: routerCandidates(llmCandidateSchema).optional(),
+  planner: routerCandidates(llmCandidateSchema).optional()
+});
+export type RouterConfig = z.infer<typeof routerSchema>;
+export type CodingCandidate = z.infer<typeof codingCandidateSchema>;
+export type LlmCandidate = z.infer<typeof llmCandidateSchema>;
 export const configSchema = z.strictObject({
   version: z.literal(1),
   factory: z.strictObject({ enabled: z.boolean().default(true), scope: z.string().min(1).max(4000) }),
@@ -57,7 +90,14 @@ export const configSchema = z.strictObject({
   }).prefault({}),
   autonomy: z.strictObject({
     profile: z.enum(['advisory', 'supervised', 'autonomous']).default('supervised'),
-    overrides: z.partialRecord(z.enum(actionKinds), permissionSchema).default({})
+    overrides: z.partialRecord(z.enum(actionKinds), permissionSchema).default({}),
+    /**
+     * What admits a run in a repository the SF Manager registered with the ready label as grant. `ready-label`: only
+     * `harness:ready` applied by a person with write access. `managed-label`: `harness:managed` applied by a person
+     * with write access is the grant, and the Factory's own follow-ups inherit it. `none`: no grant; every managed, runnable task starts
+     * within the autonomy policy and the execution limits.
+     */
+    startGrant: z.enum(['ready-label', 'managed-label', 'none']).default('ready-label')
   }).prefault({}),
   execution: z.strictObject({
     engine: z.enum(['github-actions', 'temporal']).default('github-actions'),
@@ -88,6 +128,12 @@ export const configSchema = z.strictObject({
        * configurations that leave it out keep their hash and in-flight runs stay current.
        */
       agents: z.array(codingAgentSchema).min(1).max(3).optional(),
+      /**
+       * Optional priority list for escalated attempts, Temporal engine only: a further attempt after an earlier attempt
+       * failed for a reason the agent owns (failed validation, requested changes, failed or timed-out agent run). A retry
+       * after the runner failed before the agent started keeps agents. Without it every attempt uses agents (or agent). Optional without a default, so configurations that leave it out keep their hash.
+       */
+      retryAgents: z.array(codingAgentSchema).min(1).max(3).optional(),
       /** The default is a Codex model; with agent claude name a Claude model such as claude-opus-5-5 or claude-sonnet-5-5. */
       model: codingModel.default('gpt-6.1-sol'),
       /** max is available for Claude only. */
@@ -96,14 +142,21 @@ export const configSchema = z.strictObject({
       /** Temporal executor: the worker's commands may use a private loopback (local server, browser tests); other network stays closed. */
       loopback: z.boolean().default(false),
       /** Tells the worker to keep each change to the task's one concern and to propose a split instead of one large PR. */
-      smallPullRequests: z.boolean().default(true) }).superRefine((coding, context) => {
-      if (coding.agents) {
-        if (coding.agent) context.addIssue({ code: 'custom', path: ['agent'], message: 'name either agent or agents, not both' });
+      smallPullRequests: z.boolean().default(true),
+      /**
+       * Spend cap per coding attempt in US dollars, Temporal engine only: Claude Code stops at it (--max-budget-usd; Codex
+       * has no such limit). Without it the broker uses 10 $. Optional without a default, so configurations keep their hash.
+       */
+      maxCostUsd: z.number().positive().max(1000).optional() }).superRefine((coding, context) => {
+      for (const key of ['agents', 'retryAgents'] as const) {
         const seen = new Set<string>();
-        coding.agents.forEach((entry, index) => {
-          if (seen.has(entry.agent)) context.addIssue({ code: 'custom', path: ['agents', index, 'agent'], message: 'each agent may appear once' });
+        coding[key]?.forEach((entry, index) => {
+          if (seen.has(entry.agent)) context.addIssue({ code: 'custom', path: [key, index, 'agent'], message: 'each agent may appear once' });
           seen.add(entry.agent);
         });
+      }
+      if (coding.agents) {
+        if (coding.agent) context.addIssue({ code: 'custom', path: ['agent'], message: 'name either agent or agents, not both' });
         return;
       }
       if (!coding.agent) { context.addIssue({ code: 'custom', path: ['agent'], message: 'name agent or agents' }); return; }
@@ -215,10 +268,13 @@ export const configSchema = z.strictObject({
       pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
   }).prefault({}) }).prefault({}),
-  monitoring: monitoringSchema.partial().optional()
+  monitoring: monitoringSchema.partial().optional(),
+  router: routerSchema.optional()
 }).superRefine((config, context) => {
+  if (config.router?.coding && config.execution.engine !== 'temporal') context.addIssue({ code: 'custom', path: ['router', 'coding'], message: 'router.coding requires execution.engine temporal' });
   // The Claude worker and the agent priority list exist only in the Temporal executor; the legacy Actions coding workflow runs Codex.
   if (config.workers.coding && config.execution.engine !== 'temporal') {
+    if (config.workers.coding.retryAgents) context.addIssue({ code: 'custom', path: ['workers', 'coding', 'retryAgents'], message: 'retryAgents requires execution.engine temporal' });
     if (config.workers.coding.agents) context.addIssue({ code: 'custom', path: ['workers', 'coding', 'agents'], message: 'agents requires execution.engine temporal' });
     else if (config.workers.coding.agent === 'claude') context.addIssue({ code: 'custom', path: ['workers', 'coding', 'agent'], message: 'agent claude requires execution.engine temporal' });
   }
@@ -227,6 +283,10 @@ export type Config = z.infer<typeof configSchema>;
 /** The repository's coding agents in priority order: agents, or the single agent with model and reasoningEffort. */
 export function codingAgents(coding: Exclude<Config['workers']['coding'], false>): CodingAgent[] {
   return coding.agents ?? [{ agent: coding.agent ?? 'codex', model: coding.model, reasoningEffort: coding.reasoningEffort }];
+}
+/** The agents of one attempt: retryAgents for an escalated attempt when configured, otherwise the regular list. */
+export function attemptAgents(coding: Exclude<Config['workers']['coding'], false>, escalate: boolean): CodingAgent[] {
+  return escalate && coding.retryAgents ? coding.retryAgents : codingAgents(coding);
 }
 export function loadConfig(source: string): Config {
   const doc = parseDocument(source, { uniqueKeys: true });

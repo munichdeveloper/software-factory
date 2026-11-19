@@ -1,4 +1,5 @@
 import { Pool, type PoolClient } from 'pg';
+import { usageRecordSchema, type UsageEntry, type UsageRecord } from './usage.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { snapshotSchema, type RunSnapshot } from './contract.js';
 import { workerResultSchema, type WorkerResult } from '../workers/contract.js';
@@ -49,7 +50,46 @@ export class RuntimeStore implements SanityStore {
         PRIMARY KEY(repository_id,key));
       CREATE TABLE IF NOT EXISTS factory_runtime_credit_alerts (
         agent text NOT NULL, kind text NOT NULL, sent integer NOT NULL DEFAULT 0, last_execution text,
-        updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(agent,kind));`);
+        updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(agent,kind));
+      CREATE TABLE IF NOT EXISTS factory_runtime_usage (
+        repository_id bigint NOT NULL, execution_id text NOT NULL, repository text NOT NULL, issue_number integer NOT NULL,
+        run_id bigint NOT NULL, record jsonb NOT NULL, cost_usd double precision, recorded_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY(repository_id,execution_id));
+      CREATE INDEX IF NOT EXISTS factory_runtime_usage_day ON factory_runtime_usage(repository_id, recorded_at);
+      CREATE TABLE IF NOT EXISTS factory_runtime_usage_alerts (
+        key text NOT NULL, kind text NOT NULL, sent_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(key,kind));`);
+  }
+  /** Token usage of coding runs (UsageAlerts): stored once per execution. */
+  async recordUsage(entry: UsageEntry): Promise<boolean> {
+    const { rowCount } = await this.pool.query(`INSERT INTO factory_runtime_usage(repository_id,execution_id,repository,issue_number,run_id,record,cost_usd)
+      VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`, [entry.repositoryId, entry.record.executionId, entry.repository, entry.issueNumber,
+      entry.runId, JSON.stringify(entry.record), entry.record.costUsd]);
+    return (rowCount ?? 0) > 0;
+  }
+  async usageDay(repositoryId: number, day: string): Promise<{ costUsd: number; runs: number; unknownCost: number }> {
+    const { rows } = await this.pool.query<{ cost: number | null; runs: string; unknown: string }>(
+      `SELECT sum(cost_usd) AS cost, count(*) AS runs, count(*) FILTER (WHERE cost_usd IS NULL) AS unknown FROM factory_runtime_usage
+        WHERE repository_id=$1 AND recorded_at >= $2::date AND recorded_at < $2::date + 1`, [repositoryId, day]);
+    return { costUsd: Number(rows[0]?.cost ?? 0), runs: Number(rows[0]?.runs ?? 0), unknownCost: Number(rows[0]?.unknown ?? 0) };
+  }
+  async claimUsageAlert(key: string, kind: string): Promise<boolean> {
+    const { rowCount } = await this.pool.query('INSERT INTO factory_runtime_usage_alerts(key,kind) VALUES($1,$2) ON CONFLICT DO NOTHING', [key, kind]);
+    return (rowCount ?? 0) > 0;
+  }
+  /** The stored usage of one execution, for the status comment. */
+  async usage(repositoryId: number, executionId: string): Promise<UsageRecord | null> {
+    const { rows } = await this.pool.query<{ record: unknown }>('SELECT record FROM factory_runtime_usage WHERE repository_id=$1 AND execution_id=$2', [repositoryId, executionId]);
+    const parsed = rows[0] ? usageRecordSchema.safeParse(rows[0].record) : null;
+    return parsed?.success ? parsed.data : null;
+  }
+  /** Spend per repository between two instants, for the daily report. */
+  async usageReport(from: Date, to: Date): Promise<{ repository: string; runs: number; costUsd: number; unknownCost: number; maxCostUsd: number; budgetStops: number }[]> {
+    const { rows } = await this.pool.query<{ repository: string; runs: string; cost: number | null; unknown: string; max: number | null; stops: string }>(
+      `SELECT repository, count(*) AS runs, sum(cost_usd) AS cost, count(*) FILTER (WHERE cost_usd IS NULL) AS unknown, max(cost_usd) AS max,
+        count(*) FILTER (WHERE (record->>'budgetReached')::boolean) AS stops
+        FROM factory_runtime_usage WHERE recorded_at >= $1 AND recorded_at < $2 GROUP BY repository ORDER BY repository`, [from, to]);
+    return rows.map(r => ({ repository: r.repository, runs: Number(r.runs), costUsd: Number(r.cost ?? 0), unknownCost: Number(r.unknown),
+      maxCostUsd: Number(r.max ?? 0), budgetStops: Number(r.stops) }));
   }
   /** Claims the next credit alert of an agent (CreditAlerts); null at the limit or when this execution already had one. */
   async claimCreditAlert(agent: string, kind: string, executionId: string, limit: number): Promise<number | null> {
@@ -149,6 +189,12 @@ export class RuntimeStore implements SanityStore {
   }
   async terminal(repositoryId: number, executionId: string) {
     await this.db().query('UPDATE factory_runtime_runs SET terminal=true WHERE repository_id=$1 AND execution_id=$2', [repositoryId, executionId]);
+  }
+  /** The confirmed receipt of one runtime effect of an execution, or null when it has none (yet). */
+  async effectReceipt(repositoryId: number, executionId: string, effect: string): Promise<unknown> {
+    const { rows } = await this.db().query<{ receipt: unknown }>("SELECT receipt FROM factory_runtime_effects WHERE repository_id=$1 AND execution_id=$2 AND effect=$3 AND phase='confirmed'",
+      [repositoryId, executionId, effect]);
+    return rows[0]?.receipt ?? null;
   }
   async artifact(repositoryId: number, executionId: string): Promise<CodingArtifact | null> {
     const { rows } = await this.db().query<{ artifact: unknown; digest: string }>('SELECT artifact,digest FROM factory_runtime_artifacts WHERE repository_id=$1 AND execution_id=$2', [repositoryId, executionId]);

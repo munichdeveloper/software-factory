@@ -22,8 +22,8 @@ name: sfm
 # runs and never unbinds a repository; the broker ends such a run after FACTORY_RETAINED_RUN_HOURS (default 2) and the
 # planner retries it on the current release (software-factory#102). It may equal WORKER_FACTORY_SHA.
 x-worker-release: &worker-release
-  WORKER_FACTORY_SHA: d1bd2e5c425014aae9955d8480ba8821d344d5b6
-  PREVIOUS_WORKER_FACTORY_SHA: 04b9847c2518def79dcd7fc48499b62ba74ea597
+  WORKER_FACTORY_SHA: 61c843e6ae9f18cff91301bdb8a8498ecf7de015
+  PREVIOUS_WORKER_FACTORY_SHA: aacda0f37aee77fa1ef393b402c0b90ba8f651ec
   WORKER_DEPLOYMENT: sf-backofficer
   WORKER_QUEUE: sf-backofficer-v1
 x-service: &service
@@ -81,6 +81,14 @@ services:
       FACTORY_RUNNER_SLOTS_DIR: /run/factory/runners
       FACTORY_RUNNER_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification
       FACTORY_CREDIT_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification: agent credit used up (workers.coding.agents)
+      FACTORY_ROUTER_ALERT_CHANNEL: C0CGJKK3EKS # ki-notification: model router not used, configured models ran (router:)
+      FACTORY_ROUTER_API: typesafe # Jev directly at TypeSafe (TYPESAFE_API_KEY); openrouter asks through OpenRouter
+      # ki-notification: token usage of coding runs (expensive runs, spend cap reached, tokens without result, daily
+      # spend per repository, loops of broker model calls) and the daily report at 06:00 UTC.
+      FACTORY_USAGE_ALERT_CHANNEL: C0CGJKK3EKS
+      FACTORY_USAGE_RUN_ALERT_USD: '6'
+      FACTORY_USAGE_DAY_ALERT_USD: '30'
+      FACTORY_LLM_CALLS_ALERT_PER_HOUR: '20'
       # Private repositories outside the registry whose own CI follows SF_RUNNER (id:owner/name).
       FACTORY_RUNNER_REPOSITORIES: 1449777386:munichdeveloper/sf-manager,1448658563:munichdeveloper/business-os
     volumes:

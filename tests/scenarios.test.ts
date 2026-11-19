@@ -45,7 +45,7 @@ async function settle(world: World): Promise<string[]> {
     // Exactly one lifecycle status.
     if (world.status(issue.number).length !== 1) violations.push(`#${issue.number}: ${world.status(issue.number).length} lifecycle labels`);
     // In ready-label mode only a person grants execution, and only a person ever applies the label.
-    if (world.options.readyLabel && world.github.readyFor(issue.number).some(e => e.event === 'labeled' && e.actor === bot)) violations.push(`#${issue.number}: the Manager applied harness:ready itself`);
+    if (world.options.readyLabel && world.cfg.autonomy.startGrant === 'ready-label' && world.github.readyFor(issue.number).some(e => e.event === 'labeled' && e.actor === bot)) violations.push(`#${issue.number}: the Manager applied harness:ready itself`);
     if (world.options.readyLabel) for (const row of world.store.rows.values()) {
       if (row.snapshot.admission.input.issueNumber === issue.number && row.snapshot.readyApproval?.actor === bot) violations.push(`#${issue.number}: run admitted on the Manager's own label`);
     }
@@ -96,6 +96,57 @@ describe('lifecycle scenarios', () => {
     w.grant(1); await w.tick();
     expect(w.status(1)).toEqual(['running']);
     await healthy(w);
+  });
+  it('starts without a grant where the repository configures autonomy.startGrant none', async () => {
+    const w = new World({ readyLabel: true }); w.cfg.autonomy.startGrant = 'none'; w.open(1);
+    await w.tick(); await w.tick();
+    expect(w.status(1)).toEqual(['running']);
+    expect(w.running()[0]!.snapshot.readyApproval).toBeUndefined();
+    expect(w.statusComments(1)[0]).not.toContain('Waiting only for the grant');
+    await w.finish(execution(w, 1)); await w.tick();
+    expect(w.status(1)).toEqual(['awaiting-pr']);
+    await healthy(w);
+  });
+  it('requires the grant again for new runs once the repository switches back to ready-label', async () => {
+    const w = new World({ readyLabel: true }); w.cfg.autonomy.startGrant = 'none'; w.open(1); w.open(2);
+    await w.tick(); await w.tick();
+    expect(w.status(1)).toEqual(['running']);
+    w.cfg.autonomy.startGrant = 'ready-label';
+    await w.finish(execution(w, 1)); await w.tick(); await w.tick();
+    // #2 still carries the label the Factory applied while no grant was needed; it is no grant.
+    expect(w.running()).toEqual([]);
+    expect(w.statusComments(2)[0]).toContain('removes the label `harness:ready` and applies it again');
+    w.grant(2); await w.tick();
+    expect(w.status(2)).toEqual(['running']);
+  });
+  it('takes a person\'s harness:managed as the grant under startGrant managed-label', async () => {
+    const w = new World({ readyLabel: true }); w.cfg.autonomy.startGrant = 'managed-label'; w.open(1);
+    await w.tick(); await w.tick();
+    expect(w.status(1)).toEqual(['running']);
+    expect(w.running()[0]!.snapshot.readyApproval?.actor).toBe('maintainer');
+    await w.finish(execution(w, 1)); await w.tick();
+    expect(w.status(1)).toEqual(['awaiting-pr']);
+    await healthy(w);
+  });
+  it('starts nothing under managed-label where harness:managed came from someone who cannot grant', async () => {
+    const w = new World({ readyLabel: true }); w.cfg.autonomy.startGrant = 'managed-label'; w.open(1, ['harness:managed'], 'outsider');
+    await w.tick(); await w.tick();
+    expect(w.running()).toEqual([]);
+    expect(w.statusComments(1)[0]).toContain('removes the label `harness:managed` and applies it again');
+    w.github.human(1, w.issue(1).labels.filter(l => l !== 'harness:managed')); w.github.human(1, [...w.issue(1).labels, 'harness:managed']);
+    await w.tick(); await w.tick();
+    expect(w.status(1)).toEqual(['running']);
+  });
+  it('lets a Factory follow-up inherit the managed grant of its origin, and only that', async () => {
+    const followup = (origin: number) => `Context\n\nOrigin: #${origin}\nDecision: split\n\n<!-- harness:followup:${'b'.repeat(64)} -->\n\n## Acceptance criteria\n- Observable\n`;
+    const w = new World({ readyLabel: true, maxParallelWorkers: 2 }); w.cfg.autonomy.startGrant = 'managed-label';
+    w.open(1, ['harness:managed', 'harness:blocked']); w.open(2, ['harness:managed', 'harness:blocked'], 'outsider');
+    await w.github.createIssue('Part of 1', followup(1), ['harness:managed']);
+    await w.github.createIssue('Part of 2', followup(2), ['harness:managed']);
+    await w.tick(); await w.tick();
+    const started = w.running().map(r => r.snapshot.admission.input.issueNumber);
+    expect(started).toEqual([3]);
+    expect(w.running()[0]!.snapshot.readyApproval?.actor).toBe('maintainer');
   });
   it('tells a person on the issue what the task is waiting for', async () => {
     const w = new World({ readyLabel: true }); w.open(1);

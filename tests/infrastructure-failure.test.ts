@@ -75,3 +75,31 @@ describe('the retry budget', () => {
     expect(task.desiredStatus).toBe('failed');
   });
 });
+
+describe('escalation to workers.coding.retryAgents', () => {
+  const intents = (w: World) => w.events(1).flatMap(e => e.type === 'intent' ? [e.input.contextReferences] : []);
+  const world = async () => {
+    const w = new World({ readyLabel: true, coding: true });
+    w.cfg.workers.coding = { ...(w.cfg.workers.coding as object), retryAgents: [{ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' }] } as typeof w.cfg.workers.coding;
+    w.open(1); w.grant(1); await w.tick(); return w;
+  };
+  const fail = async (w: World, error: string) => {
+    const id = w.running()[0]!.snapshot.admission.input.executionId;
+    await w.finish(id, 'failed', error, error === infrastructureFailureCode ? infrastructureFailureSummary : 'Isolated coding executor failed'); await w.tick(); await w.tick();
+  };
+  it('keeps the regular agents after a runner failure and escalates once the agent itself failed', async () => {
+    const w = await world();
+    await fail(w, infrastructureFailureCode);
+    expect(intents(w)[1]).not.toContain('urn:sf-escalate');
+    await fail(w, 'Inspect the scoped executor run');
+    expect(intents(w)[2]).toContain('urn:sf-escalate');
+    // A later runner failure does not undo the escalation: the agent already failed once on this task version.
+    await fail(w, infrastructureFailureCode);
+    expect(intents(w)[3]).toContain('urn:sf-escalate');
+  });
+  it('adds no marker without retryAgents', async () => {
+    const w = new World({ readyLabel: true, coding: true }); w.open(1); w.grant(1); await w.tick();
+    await fail(w, 'Inspect the scoped executor run');
+    expect(intents(w)[1]).not.toContain('urn:sf-escalate');
+  });
+});

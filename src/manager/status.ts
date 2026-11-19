@@ -1,5 +1,7 @@
 import type { Config } from '../config/index.js';
 import type { Task } from '../state/reconstruct.js';
+import { routeNoteEn } from '../llm/router.js';
+import { usageNoteEn } from '../runtime/usage.js';
 
 export const statusMarker = '<!-- software-factory:status -->';
 
@@ -89,7 +91,14 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
       ? `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}). ` : '';
     awaitsGrant = ready; stage = ready ? 'awaiting-grant' : 'refused';
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : 'Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
-    needs = ready ? grant : rejection === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'
+    // The label is there but was applied by an account that cannot grant, typically the Factory's own App (software-factory#109).
+    if (rejection === 'READY_ACTOR_NOT_AUTHORIZED' && task.issue.labels.includes('harness:ready')) state.push('', 'The label `harness:ready` on this issue was applied by an account that cannot grant a run, for example the Factory\'s own App. It does not count as a grant.');
+    if (rejection === 'MANAGED_ACTOR_NOT_AUTHORIZED') state.push('', 'In this repository a person\'s `harness:managed` is the grant; this one was applied by an account that cannot grant a run.');
+    needs = rejection.startsWith('MANAGED_') && rejection !== 'MANAGED_GRANT_UNSUPPORTED'
+      ? 'A person with write access removes the label `harness:managed` and applies it again. Nothing else is missing; the run starts on the next reconciliation.'
+      : rejection === 'READY_ACTOR_NOT_AUTHORIZED' && task.issue.labels.includes('harness:ready')
+      ? 'An authorized person removes the label `harness:ready` and applies it again. Nothing else is missing; the run starts on the next reconciliation.'
+      : ready ? grant : rejection === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH'
       ? 'Roll this repository out to the Factory release the runtime runs, through the SF Manager. The task starts on its own afterwards.'
       : 'Check the runtime registry entry and the Factory configuration of this repository; the code above names the failed check.';
     // A refusal that still holds is not offered again on every reconciliation (software-factory#53).
@@ -120,7 +129,13 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
   } else if (task.hasOpenPR) { stage = 'awaiting-pr'; state = ['A pull request for this task is open.']; needs = 'Review and merge the pull request.'; }
   else if (context.readyIsGrant && !task.issue.labels.includes('harness:ready')) { state = ['Ready to run. **Waiting only for the grant.**']; needs = grant; awaitsGrant = true; stage = 'awaiting-grant'; }
   else state = [context.queued ? 'Queued: all worker slots are in use. It starts when one is free.' : 'Queued; starts on the next reconciliation.'];
-  return { awaitsGrant, stage, body: [statusMarker, `**Software Factory** · \`${task.desiredStatus}\``, '', ...state, '', `**Needed from you:** ${needs}`,
+  // Which agent the running or latest coding execution uses, when the model router was asked (router.coding).
+  const routed = (running ?? task.latest)?.runtime?.route;
+  const model = routed && task.issue.state === 'open' ? ['', routeNoteEn(routed.record, routed.agent)] : [];
+  // What the latest finished agent run cost, once the broker recorded its usage.
+  const spent = task.latest?.runtime?.usage;
+  if (spent && task.issue.state === 'open') model.push(...(model.length ? [] : ['']), usageNoteEn(spent));
+  return { awaitsGrant, stage, body: [statusMarker, `**Software Factory** · \`${task.desiredStatus}\``, '', ...state, ...model, '', `**Needed from you:** ${needs}`,
     ...(links.length ? ['', `**Pull request:** ${links.join(', ')}`] : []),
     '', '_Kept up to date by the Factory. Editing or deleting this comment changes nothing._'].join('\n') };
 }

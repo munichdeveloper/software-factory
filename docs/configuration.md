@@ -17,6 +17,7 @@ Generated JSON schemas share the executable Zod source.
 | `manager.trustedActors` | `[github-actions[bot]]` | Nonempty exact author-login allowlist for machine events |
 | `autonomy.profile` | `supervised` | `advisory`, `supervised`, `autonomous` |
 | `autonomy.overrides` | `{}` | Per-action `allow`, `deny`, `approval`; unknown actions fail |
+| `autonomy.startGrant` | `ready-label` | Repositories the SF Manager registered: `ready-label` starts a run only on `harness:ready` applied by a person with write access; `managed-label` takes `harness:managed` applied by a person with write access as the grant, and follow-ups the Factory creates inherit their origin's grant (at most three levels); `none` needs no grant, every managed runnable task starts within the policy and execution limits. Labels can only be set by people with write access either way. Switching back to `ready-label` does not turn a `harness:ready` the Factory applied meanwhile into a grant |
 | `execution.dryRun` | `false` | Evaluate without writes/dispatch; manual dry-run also enables this |
 | `execution.maxParallelWorkers` | `1` | Active/uncertain executions, including old task versions, 1–20 |
 | `execution.maxRetries` | `2` | Retries after initial attempt, 0–5; separately approved per attempt. A start the runtime refused before it ran does not count |
@@ -30,6 +31,7 @@ Generated JSON schemas share the executable Zod source.
 | `monitoring.approvalWaitHours` | `48` | A run waiting at its approval gate this long is reported, 1–720 |
 | `monitoring.repeatedFailures` | `3` | This many attempts in a row ending with the same error code are reported as an endless retry, 2–20 |
 | `monitoring.stalledPasses` | `10` | Consecutive reconciliations a status label may differ from the derived status, or reconciliations may fail or report errors, before it is reported, 2–200 |
+| `workers.coding.maxCostUsd` | none (broker uses `10`) | Spend cap per coding attempt in US dollars, Temporal engine: Claude Code stops at it (`--max-budget-usd`, result `error_max_budget_usd`); Codex has no cap. Fixed per execution when it is first dispatched. Usage of every run is recorded and reported, see [Temporal runtime](temporal-runtime.md) |
 | `workers.coding.smallPullRequests` | `true` | Tells the coding worker to keep each change to the task's one concern (no drive-by refactoring, renaming or unrelated fixes) and, for a task that bundles several concerns or is too large for one reviewable change, to report `blocked` with a proposed split instead of one large PR; the planner cuts follow-ups to one concern each. Fixed per execution when it is first dispatched. Risk-based merging (`merge.risk`, more than 800 changed lines are at least `high`) stays the hard limit |
 | `monitoring.slack` | `true` | Posts new and resolved findings to Slack with the broker's bot (`SLACK_BOT_TOKEN`), one message per reconciliation that changed something, at most once |
 | `monitoring.channel` | `null` | Slack channel for findings; `null` uses `notifications.slack.channel` where `notifications.slack.enabled`, otherwise nothing is posted |
@@ -41,7 +43,7 @@ Generated JSON schemas share the executable Zod source.
 | `llm.maxCalls` | `1` | Total calls incl. retries, 0–3; zero disables semantic planning only |
 | `workers.test.enabled` | `true` | Bundled non-code-changing worker |
 | `workers.test.operation` | `sha256` | Digest, deterministic `fail`, or deterministic `blocked` |
-| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY`. `agents` (instead of `agent`, Temporal engine only) is a priority list of up to three agents, each `{agent, model, reasoningEffort}`: see [Agent priority list](#agent-priority-list) |
+| `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY`. `agents` (instead of `agent`, Temporal engine only) is a priority list of up to three agents, each `{agent, model, reasoningEffort}`: see [Agent priority list](#agent-priority-list). `retryAgents` (optional, same shape) is the list for attempts after the agent failed: see [Escalation on retry](#escalation-on-retry) |
 | `workers.review` | `false` | Must be false; not implemented |
 | `merge.risk.enabled` | `false` | Risk-based auto-merge, see [merging](merging.md#risk-based-auto-merge); requires `merge.enabled` |
 | `merge.risk.mode` | `enforce` | `enforce` gates merges by risk class; `observe` only classifies and shows |
@@ -63,6 +65,7 @@ Generated JSON schemas share the executable Zod source.
 | `deploy.rollback`/`keepReleases`/`timeoutMinutes` | `true`/`5`/`30` | Restart previous release on failure; releases kept 1–20; per-step timeout 5–60 |
 | `deploy.githubDeployment` | `false` | Additional GitHub deployment record with outcome |
 | `deploy.secrets` | `{}` | Application secrets from GitHub: `NAME: SECRET_NAME`; the SF Manager renders them into the wrapper's `deploy-env` (0.12.0, see [deploy](deploy.md#declared-in-the-configuration-deploysecrets-0120)) |
+| `router` | absent | Model router (0.16.0): a decision model picks model and effort per call among the candidates of each purpose, see [Model router](#model-router) |
 | `reporting.persistDecisions` | `true` | Deduplicated decision comments; execution intents/results and automatic block provenance always durable |
 
 ## Policy defaults
@@ -136,3 +139,97 @@ and PR title. When no agent can run the run fails without spending an attempt. W
 set, the broker posts a Slack message for each agent skipped for used-up credit, at most three times per agent; once
 that agent has run again, a later shortage is announced anew. Each repository needs the secret of every agent in its
 list. A single `agent` keeps the earlier behaviour without any check.
+
+## Escalation on retry
+
+```yaml
+workers:
+  coding:
+    enabled: true
+    agents:
+      - agent: claude
+        model: claude-sonnet-5-5
+        reasoningEffort: medium
+      - agent: codex
+        model: gpt-6.1-sol
+        reasoningEffort: high
+    retryAgents:
+      - agent: claude
+        model: claude-opus-5-5
+        reasoningEffort: high
+      - agent: codex
+        model: gpt-6.1-sol
+        reasoningEffort: high
+```
+
+The first attempt of a task runs the `agents` list. A further attempt runs `retryAgents` instead (with the same
+credit check and fallback) once an earlier attempt of the same task version failed for a reason the agent owns: a
+rework after a failed validation or a merge review's requested changes, or a failed, blocked, cancelled or timed-out
+agent run. A retry after the runner failed before the agent started (`EXECUTOR_INFRASTRUCTURE_FAILURE`, e.g. a setup
+step) keeps `agents`, since a stronger model would not change that outcome. The Manager marks an escalated intent with
+`urn:sf-escalate`. Most tasks then cost the cheaper model, and only those the agent could not finish escalate.
+`retryAgents` is optional without a default: a configuration without it keeps its hash and every attempt uses `agents`.
+Each repository needs the secret of every agent in both lists.
+
+## Model router
+
+```yaml
+router:
+  enabled: true                 # default true
+  model: typesafe/jev-1.14      # decision model (default; jev-1.14.0 at TypeSafe)
+  minConfidence: 0.5            # below this the configured models run
+  timeoutSeconds: 10
+  coding:                       # first attempts of coding runs (Temporal engine)
+    candidates:
+      - id: sonnet-medium
+        agent: claude
+        model: claude-sonnet-5-5
+        reasoningEffort: medium
+        description: Clearly specified, contained changes in one area; bug fixes, small features, texts, tests.
+      - id: opus-high
+        agent: claude
+        model: claude-opus-5-5
+        reasoningEffort: high
+        description: Changes across several modules, new architecture, migrations, security or hard debugging.
+  review:                       # merge review; likewise risk (assessment) and planner (llm.provider openai)
+    candidates:
+      - id: sonnet-medium
+        provider: claude
+        model: claude-sonnet-5-5
+        reasoningEffort: medium
+        description: Small pull requests with few files and a clear purpose.
+      - id: opus-high
+        provider: claude
+        model: claude-opus-5-5
+        reasoningEffort: high
+        description: Large pull requests, security-relevant or behaviour-changing code.
+```
+
+Before a model does the work, the broker asks the decision model TypeSafe Jev one choice question. Since 0.17.0 it asks
+TypeSafe directly (`POST https://api.typesafe.ai/v1/systemone`, broker key `TYPESAFE_API_KEY`, deploy secret
+`BROKER_TYPESAFE_API_KEY`) or through OpenRouter (Decisions API `POST /api/alpha/decisions`, `OPENROUTER_API_KEY`, deploy
+secret `BROKER_OPENROUTER_API_KEY`). The broker setting `FACTORY_ROUTER_API` (`typesafe` or `openrouter`) chooses; without
+it a TypeSafe key wins. `router.model` keeps OpenRouter's id: for TypeSafe, `typesafe/jev-1.14` becomes `jev-1.14.0`,
+and TypeSafe's own names (`jev-latest`, `jev-preview`) pass unchanged. The question: the options are the candidates' ids with their descriptions, the
+state is the request in short (a coding task's description and acceptance criteria; a pull request's title, body and
+file list with changed lines, never its patches). Jev answers with a choice and its confidence; the chosen candidate
+then does the actual work with the same instructions, input and schema as the configured model, only model and effort
+differ. A routed coding agent runs first, the configured `agents` stay behind it as the credit fallbacks; the decision
+is stored per execution, so later polls send the identical request. Escalated attempts are not routed: they run
+`retryAgents`. Broker-side candidates run with the broker's keys: `provider: claude` needs its Anthropic key, `openai`
+its OpenAI key; a candidate that cannot run, or fails, falls back to the configured chain (Claude first, OpenAI second).
+A mock configuration (`provider: llm` with `llm.provider: mock`) is never routed. A purpose without `candidates` is not
+routed, and each purpose takes 2 to 6 candidates with unique ids; the candidates are also the floor, so leave out cheap
+options where a cheap answer is not acceptable (e.g. no `low` effort for reviews).
+
+The router never blocks. Without the broker's key for the chosen endpoint (deploy secrets in the environment
+`production`), when Jev is unreachable or answers something unusable, and when its confidence stays below
+`minConfidence`, the configured models run as before. Since 0.16.1 the task's status comment names the agent of its
+coding run (`**Model:**`, chosen by the router or the configured agents and why), and the merge review and risk
+comments name the model that did the review (`Modellwahl: …`). Each decision is also logged as one `factory-router` line (purpose,
+choice, confidence or reason and a fixed code). With `FACTORY_ROUTER_ALERT_CHANNEL` on the broker, every case in which
+the configured models ran instead goes to Slack, at most once per repository, purpose and reason every six hours; the
+next message counts the cases in between. Issue and pull request text reaches Jev as untrusted data it only classifies:
+at worst it picks another of the configured candidates. `router` is optional without a default: a configuration without
+it keeps its hash.
+

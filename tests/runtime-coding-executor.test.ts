@@ -12,6 +12,8 @@ import { config } from './helpers.js';
 import type { CodingArtifact } from '../src/workers/coding.js';
 import { defaultValidationPlan, type ValidationReport } from '../src/runtime/validation-contract.js';
 import { reportFor } from './validation-fixtures.js';
+import { ModelRouter, Routing } from '../src/llm/router.js';
+import type { UsageEntry } from '../src/runtime/usage.js';
 
 const snapshot = snapshotSchema.parse({ version: 1, repositoryId: 42, repository: 'owner/target',
   release: { factorySha: 'a'.repeat(40), harnessSha: 'b'.repeat(40), workflowHash: 'c'.repeat(64), deploymentName: 'sf-coding', buildId: 'v1', taskQueue: 'sf-coding', schemaVersion: 1 },
@@ -34,7 +36,7 @@ class Effects implements EffectPort {
     const receipt = evidence ?? await r.apply(); claim.receipt = receipt; return r.validate(receipt);
   }
 }
-function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>, onSelection?: (s: RunSnapshot, selection: AgentSelection) => Promise<void>) {
+function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>, onSelection?: (s: RunSnapshot, selection: AgentSelection) => Promise<void>, routing?: Routing, onUsage?: (entry: UsageEntry) => Promise<void>) {
   const requests: { task: { description: string; contextReferences: string[] } }[] = [], calls: string[] = [];
   const cfg = config(); cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false, smallPullRequests: true };
   let ref = false, dispatches = 0, lost = false, before = false, complete = false, wrongHead = false, duplicate = false, badWrapper = false;
@@ -67,7 +69,7 @@ function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, 
     const response = status === 204 ? new Response(null, { status }) : Response.json(data, { status }); Object.defineProperty(response, 'url', { value: String(input) }); return response;
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
-  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation, onSelection);
+  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation, onSelection, routing, onUsage);
   return { effects, cfg, requests, calls, poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
     lose: () => { lost = true; }, before: () => { before = true; }, wrong: () => { wrongHead = true; }, duplicate: () => { duplicate = true; },
     badWrapper: () => { badWrapper = true; }, unrelated: () => { source = { ...source, baseSha: '9'.repeat(40) }; },missingValidation:()=>{missingValidation=true;},forgeValidation:()=>{forgedValidation=true;},blocked:()=>{source.result.status='blocked';} };
@@ -203,6 +205,17 @@ it('sends a priority list as the first agent with fallbacks and keeps a single a
   expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'high', fallbacks: [{ worker: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' }] });
   const single = fixture(); await single.poll(); expect(single.requests[0]).not.toHaveProperty('fallbacks');
 });
+it('sends retryAgents for an escalated attempt and the regular list otherwise', async () => {
+  const lists = { agent: undefined, agents: [{ agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' }, { agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' }],
+    retryAgents: [{ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' }, { agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' }] };
+  const first = fixture(); first.cfg.workers.coding = { ...(first.cfg.workers.coding as object), ...lists } as typeof first.cfg.workers.coding;
+  await first.poll();
+  expect(first.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
+  const retried = { ...snapshot, admission: { ...snapshot.admission, input: { ...snapshot.admission.input, contextReferences: [...snapshot.admission.input.contextReferences, `urn:sf-retry:${'c'.repeat(32)}`, 'urn:sf-escalate'] } } };
+  const again = fixture(retried); again.cfg.workers.coding = { ...(again.cfg.workers.coding as object), ...lists } as typeof again.cfg.workers.coding;
+  await again.poll();
+  expect(again.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'high', fallbacks: [{ worker: 'codex', model: 'gpt-6.1-sol', effort: 'high' }] });
+});
 describe('the executor\'s agent choice', () => {
   const id = snapshot.admission.input.executionId;
   const choice = (selected: boolean): AgentSelection => ({ version: 1, executionId: id, selected: selected ? { worker: 'codex', model: 'gpt-6.1-sol', effort: 'high' } : null,
@@ -231,5 +244,83 @@ describe('the executor\'s agent choice', () => {
     const { f, seen } = setup(choice(false), 'failure');
     expect(await f.poll()).toEqual({ failed: true, beforeAgent: true });
     expect(seen).toEqual([choice(false)]);
+  });
+});
+
+describe('the model router for coding', () => {
+  const lists = { agent: undefined, agents: [{ agent: 'claude', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' }, { agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' }],
+    retryAgents: [{ agent: 'claude', model: 'claude-opus-5-5', reasoningEffort: 'high' }] };
+  const router = { enabled: true, model: 'typesafe/jev-1.14', minConfidence: 0.5, timeoutSeconds: 10, coding: { candidates: [
+    { id: 'sonnet-medium', agent: 'claude' as const, model: 'claude-sonnet-5-5', reasoningEffort: 'medium' as const, description: 'Small, well specified changes' },
+    { id: 'opus-high', agent: 'claude' as const, model: 'claude-opus-5-5', reasoningEffort: 'high' as const, description: 'Broad or difficult changes' }] } };
+  const jev = (choice: string, confidence: number) => {
+    const asked: unknown[] = [];
+    const routing = new Routing(new ModelRouter('router-key', async (_url, init) => { asked.push(JSON.parse(String(init.body))); return Response.json({ answers: { route: { type: 'choice', choice, confidence } } }); }));
+    return { asked, routing };
+  };
+  const configure = (f: ReturnType<typeof fixture>) => { f.cfg.workers.coding = { ...(f.cfg.workers.coding as object), ...lists } as typeof f.cfg.workers.coding; f.cfg.router = router; };
+  it('runs the routed candidate first with the configured list behind it, and asks once per execution', async () => {
+    const { asked, routing } = jev('opus-high', 0.9), f = fixture(snapshot, undefined, undefined, undefined, routing); configure(f);
+    await f.poll(); await f.poll();
+    expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'high',
+      fallbacks: [{ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' }, { worker: 'codex', model: 'gpt-6.1-sol', effort: 'high' }] });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ model: 'typesafe/jev-1.14', questions: { route: { type: 'choice', criteria: { 'sonnet-medium': 'Small, well specified changes', 'opus-high': 'Broad or difficult changes' } } } });
+    expect(JSON.stringify(asked[0])).toContain('Implement a safe change');
+  });
+  it('keeps the configured agents below the minimum confidence and without a key', async () => {
+    const low = fixture(snapshot, undefined, undefined, undefined, jev('opus-high', 0.3).routing); configure(low); await low.poll();
+    expect(low.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
+    const keyless = fixture(snapshot, undefined, undefined, undefined, new Routing(new ModelRouter(undefined))); configure(keyless); await keyless.poll();
+    expect(keyless.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' });
+  });
+  it('does not route an escalated attempt: it runs retryAgents', async () => {
+    const retried = { ...snapshot, admission: { ...snapshot.admission, input: { ...snapshot.admission.input, contextReferences: [`urn:sf-retry:${'c'.repeat(32)}`, 'urn:sf-escalate'] } } };
+    const { asked, routing } = jev('sonnet-medium', 0.9), f = fixture(retried, undefined, undefined, undefined, routing); configure(f);
+    await f.poll();
+    expect(asked).toHaveLength(0);
+    expect(f.requests[0]).toMatchObject({ worker: 'claude', model: 'claude-opus-5-5', effort: 'high' });
+  });
+});
+
+describe('spend cap and token usage', () => {
+  const id = snapshot.admission.input.executionId;
+  const usage = (executionId = id) => ({ contractVersion: '1.0', executionId, worker: 'claude', model: 'claude-opus-5-5', effort: 'high', source: 'proxy', requests: 40,
+    tokens: { input: 1000, output: 30000, cacheRead: 900000, cacheWrite: 50000 }, costUsd: 3.4, turns: 39, durationMs: 700000, outcome: 'success', budgetUsd: 10, budgetReached: false });
+  const withUsage = (record: unknown, conclusion = 'success') => (path: string) => {
+    if (path === '/actions/runs/12/artifacts') return { total_count: 2, artifacts: [{ id: 15, name: `coding-result-${id}`, size_in_bytes: 1000, expired: false },
+      { id: 17, name: `coding-usage-${id}`, size_in_bytes: 500, expired: false }] };
+    if (path === '/actions/artifacts/17/zip') return new Response(zipSync({ 'usage.json': strToU8(JSON.stringify(record)) }) as BodyInit);
+    if (conclusion !== 'success' && path.endsWith('/runs')) return { total_count: 1, workflow_runs: [{ id: 12, display_title: `SF Temporal ${id} ${hash(snapshot)}`, head_sha: snapshot.baseSha,
+      actor: { login: 'factory[bot]' }, run_attempt: 1, event: 'workflow_dispatch', status: 'completed', conclusion }] };
+    if (path === '/actions/runs/12/jobs') return { total_count: 1, jobs: [{ id: 3, name: 'code / code', conclusion: 'failure', steps: [{ name: 'Run ./.runtime/harness', conclusion: 'failure' }] }] };
+    return undefined;
+  };
+  it('caps each new attempt at 10 $ unless the repository sets workers.coding.maxCostUsd', async () => {
+    const f = fixture(); await f.poll();
+    expect(f.requests[0]!).toMatchObject({ limits: { maxCostUsd: 10 } });
+    const g = fixture(); g.cfg.workers.coding!.maxCostUsd = 4; await g.poll();
+    expect(g.requests[0]!).toMatchObject({ limits: { maxCostUsd: 4 } });
+  });
+  it('sends no cap for an execution dispatched before caps existed, and keeps the first value when the configuration changes', async () => {
+    const f = fixture(snapshot, path => path === `/git/ref/heads/sf-temporal-executor/${id}` ? { object: { sha: snapshot.baseSha } } : undefined);
+    await f.poll();
+    expect((f.requests[0] as { limits: object }).limits).toEqual({ timeoutMinutes: 5, maxFiles: 100, maxPatchBytes: 5000000 });
+    const g = fixture(); await g.poll(); g.cfg.workers.coding!.maxCostUsd = 2; await g.poll();
+    expect(g.requests).toHaveLength(1);
+  });
+  it('hands the usage record of a finished run to onUsage, also for a failed run, and ignores a foreign one', async () => {
+    const seen: UsageEntry[] = [];
+    const f = fixture(snapshot, withUsage(usage()), undefined, undefined, undefined, async entry => { seen.push(entry); });
+    await f.poll(); f.finish(); expect(await f.poll()).toEqual({ artifact: artifact() });
+    expect(seen).toEqual([{ repositoryId: 42, repository: 'owner/target', issueNumber: 2, runId: 12, record: usage() }]);
+    const failed: UsageEntry[] = [];
+    const g = fixture(snapshot, withUsage(usage(), 'failure'), undefined, undefined, undefined, async entry => { failed.push(entry); });
+    expect(await g.poll()).toMatchObject({ failed: true });
+    expect(failed).toHaveLength(1);
+    const foreign: UsageEntry[] = [];
+    const h = fixture(snapshot, withUsage(usage('9'.repeat(32))), undefined, undefined, undefined, async entry => { foreign.push(entry); });
+    await h.poll(); h.finish(); expect(await h.poll()).toEqual({ artifact: artifact() });
+    expect(foreign).toEqual([]);
   });
 });
