@@ -18,7 +18,11 @@ Status: **in Umsetzung** (Issue #188, verwandt: #189). Alle Entscheidungen sind 
   Intent und ohne Backoff; der Preflight läuft bei jedem Abgleich erneut, ein Start läuft also wenige Minuten nach dem
   Rollout von selbst an. Diese Ablehnungen stehen in keinem Journal; der Broker meldet sie jetzt trotzdem als
   `start_refused` (`stage: preflight`, `retryAt: null`) und den folgenden Start als `start_resumed` mit
-  `trigger: cause_cleared`. Offen bleibt das Aufheben journalisierter Ablehnungen (Backoff) nach behobener Ursache.
+  `trigger: cause_cleared`. Journalisierte Ablehnungen mit `EXECUTOR_WRAPPER_RELEASE_MISMATCH` oder
+  `UNKNOWN_WORKER_DEPLOYMENT_VERSION` warten nicht mehr auf den Backoff: Der Manager fragt die Runtime bei jedem Abgleich
+  (nur für Codes, die im Journal stehen), ob die Ursache weg ist (Wrapper passt wieder, Worker-Deployment bekannt), und
+  startet dann sofort (`start_resumed`, `trigger: cause_cleared`). Agenten-Guthaben ist keine Admission-Ablehnung; das
+  regelt die Agentenliste mit Credit-Probe.
 - Schritt 4 umgesetzt (5.2): `notifications.webhooks: [{ url, events }]` (höchstens 5 Regeln, nur `https`, keine internen
   Hosts, ohne Default). Der Broker signiert jeden POST mit `FACTORY_WEBHOOK_SECRET` (Deploy-Secret `BROKER_WEBHOOK_SECRET`
   in der Umgebung `production`) als `X-Factory-Signature-256: sha256=<HMAC des Bodys>`; ohne Secret sendet er nichts.

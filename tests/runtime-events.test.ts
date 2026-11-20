@@ -36,7 +36,7 @@ it('reports refused starts with their code and backoff, marks repository-wide re
     execution(2, { result: result(2, 'success', null) }, at(20))])], config());
   expect(types(events)).toEqual(['start_refused:0', 'start_refused:1', 'start_resumed:2']);
   expect(events[1]!.data).toMatchObject({ code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', refusals: 2, repositoryWide: true, retryAt: at(46) });
-  expect(events[2]!.data).toEqual({ code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', refusals: 2, trigger: 'manual' });
+  expect(events[2]!.data).toEqual({ code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', refusals: 2, trigger: 'cause_cleared' });
   const afterBackoff = deriveEvents([task([refused(0, 'APPROVAL_REQUIRED', 0), execution(1, {}, at(20))])], config());
   expect(afterBackoff.map(e => [e.type, e.data.repositoryWide ?? e.data.trigger])).toEqual([['start_refused', false], ['start_resumed', 'backoff']]);
 });

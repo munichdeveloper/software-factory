@@ -36,5 +36,7 @@ export interface WorkflowRun { id: number; title: string; status: string; conclu
 export interface Snapshot { issues: Issue[]; comments: Map<number, Comment[]>; prs: PullRequest[]; runs: WorkflowRun[]; defaultBranch: string; dependencyStates: Map<number, boolean>;
   runtimeExecutions?: import('./runtime/contract.js').RuntimeObservation[];
   /** harness:ready is a person's grant in this repository; the Manager must never apply it itself. */
-  readyIsGrant?: boolean }
+  readyIsGrant?: boolean;
+  /** Refusal codes whose cause is gone; asked only for codes the journal holds (issue #188 step 3). */
+  clearedRefusals?: string[] }
 export type Decision = { outcome: 'allow' | 'deny' | 'approval'; reason: string; actionId: string };

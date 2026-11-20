@@ -2,7 +2,7 @@ import type { Config } from '../config/index.js';
 import type { SanityAlertSink } from '../notifications/sanity-alerts.js';
 import type { Snapshot } from '../types.js';
 import type { EventWebhooks } from './webhooks.js';
-import { admissionBackoffMinutes, infrastructureFailureCode, reconstruct, type Execution, type Task } from '../state/reconstruct.js';
+import { admissionBackoffMinutes, clearableRefusals, infrastructureFailureCode, reconstruct, type Execution, type Task } from '../state/reconstruct.js';
 
 /**
  * Runtime events (docs/failure-events.md, issue #188 step 1). The broker derives them from what every reconciliation
@@ -51,10 +51,11 @@ export function deriveEvents(tasks: Task[], config: Config): RuntimeEvent[] {
       }
       const before = current[i - 1];
       if (before?.rejected) {
-        // Until a cleared cause is detected (concept 6.1), a start before the backoff ran out followed a changed grant or policy.
-        const until = Date.parse(resultAt(task, before)) + admissionBackoffMinutes(refused) * 60000;
+        // A start before the backoff ran out followed a changed grant or policy, or a release skew that is over (concept 6.1).
+        const refusedAt = resultAt(task, before), until = Date.parse(refusedAt) + admissionBackoffMinutes(refused) * 60000;
+        const regranted = !!task.issue.readyAt && task.issue.readyAt > refusedAt || !!task.issue.managedAt && task.issue.managedAt > refusedAt;
         push('start_resumed', e, '', e.at, { code: code(before.rejected) ?? 'UNKNOWN', refusals: refused,
-          trigger: Date.parse(e.at) < until ? 'manual' : 'backoff' });
+          trigger: Date.parse(e.at) >= until ? 'backoff' : clearableRefusals.includes(before.rejected) && !regranted ? 'cause_cleared' : 'manual' });
       }
       refused = 0;
       const validation = e.runtime?.validation;

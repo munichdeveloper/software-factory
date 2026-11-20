@@ -70135,6 +70135,7 @@ var infrastructureFailureCode = "EXECUTOR_INFRASTRUCTURE_FAILURE";
 var infrastructureFailureSummary = "The coding run failed before the agent started";
 var freeInfrastructureFailures = 3;
 var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
+var clearableRefusals = ["EXECUTOR_WRAPPER_RELEASE_MISMATCH", "UNKNOWN_WORKER_DEPLOYMENT_VERSION"];
 var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
 function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
   return snapshot.issues.map((issue2) => {
@@ -70209,7 +70210,8 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     if (lastRefused) {
       const at = (events.find((e) => e.data.type === "result" && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
       const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 6e4).toISOString();
-      const changed = !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at || !!issue2.managedAt && issue2.managedAt > at;
+      const cleared = !!snapshot.clearedRefusals?.includes(lastRefused.rejected);
+      const changed = cleared || !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at || !!issue2.managedAt && issue2.managedAt > at;
       refusal = { code: lastRefused.rejected, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
     }
     const criteria = acceptanceCriteria(issue2.body);
@@ -71156,6 +71158,20 @@ var Manager = class {
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
       snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant === "ready-label";
+      const codes = new Set([...snapshot.comments.values()].flatMap((comments) => comments.flatMap((comment) => {
+        const event = decodeEvent(comment, this.config.manager.trustedActors);
+        return event?.data.type === "admission_rejected" && clearableRefusals.includes(event.data.code) ? [event.data.code] : [];
+      })));
+      const runtime = this.options.workerRuntime;
+      if (codes.size && runtime.refusalCleared) {
+        snapshot.clearedRefusals = [];
+        for (const code of codes) {
+          try {
+            if (await runtime.refusalCleared(code)) snapshot.clearedRefusals.push(code);
+          } catch {
+          }
+        }
+      }
     }
     return snapshot;
   }

@@ -4,7 +4,7 @@ import { planningCode, type Planner } from '../llm/provider.js';
 import { actionSchema, planSchema, type Action, type Snapshot } from '../types.js';
 import { actionId, executionId, hash, taskVersion } from '../state/identity.js';
 import { decodeEvent, type HarnessEvent } from '../state/events.js';
-import { admissionRejectedSummary, infrastructureFailureCode, reconstruct, type Task } from '../state/reconstruct.js';
+import { admissionRejectedSummary, clearableRefusals, infrastructureFailureCode, reconstruct, type Task } from '../state/reconstruct.js';
 import { lastBlockLabelEventId } from '../state/blocks.js';
 import { managedLabel, priorityLabels, withStatus } from '../state/lifecycle.js';
 import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
@@ -53,6 +53,19 @@ export class Manager {
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
       snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant === 'ready-label';
+      // A refusal waits for its backoff; one whose cause is provably gone (a release skew, an unknown worker deployment)
+      // is lifted at once. Asked only for codes some journal holds, at most once per code.
+      const codes = new Set([...snapshot.comments.values()].flatMap(comments => comments.flatMap(comment => {
+        const event = decodeEvent(comment, this.config.manager.trustedActors);
+        return event?.data.type === 'admission_rejected' && clearableRefusals.includes(event.data.code) ? [event.data.code] : [];
+      })));
+      const runtime = this.options.workerRuntime;
+      if (codes.size && runtime.refusalCleared) {
+        snapshot.clearedRefusals = [];
+        for (const code of codes) {
+          try { if (await runtime.refusalCleared(code)) snapshot.clearedRefusals.push(code); } catch { /* the backoff still applies */ }
+        }
+      }
     }
     return snapshot;
   }

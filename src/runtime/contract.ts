@@ -74,6 +74,12 @@ export interface WorkerRuntimePort {
    * `previousExecutionId` names the attempt a rework continues or a retry repeats; its grant may carry over.
    */
   preflight?(issueNumber: number, previousExecutionId?: string): Promise<void>;
+  /**
+   * Whether the cause of a journaled refusal is gone (issue #188 step 3, concept 6.1): the executor workflow pins the
+   * runtime's release again, or the worker deployment of the runtime's release is known. Such a refusal no longer waits
+   * for its backoff. False for every other code.
+   */
+  refusalCleared?(code: string): Promise<boolean>;
   start(admission: Admission): Promise<RuntimeObservation>;
   observations(executionIds: string[]): Promise<RuntimeObservation[]>;
   cancel(executionId: string): Promise<void>;
