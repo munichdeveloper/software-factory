@@ -128,6 +128,21 @@ geänderte Zeilen (Default 300), ist die Klasse mindestens `medium`. `high` alle
 berührt sind. Die Herkunft wird mitgespeichert (`source: builtin | areas | ai`), damit im PR sichtbar ist, warum eine
 Klasse gilt.
 
+### 4.x Risiko isolieren durch Aufteilen (SF #210)
+
+Damit der Großteil einer Aufgabe automatisch gemergt wird, trennt die Factory einen riskanten Teil möglichst früh ab
+(nur bei `merge.risk.enabled` mit `mode: enforce`):
+
+- **Vor dem Lauf:** Der Jev-Planner (`llm.provider: jev`) kennt das Urteil `mixed-risk`. Ein Textmodell (Claude zuerst,
+  OpenAI danach, Modell und Effort von `merge.risk.assessor`) schreibt daraus zwei Folgeaufgaben: einen Routineteil ohne
+  Auth, Rechte, Geld oder Migrationen und einen möglichst kleinen riskanten Teil. Die Ursprungsaufgabe wird blockiert.
+- **Während des Laufs:** Der Coding-Agent bekommt die Arbeitsregel, eine trennbare Mischung nicht zu bauen, sondern
+  `blocked` mit einer Zusammenfassung zu melden, die mit `Risk split:` beginnt. Jeder Planner erzeugt daraus dieselben
+  zwei Folgeaufgaben.
+- Die Folgeaufgaben laufen über die `create_followup`-Policy. Wo sie verboten ist, bleibt es beim Block mit Begründung;
+  mit `startGrant: ready-label` braucht jede Teilaufgabe wie jede neue Aufgabe `harness:ready`. Teilaufgaben werden nie
+  erneut aufgeteilt.
+
 ## 5. Einbettung in den Merge-Pass und Temporal
 
 **Zeitpunkt.** Die Bewertung startet an derselben Stelle wie das KI-Review: erst wenn alle Pflicht-Checks auf dem Head

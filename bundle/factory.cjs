@@ -69585,6 +69585,7 @@ var Octokit2 = Octokit.plugin(requestLog, legacyRestEndpointMethods, paginateRes
 // src/types.ts
 var statuses = ["backlog", "ready", "running", "awaiting-pr", "awaiting-approval", "blocked", "failed", "done"];
 var statusSchema = external_exports.enum(statuses);
+var riskSplitKeyPrefix = "risk-split.";
 var followupSchema = external_exports.strictObject({
   key: external_exports.string().regex(/^[a-z0-9][a-z0-9._-]{2,99}$/),
   title: external_exports.string().min(3).max(200),
@@ -70131,7 +70132,8 @@ function evaluate(action, ctx) {
   if (action.kind === "create_followup") {
     if (!action.followup) return deny("Follow-up details are required");
     if (budget.newIssues >= config2.execution.maxNewIssues) return deny("Maximum new issues per run reached");
-    if (!task.latest?.result || !["blocked", "success"].includes(task.latest.result.status)) return deny("Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself");
+    const plannedSplit = ctx.source === "planner" && !task.latest && action.followup.key.startsWith(riskSplitKeyPrefix) && config2.merge.risk.enabled && config2.merge.risk.mode === "enforce" && !action.followup.expandsScope;
+    if (!plannedSplit && (!task.latest?.result || !["blocked", "success"].includes(task.latest.result.status))) return deny("Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself");
     if (task.hasOpenPR) return deny("Task has an open pull request; follow-ups wait until it is merged or closed");
     if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map((n) => `#${n}`).join(", ")}`);
     if (action.followup.expandsScope) {
@@ -72095,6 +72097,8 @@ function validateChanges(artifact) {
   if (total > 5e6) throw new Error("Artifact exceeds publication limit");
 }
 var smallPullRequestGuidance = "\n\nFactory working rule, small pull requests: keep this change to the one concern of this task. Change only what the task and its acceptance criteria need: no drive-by refactoring, renaming, reformatting, dependency upgrades or unrelated fixes, even where they look worthwhile; mention them in your summary instead. If the task bundles several independent concerns or is too large for one reviewable change, do not build one large change: make no changes, report `blocked` and name in your summary how to split it into follow-up tasks, one concern each.";
+var riskIsolationGuidance = "\n\nFactory working rule, isolate risk: pull requests that change authentication, permissions or roles, anything involving money (payments, billing, prices, invoices, credits) or data migrations need a person to approve the merge; everything else merges automatically. If this task mixes such a risky part with routine work that is useful and correct on its own, do not build one mixed change: make no changes, report `blocked` and start your summary with `Risk split:` followed by the routine part and the risky part; the Factory then creates the two tasks. If the risky part cannot be separated, or the task is only the risky part, implement it and keep the risky change as small as possible.";
+var scopeGuidance = (config2) => !config2.workers.coding || !config2.workers.coding.smallPullRequests ? "" : smallPullRequestGuidance + (config2.merge.risk.enabled && config2.merge.risk.mode === "enforce" ? riskIsolationGuidance : "");
 var taskId = (repository, issue2) => `github:${repository}#${issue2}`;
 async function prepareCoding(github, config2, repository, issue2, id, correlationId) {
   const auth2 = await authorizeDelegation(github, config2, issue2, id);
@@ -72113,7 +72117,7 @@ async function prepareCoding(github, config2, repository, issue2, id, correlatio
     task: {
       id: taskId(github.repository, issue2),
       version: auth2.input.taskVersion,
-      description: config2.workers.coding.smallPullRequests && auth2.input.description.length + smallPullRequestGuidance.length <= 2e4 ? auth2.input.description + smallPullRequestGuidance : auth2.input.description,
+      description: scopeGuidance(config2) && auth2.input.description.length + scopeGuidance(config2).length <= 2e4 ? auth2.input.description + scopeGuidance(config2) : auth2.input.description,
       acceptanceCriteria: auth2.input.acceptanceCriteria,
       contextReferences: auth2.input.contextReferences
     },

@@ -48,6 +48,18 @@ export function validateChanges(artifact: CodingArtifact): void {
  */
 export const smallPullRequestGuidance = '\n\nFactory working rule, small pull requests: keep this change to the one concern of this task. Change only what the task and its acceptance criteria need: no drive-by refactoring, renaming, reformatting, dependency upgrades or unrelated fixes, even where they look worthwhile; mention them in your summary instead. If the task bundles several independent concerns or is too large for one reviewable change, do not build one large change: make no changes, report `blocked` and name in your summary how to split it into follow-up tasks, one concern each.';
 
+/**
+ * Isolate risk (Johannes, 2026-11-20, SF #210): with risk-based merging, a change touching authentication, permissions,
+ * money or data migrations needs a person (#209), everything else merges on its own. A task that mixes both should land
+ * as two pull requests, so only the small risky one waits for a person. Sent with the small pull request rule when
+ * `merge.risk` is enabled; the Jev planner catches such tasks before the start where it plans, this is the fallback during the run
+ * (llm/risk-split.ts writes the two tasks).
+ */
+export const riskIsolationGuidance = '\n\nFactory working rule, isolate risk: pull requests that change authentication, permissions or roles, anything involving money (payments, billing, prices, invoices, credits) or data migrations need a person to approve the merge; everything else merges automatically. If this task mixes such a risky part with routine work that is useful and correct on its own, do not build one mixed change: make no changes, report `blocked` and start your summary with `Risk split:` followed by the routine part and the risky part; the Factory then creates the two tasks. If the risky part cannot be separated, or the task is only the risky part, implement it and keep the risky change as small as possible.';
+/** The scope rules sent with a coding request: small pull requests, plus risk isolation when risk-based merging is on. */
+export const scopeGuidance = (config: Config) => !config.workers.coding || !config.workers.coding.smallPullRequests ? ''
+  : smallPullRequestGuidance + (config.merge.risk.enabled && config.merge.risk.mode === 'enforce' ? riskIsolationGuidance : '');
+
 const taskId = (repository: string, issue: number) => `github:${repository}#${issue}`;
 
 export async function prepareCoding(github: GitHubPort, config: Config, repository: CodingRepositoryPort,
@@ -60,8 +72,8 @@ export async function prepareCoding(github: GitHubPort, config: Config, reposito
   sha.parse(base.sha);
   return { base, request: { contractVersion: '3.0', executionId: id, worker: 'codex',
     task: { id: taskId(github.repository, issue), version: auth.input.taskVersion,
-      description: config.workers.coding.smallPullRequests && auth.input.description.length + smallPullRequestGuidance.length <= 20000
-        ? auth.input.description + smallPullRequestGuidance : auth.input.description,
+      description: scopeGuidance(config) && auth.input.description.length + scopeGuidance(config).length <= 20000
+        ? auth.input.description + scopeGuidance(config) : auth.input.description,
       acceptanceCriteria: auth.input.acceptanceCriteria, contextReferences: auth.input.contextReferences },
     baseSha: base.sha, allowedActions: ['edit_workspace', 'run_commands'], model: config.workers.coding.model,
     effort: config.workers.coding.reasoningEffort,
