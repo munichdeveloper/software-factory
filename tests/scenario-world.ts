@@ -9,7 +9,7 @@ import { authorizeManagedLabel, authorizeReadyLabel } from '../src/runtime/ready
 import { followupOrigin } from '../src/state/reconstruct.js';
 import { Manager } from '../src/manager/index.js';
 import type { RunReport } from '../src/manager/report.js';
-import { MockPlanner } from '../src/llm/provider.js';
+import { StaticPlanner } from '../src/llm/provider.js';
 import { decodeEvent, type HarnessEvent } from '../src/state/events.js';
 import { lifecycleLabels } from '../src/state/lifecycle.js';
 import type { BlockLabelEvent, Issue } from '../src/types.js';
@@ -204,7 +204,7 @@ export class World {
   /** One Manager reconciliation. A run that cannot even take a snapshot rejects; that is recorded, not thrown. */
   async tick(): Promise<Tick> {
     try {
-      const report = await new Manager(this.github, this.cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => this.now, workerRuntime: this.controller, notifications: this.options.notifications }).run();
+      const report = await new Manager(this.github, this.cfg, new StaticPlanner(), { correlationId: 'temporal:42', now: () => this.now, workerRuntime: this.controller, notifications: this.options.notifications }).run();
       this.log.push(`tick ${JSON.stringify({ errors: report.errors, blockers: report.blockers })}`); return { report };
     } catch (error) { const thrown = error instanceof Error ? error.message : String(error); this.log.push(`tick threw ${thrown}`); return { thrown }; }
   }

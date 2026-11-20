@@ -4,7 +4,7 @@ import { blockedReason, runtimeServer, type RuntimeBinding } from '../src/runtim
 import { brokerReason } from '../src/runtime/worker.js';
 import type { RuntimeStore } from '../src/runtime/store.js';
 import { config, MemoryGitHub } from './helpers.js';
-import { MockPlanner } from '../src/llm/provider.js';
+import { StaticPlanner } from '../src/llm/provider.js';
 
 const servers: Server[] = [];
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve())))); });
@@ -16,7 +16,7 @@ async function fixture(merge?: { start: ReturnType<typeof vi.fn>; errors?: strin
   const store = { list: vi.fn(async () => []), events: vi.fn(async () => [{ key: 'run_failed:x', type: 'run_failed', issueNumber: 7 }]), findings: vi.fn(async () => [{ key: 'run_stuck:7:x', kind: 'run_stuck', issueNumber: 7 }]), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()),
     tryLocked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
   const managerToken = 'm'.repeat(32), workerToken = 'w'.repeat(32);
-  const server = runtimeServer({ managerToken, workerToken, bindings: [{ repository, controller, planner: new MockPlanner(), merge } as unknown as RuntimeBinding], store: store as unknown as RuntimeStore, ...(nudge ? { nudge } : {}) });
+  const server = runtimeServer({ managerToken, workerToken, bindings: [{ repository, controller, planner: new StaticPlanner(), merge } as unknown as RuntimeBinding], store: store as unknown as RuntimeStore, ...(nudge ? { nudge } : {}) });
   servers.push(server); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('No test listener');
   const call = (path: string, body?: unknown, token = managerToken, method?: string) => fetch(`http://127.0.0.1:${address.port}${path}`, {
@@ -108,7 +108,7 @@ describe('private runtime HTTP boundaries', () => {
     const controller = { observations: vi.fn(async () => []) }, seen: string[] = [];
     const store = { locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()),
     tryLocked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
-    const planner = (current: typeof cfg) => { seen.push(current.llm.provider); return new MockPlanner(); };
+    const planner = (current: typeof cfg) => { seen.push(current.llm.provider); return new StaticPlanner(); };
     const server = runtimeServer({ managerToken: 'm'.repeat(32), workerToken: 'w'.repeat(32), store: store as unknown as RuntimeStore,
       bindings: [{ repository: { repositoryId: 42, github, config: async () => cfg }, controller, planner } as unknown as RuntimeBinding] });
     servers.push(server); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -117,8 +117,8 @@ describe('private runtime HTTP boundaries', () => {
       headers: { Authorization: `Bearer ${'m'.repeat(32)}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ actor: 'maintainer' }) });
     cfg.llm.provider = 'openai'; expect((await reconcile()).status).toBe(200);
     // The repository is migrated to the deterministic planner while the broker keeps running.
-    cfg.llm.provider = 'mock'; expect((await reconcile()).status).toBe(200);
-    expect(seen).toEqual(['openai', 'mock']);
+    cfg.llm.provider = 'static'; expect((await reconcile()).status).toBe(200);
+    expect(seen).toEqual(['openai', 'static']);
   });
   it('does not expose upstream exceptions or accept oversized request bodies', async () => {
     const f = await fixture(); f.controller.gate.mockRejectedValueOnce(new Error('private database password'));

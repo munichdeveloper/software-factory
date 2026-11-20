@@ -3,14 +3,14 @@ import { startReconcileSchedule } from '../src/runtime/schedule.js';
 import type { RuntimeBinding } from '../src/runtime/server.js';
 import type { RuntimeStore } from '../src/runtime/store.js';
 import { config, MemoryGitHub } from './helpers.js';
-import { MockPlanner } from '../src/llm/provider.js';
+import { StaticPlanner } from '../src/llm/provider.js';
 
 const stops: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(stops.splice(0).map(stop => stop())); vi.useRealTimers(); vi.restoreAllMocks(); });
 function binding(repositoryId: number, engine: 'temporal' | 'actions' = 'temporal') {
   const cfg = config(); cfg.execution.engine = engine;
   const controller = { observations: vi.fn(async () => []) };
-  return { repository: { repositoryId, github: new MemoryGitHub(), config: async () => cfg }, controller, planner: new MockPlanner() } as unknown as RuntimeBinding;
+  return { repository: { repositoryId, github: new MemoryGitHub(), config: async () => cfg }, controller, planner: new StaticPlanner() } as unknown as RuntimeBinding;
 }
 const start = (...args: Parameters<typeof startReconcileSchedule>) => { const schedule = startReconcileSchedule(...args); stops.push(() => schedule.stop()); return schedule; };
 const store = () => ({ tryLocked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) });

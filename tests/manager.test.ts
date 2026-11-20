@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Manager, ownFields } from '../src/manager/index.js';
-import { compactContext, MockPlanner, OpenAIPlanner, proposal, type Planner } from '../src/llm/provider.js';
+import { compactContext, StaticPlanner, OpenAIPlanner, proposal, type Planner } from '../src/llm/provider.js';
 import { reconstruct } from '../src/state/reconstruct.js';
 import { executeDelegation } from '../src/workers/execute-delegation.js';
 import { decodeEvent, encodeEvent } from '../src/state/events.js';
@@ -8,7 +8,7 @@ import { clock, config, issue, MemoryGitHub, fakeHarness, finishedAttempt } from
 
 function setup(profile: 'advisory' | 'supervised' | 'autonomous' = 'autonomous') {
   const github = new MemoryGitHub(); const cfg = config(profile);
-  const run = (planner: Planner = new MockPlanner(), now = clock) => new Manager(github, cfg, planner, { correlationId: 'manager-test', now: () => now }).run();
+  const run = (planner: Planner = new StaticPlanner(), now = clock) => new Manager(github, cfg, planner, { correlationId: 'manager-test', now: () => now }).run();
   return { github, cfg, run };
 }
 describe('manager integration with simulated GitHub responses', () => {
@@ -57,7 +57,7 @@ describe('manager integration with simulated GitHub responses', () => {
   });
   it('8: cancels timed out runs before a retry can begin', async () => {
     const { github, run } = setup(); github.state.issues.push(issue()); await run();
-    await run(new MockPlanner(), new Date(clock.getTime() + 31 * 60000));
+    await run(new StaticPlanner(), new Date(clock.getTime() + 31 * 60000));
     expect(github.mutations).toContain('cancel:1'); expect(github.dispatches).toBe(1);
   });
   it('10: deduplicates follow-ups by stable semantic key across runs', async () => {
@@ -124,7 +124,7 @@ describe('manager integration with simulated GitHub responses', () => {
   });
   it('quarantines ambiguous dispatch without visible runs rather than retrying', async () => {
     const { github, run } = setup(); github.state.issues.push(issue()); await run(); github.state.runs = [];
-    const report = await run(new MockPlanner(), new Date(clock.getTime() + 11 * 60000));
+    const report = await run(new StaticPlanner(), new Date(clock.getTime() + 11 * 60000));
     expect(github.dispatches).toBe(1); expect(report.blockers.join(' ')).toContain('uncertain'); expect(github.state.issues[0]!.labels).toContain('harness:blocked');
   });
   it('processes asynchronous durable success without falsely closing the task', async () => {
@@ -214,12 +214,12 @@ describe('manager integration with simulated GitHub responses', () => {
   it('recovers quarantine after the original worker completes, with decision logs disabled', async () => {
     const { github, cfg, run } = setup(); cfg.reporting.persistDecisions = false; github.state.issues.push(issue());
     await run(); const original = structuredClone(github.state.runs[0]!); github.state.runs = [];
-    const later = new Date(clock.getTime() + 11 * 60000); await run(new MockPlanner(), later);
+    const later = new Date(clock.getTime() + 11 * 60000); await run(new StaticPlanner(), later);
     expect(github.state.issues[0]!.labels).toContain('harness:blocked');
     github.state.runs.push(original);
     const id = reconstruct(github.state, cfg, later)[0]!.latest!.input.executionId;
     await executeDelegation(github, cfg, 1, id, 'worker', fakeHarness); github.state.runs[0]!.status = 'completed';
-    await run(new MockPlanner(), later);
+    await run(new StaticPlanner(), later);
     expect(github.state.issues[0]!.labels).toContain('harness:awaiting-pr'); expect(github.dispatches).toBe(1);
   });
   it('retains automatic block origin through a crash after the label update', async () => {
@@ -231,7 +231,7 @@ describe('manager integration with simulated GitHub responses', () => {
   it('preserves a new human block after a quarantine resolves', async () => {
     const { github, run } = setup(); github.state.issues.push(issue()); await run();
     const original = structuredClone(github.state.runs[0]!); github.state.runs = [];
-    await run(new MockPlanner(), new Date(clock.getTime() + 11 * 60000));
+    await run(new StaticPlanner(), new Date(clock.getTime() + 11 * 60000));
     github.state.runs.push(original); await run(); expect(github.state.issues[0]!.labels).toContain('harness:running');
     github.labelBlock(1, true); await run(); expect(github.state.issues[0]!.labels).toContain('harness:blocked'); expect(github.dispatches).toBe(1);
   });

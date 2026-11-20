@@ -20,7 +20,7 @@ execution:
   workerTimeoutMinutes: 30
   dispatchGraceMinutes: 10
 llm:
-  provider: mock
+  provider: static
   model: gpt-4.1-mini
   reasoningEffort: null
   maxOutputTokens: 4000

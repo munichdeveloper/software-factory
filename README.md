@@ -32,7 +32,8 @@ source describes its pre-publication private distribution; this public release
 needs no cross-repository PAT or private-action sharing setup.
 
 Dispatch bootstrap once to create missing labels, then manager. Defaults are
-supervised and mock planning. To enable OpenAI, set `llm.provider: openai` and
+supervised and static planning (deterministic, no model: every startable issue
+by priority label, then number; the former name `mock` is still accepted). To enable OpenAI, set `llm.provider: openai` and
 the target Actions secret `OPENAI_API_KEY`. All project-level settings, including
 `factory.enabled`, `factory.scope`, autonomy overrides, worker limits and retries,
 belong in the SF configuration. The Harness has no such configuration.

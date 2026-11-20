@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { config, issue, MemoryGitHub } from './helpers.js';
 import { Manager } from '../src/manager/index.js';
-import { MockPlanner } from '../src/llm/provider.js';
+import { StaticPlanner } from '../src/llm/provider.js';
 import { prepareCoding, publishCoding, smallPullRequestGuidance, validateChanges, type CodingArtifact } from '../src/workers/coding.js';
 import { decodeEvent } from '../src/state/events.js';
 
@@ -10,7 +10,7 @@ async function fixture() {
   const cfg = config(); cfg.workers.test.enabled = false;
   cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false, smallPullRequests: true };
   const gh = new MemoryGitHub(); gh.state.issues = [issue()];
-  await new Manager(gh, cfg, new MockPlanner(), { correlationId: 'test' }).run();
+  await new Manager(gh, cfg, new StaticPlanner(), { correlationId: 'test' }).run();
   const intent = (await gh.comments(1)).map(c => decodeEvent(c, cfg.manager.trustedActors)).find(e => e?.data.type === 'intent')!;
   if (intent.data.type !== 'intent') throw new Error('No delegation');
   const id = intent.data.input.executionId;

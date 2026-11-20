@@ -37,7 +37,7 @@ const reviewGuard = (error: unknown) => error instanceof Error && error.message 
 const riskGuard = (error: unknown) => error instanceof Error && error.message === 'A real OpenAI risk assessor is required';
 
 export function routedReviewer(models: RoutedModels, config: Config, configured: MergeReviewer): MergeReviewer {
-  // A mock configuration is never reviewed: the configured reviewer refuses it, without asking the router first.
+  // A static configuration is never reviewed: the configured reviewer refuses it, without asking the router first.
   if (config.merge.review.provider === 'llm' && config.llm.provider !== 'openai') return configured;
   return { review: input => routedCall({ routing: models.routing, repository: models.repository, purpose: 'review', state: () => reviewRouterState(input),
     router: config.router, candidates: config.router?.review?.candidates, fatal: reviewGuard, configured: () => configured.review(input),

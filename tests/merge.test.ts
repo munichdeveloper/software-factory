@@ -174,7 +174,7 @@ it('uses real structured Responses review with no tools, keeps untrusted code in
     return new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(x.review) }] }] }));
   });
   expect(await new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).toEqual(x.review);
-  x.cfg.llm.provider = 'mock'; await expect(new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).rejects.toThrow('real OpenAI');
+  x.cfg.llm.provider = 'static'; await expect(new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).rejects.toThrow('real OpenAI');
   // An explicit OpenAI reviewer with deterministic planning; still never without a key.
   x.cfg.merge.review.provider = 'openai'; expect(await new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).toEqual(x.review);
   await expect(new OpenAIMergeReviewer('', x.cfg, fetcher).review(input)).rejects.toThrow('real OpenAI');

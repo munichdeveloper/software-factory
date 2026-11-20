@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 import { HarnessProcessClient } from '../src/workers/harness-client.js';
 import { executeDelegation } from '../src/workers/execute-delegation.js';
 import { Manager } from '../src/manager/index.js';
-import { MockPlanner } from '../src/llm/provider.js';
+import { StaticPlanner } from '../src/llm/provider.js';
 import { reconstruct } from '../src/state/reconstruct.js';
 import { config, issue, MemoryGitHub, clock } from './helpers.js';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -23,7 +23,7 @@ it('passes the pinned Harness coding schemas through SF authorization and public
   cfg.workers.test.enabled = false;
   cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
   const repository = { async base() { return { sha: 'c'.repeat(40), branch: 'main' }; }, async publish() { return 'https://github.com/owner/target/pull/2'; } };
-  await new Manager(github, cfg, new MockPlanner(), { correlationId: 'integration', now: () => clock }).run();
+  await new Manager(github, cfg, new StaticPlanner(), { correlationId: 'integration', now: () => clock }).run();
   const id = reconstruct(github.state, cfg, clock)[0]!.latest!.input.executionId;
   const prepared = (await prepareCoding(github, cfg, repository, 1, id, 'integration'))!;
   const ajv = new Ajv2020({ strict: false });
@@ -39,7 +39,7 @@ it('passes the pinned Harness coding schemas through SF authorization and public
 });
 it('runs SF planning → separate Harness process → durable result → later SF reconciliation', async () => {
   const github = new MemoryGitHub(), cfg = config(); github.state.issues.push(issue());
-  const manager = () => new Manager(github, cfg, new MockPlanner(), { correlationId: 'integration', now: () => clock }).run();
+  const manager = () => new Manager(github, cfg, new StaticPlanner(), { correlationId: 'integration', now: () => clock }).run();
   await manager(); const id = reconstruct(github.state, cfg, clock)[0]!.latest!.input.executionId;
   const result = await executeDelegation(github, cfg, 1, id, 'worker', runtime);
   expect(result.status).toBe('success'); expect(result.artifacts[0]).toMatch(/^urn:sha256:[a-f0-9]{64}$/);

@@ -8,7 +8,7 @@ export function temporalInstallationVariant(harnessSha: string): InstallationCon
   const placeholder = 'f'.repeat(40);
   const config = configSchema.parse({ version: 1, factory: { enabled: false, scope: 'Implement explicitly authorized managed issues and publish review Draft PRs.' },
     manager: { trustedActors: ['github-actions[bot]'] },
-    execution: { engine: 'temporal' }, llm: { provider: 'mock' },
+    execution: { engine: 'temporal' }, llm: { provider: 'static' },
     autonomy: { profile: 'autonomous', overrides: { merge_pr: 'deny', close_issue: 'deny', create_followup: 'deny', expand_scope: 'deny' } },
     workers: { test: { enabled: false }, coding: { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null } },
     merge: { enabled: false }, deploy: { enabled: false } });

@@ -11,14 +11,17 @@ export const proposal = (task: Task, kind: Action['kind'], reason: string, value
   attempt: ['start_worker', 'retry_worker'].includes(kind) ? task.nextAttempt : null,
   followup: null, reason, ...values
 });
-export class MockPlanner implements Planner {
+/** The deterministic planner of llm.provider static: no model call, every startable task by priority label, then number. */
+export class StaticPlanner implements Planner {
   async plan(tasks: Task[], config: Config): Promise<Plan> {
     return { version: 1, actions: tasks.filter(t => !t.blocked && !t.latest && !t.refusal?.waiting && !t.hasOpenPR && !t.hasClosingMerge && t.issue.state === 'open' && !t.executions.some(e => e.active))
       .sort((a, b) => priority(a) - priority(b) || a.issue.number - b.issue.number)
       .slice(0, config.manager.maxContextTasks)
-      .map(t => proposal(t, 'start_worker', 'Runnable task selected by deterministic mock planner')) };
+      .map(t => proposal(t, 'start_worker', 'Runnable task selected by deterministic static planner')) };
   }
 }
+/** @deprecated Former name of StaticPlanner. */
+export const MockPlanner = StaticPlanner;
 function priority(t: Task): number { return t.issue.labels.includes('harness:priority-high') ? 0 : t.issue.labels.includes('harness:priority-low') ? 2 : 1; }
 export const systemPrompt = `You are the planning component of Software Factory v0.1.
 Return only the schema-conforming execution plan. You have no tools or GitHub credentials.

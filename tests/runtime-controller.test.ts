@@ -6,7 +6,7 @@ import { executorWrapper } from '../src/runtime/coding-executor.js';
 import { RuntimeStore, type StoredRun } from '../src/runtime/store.js';
 import { type Admission, type RuntimeRelease } from '../src/runtime/contract.js';
 import { Manager } from '../src/manager/index.js';
-import { MockPlanner } from '../src/llm/provider.js';
+import { StaticPlanner } from '../src/llm/provider.js';
 import { clock, config, issue, MemoryGitHub } from './helpers.js';
 import { hash } from '../src/state/identity.js';
 import type { WorkerResult } from '../src/workers/contract.js';
@@ -54,7 +54,7 @@ async function fixture(requireHumanGate = true, coding = false) {
   const cfg = config(), github = new MemoryGitHub(); cfg.execution.engine = 'temporal'; github.state.issues.push(issue());
   if (coding) cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null };
   let admission!: Admission;
-  await new Manager(github, cfg, new MockPlanner(), { correlationId: 'prepare', now: () => clock,
+  await new Manager(github, cfg, new StaticPlanner(), { correlationId: 'prepare', now: () => clock,
     workerRuntime: { observations: async () => [], cancel: async () => {}, start: async value => { admission = value; throw new Error('test captures admission'); } } }).run();
   const store = new MemoryStore(), runId = '00000000-0000-4000-8000-000000000001';
   let status = 'RUNNING';
