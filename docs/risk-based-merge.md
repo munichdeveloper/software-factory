@@ -109,15 +109,22 @@ sind vom Autor kontrolliert und das naheliegende Mittel, um ein Modell zu „das
 Bewertung stützt sich nur auf das, was der Code tatsächlich ändert.
 
 Faktoren (feste Aufzählung, damit Auswertungen möglich sind): `data_schema`, `data_loss`, `security`, `auth`,
-`payments`, `external_integration`, `public_api`, `runtime_config`, `dependency`, `business_logic`, `ui`, `docs`,
+`permissions`, `payments`, `external_integration`, `public_api`, `runtime_config`, `dependency`, `business_logic`, `ui`, `docs`,
 `tests`, `test_coverage`, `size`.
 
-**Schritt 4: Größenregel.** Zusätzlich deterministisch: Überschreitet die Änderung `merge.risk.maxLowRiskLines`
-geänderte Zeilen (Default 300), ist die Klasse mindestens `medium`, über `merge.risk.maxMediumRiskLines` (Default
-800) mindestens `high`. Die zweite Stufe ist bei der Schwelle `medium` die eigentliche Bremse. Große Änderungen sind schwer zu überblicken, egal was
-sie berühren.
+**Inhaltsregel (#209).** Der Inhalt bestimmt das Risiko, nicht die Größe. Jede Änderung an Authentifizierung,
+Berechtigungen (Rollen, Zugriffsrechte, Autorisierungsprüfungen) oder an allem, wo Geld im Spiel ist (Zahlungen,
+Abrechnung, Preise, Rechnungen, Guthaben), ist mindestens `high`, auch wenn sie nur eine Zeile umfasst. Das Modell
+benennt sie mit den Faktoren `auth`, `permissions` oder `payments`; nennt die Bewertung einen davon, hebt die Factory
+die Klasse deterministisch auf mindestens `high`, auch wenn das Modell niedriger eingestuft hat.
 
-**Ergebnis.** `class = max(KI, Mindestklassen der Bereiche, Größenregel)`, bzw. `critical`, wenn eingebaute Pfade
+**Schritt 4: Größenregel.** Zusätzlich deterministisch: Überschreitet die Änderung `merge.risk.maxLowRiskLines`
+geänderte Zeilen (Default 300), ist die Klasse mindestens `medium`. `high` allein wegen der Größe gilt erst über
+`merge.risk.maxMediumRiskLines` geänderten Zeilen (Default 5000, bis #209: 800) oder über
+`merge.risk.maxMediumRiskFiles` geänderten Dateien (Default 100). Eine harmlose Änderung von 4900 Zeilen ist also
+`medium` wegen ihrer Größe.
+
+**Ergebnis.** `class = max(KI, Inhaltsregel, Mindestklassen der Bereiche, Größenregel)`, bzw. `critical`, wenn eingebaute Pfade
 berührt sind. Die Herkunft wird mitgespeichert (`source: builtin | areas | ai`), damit im PR sichtbar ist, warum eine
 Klasse gilt.
 
@@ -191,7 +198,8 @@ merge:
     autoMergeUpTo: medium       # low | medium | high; critical nie
     aboveThreshold: approval    # approval = /harness approve, block = Mensch merged selbst
     maxLowRiskLines: 300        # mehr geänderte Zeilen: mindestens medium
-    maxMediumRiskLines: 800     # mehr geänderte Zeilen: mindestens high
+    maxMediumRiskLines: 5000    # mehr geänderte Zeilen: mindestens high
+    maxMediumRiskFiles: 100     # mehr geänderte Dateien: mindestens high (optional)
     assessor:
       provider: llm             # wie merge.review.provider; static (früher mock) bewertet immer critical
       model: gpt-6.1-sol

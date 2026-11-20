@@ -49,7 +49,8 @@ Generated JSON schemas share the executable Zod source.
 | `merge.risk.mode` | `enforce` | `enforce` gates merges by risk class; `observe` only classifies and shows |
 | `merge.risk.autoMergeUpTo` | `medium` | Highest class the Factory merges on its own: `low`, `medium`, `high`; `critical` never |
 | `merge.risk.aboveThreshold` | `approval` | `approval` asks for `/harness approve`; `block` leaves the merge to a person |
-| `merge.risk.maxLowRiskLines`/`maxMediumRiskLines` | `300`/`800` | More changed lines make a change at least `medium`/`high` |
+| `merge.risk.maxLowRiskLines`/`maxMediumRiskLines` | `300`/`5000` | More changed lines make a change at least `medium`/`high` |
+| `merge.risk.maxMediumRiskFiles` | `100` | More changed files make a change at least `high`; optional, leaving it out keeps the configuration hash |
 | `merge.risk.assessor` | `{provider: llm, model: gpt-6.1-sol, reasoningEffort: medium, timeoutSeconds: 90}` | AI assessor; `llm` follows `llm.provider`, a static configuration fails closed (critical) |
 | `merge.risk.guidance` | `null` | Trusted project hint for the assessor, at most 2000 characters |
 | `merge.risk.areas` | `[]` | Up to 30 `{name, paths, class}` with relative globs (`*`, `?`, `**`); lower the class only when they cover every changed file, otherwise a minimum |

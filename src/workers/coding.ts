@@ -43,8 +43,8 @@ export function validateChanges(artifact: CodingArtifact): void {
   if (total > 5000000) throw new Error('Artifact exceeds publication limit');
 }
 /**
- * Small, single-concern pull requests are reviewed more reliably and rank lower in the planned risk-based merge, whose
- * size rule (more than 800 changed lines) stays the hard limit. Sent when `workers.coding.smallPullRequests` is on.
+ * Small, single-concern pull requests are reviewed more reliably and are easier to keep within the risk-based merge's
+ * threshold. Sent when `workers.coding.smallPullRequests` is on.
  */
 export const smallPullRequestGuidance = '\n\nFactory working rule, small pull requests: keep this change to the one concern of this task. Change only what the task and its acceptance criteria need: no drive-by refactoring, renaming, reformatting, dependency upgrades or unrelated fixes, even where they look worthwhile; mention them in your summary instead. If the task bundles several independent concerns or is too large for one reviewable change, do not build one large change: make no changes, report `blocked` and name in your summary how to split it into follow-up tasks, one concern each.';
 

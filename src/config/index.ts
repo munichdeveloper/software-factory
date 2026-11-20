@@ -215,7 +215,10 @@ export const configSchema = z.strictObject({
       mode: z.enum(['enforce', 'observe']).default('enforce'),
       autoMergeUpTo: z.enum(['low', 'medium', 'high']).default('medium'),
       aboveThreshold: z.enum(['approval', 'block']).default('approval'),
-      maxLowRiskLines: bounded(1, 100000, 300), maxMediumRiskLines: bounded(1, 100000, 800),
+      // Size says little about risk: only very large changes are high because of size alone, content decides (#209).
+      maxLowRiskLines: bounded(1, 100000, 300), maxMediumRiskLines: bounded(1, 100000, 5000),
+      // Optional without a default (100 applies, defaultMaxMediumRiskFiles in merge/risk.ts).
+      maxMediumRiskFiles: z.number().int().min(1).max(10000).optional(),
       assessor: z.strictObject({
         provider: z.enum(['llm', 'openai']).default('llm'),
         model: z.string().min(1).max(100).default('gpt-6.1-sol'),
