@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { attention, deriveEvents, RuntimeEvents, type RuntimeEvent } from '../src/runtime/events.js';
 import type { Execution, Task } from '../src/state/reconstruct.js';
 import { clock, config, issue } from './helpers.js';
@@ -80,4 +80,43 @@ it('records events idempotently through the store and never throws', async () =>
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   const { MemoryGitHub } = await import('./helpers.js');
   await expect(recorder.observed({ repositoryId: 1, repository: 'owner/target' }, config(), new MemoryGitHub().state)).resolves.toEqual([]);
+});
+
+describe('Slack notifications of runtime events', () => {
+  const at = (minutes: number) => new Date(clock.getTime() + minutes * 60000).toISOString();
+  const event = (type: RuntimeEvent['type'], data: RuntimeEvent['data'], minutes = 0): RuntimeEvent =>
+    ({ key: `${type}:${minutes}:${JSON.stringify(data)}`, type, issueNumber: 7, taskVersion: version, executionId: id(0), at: at(minutes), data });
+  const setup = (events: RuntimeEvent[]) => {
+    const cfg = config(); cfg.notifications.slack.enabled = true; cfg.notifications.slack.channel = '#ki-notification';
+    const claimed = new Set<string>();
+    const store = { recordEvents: vi.fn(async () => events), claimUsageAlert: vi.fn(async (key: string) => !claimed.has(key) && !!claimed.add(key)) };
+    const alerts = { post: vi.fn(async () => {}) };
+    const recorder = new RuntimeEvents(store, () => new Date(at(10)), alerts);
+    return { cfg, alerts, observe: () => recorder.notify({ repositoryId: 1, repository: 'owner/target' }, cfg, events) };
+  };
+  it('posts only subscribed events to the rule channel, repository-wide refusals once per day, and nothing old', async () => {
+    const events = [event('attention_required', { reason: 'retries_exhausted', attempts: 3, error: 'X_FAILED' }),
+      event('start_refused', { code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', refusals: 1, retryAt: at(15), repositoryWide: true }),
+      event('start_refused', { code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', refusals: 1, retryAt: at(15), repositoryWide: true }, 1),
+      event('start_refused', { code: 'APPROVAL_REQUIRED', refusals: 1, retryAt: at(15), repositoryWide: false }),
+      event('validation_failed', { reason: 'CHECK_FAILED', steps: [{ name: 'browser', exitCode: 1 }], validationRunId: 5, attempt: 0, next: 'rework' }),
+      event('attention_required', { reason: 'blocked_without_pr', attempts: 0, error: null }, -7 * 60)];
+    const x = setup(events);
+    x.cfg.notifications.slack.events.attention_required = { enabled: true, channel: '#factory-todo' };
+    x.cfg.notifications.slack.events.start_refused = { enabled: true, channel: '#factory-todo' };
+    await x.observe();
+    expect(x.alerts.post.mock.calls.map(c => c[0])).toEqual(['#factory-todo', '#factory-todo']);
+    const [attentionText, refusedText] = x.alerts.post.mock.calls.map(c => c[1] as string);
+    expect(attentionText).toContain('SF braucht dich: owner/target#7'); expect(attentionText).toContain('alle Versuche sind aufgebraucht');
+    expect(refusedText).toContain('über den SF Manager ausrollen');
+  });
+  it('stays silent without a rule or with Slack disabled; validation failures only when subscribed', async () => {
+    const failed = event('validation_failed', { reason: 'CHECK_FAILED', steps: [{ name: 'browser', exitCode: 1 }], validationRunId: 5, attempt: 0, next: 'rework' });
+    const x = setup([failed]);
+    await x.observe(); expect(x.alerts.post).not.toHaveBeenCalled();
+    x.cfg.notifications.slack.events.validation_failed = { enabled: true, channel: null };
+    await x.observe();
+    expect(x.alerts.post).toHaveBeenCalledWith('#ki-notification', expect.stringContaining('Schritt: browser (Exit 1). Nächster Schritt: Nachbesserung startet automatisch'));
+    x.cfg.notifications.slack.enabled = false; await x.observe(); expect(x.alerts.post).toHaveBeenCalledTimes(1);
+  });
 });

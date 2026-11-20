@@ -9,6 +9,11 @@ Status: **in Umsetzung** (Issue #188, verwandt: #189). Alle Entscheidungen sind 
   `rework_exhausted` und `blocked_without_pr`. Lesen: `GET /v1/repositories/{id}/events?since=<ISO>` (Manager-Token)
   und `GET /v1/events?since=<ISO>` (Manager- oder Monitor-Token); ohne `since` die letzten 24 Stunden, höchstens
   30 Tage zurück, höchstens 500 Ereignisse, älteste zuerst.
+- Schritt 2 (Slack) umgesetzt: `notifications.slack.events.{validation_failed,start_refused,attention_required}`
+  (`enabled`, `channel`, ohne Default). Der Broker postet neue Ereignisse mit dem Bot-Token; `start_refused` nur für
+  repo-weite Codes, einmal pro Repository, Code und Tag. Ereignisse, die älter als 6 Stunden sind (etwa der erste
+  Abgleich nach dem Deploy), werden nur gespeichert. Empfehlung laut Entscheidung 3: `attention_required` und
+  `start_refused` mit `channel: C0CJZDHJMSB` (`#factory-todo`), `validation_failed` aus.
 
 Dieses Dokument beschreibt, wie der Broker einen gescheiterten Prüfschritt, einen abgelehnten Start oder einen
 festhängenden Lauf als **Ereignis** veröffentlicht. Wer will, kann es abonnieren: Slack, der Factory-Monitor, ein

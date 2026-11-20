@@ -1,4 +1,5 @@
 import type { Config } from '../config/index.js';
+import type { SanityAlertSink } from '../notifications/sanity-alerts.js';
 import type { Snapshot } from '../types.js';
 import { admissionBackoffMinutes, infrastructureFailureCode, reconstruct, type Execution, type Task } from '../state/reconstruct.js';
 
@@ -94,11 +95,45 @@ export interface StoredRuntimeEvent extends RuntimeEvent { id: number; repositor
 export interface RuntimeEventStore {
   /** Stores events not yet known by key; returns the ones that are new. */
   recordEvents(repositoryId: number, repository: string, events: RuntimeEvent[]): Promise<RuntimeEvent[]>;
+  /** True exactly once per key and kind (Slack deduplication across reconciliations and broker restarts). */
+  claimUsageAlert(key: string, kind: string): Promise<boolean>;
+}
+
+/** Only facts this recent are posted: the first reconciliation after a deploy records older ones silently. */
+export const notifyWithinMs = 6 * 3600000;
+const attentionText: Record<typeof attentionReasons[number], string> = {
+  retries_exhausted: 'alle Versuche sind aufgebraucht', rework_exhausted: 'die Validierung scheitert auch nach allen Nachbesserungen',
+  blocked_without_pr: 'die Aufgabe ist ohne PR blockiert',
+};
+const refusalHint: Record<string, string> = {
+  EXECUTOR_WRAPPER_RELEASE_MISMATCH: 'Der Wrapper im Repository passt nicht zum Release des Hosts; die Factory-Version über den SF Manager ausrollen.',
+  UNKNOWN_WORKER_DEPLOYMENT_VERSION: 'Der Host kennt die Worker-Version nicht; Deployment der Laufzeit prüfen.',
+  CODING_EXECUTOR_UNAVAILABLE: 'Der Coding-Executor ist nicht erreichbar.',
+  WORKER_READINESS_FAILED: 'Die Worker sind nicht bereit.',
+  POLICY_MISMATCH: 'Die Policy des Repositories passt nicht zur Laufzeit.',
+};
+/** The Slack text of one event: repository, issue, what happened and what the Factory does next. Fixed codes only. */
+export function eventText(repository: string, e: RuntimeEvent): string {
+  const issue = `https://github.com/${repository}/issues/${e.issueNumber}`;
+  if (e.type === 'attention_required') {
+    return `SF braucht dich: ${repository}#${e.issueNumber}\nDie Factory kommt nicht mehr automatisch weiter: ${attentionText[e.data.reason as typeof attentionReasons[number]] ?? String(e.data.reason)} ` +
+      `(${String(e.data.attempts)} Versuch(e)${e.data.error ? `, letzter Fehler ${String(e.data.error)}` : ''}).\n${issue}`;
+  }
+  if (e.type === 'start_refused') {
+    return `SF Starts abgelehnt: ${repository}\nCode ${String(e.data.code)}; das betrifft alle Issues des Repositories. ${refusalHint[String(e.data.code)] ?? ''}`.trim() +
+      `\nNächster Versuch frühestens ${String(e.data.retryAt).slice(0, 16).replace('T', ' ')} UTC. Zuerst gesehen bei ${issue}`;
+  }
+  if (e.type === 'validation_failed') {
+    const steps = Array.isArray(e.data.steps) && e.data.steps.length ? e.data.steps.map(s => `${s.name} (Exit ${s.exitCode ?? '?'})`).join(', ') : String(e.data.reason);
+    return `SF Validierung fehlgeschlagen: ${repository}#${e.issueNumber}\nSchritt: ${steps}. Nächster Schritt: ${e.data.next === 'rework' ? 'Nachbesserung startet automatisch' : 'keiner automatisch'}.` +
+      `\n${issue}\nValidierungslauf: https://github.com/${repository}/actions/runs/${String(e.data.validationRunId)}`;
+  }
+  return `SF ${e.type}: ${repository}#${e.issueNumber}\n${issue}`;
 }
 
 /** Records the events of every completed reconciliation. Never throws: events never block the Factory. */
 export class RuntimeEvents {
-  constructor(private store: RuntimeEventStore, private now: () => Date = () => new Date()) {}
+  constructor(private store: RuntimeEventStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink) {}
   async observed(target: { repositoryId: number; repository: string }, config: Config, snapshot: Snapshot | undefined): Promise<RuntimeEvent[]> {
     if (!snapshot) return [];
     try {
@@ -106,10 +141,30 @@ export class RuntimeEvents {
       const added = found.length ? await this.store.recordEvents(target.repositoryId, target.repository, found) : [];
       if (added.length) console.log(JSON.stringify({ event: 'factory-runtime-events', repositoryId: target.repositoryId,
         added: added.map(e => ({ type: e.type, issue: e.issueNumber, ...(e.data.code ? { code: e.data.code } : {}), ...(e.data.reason ? { reason: e.data.reason } : {}) })) }));
+      await this.notify(target, config, added);
       return added;
     } catch {
       console.warn(JSON.stringify({ event: 'factory-runtime-events-failed', repositoryId: target.repositoryId }));
       return [];
+    }
+  }
+  /**
+   * Posts new events the configuration subscribes to (notifications.slack.events). Decision 3 of the concept: Slack is for
+   * what needs a person (attention_required) and for refusals that stop a whole repository; every event stays in the
+   * store and the monitor. At most once: a message lost to Slack is not repeated.
+   */
+  async notify(target: { repositoryId: number; repository: string }, config: Config, added: RuntimeEvent[]) {
+    const slack = config.notifications.slack;
+    if (!this.alerts || !slack.enabled) return;
+    const now = this.now().getTime();
+    for (const e of added) {
+      if (e.type !== 'validation_failed' && e.type !== 'start_refused' && e.type !== 'attention_required') continue;
+      const rule = slack.events[e.type], channel = rule?.channel ?? slack.channel;
+      if (!rule?.enabled || !channel || now - Date.parse(e.at) > notifyWithinMs) continue;
+      if (e.type === 'start_refused' && (!e.data.repositoryWide ||
+        !await this.store.claimUsageAlert(`${target.repositoryId}:${String(e.data.code)}:${this.now().toISOString().slice(0, 10)}`, 'start_refused'))) continue;
+      try { await this.alerts.post(channel, eventText(target.repository, e)); }
+      catch { console.warn(JSON.stringify({ event: 'factory-runtime-event-alert-failed', repositoryId: target.repositoryId, type: e.type })); }
     }
   }
 }

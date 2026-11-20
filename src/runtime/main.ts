@@ -295,7 +295,7 @@ export async function main(args = process.argv.slice(2)) {
     // Cost analytics (GET /v1/analytics, same token as the queue): issue titles and merges from each reconciliation.
     const analytics = new AnalyticsIssueSync(store);
     // Runtime events (issue #188): failed validations, refused and resumed starts, failed runs, tasks that need a person.
-    const events = new RuntimeEvents(store);
+    const events = new RuntimeEvents(store, undefined, process.env.SLACK_BOT_TOKEN ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined);
     const serverOptions = { monitor, queue, analytics, events, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
       monitorToken: process.env.FACTORY_MONITOR_TOKEN ?? '', ...(notifications ? { notifications } : {}) };
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
