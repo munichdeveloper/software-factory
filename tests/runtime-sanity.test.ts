@@ -23,6 +23,8 @@ const settings = monitoringSettings(config());
 const kinds = (found: Finding[]) => found.map(f => `${f.kind}#${f.issueNumber}`);
 const repo = { repositoryId: 1, repository: 'owner/target' };
 const later = (minutes: number) => new Date(clock.getTime() + minutes * 60000);
+/** A clock that moves on by one 3-minute step per pass, like the schedule the thresholds were written for. */
+const ticking = () => { let at = clock.getTime(); return () => new Date(at += 180000); };
 
 it('reports a run that outlives its worker timeout plus the grace, and a long approval wait', () => {
   const running = task(1, { executions: [execution(0, {}, 'running')] });
@@ -77,7 +79,7 @@ const snapshot = (labels: string[]) => ({ issues: [{ ...issue(1, labels), create
 
 it('counts a status that never settles and failing reconciliations over passes, and resolves them when they recover', async () => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
-  const store = new MemoryFindings(), monitor = new SanityMonitor(store, () => clock), cfg = config();
+  const store = new MemoryFindings(), monitor = new SanityMonitor(store, ticking()), cfg = config();
   cfg.monitoring = { stalledPasses: 3 };
   // awaiting-pr without any pull request: the derived status differs, every pass.
   for (let i = 0; i < 2; i++) await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:awaiting-pr']), report());
@@ -88,11 +90,25 @@ it('counts a status that never settles and failing reconciliations over passes, 
   expect([...store.open.keys()]).toEqual([]);
 
   for (let i = 0; i < 3; i++) await monitor.failed(repo, 'OPERATION_FAILED');
-  expect([...store.open.values()].map(f => f.detail)).toEqual(['3 reconciliations in a row failed (OPERATION_FAILED)']);
+  expect([...store.open.values()].map(f => f.detail)).toEqual(['Reconciliations have failed for 6 minutes (3 in a row: OPERATION_FAILED)']);
   for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report());
   expect(store.open.size).toBe(0);
   for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, snapshot(['harness:managed', 'harness:backlog']), report(['LLM planning failed (LLM_HTTP_429); deterministic reconciliation remains available']));
-  expect([...store.open.values()].map(f => f.detail)).toEqual(['3 reconciliations in a row reported errors (LLM_HTTP_429)']);
+  expect([...store.open.values()].map(f => f.detail)).toEqual(['Reconciliations have reported errors for 6 minutes (3 in a row: LLM_HTTP_429)']);
+});
+
+it('measures streaks in time, so a burst of webhook reconciliations opens nothing (#197)', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  let at = clock.getTime();
+  const store = new MemoryFindings(), monitor = new SanityMonitor(store, () => new Date(at)), cfg = config();
+  cfg.monitoring = { stalledPasses: 3 };
+  const stuck = snapshot(['harness:managed', 'harness:awaiting-pr']);
+  // Ten reconciliations within two minutes: below the 6 minutes that 3 passes of the old 3-minute schedule meant.
+  for (let i = 0; i < 10; i++) { at += 12000; await monitor.observed(repo, cfg, stuck, report()); }
+  expect(store.open.size).toBe(0);
+  // Two safety-net passes 15 minutes apart: the streak lasted long enough.
+  at += 900000; await monitor.observed(repo, cfg, stuck, report());
+  expect([...store.open.values()].map(f => f.detail)).toEqual(['Status awaiting-pr should be backlog but has not changed for 17 minutes (11 reconciliations)']);
 });
 
 it('neither flaps on a single clean pass nor reports a failing reconciliation as solved after a broker restart', async () => {
@@ -100,7 +116,7 @@ it('neither flaps on a single clean pass nor reports a failing reconciliation as
   const alerts = { post: vi.fn(async () => {}) }, store = new MemoryFindings(), cfg = config();
   cfg.monitoring = { stalledPasses: 3, channel: 'C0123456789' };
   const fine = snapshot(['harness:managed', 'harness:backlog']), failing = report(['LLM planning failed (LLM_HTTP_429); deterministic reconciliation remains available']);
-  let monitor = new SanityMonitor(store, () => clock, alerts);
+  let monitor = new SanityMonitor(store, ticking(), alerts);
   for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, fine, failing);
   // One pass that did not need the planner, then errors again: still the same open finding, no further message.
   await monitor.observed(repo, cfg, fine, report());
@@ -108,7 +124,7 @@ it('neither flaps on a single clean pass nor reports a failing reconciliation as
   expect([...store.open.keys()]).toEqual(['reconcile_failing:-']);
   expect(alerts.post).toHaveBeenCalledTimes(1);
   // A restart forgets the streak: neither a clean pass nor a failed one decides until a full streak was seen.
-  monitor = new SanityMonitor(store, () => clock, alerts);
+  monitor = new SanityMonitor(store, ticking(), alerts);
   await monitor.observed(repo, cfg, fine, report());
   await monitor.failed(repo, 'OPERATION_FAILED');
   for (let i = 0; i < 2; i++) await monitor.observed(repo, cfg, fine, report());
@@ -139,7 +155,7 @@ it('stays silent where a repository turns it off and never lets a store failure 
 it('posts new and resolved findings once to the configured or the notifications channel, and survives a Slack failure', async () => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-  const alerts = { post: vi.fn(async () => {}) }, store = new MemoryFindings(), monitor = new SanityMonitor(store, () => clock, alerts), cfg = config();
+  const alerts = { post: vi.fn(async () => {}) }, store = new MemoryFindings(), monitor = new SanityMonitor(store, ticking(), alerts), cfg = config();
   cfg.monitoring = { stalledPasses: 2 };
   const stuck = snapshot(['harness:managed', 'harness:awaiting-pr']), fine = snapshot(['harness:managed', 'harness:backlog']);
   for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, stuck, report());
@@ -149,7 +165,7 @@ it('posts new and resolved findings once to the configured or the notifications 
   for (let i = 0; i < 3; i++) await monitor.observed(repo, cfg, stuck, report());
   await monitor.observed(repo, cfg, fine, report());
   expect(alerts.post.mock.calls).toEqual([
-    ['#factory', 'SF Sanity-Check: owner/target\nNeue Probleme:\n• Status stellt sich nicht ein – https://github.com/owner/target/issues/1\n  Status awaiting-pr should be backlog but has not changed for 2 reconciliations'],
+    ['#factory', 'SF Sanity-Check: owner/target\nNeue Probleme:\n• Status stellt sich nicht ein – https://github.com/owner/target/issues/1\n  Status awaiting-pr should be backlog but has not changed for 3 minutes (2 reconciliations)'],
     ['#factory', 'SF Sanity-Check: owner/target\nBehoben:\n• Status stellt sich nicht ein – https://github.com/owner/target/issues/1'],
   ]);
   cfg.monitoring = { stalledPasses: 2, channel: 'C0123456789' }; alerts.post.mockRejectedValueOnce(new Error('xoxb-secret'));

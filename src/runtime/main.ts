@@ -21,7 +21,7 @@ import { hash } from '../state/identity.js';
 import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract.js';
 import { RuntimeStore, type Registration } from './store.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
-import { startReconcileSchedule } from './schedule.js';
+import { startReconcileSchedule, type ReconcileSchedule } from './schedule.js';
 import { QueueBoard } from './queue.js';
 import { AnalyticsIssueSync } from './analytics.js';
 import { configurePrices, setLlmCallSink } from '../llm/analytics.js';
@@ -288,8 +288,9 @@ export async function main(args = process.argv.slice(2)) {
     const notifications = process.env.SLACK_BOT_TOKEN ? new SlackSink(process.env.SLACK_BOT_TOKEN) : undefined;
     const monitor = new SanityMonitor(store, undefined, process.env.SLACK_BOT_TOKEN ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined);
     // The broker reconciles its repositories itself; 0 leaves it to external callers (the SF Manager) as before.
-    // 180 s like the Manager did: one pass costs about 150 GitHub requests, once a minute already exceeds an App
-    // installation's 5000 requests per hour.
+    // 180 s like the Manager did. A pass over all repositories counts about 280 requests against the App installation's
+    // 5000 per hour (2026-11-20, 8 repositories), so a shorter interval runs into the limit. Fast reactions come from
+    // webhook nudges instead (software-factory#197); with them the schedule is only a safety net (900 s).
     const interval = z.coerce.number().int().min(0).max(3600).parse(process.env.FACTORY_RECONCILE_INTERVAL_SECONDS ?? '180');
     // The job queue view for software-factory-monitor; FACTORY_MONITOR_TOKEN opens it read-only (unset: manager token only).
     const queue = new QueueBoard(undefined, interval || null);
@@ -298,20 +299,26 @@ export async function main(args = process.argv.slice(2)) {
     // Runtime events (issue #188): failed validations, refused and resumed starts, failed runs, tasks that need a person.
     const events = new RuntimeEvents(store, undefined, process.env.SLACK_BOT_TOKEN ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined,
       new EventWebhooks(process.env.FACTORY_WEBHOOK_SECRET || undefined));
-    const serverOptions = { monitor, queue, analytics, events, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
+    // The schedule starts after the servers listen; a nudge that arrives before is refused and the next webhook or pass catches up.
+    const scheduled: { current?: ReconcileSchedule } = {};
+    const nudge = (repositoryId: number) => scheduled.current?.nudge(repositoryId) ?? false;
+    const serverOptions = { monitor, queue, analytics, events, nudge, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
       monitorToken: process.env.FACTORY_MONITOR_TOKEN ?? '', ...(notifications ? { notifications } : {}) };
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     const addresses = await listenAddresses(process.env.FACTORY_RUNTIME_LISTEN_ALIAS);
     // One server per address; they share the options, so a registration through either is served by both.
     const servers = addresses.map(() => runtimeServer(serverOptions));
     await Promise.all(servers.map((server, i) => new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, addresses[i], resolve); })));
-    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, queue, analytics, events, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
-    // Off unless the deployment turns it on: the App needs Administration and Variables write for it.
+    const schedule = scheduled.current = startReconcileSchedule(bindings, { store, monitor, queue, analytics, events, ...(notifications ? { notifications } : {}) }, interval * 1000);
+    const stopSchedule = () => schedule.stop();
+    // Off unless the deployment turns it on: the App needs Administration and Variables write for it. Own interval
+    // (software-factory#197): refused jobs must move to the own runner quickly even when the schedule runs every 15 minutes.
+    const runnerInterval = z.coerce.number().int().min(60).max(3600).parse(process.env.FACTORY_RUNNER_INTERVAL_SECONDS ?? '180');
     const stopRunners = process.env.FACTORY_RUNNER_FALLBACK === 'on' ? (() => {
       const channel = process.env.FACTORY_RUNNER_ALERT_CHANNEL, slack = process.env.SLACK_BOT_TOKEN && channel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;
       const fallback = new RunnerFallback(runnerPorts, slack ? { alerts: { post: text => slack.post(channel!, text) } } : {});
       const slots = process.env.FACTORY_RUNNER_SLOTS_DIR;
-      return startRunnerFallback(fallback, slots ? new RunnerDispenser(fallback, slots) : null, Math.max(interval, 60) * 1000);
+      return startRunnerFallback(fallback, slots ? new RunnerDispenser(fallback, slots) : null, runnerInterval * 1000);
     })() : () => {};
     const report = usageSink && usageChannel ? setInterval(() => { void dailyUsageReport(store, usageSink, usageChannel, new Date()).catch(() => undefined); }, 600000) : undefined;
     report?.unref();

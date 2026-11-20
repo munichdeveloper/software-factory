@@ -80,7 +80,21 @@ export function dependencyCycles(tasks: Task[]): number[][] {
 }
 
 interface Target { repositoryId: number; repository: string }
-interface History { stalled: Map<number, { status: string; passes: number }>; failures: number; lastFailure: string | null; errorPasses: number; cleanPasses: number }
+/** A run of passes with the same outcome: how many, and when the first of them was seen. */
+interface Streak { passes: number; since: number }
+interface History { stalled: Map<number, { status: string } & Streak>; failures: Streak; lastFailure: string | null; errorPasses: Streak; cleanPasses: Streak }
+const none = (): Streak => ({ passes: 0, since: 0 });
+const extend = (streak: Streak, now: number): Streak => streak.passes ? { passes: streak.passes + 1, since: streak.since } : { passes: 1, since: now };
+/**
+ * Streaks are measured in time, not in passes (software-factory#197): webhooks trigger reconciliations in bursts and the
+ * schedule only every 15 minutes, so a count of passes no longer says how long something lasted. `stalledPasses` keeps
+ * its meaning from the 3-minute schedule it was written for: a streak decides once it lasted (stalledPasses - 1) such
+ * intervals and was seen at least twice.
+ */
+export const STREAK_STEP_MS = 180000;
+const lasted = (streak: Streak, settings: MonitoringSettings, now: number) =>
+  streak.passes >= Math.min(2, settings.stalledPasses) && now - streak.since >= (settings.stalledPasses - 1) * STREAK_STEP_MS;
+const streakMinutes = (streak: Streak, now: number) => Math.round((now - streak.since) / 60000);
 
 /**
  * The fixed codes behind a reconciliation's errors, at most three: what keeps failing, without any external text.
@@ -110,7 +124,7 @@ export interface SanityStore {
 
 /**
  * Watches every reconciliation of the broker. Findings that need more than one view (a status that never settles,
- * reconciliations that keep failing) count consecutive passes in memory; a broker restart starts them over.
+ * reconciliations that keep failing) measure streaks of passes in memory (see STREAK_STEP_MS); a broker restart starts them over.
  * The check reads only what the reconciliation already fetched: it costs no GitHub request.
  */
 export class SanityMonitor {
@@ -120,7 +134,7 @@ export class SanityMonitor {
   constructor(private store: SanityStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink) {}
   private state(repositoryId: number): History {
     let history = this.history.get(repositoryId);
-    if (!history) this.history.set(repositoryId, history = { stalled: new Map(), failures: 0, lastFailure: null, errorPasses: 0, cleanPasses: 0 });
+    if (!history) this.history.set(repositoryId, history = { stalled: new Map(), failures: none(), lastFailure: null, errorPasses: none(), cleanPasses: none() });
     return history;
   }
   /** After a reconciliation that completed (possibly with errors). Never throws. */
@@ -134,21 +148,21 @@ export class SanityMonitor {
       const tasks = reconstruct(snapshot, config, now);
       const found = inspect(tasks, config, settings, now);
       // A label that differs from the derived status over many passes: the Manager cannot apply it (denied, failing, deadlocked).
-      const stalled = new Map<number, { status: string; passes: number }>();
+      const stalled = new Map<number, { status: string } & Streak>(), at = now.getTime();
       for (const task of tasks.filter(t => t.issue.state === 'open' && t.status !== t.desiredStatus)) {
         const key = `${task.status}->${task.desiredStatus}`, before = history.stalled.get(task.issue.number);
-        const passes = before?.status === key ? before.passes + 1 : 1;
-        stalled.set(task.issue.number, { status: key, passes });
-        if (passes >= settings.stalledPasses) found.push(finding('status_stalled', task.issue.number, `Status ${task.status} should be ${task.desiredStatus} but has not changed for ${passes} reconciliations`));
+        const streak = extend(before?.status === key ? before : none(), at);
+        stalled.set(task.issue.number, { status: key, ...streak });
+        if (lasted(streak, settings, at)) found.push(finding('status_stalled', task.issue.number, `Status ${task.status} should be ${task.desiredStatus} but has not changed for ${streakMinutes(streak, at)} minutes (${streak.passes} reconciliations)`));
       }
       history.stalled = stalled;
-      history.failures = 0; history.lastFailure = null;
-      history.errorPasses = report.errors.length ? history.errorPasses + 1 : 0;
-      history.cleanPasses = report.errors.length ? 0 : history.cleanPasses + 1;
-      if (history.errorPasses >= settings.stalledPasses) {
-        found.push(finding('reconcile_failing', null, `${history.errorPasses} reconciliations in a row reported errors (${errorCodes(report.errors).join(', ')})`));
+      history.failures = none(); history.lastFailure = null;
+      history.errorPasses = report.errors.length ? extend(history.errorPasses, at) : none();
+      history.cleanPasses = report.errors.length ? none() : extend(history.cleanPasses, at);
+      if (lasted(history.errorPasses, settings, at)) {
+        found.push(finding('reconcile_failing', null, `Reconciliations have reported errors for ${streakMinutes(history.errorPasses, at)} minutes (${history.errorPasses.passes} in a row: ${errorCodes(report.errors).join(', ')})`));
       }
-      await this.record(target, found, this.decided(history, settings) ? findingKinds : findingKinds.filter(k => k !== 'reconcile_failing'), now);
+      await this.record(target, found, this.decided(history, settings, at) ? findingKinds : findingKinds.filter(k => k !== 'reconcile_failing'), now);
     });
   }
   /** After a reconciliation that failed with a fixed code (BUSY and disabled repositories are not failures). Never throws. */
@@ -157,21 +171,21 @@ export class SanityMonitor {
     await this.guard(repositoryId, async () => {
       const settings = this.settings.get(repositoryId) ?? monitoringSettings({} as Config);
       if (!settings.enabled) return;
-      const history = this.state(repositoryId);
-      history.failures++; history.lastFailure = code(reason) ?? 'OPERATION_FAILED'; history.cleanPasses = 0;
+      const history = this.state(repositoryId), now = this.now(), at = now.getTime();
+      history.failures = extend(history.failures, at); history.lastFailure = code(reason) ?? 'OPERATION_FAILED'; history.cleanPasses = none();
       // Without a view of the repository only this finding can change; the others stay as last seen.
       // Below the threshold the pass decides nothing: an open finding is not resolved by a further failure.
-      if (history.failures < settings.stalledPasses) return;
-      await this.record(target, [finding('reconcile_failing', null, `${history.failures} reconciliations in a row failed (${history.lastFailure})`)], ['reconcile_failing'], this.now());
+      if (!lasted(history.failures, settings, at)) return;
+      await this.record(target, [finding('reconcile_failing', null, `Reconciliations have failed for ${streakMinutes(history.failures, at)} minutes (${history.failures.passes} in a row: ${history.lastFailure})`)], ['reconcile_failing'], now);
     });
   }
   /**
-   * Whether this pass opens or resolves `reconcile_failing`. It opens after `stalledPasses` passes with errors and resolves
-   * only after as many clean passes in a row: a pass without errors in between (for example one where no task needed
+   * Whether this pass opens or resolves `reconcile_failing`. It opens after a streak of passes with errors and resolves
+   * only after an equally long streak of clean passes: a pass without errors in between (for example one where no task needed
    * planning) or a broker restart, which starts the counters over, must not report the problem as solved and new again.
    */
-  private decided(history: History, settings: MonitoringSettings): boolean {
-    return history.errorPasses >= settings.stalledPasses || history.cleanPasses >= settings.stalledPasses;
+  private decided(history: History, settings: MonitoringSettings, at: number): boolean {
+    return lasted(history.errorPasses, settings, at) || lasted(history.cleanPasses, settings, at);
   }
   private async record({ repositoryId, repository }: Target, found: Finding[], kinds: readonly FindingKind[], now: Date) {
     const unique = [...new Map(found.map(f => [f.key, f])).values()];

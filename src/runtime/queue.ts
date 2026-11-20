@@ -72,7 +72,13 @@ export interface QueueRepository {
   slots: { active: number; max: number } | null;
   entries: QueueEntry[];
 }
-export interface QueueView { generatedAt: string; reconcileIntervalSeconds: number | null; repositories: QueueRepository[] }
+/**
+ * When the schedule reconciles next (software-factory#197). A pass reconciles the repositories one after another and the
+ * next pass starts an interval after the last one ended, so `observedAt + interval` of one repository is not its next
+ * reconciliation. While a pass runs `passStartedAt` is set and `nextPassAt` is null; webhooks reconcile in between.
+ */
+export interface QueueSchedule { passStartedAt: string | null; nextPassAt: string | null }
+export interface QueueView extends QueueSchedule { generatedAt: string; reconcileIntervalSeconds: number | null; repositories: QueueRepository[] }
 interface Target { repositoryId: number; repository: string }
 
 /** The order of the queue: what runs first, then what the Factory will most likely start next. */
@@ -151,6 +157,7 @@ export function queueEntries(snapshot: Snapshot, config: Config, report: RunRepo
 /** Keeps the last queue view of every repository in memory. */
 export class QueueBoard {
   private repositories = new Map<number, QueueRepository>();
+  private plan: QueueSchedule = { passStartedAt: null, nextPassAt: null };
   constructor(private now: () => Date = () => new Date(), private reconcileIntervalSeconds: number | null = null) {}
   private current(target: Target): QueueRepository {
     return this.repositories.get(target.repositoryId) ?? { repositoryId: target.repositoryId, repository: target.repository, observedAt: null,
@@ -171,9 +178,11 @@ export class QueueBoard {
   failed(target: Target, reason: string) {
     this.repositories.set(target.repositoryId, { ...this.current(target), failure: { reason: fixedCode(reason) ?? 'OPERATION_FAILED', at: this.now().toISOString() } });
   }
+  /** Told by the schedule when a pass starts and when the next one is due. */
+  schedule(plan: QueueSchedule) { this.plan = { ...plan }; }
   /** Every bound repository, also those not reconciled since the broker started. */
   view(targets: Target[]): QueueView {
-    return { generatedAt: this.now().toISOString(), reconcileIntervalSeconds: this.reconcileIntervalSeconds,
+    return { generatedAt: this.now().toISOString(), reconcileIntervalSeconds: this.reconcileIntervalSeconds, ...this.plan,
       repositories: targets.map(t => ({ ...this.current(t), repository: t.repository })).sort((a, b) => a.repository.localeCompare(b.repository)) };
   }
 }
