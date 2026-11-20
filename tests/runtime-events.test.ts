@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { attention, deriveEvents, RuntimeEvents, type RuntimeEvent } from '../src/runtime/events.js';
+import { attention, deriveEvents, preflightEvents, RuntimeEvents, type RuntimeEvent } from '../src/runtime/events.js';
 import type { Execution, Task } from '../src/state/reconstruct.js';
 import { clock, config, issue } from './helpers.js';
 
@@ -119,4 +119,17 @@ describe('Slack notifications of runtime events', () => {
     expect(x.alerts.post).toHaveBeenCalledWith('#ki-notification', expect.stringContaining('Schritt: browser (Exit 1). Nächster Schritt: Nachbesserung startet automatisch'));
     x.cfg.notifications.slack.enabled = false; await x.observe(); expect(x.alerts.post).toHaveBeenCalledTimes(1);
   });
+});
+
+it('reports preflight refusals, which no journal holds, and the start once the cause is gone', () => {
+  const refused = preflightEvents([task([])], new Map([[1, 'EXECUTOR_WRAPPER_RELEASE_MISMATCH']]), new Map(), clock);
+  expect(refused).toEqual([expect.objectContaining({ type: 'start_refused', key: `start_refused:1:${version.slice(0, 16)}:EXECUTOR_WRAPPER_RELEASE_MISMATCH`,
+    data: { code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', refusals: 1, retryAt: null, repositoryWide: true, stage: 'preflight' } })]);
+  const before = new Map([[1, { code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', version, at: clock.toISOString() }]]);
+  expect(preflightEvents([task([])], new Map([[1, 'EXECUTOR_WRAPPER_RELEASE_MISMATCH']]), before, new Date(clock.getTime() + 60000))[0]!.at).toBe(clock.toISOString());
+  const later = new Date(clock.getTime() + 180000).toISOString();
+  const resumed = preflightEvents([task([execution(0, { active: true }, later)])], new Map(), before, new Date(later));
+  expect(resumed).toEqual([expect.objectContaining({ type: 'start_resumed', key: `start_resumed:${id(0)}:cleared`,
+    data: { code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', refusals: 1, trigger: 'cause_cleared' } })]);
+  expect(preflightEvents([task([])], new Map(), before, new Date(later))).toEqual([]);
 });

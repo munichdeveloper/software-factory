@@ -121,7 +121,7 @@ export function eventText(repository: string, e: RuntimeEvent): string {
   }
   if (e.type === 'start_refused') {
     return `SF Starts abgelehnt: ${repository}\nCode ${String(e.data.code)}; das betrifft alle Issues des Repositories. ${refusalHint[String(e.data.code)] ?? ''}`.trim() +
-      `\nNächster Versuch frühestens ${String(e.data.retryAt).slice(0, 16).replace('T', ' ')} UTC. Zuerst gesehen bei ${issue}`;
+      `\n${e.data.retryAt ? `Nächster Versuch frühestens ${String(e.data.retryAt).slice(0, 16).replace('T', ' ')} UTC.` : 'Die Factory prüft bei jedem Abgleich erneut und startet, sobald die Ursache behoben ist.'} Zuerst gesehen bei ${issue}`;
   }
   if (e.type === 'validation_failed') {
     const steps = Array.isArray(e.data.steps) && e.data.steps.length ? e.data.steps.map(s => `${s.name} (Exit ${s.exitCode ?? '?'})`).join(', ') : String(e.data.reason);
@@ -131,13 +131,41 @@ export function eventText(repository: string, e: RuntimeEvent): string {
   return `SF ${e.type}: ${repository}#${e.issueNumber}\n${issue}`;
 }
 
+/**
+ * Refusals of the runtime's preflight (for example EXECUTOR_WRAPPER_RELEASE_MISMATCH): they happen before an intent, so
+ * no journal holds them. The preflight runs again on every reconciliation, which is how such a start resumes as soon as
+ * the cause is gone (concept 6.1); `cleared` lists the starts that followed a refusal of the previous reconciliation.
+ */
+export function preflightEvents(tasks: Task[], refused: ReadonlyMap<number, string>, before: ReadonlyMap<number, { code: string; version: string; at: string }>, now: Date): RuntimeEvent[] {
+  const events: RuntimeEvent[] = [];
+  for (const task of tasks.filter(t => t.issue.state === 'open')) {
+    const n = task.issue.number, refusal = code(refused.get(n)), earlier = before.get(n);
+    if (refusal) events.push({ key: `start_refused:${n}:${task.version.slice(0, 16)}:${refusal}`, type: 'start_refused', issueNumber: n, taskVersion: task.version,
+      executionId: null, at: earlier?.code === refusal && earlier.version === task.version ? earlier.at : now.toISOString(),
+      data: { code: refusal, refusals: 1, retryAt: null, repositoryWide: repositoryWideRefusals.has(refusal), stage: 'preflight' } });
+    else if (earlier && earlier.version === task.version) {
+      const started = task.executions.find(e => e.input.taskVersion === task.version && !e.rejected && e.at >= earlier.at);
+      if (started) events.push({ key: `start_resumed:${started.input.executionId}:cleared`, type: 'start_resumed', issueNumber: n, taskVersion: task.version,
+        executionId: started.input.executionId, at: started.at, data: { code: earlier.code, refusals: 1, trigger: 'cause_cleared' } });
+    }
+  }
+  return events;
+}
+
 /** Records the events of every completed reconciliation. Never throws: events never block the Factory. */
 export class RuntimeEvents {
+  /** Preflight refusals of the previous reconciliation per repository (in memory: a broker restart starts over). */
+  private preflight = new Map<number, Map<number, { code: string; version: string; at: string }>>();
   constructor(private store: RuntimeEventStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink) {}
-  async observed(target: { repositoryId: number; repository: string }, config: Config, snapshot: Snapshot | undefined): Promise<RuntimeEvent[]> {
+  async observed(target: { repositoryId: number; repository: string }, config: Config, snapshot: Snapshot | undefined,
+    refused: ReadonlyMap<number, string> = new Map()): Promise<RuntimeEvent[]> {
     if (!snapshot) return [];
     try {
-      const found = deriveEvents(reconstruct(snapshot, config, this.now()), config);
+      const tasks = reconstruct(snapshot, config, this.now());
+      const pre = preflightEvents(tasks, refused, this.preflight.get(target.repositoryId) ?? new Map(), this.now());
+      this.preflight.set(target.repositoryId, new Map(pre.filter(e => e.type === 'start_refused')
+        .map(e => [e.issueNumber, { code: String(e.data.code), version: e.taskVersion, at: e.at }])));
+      const found = [...deriveEvents(tasks, config), ...pre];
       const added = found.length ? await this.store.recordEvents(target.repositoryId, target.repository, found) : [];
       if (added.length) console.log(JSON.stringify({ event: 'factory-runtime-events', repositoryId: target.repositoryId,
         added: added.map(e => ({ type: e.type, issue: e.issueNumber, ...(e.data.code ? { code: e.data.code } : {}), ...(e.data.reason ? { reason: e.data.reason } : {}) })) }));

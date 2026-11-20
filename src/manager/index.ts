@@ -41,6 +41,8 @@ export class Manager {
   get settledSnapshot(): Snapshot | undefined { return this.settled ?? this.observed; }
   /** Definite admission refusals of the last run, by issue: their codes. */
   get lastRejections(): ReadonlyMap<number, string> { return new Map(this.rejections.map(r => [r.issueNumber, r.code])); }
+  /** Refusals of the runtime's preflight in the last run: before any intent, so the journal does not know them. */
+  get lastPreflightRefusals(): ReadonlyMap<number, string> { return new Map(this.rejections.filter(r => !r.recorded).map(r => [r.issueNumber, r.code])); }
   private async snapshot(): Promise<Snapshot> {
     const snapshot = await this.github.snapshot(this.config.execution.engine === 'temporal' ? null : this.config.manager.workflow);
     if (this.config.execution.engine === 'temporal') {

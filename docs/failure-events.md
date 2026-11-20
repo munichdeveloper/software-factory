@@ -14,6 +14,11 @@ Status: **in Umsetzung** (Issue #188, verwandt: #189). Alle Entscheidungen sind 
   repo-weite Codes, einmal pro Repository, Code und Tag. Ereignisse, die älter als 6 Stunden sind (etwa der erste
   Abgleich nach dem Deploy), werden nur gespeichert. Empfehlung laut Entscheidung 3: `attention_required` und
   `start_refused` mit `channel: C0CJZDHJMSB` (`#factory-todo`), `validation_failed` aus.
+- Schritt 3, Stand: `EXECUTOR_WRAPPER_RELEASE_MISMATCH` wird seit #124 schon im Preflight abgelehnt, also vor jedem
+  Intent und ohne Backoff; der Preflight läuft bei jedem Abgleich erneut, ein Start läuft also wenige Minuten nach dem
+  Rollout von selbst an. Diese Ablehnungen stehen in keinem Journal; der Broker meldet sie jetzt trotzdem als
+  `start_refused` (`stage: preflight`, `retryAt: null`) und den folgenden Start als `start_resumed` mit
+  `trigger: cause_cleared`. Offen bleibt das Aufheben journalisierter Ablehnungen (Backoff) nach behobener Ursache.
 
 Dieses Dokument beschreibt, wie der Broker einen gescheiterten Prüfschritt, einen abgelehnten Start oder einen
 festhängenden Lauf als **Ereignis** veröffentlicht. Wer will, kann es abonnieren: Slack, der Factory-Monitor, ein

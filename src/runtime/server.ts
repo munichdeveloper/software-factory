@@ -87,7 +87,7 @@ export async function reconcileBinding(binding: RuntimeBinding, options: Pick<Se
   if (executed.length || report.errors.length || report.blockers.length) console.log(JSON.stringify({ event: 'factory-reconcile',
     repositoryId: binding.repository.repositoryId, outcome: report.outcome, executed, errors: report.errors, blockers: report.blockers }));
   await options.monitor?.observed(binding.repository, config, manager.lastSnapshot, report);
-  await options.events?.observed(binding.repository, config, manager.lastSnapshot);
+  await options.events?.observed(binding.repository, config, manager.lastSnapshot, manager.lastPreflightRefusals);
   options.queue?.observed(binding.repository, config, manager.settledSnapshot, report, manager.lastRejections, binding.merge?.progress());
   await options.analytics?.observed(binding.repository.repository, manager.settledSnapshot);
   return report;
