@@ -72831,6 +72831,8 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
         if (!this.eligible(f, snapshot)) continue;
         if (f.state === "closed") {
           this.note(number4, f.mergeSha ? "merged" : "stopped", f.mergeSha ? null : "PR wurde ohne Merge geschlossen.");
+          phase = "\xDCbergabe-Label entfernen";
+          await this.needsHuman(f, false, this.owned(f, snapshot));
           if (f.mergeSha && f.mergeActorType === "Bot" && this.events(f).some((e) => e.data.type === "merge_intent" && e.data.head === f.head)) {
             await this.event(f, `merge-completed:${f.head}`, { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: f.mergeSha });
             await this.postMerge(f, f.mergeSha);

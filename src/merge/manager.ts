@@ -231,6 +231,9 @@ export class MergeManager {
         if (!this.eligible(f, snapshot)) continue;
         if (f.state === 'closed') {
           this.note(number, f.mergeSha ? 'merged' : 'stopped', f.mergeSha ? null : 'PR wurde ohne Merge geschlossen.');
+          // Nobody waits for an approval any more, also when a person merged or closed the pull request themselves.
+          phase = 'Übergabe-Label entfernen';
+          await this.needsHuman(f, false, this.owned(f, snapshot));
           if (f.mergeSha && f.mergeActorType === 'Bot' && this.events(f).some(e => e.data.type === 'merge_intent' && e.data.head === f!.head)) {
             await this.event(f, `merge-completed:${f.head}`, { type: 'merge_completed', prNumber: number, head: f.head, mergeSha: f.mergeSha });
             await this.postMerge(f, f.mergeSha);
