@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Server } from 'node:http';
 import { Manager } from '../src/manager/index.js';
-import { MockPlanner } from '../src/llm/provider.js';
+import { StaticPlanner } from '../src/llm/provider.js';
 import { QueueBoard } from '../src/runtime/queue.js';
 import type { MergeObserver, MergeProgress } from '../src/runtime/merge.js';
 import { runtimeServer, type RuntimeBinding } from '../src/runtime/server.js';
@@ -10,7 +10,7 @@ import { World } from './scenario-world.js';
 
 /** One reconciliation like the broker's, recorded on the queue board. */
 async function reconcile(w: World, board: QueueBoard) {
-  const manager = new Manager(w.github, w.cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => w.now, workerRuntime: w.controller });
+  const manager = new Manager(w.github, w.cfg, new StaticPlanner(), { correlationId: 'temporal:42', now: () => w.now, workerRuntime: w.controller });
   const report = await manager.run();
   board.observed(w.repo, w.cfg, manager.settledSnapshot, report, manager.lastRejections);
 }
@@ -60,7 +60,7 @@ describe('queue view', () => {
     const progress = new Map<number, MergeProgress>();
     const observe: MergeObserver = (pullRequest, step, detail = null, risk = null) => { progress.set(pullRequest, { pullRequest, step, detail, risk, at: w.now.toISOString() }); };
     const observed = async () => {
-      const manager = new Manager(w.github, w.cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => w.now, workerRuntime: w.controller });
+      const manager = new Manager(w.github, w.cfg, new StaticPlanner(), { correlationId: 'temporal:42', now: () => w.now, workerRuntime: w.controller });
       const report = await manager.run();
       board.observed(w.repo, w.cfg, manager.settledSnapshot, report, manager.lastRejections, progress);
       return repository(board, w).entries.find(e => e.issueNumber === 1)!;

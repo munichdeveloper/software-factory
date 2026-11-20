@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { configSchema, loadConfig } from './config/index.js';
 import { GitHubClient } from './github/client.js';
 import { Manager } from './manager/index.js';
-import { MockPlanner, OpenAIPlanner } from './llm/provider.js';
+import { StaticPlanner, OpenAIPlanner } from './llm/provider.js';
 import { summary } from './manager/report.js';
 import { executeDelegation } from './workers/execute-delegation.js';
 import { HarnessProcessClient } from './workers/harness-client.js';
@@ -188,7 +188,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         new HarnessProcessClient(process.env.HARNESS_ENTRYPOINT ?? ''));
       console.log(JSON.stringify({ correlationId, executionId: result.executionId, status: result.status })); return;
     }
-    const planner = config.llm.provider === 'mock' ? new MockPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
+    const planner = config.llm.provider !== 'openai' ? new StaticPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
     const report = await new Manager(github, config, planner, { correlationId,
       workerRuntime: config.execution.engine === 'temporal' ? new RuntimeHttpClient(process.env.FACTORY_RUNTIME_URL ?? '',
         process.env.FACTORY_RUNTIME_TOKEN ?? '', Number(process.env.GITHUB_REPOSITORY_ID)) : undefined,

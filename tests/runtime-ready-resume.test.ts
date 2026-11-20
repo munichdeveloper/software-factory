@@ -6,7 +6,7 @@ import { RuntimeStore, type StoredRun } from '../src/runtime/store.js';
 import type { RuntimeRelease } from '../src/runtime/contract.js';
 import { authorizeReadyLabel } from '../src/runtime/ready-approval.js';
 import { Manager } from '../src/manager/index.js';
-import { MockPlanner } from '../src/llm/provider.js';
+import { StaticPlanner } from '../src/llm/provider.js';
 import { decodeEvent } from '../src/state/events.js';
 import { policyVersion } from '../src/policies/engine.js';
 import { statusMarker } from '../src/manager/status.js';
@@ -66,7 +66,7 @@ function fixture() {
   const repo: RuntimeRepository = { repositoryId: 42, repository: github.repository, release, github, requireHumanGate: false, config: async () => cfg, baseSha: async () => 'd'.repeat(40),
     readyApproval: async (number, expected) => authorizeReadyLabel(await github.getIssue(number), github.readyFor(number), actor => github.canApprove(actor), cfg.manager.trustedActors, expected) };
   const controller = new RuntimeController(repo, store, client);
-  const manager = () => new Manager(github, cfg, new MockPlanner(), { correlationId: 'temporal:42', now: () => github.now, workerRuntime: controller }).run();
+  const manager = () => new Manager(github, cfg, new StaticPlanner(), { correlationId: 'temporal:42', now: () => github.now, workerRuntime: controller }).run();
   const events = () => (github.state.comments.get(1) ?? []).flatMap(c => { const e = decodeEvent(c, cfg.manager.trustedActors); return e ? [e.data] : []; });
   const advance = (minutes: number) => { github.now = new Date(github.now.getTime() + minutes * 60000); };
   /** The worker returns a blocked result for the latest execution, as the first Backofficer#13 run did. */

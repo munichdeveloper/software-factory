@@ -35,7 +35,7 @@ Generated JSON schemas share the executable Zod source.
 | `workers.coding.smallPullRequests` | `true` | Tells the coding worker to keep each change to the task's one concern (no drive-by refactoring, renaming or unrelated fixes) and, for a task that bundles several concerns or is too large for one reviewable change, to report `blocked` with a proposed split instead of one large PR; the planner cuts follow-ups to one concern each. Fixed per execution when it is first dispatched. Risk-based merging (`merge.risk`, more than 800 changed lines are at least `high`) stays the hard limit |
 | `monitoring.slack` | `true` | Posts new and resolved findings to Slack with the broker's bot (`SLACK_BOT_TOKEN`), one message per reconciliation that changed something, at most once |
 | `monitoring.channel` | `null` | Slack channel for findings; `null` uses `notifications.slack.channel` where `notifications.slack.enabled`, otherwise nothing is posted |
-| `llm.provider` | `mock` | Deterministic mock or real `openai` Responses API |
+| `llm.provider` | `static` | `static`: deterministic planner without a model (every startable issue by priority label, then issue number); `openai`: real Responses API. The former name `mock` is still accepted and read as `static`; `jev`: see [Jev planner](#jev-planner) |
 | `llm.model` | `gpt-4.1-mini` | Explicit provider model string; account must have access |
 | `llm.reasoningEffort` | `null` | Omit capability, or `none`, `minimal`, `low`, `medium`, `high`, `xhigh`; must match model |
 | `llm.maxOutputTokens` | `4000` | Output cap, 256–16000 |
@@ -50,7 +50,7 @@ Generated JSON schemas share the executable Zod source.
 | `merge.risk.autoMergeUpTo` | `medium` | Highest class the Factory merges on its own: `low`, `medium`, `high`; `critical` never |
 | `merge.risk.aboveThreshold` | `approval` | `approval` asks for `/harness approve`; `block` leaves the merge to a person |
 | `merge.risk.maxLowRiskLines`/`maxMediumRiskLines` | `300`/`800` | More changed lines make a change at least `medium`/`high` |
-| `merge.risk.assessor` | `{provider: llm, model: gpt-6.1-sol, reasoningEffort: medium, timeoutSeconds: 90}` | AI assessor; `llm` follows `llm.provider`, a mock configuration fails closed (critical) |
+| `merge.risk.assessor` | `{provider: llm, model: gpt-6.1-sol, reasoningEffort: medium, timeoutSeconds: 90}` | AI assessor; `llm` follows `llm.provider`, a static configuration fails closed (critical) |
 | `merge.risk.guidance` | `null` | Trusted project hint for the assessor, at most 2000 characters |
 | `merge.risk.areas` | `[]` | Up to 30 `{name, paths, class}` with relative globs (`*`, `?`, `**`); lower the class only when they cover every changed file, otherwise a minimum |
 | `deploy.enabled` | `false` | Optional deployment of the default branch, see [deploy](deploy.md) |
@@ -246,7 +246,7 @@ differ. A routed coding agent runs first, the configured `agents` stay behind it
 is stored per execution, so later polls send the identical request. Escalated attempts are not routed: they run
 `retryAgents`. Broker-side candidates run with the broker's keys: `provider: claude` needs its Anthropic key, `openai`
 its OpenAI key; a candidate that cannot run, or fails, falls back to the configured chain (Claude first, OpenAI second).
-A mock configuration (`provider: llm` with `llm.provider: mock`) is never routed. A purpose without `candidates` is not
+A static configuration (`provider: llm` with `llm.provider: static`) is never routed. A purpose without `candidates` is not
 routed, and each purpose takes 2 to 6 candidates with unique ids; the candidates are also the floor, so leave out cheap
 options where a cheap answer is not acceptable (e.g. no `low` effort for reviews).
 
@@ -264,4 +264,23 @@ case in which the configured models ran instead too, at most once per repository
 next message counts the cases in between. Issue and pull request text reaches Jev as untrusted data it only classifies:
 at worst it picks another of the configured candidates. `router` is optional without a default: a configuration without
 it keeps its hash.
+
+## Jev planner
+
+`llm.provider: jev` (broker, Temporal engine; elsewhere it plans like `static`) keeps the static planner's selection of
+startable tasks and lets TypeSafe Jev, the model router's decision model, make two decisions on them:
+
+- **Start order.** When more tasks are startable than worker slots are free (`execution.maxParallelWorkers`), Jev is
+  asked which task to implement first (at most 16 options). Its probabilities rank the tasks; a priority label
+  (`harness:priority-high` / `-low`) still comes first.
+- **Start readiness.** Before a task starts, Jev classifies its text as `ready`, `unclear` or `too-large`. An unclear or
+  too large task is not started; the planner blocks it for its current text, and the status comment says so. A revised
+  text lifts the block and is judged again; a person who removes `harness:blocked` starts it as it is. Readiness is
+  asked for at most two tasks beyond the free slots per reconciliation.
+
+Jev's settings come from the `router` block (`enabled`, `model`, `minConfidence`, `timeoutSeconds`; no candidates
+needed). Without the broker's Jev key, when Jev is unreachable, gives no usable answer or stays below
+`router.minConfidence`, the static plan runs. Answers are kept per task version and per set of candidates, so Jev is
+asked when something changed, not on every reconciliation. Each decision is logged (`factory-router`, purpose
+`planner`) and reported to the router's Slack channel like other routing decisions.
 

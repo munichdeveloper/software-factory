@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Manager } from '../src/manager/index.js';
-import { MockPlanner } from '../src/llm/provider.js';
+import { StaticPlanner } from '../src/llm/provider.js';
 import { reconstruct } from '../src/state/reconstruct.js';
 import { RuntimeHttpClient } from '../src/runtime/client.js';
 import { RuntimeAdmissionRejected, type RuntimeObservation, type WorkerRuntimePort } from '../src/runtime/contract.js';
@@ -16,7 +16,7 @@ function fixture() {
     observations.push(observation); return observation;
   });
   const runtime: WorkerRuntimePort = { start, observations: async ids => observations.filter(r => ids.includes(r.executionId)), cancel: vi.fn(async () => {}) };
-  const run = (now = clock) => new Manager(github, cfg, new MockPlanner(), { correlationId: 'runtime-test', workerRuntime: runtime, now: () => now }).run();
+  const run = (now = clock) => new Manager(github, cfg, new StaticPlanner(), { correlationId: 'runtime-test', workerRuntime: runtime, now: () => now }).run();
   return { github, cfg, runtime, start, observations, run };
 }
 describe('regular Factory manager on Temporal', () => {
@@ -43,7 +43,7 @@ describe('regular Factory manager on Temporal', () => {
     expect(task.desiredStatus).toBe('awaiting-approval'); expect(task.latest).toMatchObject({ active: true, timedOut: false, ambiguous: false });
   });
   it('fails closed when a Temporal repository has no runtime client', async () => {
-    const f = fixture(); await expect(new Manager(f.github, f.cfg, new MockPlanner(), { correlationId: 'missing' }).run()).rejects.toThrow('Temporal runtime is required');
+    const f = fixture(); await expect(new Manager(f.github, f.cfg, new StaticPlanner(), { correlationId: 'missing' }).run()).rejects.toThrow('Temporal runtime is required');
     expect(f.github.dispatches).toBe(0); expect(f.github.mutations).toEqual([]);
   });
   it('fails closed on an unavailable observer before starting additional work', async () => {

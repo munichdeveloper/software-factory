@@ -4,7 +4,7 @@ import { authorizeReadyLabel } from '../src/runtime/ready-approval.js';
 import { evaluate } from '../src/policies/engine.js';
 import { reconstruct } from '../src/state/reconstruct.js';
 import { Manager } from '../src/manager/index.js';
-import { MockPlanner, proposal } from '../src/llm/provider.js';
+import { StaticPlanner, proposal } from '../src/llm/provider.js';
 import { clock, config, issue, MemoryGitHub } from './helpers.js';
 import type { Issue } from '../src/types.js';
 
@@ -38,7 +38,7 @@ describe('approved task text', () => {
   });
 });
 describe('Manager withdraws approval of changed text', () => {
-  const run = (github: MemoryGitHub, cfg = config()) => new Manager(github, cfg, new MockPlanner(), { correlationId: 'content', now: () => clock }).run();
+  const run = (github: MemoryGitHub, cfg = config()) => new Manager(github, cfg, new StaticPlanner(), { correlationId: 'content', now: () => clock }).run();
   it('removes harness:managed and the ready grant, explains it and starts nothing', async () => {
     const github = new MemoryGitHub(); github.state.issues.push(approved([stranger(5)], ['harness:managed', 'harness:ready', 'bug']));
     const report = await run(github);

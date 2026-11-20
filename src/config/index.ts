@@ -119,7 +119,11 @@ export const configSchema = z.strictObject({
     rework: z.boolean().default(false)
   }).prefault({}),
   llm: z.strictObject({
-    provider: z.enum(['mock', 'openai']).default('mock'), model: z.string().min(1).default('gpt-4.1-mini'),
+    // 'static' plans deterministically without a model (every startable issue by priority label, then number); 'mock' is
+    // its former name and still read as 'static', so existing repository configurations keep working (SF #200).
+    // 'jev' (SF #203): the static selection, with TypeSafe Jev deciding start order and start readiness in the broker;
+    // its settings come from the router block, and every router skip plans like 'static'.
+    provider: z.enum(['static', 'mock', 'openai', 'jev']).default('static').transform(p => p === 'mock' ? 'static' as const : p), model: z.string().min(1).default('gpt-4.1-mini'),
     reasoningEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']).nullable().default(null),
     maxOutputTokens: bounded(256, 16000, 4000), timeoutSeconds: bounded(1, 120, 60),
     maxCalls: bounded(0, 3, 1)
@@ -191,8 +195,8 @@ export const configSchema = z.strictObject({
     validationWorkflow: z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/).nullable().default('test.yml'),
     maxReviewsPerRun: bounded(1, 5, 2), maxActionsPerRun: bounded(1, 3, 1),
     review: z.strictObject({
-      // 'llm' follows llm.provider, so a mock configuration never approves a merge. 'openai' always reviews with OpenAI,
-      // also when planning stays deterministic (llm.provider mock).
+      // 'llm' follows llm.provider, so a static configuration never approves a merge. 'openai' always reviews with OpenAI,
+      // also when planning stays deterministic (llm.provider static).
       provider: z.enum(['llm', 'openai']).default('llm'),
       model: z.string().min(1).max(100).default('gpt-6.1-sol'),
       reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).default('high'),

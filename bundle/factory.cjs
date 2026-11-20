@@ -65297,7 +65297,11 @@ var configSchema = external_exports.strictObject({
     rework: external_exports.boolean().default(false)
   }).prefault({}),
   llm: external_exports.strictObject({
-    provider: external_exports.enum(["mock", "openai"]).default("mock"),
+    // 'static' plans deterministically without a model (every startable issue by priority label, then number); 'mock' is
+    // its former name and still read as 'static', so existing repository configurations keep working (SF #200).
+    // 'jev' (SF #203): the static selection, with TypeSafe Jev deciding start order and start readiness in the broker;
+    // its settings come from the router block, and every router skip plans like 'static'.
+    provider: external_exports.enum(["static", "mock", "openai", "jev"]).default("static").transform((p) => p === "mock" ? "static" : p),
     model: external_exports.string().min(1).default("gpt-4.1-mini"),
     reasoningEffort: external_exports.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).nullable().default(null),
     maxOutputTokens: bounded(256, 16e3, 4e3),
@@ -65378,8 +65382,8 @@ var configSchema = external_exports.strictObject({
     maxReviewsPerRun: bounded(1, 5, 2),
     maxActionsPerRun: bounded(1, 3, 1),
     review: external_exports.strictObject({
-      // 'llm' follows llm.provider, so a mock configuration never approves a merge. 'openai' always reviews with OpenAI,
-      // also when planning stays deterministic (llm.provider mock).
+      // 'llm' follows llm.provider, so a static configuration never approves a merge. 'openai' always reviews with OpenAI,
+      // also when planning stays deterministic (llm.provider static).
       provider: external_exports.enum(["llm", "openai"]).default("llm"),
       model: external_exports.string().min(1).max(100).default("gpt-6.1-sol"),
       reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh"]).default("high"),
@@ -70517,9 +70521,9 @@ var proposal = (task, kind, reason, values = {}) => ({
   reason,
   ...values
 });
-var MockPlanner = class {
+var StaticPlanner = class {
   async plan(tasks, config2) {
-    return { version: 1, actions: tasks.filter((t) => !t.blocked && !t.latest && !t.refusal?.waiting && !t.hasOpenPR && !t.hasClosingMerge && t.issue.state === "open" && !t.executions.some((e) => e.active)).sort((a, b) => priority(a) - priority(b) || a.issue.number - b.issue.number).slice(0, config2.manager.maxContextTasks).map((t) => proposal(t, "start_worker", "Runnable task selected by deterministic mock planner")) };
+    return { version: 1, actions: tasks.filter((t) => !t.blocked && !t.latest && !t.refusal?.waiting && !t.hasOpenPR && !t.hasClosingMerge && t.issue.state === "open" && !t.executions.some((e) => e.active)).sort((a, b) => priority(a) - priority(b) || a.issue.number - b.issue.number).slice(0, config2.manager.maxContextTasks).map((t) => proposal(t, "start_worker", "Runnable task selected by deterministic static planner")) };
   }
 };
 function priority(t) {
@@ -71033,7 +71037,7 @@ function statusView(task, config2, context2) {
   } else if (task.blockReason && !(result?.status === "blocked" && task.automaticBlockCause === "worker")) {
     state = [`**Blocked: ${task.blockReason}.**`];
     stage = "blocked";
-    needs = task.blockReason.startsWith("Unresolved dependencies") ? "Close the issues this task depends on, or remove them from its `Depends on:` line." : task.blockReason.startsWith("Missing Acceptance") ? "Add a section `## Acceptance criteria` with at least one list item to the task text." : task.blockReason.startsWith(protectedPathBlockPrefix) ? "The coding worker may not change CI workflows (`.github/`), agent instruction files or CODEOWNERS. A maintainer makes that part of the change, then removes it from the task text (or moves it to a section `## Out of scope` / `## Nicht enthalten`); the task then starts normally." : "Remove the label `harness:blocked` when the task may continue.";
+    needs = task.blockReason.startsWith("Unresolved dependencies") ? "Close the issues this task depends on, or remove them from its `Depends on:` line." : task.blockReason.startsWith("Missing Acceptance") ? "Add a section `## Acceptance criteria` with at least one list item to the task text." : task.blockReason.startsWith(protectedPathBlockPrefix) ? "The coding worker may not change CI workflows (`.github/`), agent instruction files or CODEOWNERS. A maintainer makes that part of the change, then removes it from the task text (or moves it to a section `## Out of scope` / `## Nicht enthalten`); the task then starts normally." : task.automaticBlockCause === "planner" ? "The planner judged this task text unclear or too large for one run. Revise the task text (a revised text is judged again), or remove the label `harness:blocked` to start it as it is." : "Remove the label `harness:blocked` when the task may continue.";
   } else if (rejection) {
     const ready = rejection.startsWith("READY_");
     const previous = result && ["failed", "cancelled"].includes(result.status) ? `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}). ` : "";
@@ -74241,7 +74245,7 @@ base-branch=${prepared.base.branch}
       console.log(JSON.stringify({ correlationId, executionId: result.executionId, status: result.status }));
       return;
     }
-    const planner = config2.llm.provider === "mock" ? new MockPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? "");
+    const planner = config2.llm.provider !== "openai" ? new StaticPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? "");
     const report = await new Manager(github, config2, planner, {
       correlationId,
       workerRuntime: config2.execution.engine === "temporal" ? new RuntimeHttpClient(

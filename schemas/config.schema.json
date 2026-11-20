@@ -181,11 +181,13 @@
       "type": "object",
       "properties": {
         "provider": {
-          "default": "mock",
+          "default": "static",
           "type": "string",
           "enum": [
+            "static",
             "mock",
-            "openai"
+            "openai",
+            "jev"
           ]
         },
         "model": {

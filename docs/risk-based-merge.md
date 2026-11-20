@@ -193,7 +193,7 @@ merge:
     maxLowRiskLines: 300        # mehr geänderte Zeilen: mindestens medium
     maxMediumRiskLines: 800     # mehr geänderte Zeilen: mindestens high
     assessor:
-      provider: llm             # wie merge.review.provider; mock bewertet immer critical
+      provider: llm             # wie merge.review.provider; static (früher mock) bewertet immer critical
       model: gpt-6.1-sol
       reasoningEffort: medium
       timeoutSeconds: 90

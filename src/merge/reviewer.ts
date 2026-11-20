@@ -44,7 +44,7 @@ export class OpenAIMergeReviewer implements MergeReviewer {
   }
 }
 
-/** Claude with the same instructions, input and schema; the guard against a mock configuration applies as well. */
+/** Claude with the same instructions, input and schema; the guard against a static configuration applies as well. */
 export class ClaudeMergeReviewer implements MergeReviewer {
   constructor(private call: ClaudeCall, private model: string, private config: Config) {}
   async review(input: ReviewInput) {
