@@ -7271,7 +7271,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse5(src, reviver, options) {
+    function parse6(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -7312,7 +7312,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports2.parse = parse5;
+    exports2.parse = parse6;
     exports2.parseAllDocuments = parseAllDocuments;
     exports2.parseDocument = parseDocument2;
     exports2.stringify = stringify2;
@@ -41518,7 +41518,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse5(serialize2(uri, options), options);
+        parse6(serialize2(uri, options), options);
       }
       return uri;
     }
@@ -41561,8 +41561,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse5(serialize2(base, options), options);
-        relative2 = parse5(serialize2(relative2, options), options);
+        base = parse6(serialize2(base, options), options);
+        relative2 = parse6(serialize2(relative2, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative2.scheme) {
@@ -41880,7 +41880,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse5(uri, opts) {
+    function parse6(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -41917,7 +41917,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize: serialize2,
-      parse: parse5
+      parse: parse6
     };
     module2.exports = fastUri;
     module2.exports.default = fastUri;
@@ -47024,18 +47024,18 @@ var validateAsync = async (schema, value, _ctx) => {
   return result.issues.length === 0;
 };
 var _encode = (_Err) => {
-  const parse5 = _parse(_Err);
+  const parse6 = _parse(_Err);
   const fn = (schema, value, _ctx, _params) => {
     const ctx = _ctx ? { ..._ctx, direction: "backward" } : { direction: "backward" };
-    return parse5(schema, value, ctx, finalizeParams(fn, _params));
+    return parse6(schema, value, ctx, finalizeParams(fn, _params));
   };
   return fn;
 };
 var encode = /* @__PURE__ */ _encode($ZodRealError);
 var _decode = (_Err) => {
-  const parse5 = _parse(_Err);
+  const parse6 = _parse(_Err);
   const fn = (schema, value, _ctx, _params) => {
-    return parse5(schema, value, _ctx, finalizeParams(fn, _params));
+    return parse6(schema, value, _ctx, finalizeParams(fn, _params));
   };
   return fn;
 };
@@ -48530,7 +48530,7 @@ function capSize(inst, size) {
   if (!caps.length)
     return;
   const cap = Math.min(...caps.map((c) => c[0]));
-  const parse5 = inst._zod.parse;
+  const parse6 = inst._zod.parse;
   inst._zod.parse = (payload, ctx) => {
     const n = size(payload.value);
     if (n > cap && !ctx?.skipChecks && ctx?.direction !== "backward") {
@@ -48544,7 +48544,7 @@ function capSize(inst, size) {
         }
       }
     }
-    return parse5(payload, ctx);
+    return parse6(payload, ctx);
   };
 }
 var arraySize = (input2) => Array.isArray(input2) ? input2.length : -1;
@@ -72151,6 +72151,7 @@ async function publishCoding(github, config2, repository, issue2, id, correlatio
 }
 
 // src/merge/github.ts
+var import_yaml2 = __toESM(require_dist(), 1);
 var forbidden = (error62) => !!error62 && typeof error62 === "object" && "status" in error62 && error62.status === 403;
 var GitHubMergePort = class {
   /**
@@ -72310,14 +72311,16 @@ var GitHubMergePort = class {
   async dispatch(workflow, ref) {
     await this.api.actions.createWorkflowDispatch({ ...this.target, workflow_id: workflow, ref });
   }
-  async workflowAvailable(workflow) {
-    try {
-      await this.api.actions.getWorkflow({ ...this.target, workflow_id: workflow });
-      return true;
-    } catch (error62) {
-      if (error62 instanceof Error && "status" in error62 && error62.status === 404) return false;
+  async workflowAvailable(workflow, ref) {
+    const missing = (error62) => {
+      if (error62 instanceof Error && "status" in error62 && error62.status === 404) return null;
       throw error62;
-    }
+    };
+    const found = await this.api.actions.getWorkflow({ ...this.target, workflow_id: workflow }).catch(missing);
+    if (!found) return false;
+    const file2 = await this.api.repos.getContent({ ...this.target, path: found.data.path, ...ref ? { ref } : {} }).catch(missing);
+    if (!file2 || Array.isArray(file2.data) || file2.data.type !== "file" || !("content" in file2.data)) return false;
+    return dispatchTrigger(Buffer.from(file2.data.content, "base64").toString("utf8"));
   }
   async ready(number4, head) {
     const { data: pr } = await this.api.pulls.get({ ...this.target, pull_number: number4 });
@@ -72374,6 +72377,17 @@ var GitHubMergePort = class {
     }
   }
 };
+function dispatchTrigger(source) {
+  let on;
+  try {
+    on = (0, import_yaml2.parse)(source)?.on;
+  } catch {
+    return false;
+  }
+  if (typeof on === "string") return on === "workflow_dispatch";
+  if (Array.isArray(on)) return on.includes("workflow_dispatch");
+  return !!on && typeof on === "object" && Object.hasOwn(on, "workflow_dispatch");
+}
 
 // src/merge/reviewer.ts
 var reviewInstructions = `You are Software Factory's mandatory independent merge reviewer. Review code and deployment/security behavior, not just green CI.
@@ -72732,17 +72746,20 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
     const owned = this.config.merge.includeFactoryPRs && !!this.ownership(f, snapshot);
     return this.options.ownedOnly ? owned : f.labels.includes(this.config.merge.adoptLabel) || owned;
   }
+  /**
+   * Starts `workflow` on `ref` once per commit. A workflow without a workflow_dispatch trigger on `ref` is skipped: GitHub
+   * would refuse it with 422 in every pass, and the pull_request checks of the new head run without it (issue #195).
+   */
   async dispatch(f, workflow, ref, sha4) {
     if (!workflow) return;
     const key = `merge-ci:${hash2({ workflow, ref, sha: sha4 })}`;
     if (this.events(f).some((e) => e.key === key)) return;
+    if (!await this.api.workflowAvailable(workflow, ref)) return;
     await this.api.dispatch(workflow, ref);
     await this.event(f, key, { type: "workflow_dispatch", workflow, ref, sha: sha4 });
   }
   async postMerge(f, sha4) {
-    for (const workflow of new Set(this.config.merge.postMergeWorkflows)) {
-      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha4);
-    }
+    for (const workflow of new Set(this.config.merge.postMergeWorkflows)) await this.dispatch(f, workflow, f.baseBranch, sha4);
   }
   /** One merge pass; its model calls are recorded for analytics under the pull request (and issue) they review. */
   run(snapshot) {
@@ -72834,7 +72851,12 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
           continue;
         }
         const pendingUpdate = this.events(f).find((e) => e.data.type === "branch_update" && e.data.base === f.base && e.data.head !== f.head);
-        if (pendingUpdate) await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
+        if (pendingUpdate) {
+          const previous = phase;
+          phase = "Validierung nach Branch-Aktualisierung starten";
+          await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
+          phase = previous;
+        }
         const sourceTask = owner ? { number: owner.number, title: owner.title, body: owner.body } : null;
         const { risk: _risk, ...mergePolicy } = this.config.merge;
         void _risk;

@@ -1,4 +1,5 @@
 import { Octokit } from '@octokit/rest';
+import { parse } from 'yaml';
 import { needsHumanLabel, type MergeFacts, type MergePort, type ReviewInput } from './contract.js';
 
 const forbidden = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && error.status === 403;
@@ -127,9 +128,14 @@ export class GitHubMergePort implements MergePort {
     return data.sha;
   }
   async dispatch(workflow: string, ref: string) { await this.api.actions.createWorkflowDispatch({ ...this.target, workflow_id: workflow, ref }); }
-  async workflowAvailable(workflow: string) {
-    try { await this.api.actions.getWorkflow({ ...this.target, workflow_id: workflow }); return true; }
-    catch (error) { if (error instanceof Error && 'status' in error && error.status === 404) return false; throw error; }
+  async workflowAvailable(workflow: string, ref?: string) {
+    const missing = (error: unknown) => { if (error instanceof Error && 'status' in error && error.status === 404) return null; throw error; };
+    const found = await this.api.actions.getWorkflow({ ...this.target, workflow_id: workflow }).catch(missing);
+    if (!found) return false;
+    // GitHub dispatches the workflow file of `ref`; only one that declares workflow_dispatch there can be started (#195).
+    const file = await this.api.repos.getContent({ ...this.target, path: found.data.path, ...(ref ? { ref } : {}) }).catch(missing);
+    if (!file || Array.isArray(file.data) || file.data.type !== 'file' || !('content' in file.data)) return false;
+    return dispatchTrigger(Buffer.from(file.data.content, 'base64').toString('utf8'));
   }
   async ready(number: number, head: string) {
     const { data: pr } = await this.api.pulls.get({ ...this.target, pull_number: number });
@@ -182,4 +188,13 @@ export class GitHubMergePort implements MergePort {
     try { return ['admin', 'maintain', 'write'].includes((await this.api.repos.getCollaboratorPermissionLevel({ ...this.target, username: login })).data.permission); }
     catch { return false; }
   }
+}
+
+/** Whether a workflow file declares a workflow_dispatch trigger (`on:` as a string, a list or a map). */
+export function dispatchTrigger(source: string): boolean {
+  let on: unknown;
+  try { on = (parse(source) as Record<string, unknown> | null)?.on; } catch { return false; }
+  if (typeof on === 'string') return on === 'workflow_dispatch';
+  if (Array.isArray(on)) return on.includes('workflow_dispatch');
+  return !!on && typeof on === 'object' && Object.hasOwn(on, 'workflow_dispatch');
 }

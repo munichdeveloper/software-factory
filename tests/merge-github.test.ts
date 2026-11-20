@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { GitHubMergePort } from '../src/merge/github.js';
+import { dispatchTrigger, GitHubMergePort } from '../src/merge/github.js';
 
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 function fixture(options: { approval?: boolean; tooManyThreads?: boolean; noPatch?: boolean; largeFile?: boolean; failMerge?: boolean; forbidden?: boolean } = {}) {
@@ -35,6 +35,13 @@ function fixture(options: { approval?: boolean; tooManyThreads?: boolean; noPatc
     else if (path.includes('/compare/')) {
       expect(path).toContain(`${base}...${head}`);
       value = { files: [{ filename: 'file.txt', status: 'modified', patch: options.noPatch ? undefined : '-old\n+new' }] };
+    } else if (path.includes('/actions/workflows/')) {
+      const name = path.split('/').at(-1)!;
+      if (name === 'missing.yml') return new Response('{"message":"Not Found"}', { status: 404, headers: { 'content-type': 'application/json' } });
+      value = { id: 1, name, path: `.github/workflows/${name}` };
+    } else if (path.includes('/contents/.github/workflows/')) {
+      const triggers = path.endsWith('/test.yml') ? 'on:\n  pull_request:\n  push:\n' : 'on:\n  workflow_dispatch:\n  push:\n';
+      value = { type: 'file', encoding: 'base64', size: triggers.length, content: Buffer.from(`name: CI\n${triggers}jobs: {}\n`).toString('base64') };
     } else if (path.includes('/contents/')) value = { encoding: 'base64', size: options.largeFile ? 999999 : 3, content: Buffer.from('new').toString('base64') };
     else if (path.includes('/collaborators/')) value = { permission: 'write' };
     else if (path.endsWith('/dispatches')) return new Response(null, { status: 204 });
@@ -172,3 +179,14 @@ it('adds and removes the hand-over label, tolerating a label that is already gon
   await api.needsHuman(52, true); await api.needsHuman(52, false);
   expect(calls).toEqual(['POST /repos/owner/target/issues/52/labels', 'DELETE /repos/owner/target/issues/52/labels/sf:needs-human']);
 });
+it('starts only workflows that declare workflow_dispatch on the dispatched ref (issue #195)', async () => {
+  const x = fixture();
+  expect(await x.api.workflowAvailable('publish.yml', 'feature')).toBe(true);
+  expect(x.calls.find(c => c.path.endsWith('/contents/.github/workflows/publish.yml'))).toBeDefined();
+  expect(await x.api.workflowAvailable('test.yml', 'feature')).toBe(false);
+  expect(await x.api.workflowAvailable('missing.yml')).toBe(false);
+});
+it.each([
+  ['on: workflow_dispatch', true], ['on: [push, workflow_dispatch]', true], ['on:\n  workflow_dispatch:\n    inputs: {}', true],
+  ['on:\n  workflow_dispatch:', true], ['on: [push, pull_request]', false], ['on:\n  pull_request:\n  push:', false], ['name: x', false], ['on: [', false]
+])('reads the workflow_dispatch trigger of %j', (source, expected) => { expect(dispatchTrigger(source)).toBe(expected); });

@@ -31,7 +31,7 @@ merge:
   method: squash
   updateBranch: true
   requiredChecks: [test-backend, test-frontend, test-docker]
-  validationWorkflow: test.yml
+  validationWorkflow: test.yml # Started after a branch update only when it declares workflow_dispatch.
   maxReviewsPerRun: 2
   maxActionsPerRun: 1
   review:

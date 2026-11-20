@@ -177,17 +177,20 @@ export class MergeManager {
     const owned = this.config.merge.includeFactoryPRs && !!this.ownership(f, snapshot);
     return this.options.ownedOnly ? owned : f.labels.includes(this.config.merge.adoptLabel) || owned;
   }
+  /**
+   * Starts `workflow` on `ref` once per commit. A workflow without a workflow_dispatch trigger on `ref` is skipped: GitHub
+   * would refuse it with 422 in every pass, and the pull_request checks of the new head run without it (issue #195).
+   */
   private async dispatch(f: MergeFacts, workflow: string | null, ref: string, sha: string) {
     if (!workflow) return;
     const key = `merge-ci:${hash({ workflow, ref, sha })}`;
     if (this.events(f).some(e => e.key === key)) return;
+    if (!(await this.api.workflowAvailable(workflow, ref))) return;
     await this.api.dispatch(workflow, ref);
     await this.event(f, key, { type: 'workflow_dispatch', workflow, ref, sha });
   }
   private async postMerge(f: MergeFacts, sha: string) {
-    for (const workflow of new Set(this.config.merge.postMergeWorkflows)) {
-      if (await this.api.workflowAvailable(workflow)) await this.dispatch(f, workflow, f.baseBranch, sha);
-    }
+    for (const workflow of new Set(this.config.merge.postMergeWorkflows)) await this.dispatch(f, workflow, f.baseBranch, sha);
   }
   /** One merge pass; its model calls are recorded for analytics under the pull request (and issue) they review. */
   run(snapshot: Snapshot) { return withLlmContext({}, () => this.pass(snapshot)); }
@@ -268,7 +271,11 @@ export class MergeManager {
           await this.explain(f, 'PR ist nicht offen/freigegeben, stammt aus einem Fork/falschen Zielbranch oder wurde ausdrücklich blockiert.'); continue;
         }
         const pendingUpdate = this.events(f).find(e => e.data.type === 'branch_update' && e.data.base === f!.base && e.data.head !== f!.head);
-        if (pendingUpdate) await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
+        if (pendingUpdate) {
+          const previous = phase; phase = 'Validierung nach Branch-Aktualisierung starten';
+          await this.dispatch(f, this.config.merge.validationWorkflow, f.headBranch, f.head);
+          phase = previous;
+        }
         const sourceTask = owner ? { number: owner.number, title: owner.title, body: owner.body } : null;
         // Immutable head/base IDs bind all source/context files. Mutable facts and task intent are included explicitly.
         // The risk settings decide only whether a person approves; they are no input of the code review.

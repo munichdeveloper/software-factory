@@ -40,7 +40,11 @@ export interface MergePort {
   update(number: number, head: string): Promise<string>;
   merge(number: number, head: string, method: 'squash' | 'merge' | 'rebase'): Promise<string>;
   dispatch(workflow: string, ref: string): Promise<void>;
-  workflowAvailable(workflow: string): Promise<boolean>;
+  /**
+   * Whether `workflow` exists and can be started with workflow_dispatch from `ref` (default: the default branch), i.e. its
+   * file there declares a workflow_dispatch trigger. GitHub refuses any other dispatch with 422 (issue #195).
+   */
+  workflowAvailable(workflow: string, ref?: string): Promise<boolean>;
   canApprove(login: string): Promise<boolean>;
   /** Sets `label` as the pull request's only `sf:risk-*` label (display only; never read as authorization). */
   riskLabel?(number: number, label: string): Promise<void>;
