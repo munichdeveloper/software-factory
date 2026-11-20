@@ -21,6 +21,8 @@ export const infrastructureFailureSummary = 'The coding run failed before the ag
  */
 export const freeInfrastructureFailures = 3;
 export const admissionBackoffMinutes = (refusals: number) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
+/** Refusal codes whose cause the runtime can check again on its own (issue #188 step 3). */
+export const clearableRefusals = ['EXECUTOR_WRAPPER_RELEASE_MISMATCH', 'UNKNOWN_WORKER_DEPLOYMENT_VERSION'];
 
 export interface Execution { input: WorkerInput; attempt: number; actionId: string; at: string; run?: WorkflowRun; runtime?: import('../runtime/contract.js').RuntimeObservation; result?: WorkerResult; active: boolean; ambiguous: boolean; timedOut: boolean;
   /** A Temporal run whose task was closed or revised underneath it: its result can no longer be published. */
@@ -118,7 +120,9 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     if (lastRefused) {
       const at = (events.find(e => e.data.type === 'result' && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
       const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 60000).toISOString();
-      const changed = (!!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config)) || (!!issue.readyAt && issue.readyAt > at) || (!!issue.managedAt && issue.managedAt > at);
+      // The cause of the refusal is provably gone, e.g. the repository pins the runtime's release again (issue #188 step 3).
+      const cleared = !!snapshot.clearedRefusals?.includes(lastRefused.rejected!);
+      const changed = cleared || (!!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config)) || (!!issue.readyAt && issue.readyAt > at) || (!!issue.managedAt && issue.managedAt > at);
       refusal = { code: lastRefused.rejected!, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
     }
     const criteria = acceptanceCriteria(issue.body);

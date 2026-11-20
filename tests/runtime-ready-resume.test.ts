@@ -261,6 +261,15 @@ describe('a start the runtime refused (software-factory#53)', () => {
     expect(attempts(f)).toEqual([0, 1, 2, 3]); expect(report.blockers).toContain('#1: retry budget exhausted');
     expect(status(f)).toContain('(attempt 2 of 2)');
   });
+  it('starts again at once when the worker deployment of the runtime release is known again (issue #188 step 3)', async () => {
+    const f = fixture(); delete f.repo.readyApproval;
+    f.unknownDeployment(); await f.manager();
+    expect(f.events().find(e => e.type === 'admission_rejected')).toMatchObject({ code: 'UNKNOWN_WORKER_DEPLOYMENT_VERSION' });
+    f.advance(2); await f.manager(); expect(attempts(f)).toEqual([0]);
+    // The host deploy registered the version: the next reconciliation starts without waiting for the backoff.
+    f.knownDeployment(); f.advance(2); const report = await f.manager();
+    expect(report.errors).toEqual([]); expect(attempts(f)).toEqual([0, 1]); expect(f.store.rows.size).toBe(1);
+  });
   it('starts again at once after a new grant', async () => {
     const f = fixture(); f.github.human(1, ['harness:managed', 'harness:ready']);
     const original = f.repo.readyApproval!; let calls = 0;

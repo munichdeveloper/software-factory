@@ -65461,29 +65461,37 @@ var configSchema = external_exports.strictObject({
       context2.addIssue({ code: "custom", path: ["workflows"], message: "trigger checks requires at least one workflow name" });
     }
   }).prefault({}),
-  notifications: external_exports.strictObject({ slack: external_exports.strictObject({
-    enabled: external_exports.boolean().default(false),
-    channel: slackChannel.nullable().default(null),
-    maxPerRun: bounded(1, 100, 20),
-    since: external_exports.iso.datetime().nullable().default(null),
-    events: external_exports.strictObject({
-      // Optional without a default, so configurations that leave it out keep their hash and in-flight runs stay current.
-      run_started: notificationRule.optional(),
-      // A PR whose risk class is above merge.risk.autoMergeUpTo waits for `/harness approve`; optional for the same reason.
-      approval_required: notificationRule.optional(),
-      // A task that waits for nothing but a person's `harness:ready` grant (ready-label repositories); optional for the same reason.
-      grant_required: notificationRule.optional(),
-      // A Factory PR the review handed over to a person (merge_handover); optional for the same reason.
-      handover_required: notificationRule.optional(),
-      // Runtime events (docs/failure-events.md, issue #188), posted by the broker; optional for the same reason.
-      // start_refused posts only refusals that hold for the whole repository, once per repository, code and day.
-      validation_failed: notificationRule.optional(),
-      start_refused: notificationRule.optional(),
-      attention_required: notificationRule.optional(),
-      issue_created: notificationRule.prefault({}),
-      pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
-    }).prefault({})
-  }).prefault({}) }).prefault({}),
+  notifications: external_exports.strictObject({
+    slack: external_exports.strictObject({
+      enabled: external_exports.boolean().default(false),
+      channel: slackChannel.nullable().default(null),
+      maxPerRun: bounded(1, 100, 20),
+      since: external_exports.iso.datetime().nullable().default(null),
+      events: external_exports.strictObject({
+        // Optional without a default, so configurations that leave it out keep their hash and in-flight runs stay current.
+        run_started: notificationRule.optional(),
+        // A PR whose risk class is above merge.risk.autoMergeUpTo waits for `/harness approve`; optional for the same reason.
+        approval_required: notificationRule.optional(),
+        // A task that waits for nothing but a person's `harness:ready` grant (ready-label repositories); optional for the same reason.
+        grant_required: notificationRule.optional(),
+        // A Factory PR the review handed over to a person (merge_handover); optional for the same reason.
+        handover_required: notificationRule.optional(),
+        // Runtime events (docs/failure-events.md, issue #188), posted by the broker; optional for the same reason.
+        // start_refused posts only refusals that hold for the whole repository, once per repository, code and day.
+        validation_failed: notificationRule.optional(),
+        start_refused: notificationRule.optional(),
+        attention_required: notificationRule.optional(),
+        issue_created: notificationRule.prefault({}),
+        pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
+      }).prefault({})
+    }).prefault({}),
+    // Signed POSTs of runtime events (docs/failure-events.md 5.2, issue #188 step 4), signed with the broker's
+    // FACTORY_WEBHOOK_SECRET. Optional without a default, so the configuration hash of existing repositories stays.
+    webhooks: external_exports.array(external_exports.strictObject({
+      url: external_exports.url({ protocol: /^https$/ }).max(500),
+      events: external_exports.array(external_exports.enum(["validation_failed", "start_refused", "start_resumed", "run_failed", "attention_required"])).min(1).max(5)
+    })).max(5).optional()
+  }).prefault({}),
   monitoring: monitoringSchema.partial().optional(),
   router: routerSchema.optional()
 }).superRefine((config2, context2) => {
@@ -70127,6 +70135,7 @@ var infrastructureFailureCode = "EXECUTOR_INFRASTRUCTURE_FAILURE";
 var infrastructureFailureSummary = "The coding run failed before the agent started";
 var freeInfrastructureFailures = 3;
 var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
+var clearableRefusals = ["EXECUTOR_WRAPPER_RELEASE_MISMATCH", "UNKNOWN_WORKER_DEPLOYMENT_VERSION"];
 var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
 function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
   return snapshot.issues.map((issue2) => {
@@ -70201,7 +70210,8 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     if (lastRefused) {
       const at = (events.find((e) => e.data.type === "result" && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
       const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 6e4).toISOString();
-      const changed = !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at || !!issue2.managedAt && issue2.managedAt > at;
+      const cleared = !!snapshot.clearedRefusals?.includes(lastRefused.rejected);
+      const changed = cleared || !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at || !!issue2.managedAt && issue2.managedAt > at;
       refusal = { code: lastRefused.rejected, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
     }
     const criteria = acceptanceCriteria(issue2.body);
@@ -71148,6 +71158,20 @@ var Manager = class {
       })))];
       snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
       snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant === "ready-label";
+      const codes = new Set([...snapshot.comments.values()].flatMap((comments) => comments.flatMap((comment) => {
+        const event = decodeEvent(comment, this.config.manager.trustedActors);
+        return event?.data.type === "admission_rejected" && clearableRefusals.includes(event.data.code) ? [event.data.code] : [];
+      })));
+      const runtime = this.options.workerRuntime;
+      if (codes.size && runtime.refusalCleared) {
+        snapshot.clearedRefusals = [];
+        for (const code of codes) {
+          try {
+            if (await runtime.refusalCleared(code)) snapshot.clearedRefusals.push(code);
+          } catch {
+          }
+        }
+      }
     }
     return snapshot;
   }

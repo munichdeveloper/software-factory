@@ -1,7 +1,8 @@
 import type { Config } from '../config/index.js';
 import type { SanityAlertSink } from '../notifications/sanity-alerts.js';
 import type { Snapshot } from '../types.js';
-import { admissionBackoffMinutes, infrastructureFailureCode, reconstruct, type Execution, type Task } from '../state/reconstruct.js';
+import type { EventWebhooks } from './webhooks.js';
+import { admissionBackoffMinutes, clearableRefusals, infrastructureFailureCode, reconstruct, type Execution, type Task } from '../state/reconstruct.js';
 
 /**
  * Runtime events (docs/failure-events.md, issue #188 step 1). The broker derives them from what every reconciliation
@@ -50,10 +51,11 @@ export function deriveEvents(tasks: Task[], config: Config): RuntimeEvent[] {
       }
       const before = current[i - 1];
       if (before?.rejected) {
-        // Until a cleared cause is detected (concept 6.1), a start before the backoff ran out followed a changed grant or policy.
-        const until = Date.parse(resultAt(task, before)) + admissionBackoffMinutes(refused) * 60000;
+        // A start before the backoff ran out followed a changed grant or policy, or a release skew that is over (concept 6.1).
+        const refusedAt = resultAt(task, before), until = Date.parse(refusedAt) + admissionBackoffMinutes(refused) * 60000;
+        const regranted = !!task.issue.readyAt && task.issue.readyAt > refusedAt || !!task.issue.managedAt && task.issue.managedAt > refusedAt;
         push('start_resumed', e, '', e.at, { code: code(before.rejected) ?? 'UNKNOWN', refusals: refused,
-          trigger: Date.parse(e.at) < until ? 'manual' : 'backoff' });
+          trigger: Date.parse(e.at) >= until ? 'backoff' : clearableRefusals.includes(before.rejected) && !regranted ? 'cause_cleared' : 'manual' });
       }
       refused = 0;
       const validation = e.runtime?.validation;
@@ -156,7 +158,7 @@ export function preflightEvents(tasks: Task[], refused: ReadonlyMap<number, stri
 export class RuntimeEvents {
   /** Preflight refusals of the previous reconciliation per repository (in memory: a broker restart starts over). */
   private preflight = new Map<number, Map<number, { code: string; version: string; at: string }>>();
-  constructor(private store: RuntimeEventStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink) {}
+  constructor(private store: RuntimeEventStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink, private webhooks?: EventWebhooks) {}
   async observed(target: { repositoryId: number; repository: string }, config: Config, snapshot: Snapshot | undefined,
     refused: ReadonlyMap<number, string> = new Map()): Promise<RuntimeEvent[]> {
     if (!snapshot) return [];
@@ -182,6 +184,10 @@ export class RuntimeEvents {
    * store and the monitor. At most once: a message lost to Slack is not repeated.
    */
   async notify(target: { repositoryId: number; repository: string }, config: Config, added: RuntimeEvent[]) {
+    // Webhooks get every new event their rule names, also the ones Slack leaves out; stale ones (first reconciliation
+    // after a deploy) are only stored, as for Slack.
+    const fresh = added.filter(e => this.now().getTime() - Date.parse(e.at) <= notifyWithinMs);
+    try { this.webhooks?.deliver(target, config.notifications.webhooks, fresh); } catch { /* never blocks the Factory */ }
     const slack = config.notifications.slack;
     if (!this.alerts || !slack.enabled) return;
     const now = this.now().getTime();

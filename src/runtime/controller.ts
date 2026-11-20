@@ -156,14 +156,25 @@ export class RuntimeController implements WorkerRuntimePort {
     }
     return this.repo.readyApproval.bind(this.repo);
   }
+  async refusalCleared(code: string): Promise<boolean> {
+    if (code === 'EXECUTOR_WRAPPER_RELEASE_MISMATCH') return this.executorWrapperCurrent();
+    if (code !== 'UNKNOWN_WORKER_DEPLOYMENT_VERSION') return false;
+    const { deploymentName, buildId } = this.repo.release;
+    const info = (await this.temporal.workflowService.describeWorkerDeploymentVersion({ namespace: this.temporal.options.namespace,
+      deploymentVersion: { deploymentName, buildId } })).workerDeploymentVersionInfo;
+    return info?.deploymentVersion?.deploymentName === deploymentName && info.deploymentVersion.buildId === buildId;
+  }
+  async executorWrapperCurrent(): Promise<boolean> {
+    const coding = this.repo.coding && this.repo.executorWrapper ? (await this.repo.config()).workers.coding : false;
+    return !(coding && coding.enabled && this.repo.executorWrapper &&
+      await this.repo.executorWrapper() !== executorWrapper(this.repo.release.factorySha, this.repo.release.harnessSha, !!this.repo.validationPlan));
+  }
   async preflight(issueNumber: number, previousExecutionId?: string): Promise<void> {
     try {
       this.scope(issueNumber);
       // The broker dispatches only an executor workflow that pins its own release. Refused here, before an intent
       // exists, a release skew between runtime host and repository costs no attempt (software-factory#93).
-      const coding = this.repo.coding && this.repo.executorWrapper ? (await this.repo.config()).workers.coding : false;
-      if (coding && coding.enabled && this.repo.executorWrapper &&
-        await this.repo.executorWrapper() !== executorWrapper(this.repo.release.factorySha, this.repo.release.harnessSha, !!this.repo.validationPlan)) throw new Error('EXECUTOR_WRAPPER_RELEASE_MISMATCH');
+      if (!await this.executorWrapperCurrent()) throw new Error('EXECUTOR_WRAPPER_RELEASE_MISMATCH');
       const ready = await this.readyGrant();
       if (ready) {
         const previous = previousExecutionId ? await this.store.get(this.repo.repositoryId, previousExecutionId) : null;
