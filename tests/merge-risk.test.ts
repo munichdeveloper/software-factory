@@ -54,7 +54,9 @@ describe('glob patterns', () => {
     expect(parse({ enabled: true, risk: { enabled: true, maxLowRiskLines: 500, maxMediumRiskLines: 100 } })).toBe(false);
     expect(parse({ enabled: true, risk: { enabled: true, areas: [{ name: 'A', paths: ['a/**'], class: 'low' }, { name: 'A', paths: ['b/**'], class: 'low' }] } })).toBe(false);
     const defaults = configSchema.parse({ version: 1, factory: { scope: 'x' } }).merge.risk;
-    expect(defaults).toMatchObject({ enabled: false, mode: 'enforce', autoMergeUpTo: 'medium', aboveThreshold: 'approval', maxLowRiskLines: 300, maxMediumRiskLines: 800 });
+    expect(defaults).toMatchObject({ enabled: false, mode: 'enforce', autoMergeUpTo: 'medium', aboveThreshold: 'approval', maxLowRiskLines: 300, maxMediumRiskLines: 5000 });
+    expect(defaults.maxMediumRiskFiles).toBeUndefined();
+    expect(parse({ enabled: true, risk: { enabled: true, maxMediumRiskFiles: 0 } })).toBe(false);
   });
 });
 
@@ -80,9 +82,27 @@ describe('classification', () => {
     const low = { assess: vi.fn(async () => ({ class: 'low' as const, reason: 'Klein.', factors: [] })) };
     expect(await classifyRisk([change('db/migration/V2__x.sql'), change('src/a.ts')], risk(), low)).toMatchObject({ class: 'high', aiClass: 'low', matchedAreas: ['Migrations'] });
     expect((await classifyRisk([change('src/a.ts', 301)], risk(), low)).class).toBe('medium');
-    expect((await classifyRisk([change('src/a.ts', 801)], risk(), low)).class).toBe('high');
-    expect((await classifyRisk([change('docs/a.md', 900)], risk(), low)).class).toBe('high');
+    // A harmless change just under the line limit is medium because of its size only (#209).
+    expect((await classifyRisk([change('src/a.ts', 4900)], risk(), low)).class).toBe('medium');
+    expect((await classifyRisk([change('src/a.ts', 5001)], risk(), low)).class).toBe('high');
+    expect((await classifyRisk([change('docs/a.md', 5002)], risk(), low)).class).toBe('high');
+    const many = (n: number) => Array.from({ length: n }, (_, i) => change(`src/f${i}.ts`));
+    expect((await classifyRisk(many(100), risk(), low)).class).toBe('low');
+    expect(await classifyRisk(many(101), risk(), low)).toMatchObject({ class: 'high', files: 101 });
+    const r = risk(); r.maxMediumRiskFiles = 10;
+    expect((await classifyRisk(many(11), r, low)).class).toBe('high');
     expect(riskRules([change('src/a.ts', 300)], risk())).toMatchObject({ floor: 'low', lines: 300, covered: false });
+  });
+  it('makes authentication, permissions and money at least high, even for a one-line change', async () => {
+    for (const factor of ['auth', 'permissions', 'payments'] as const) {
+      const assessor = { assess: vi.fn(async () => ({ class: 'low' as const, reason: 'Klein.', factors: [{ factor, path: 'src/a.ts', explanation: 'Prüfung geändert.' }] })) };
+      expect(await classifyRisk([change('src/a.ts', 1)], risk(), assessor)).toMatchObject({ class: 'high', aiClass: 'low', source: 'ai' });
+    }
+    const ui = { assess: vi.fn(async () => ({ class: 'low' as const, reason: 'Text.', factors: [{ factor: 'ui' as const, path: 'src/a.ts', explanation: 'Text.' }] })) };
+    expect((await classifyRisk([change('src/a.ts', 1)], risk(), ui)).class).toBe('low');
+    // The content floor never lowers a higher model class.
+    const critical = { assess: vi.fn(async () => ({ class: 'critical' as const, reason: 'x', factors: [{ factor: 'auth' as const, path: 'a', explanation: 'x' }] })) };
+    expect((await classifyRisk([change('src/a.ts', 1)], risk(), critical)).class).toBe('critical');
   });
   it.each(['throws', 'invalid output', 'missing'])('fails closed to critical when the assessor %s', async mode => {
     const assessor = mode === 'missing' ? undefined : { assess: vi.fn(async () => {
@@ -204,15 +224,28 @@ describe('readable verdict', () => {
     const text = describeRisk(record, r());
     expect(text).toContain('**Risikoklasse: critical.** Liegt über der Grenze für automatisches Mergen (`medium`); critical wird nie automatisch gemergt.');
     expect(text).toContain('Grund: Die Risikobewertung ist fehlgeschlagen. Ohne Bewertung gilt jeder PR als critical, unabhängig von seiner Größe.');
-    expect(text).toContain('Umfang: 416 geänderte Zeilen. Allein nach Größe wäre das `medium` (Grenzen: bis 300 Zeilen low, bis 800 medium, darüber high); die Größe hat die Klasse nicht bestimmt.');
+    expect(text).toContain('Umfang: 416 geänderte Zeilen in 1 Datei. Allein nach Größe wäre das `medium` (Grenzen: bis 300 Zeilen low, bis 5000 Zeilen und 100 Dateien medium, darüber high); die Größe hat die Klasse nicht bestimmt.');
     expect(text).toContain('Ursache: HTTP 429 des Bewertungsanbieters.');
     expect(text).not.toContain('rate limited');
   });
   it('says when the size, not the model, raised the class', async () => {
-    const record = await classifyRisk([change('src/a.ts', 900)], r(), { assess: async () => ({ class: 'low', reason: 'Klein.', factors: [] }) });
+    const record = await classifyRisk([change('src/a.ts', 5100)], r(), { assess: async () => ({ class: 'low', reason: 'Klein.', factors: [] }) });
     expect(record.class).toBe('high');
     const text = describeRisk(record, r());
     expect(text).toContain('Grund: KI-Bewertung `low`.');
     expect(text).toContain('die Größe hat die Klasse auf `high` angehoben.');
+    expect(text).not.toContain('Inhalt:');
+  });
+  it('says when the content, not the size, raised the class', async () => {
+    const record = await classifyRisk([change('src/a.ts', 2)], r(), { assess: async () => ({ class: 'medium', reason: 'Rollenprüfung.',
+      factors: [{ factor: 'permissions', path: 'src/a.ts', explanation: 'Rollenprüfung geändert.' }] }) });
+    const text = describeRisk(record, r());
+    expect(text).toContain('**Risikoklasse: high.**');
+    expect(text).toContain('- Inhalt: Der PR berührt Authentifizierung, Berechtigungen oder Geld (permissions); das ist unabhängig von der Größe mindestens `high`.');
+    expect(text).toContain('die Größe hat die Klasse nicht bestimmt.');
+  });
+  it('reads records written before the file count existed', () => {
+    const text = describeRisk({ class: 'medium', source: 'ai', aiClass: 'medium', matchedAreas: [], builtinPaths: [], lines: 400, reason: 'x', factors: [] }, r());
+    expect(text).toContain('Umfang: 400 geänderte Zeilen. Allein nach Größe');
   });
 });

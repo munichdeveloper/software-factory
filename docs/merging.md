@@ -131,7 +131,10 @@ merge:
   `.github/software-factory.validation.json`, `AGENTS.md` and `CODEOWNERS`.
 - A change covered completely by areas takes the highest area class without a
   model call. Otherwise the AI assessor decides, and touched areas plus the size
-  rule (`maxLowRiskLines`, `maxMediumRiskLines`) act as a minimum.
+  rule (`maxLowRiskLines`, `maxMediumRiskLines`, `maxMediumRiskFiles`) act as a
+  minimum. Content decides more than size: an assessment naming authentication,
+  permissions or money (factors `auth`, `permissions`, `payments`) is at least
+  `high`, even for a one-line change.
 - The assessor sees the changed files and trusted `guidance`, never the PR title,
   body, comments or task text. Any failure counts as `critical` and is retried in
   the next pass.

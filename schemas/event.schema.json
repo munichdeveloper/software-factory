@@ -779,6 +779,11 @@
                   "minimum": 0,
                   "maximum": 9007199254740991
                 },
+                "files": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
                 "reason": {
                   "type": "string",
                   "maxLength": 2000
@@ -796,6 +801,7 @@
                           "data_loss",
                           "security",
                           "auth",
+                          "permissions",
                           "payments",
                           "external_integration",
                           "public_api",
