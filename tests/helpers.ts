@@ -75,7 +75,7 @@ export class MemoryGitHub implements GitHubPort {
   }
 }
 /** Records a finished attempt of an issue, as a Manager intent followed by its worker result. */
-export async function finishedAttempt(github: MemoryGitHub, number: number, status: 'blocked' | 'success' | 'failed', attempt = 0) {
+export async function finishedAttempt(github: MemoryGitHub, number: number, status: 'blocked' | 'success' | 'failed', attempt = 0, summary = 'Finished attempt') {
   const task = github.state.issues.find(i => i.number === number)!;
   const executionId = `${String(number).padStart(4, '0')}${String(attempt).padStart(4, '0')}`.padEnd(32, 'a');
   const input = { contractVersion: '1.0' as const, repository: github.repository, issueNumber: number, taskVersion: taskVersion(task), description: task.body,
@@ -83,5 +83,5 @@ export async function finishedAttempt(github: MemoryGitHub, number: number, stat
     limits: { timeoutMinutes: 30, maxOutputBytes: 16000 as const }, operation: 'sha256' as const, worker: 'test' as const };
   await github.writeEvent(number, { version: 1, key: `intent:${executionId}`, at: clock.toISOString(), correlationId: 'test', data: { type: 'intent', input, actionId: 'a'.repeat(64), attempt } });
   await github.writeEvent(number, { version: 1, key: `result:${executionId}`, at: clock.toISOString(), correlationId: 'test', data: { type: 'result', result: {
-    contractVersion: '1.0', executionId, issueNumber: number, status, summary: 'Finished attempt', artifacts: [], error: null, proposedActions: [] } } });
+    contractVersion: '1.0', executionId, issueNumber: number, status, summary, artifacts: [], error: null, proposedActions: [] } } });
 }

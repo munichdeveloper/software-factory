@@ -3,7 +3,7 @@ import { unzipSync } from 'fflate';
 import { z } from 'zod';
 import { codingExecutionSchema } from './coding-contract.js';
 import { agentSelectionSchema, type AgentSelection } from './agent-selection.js';
-import { codingArtifactSchema, smallPullRequestGuidance, validateChanges, type CodingArtifact } from '../workers/coding.js';
+import { codingArtifactSchema, scopeGuidance, validateChanges, type CodingArtifact } from '../workers/coding.js';
 import { attemptAgents, type CodingAgent, type Config } from '../config/index.js';
 import type { Routing } from '../llm/router.js';
 import { codingRouteSchema, type RunSnapshot } from './contract.js';
@@ -268,7 +268,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
       apply: async () => {
         try { await this.api.git.getRef({ ...target, ref: `heads/sf-temporal-executor/${input.executionId}` }); return { text: '' }; }
         catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
-        return { text: coding.smallPullRequests ? smallPullRequestGuidance : '' };
+        return { text: scopeGuidance(config) };
       } })).text;
     let description = input.description;
     for (const text of [guidance, scope]) if (text && description.length + text.length <= 20000) description += text;

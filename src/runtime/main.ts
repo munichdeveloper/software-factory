@@ -14,6 +14,7 @@ import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
 import { ClaudePlanner, FallbackPlanner, StaticPlanner, OpenAIPlanner } from '../llm/provider.js';
 import { JevPlanner } from '../llm/jev-planner.js';
+import { CachedRiskSplitter, ClaudeRiskSplitter, FallbackRiskSplitter, OpenAIRiskSplitter, RiskSplitPlanner } from '../llm/risk-split.js';
 import { claudeModels, claudeStructured } from '../llm/claude.js';
 import { ModelRouter, RouterAlerts, Routing, routerEndpoint } from '../llm/router.js';
 import { routedAssessor, routedPlanner, routedReviewer, type RoutedModels } from '../llm/routed-models.js';
@@ -243,8 +244,11 @@ export async function main(args = process.argv.slice(2)) {
       // A purpose the repository routes (router: review, risk, planner) asks the router first; its configured chain
       // below stays the fallback.
       const routed: RoutedModels = { routing, repository: item.repository, claude, openaiKey: process.env.OPENAI_API_KEY ?? '' };
-      const openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? ''), deterministic = new StaticPlanner(),
-        jev = new JevPlanner(routing, item.repository, deterministic);
+      // Risk isolation (SF #210): the split texts come from the risk assessment's models, Claude first.
+      const plainSplitter = new OpenAIRiskSplitter(process.env.OPENAI_API_KEY ?? '');
+      const splitter = new CachedRiskSplitter(claude ? new FallbackRiskSplitter(new ClaudeRiskSplitter(claude, models.risk), plainSplitter) : plainSplitter);
+      const openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? ''), deterministic = new RiskSplitPlanner(new StaticPlanner(), splitter),
+        jev = new RiskSplitPlanner(new JevPlanner(routing, item.repository, new StaticPlanner(), splitter), splitter);
       const planner = routedPlanner(routed, claude ? new FallbackPlanner(new ClaudePlanner(claude, models.planner), openai) : openai);
       const reviewer = (config: Config) => { const plain = new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config);
         return routedReviewer(routed, config, claude ? new FallbackMergeReviewer(new ClaudeMergeReviewer(claude, models.review, config), plain) : plain); };

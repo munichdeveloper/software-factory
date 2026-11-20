@@ -278,6 +278,12 @@ startable tasks and lets TypeSafe Jev, the model router's decision model, make t
   too large task is not started; the planner blocks it for its current text, and the status comment says so. A revised
   text lifts the block and is judged again; a person who removes `harness:blocked` starts it as it is. Readiness is
   asked for at most two tasks beyond the free slots per reconciliation.
+- **Risk isolation (SF #210).** With risk-based merging enforced (`merge.risk.enabled`, `mode: enforce`) readiness has a
+  fourth verdict, `mixed-risk`: the task mixes a risky part (authentication, permissions or roles, money, data
+  migrations) with routine work. A text model (Claude first, OpenAI second, model and effort of `merge.risk.assessor`)
+  then writes two follow-up tasks, a routine part that merges automatically and a small risky part that a person
+  approves, and the original task is blocked as their origin. If the model finds the parts inseparable, the task starts
+  as it is; if it fails, the task is blocked with the reason. The parts themselves are never split again.
 
 Jev's settings come from the `router` block (`enabled`, `model`, `minConfidence`, `timeoutSeconds`; no candidates
 needed). Without the broker's Jev key, when Jev is unreachable, gives no usable answer or stays below

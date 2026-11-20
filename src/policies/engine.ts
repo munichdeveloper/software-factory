@@ -1,5 +1,5 @@
 import type { Config } from '../config/index.js';
-import type { Action, Decision } from '../types.js';
+import { riskSplitKeyPrefix, type Action, type Decision } from '../types.js';
 import type { Task } from '../state/reconstruct.js';
 import { actionId, hash } from '../state/identity.js';
 import { canTransition } from '../state/lifecycle.js';
@@ -77,7 +77,10 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
     if (budget.newIssues >= config.execution.maxNewIssues) return deny('Maximum new issues per run reached');
     // Follow-ups answer what an attempt found. A task that has not run, or whose run failed for reasons outside the
     // task, is started or retried itself; a copy would only compete for the same worker slot (software-factory#93).
-    if (!task.latest?.result || !['blocked', 'success'].includes(task.latest.result.status)) return deny('Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself');
+    // A risk split before the run (SF #210): the planner judged the task text and the Factory writes its two parts.
+    const plannedSplit = ctx.source === 'planner' && !task.latest && action.followup.key.startsWith(riskSplitKeyPrefix) &&
+      config.merge.risk.enabled && config.merge.risk.mode === 'enforce' && !action.followup.expandsScope;
+    if (!plannedSplit && (!task.latest?.result || !['blocked', 'success'].includes(task.latest.result.status))) return deny('Follow-ups require a finished attempt that reported blocked or success; start or retry the task itself');
     // An open pull request still delivers the task; a follow-up written now copies work that is about to be merged (controla#103).
     if (task.hasOpenPR) return deny('Task has an open pull request; follow-ups wait until it is merged or closed');
     if (task.openFollowups.length && !budget.followupOrigins?.includes(task.issue.number)) return deny(`Task already has open follow-ups: ${task.openFollowups.map(n => `#${n}`).join(', ')}`);
