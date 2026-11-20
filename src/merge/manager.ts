@@ -8,7 +8,7 @@ import { permission, policyVersion } from '../policies/engine.js';
 import { mergeReviewSchema, needsHumanLabel, type MergeFacts, type MergePort, type MergeReview, type MergeReviewer, type ReviewInput } from './contract.js';
 import { aboveThreshold, builtinCriticalPaths, classifyRisk, describeRisk, type RiskAssessor, type RiskRecord } from './risk.js';
 import { routeNoteDe, routeOutcome } from '../llm/router.js';
-import { combineReviews, contextLimitError, partsLimitError, reviewParts } from './parts.js';
+import { combineReviews, contextLimitError, defaultMaxParts, partsLimitError, reviewParts } from './parts.js';
 import { setLlmSubject, withLlmContext } from '../llm/analytics.js';
 import { reconstruct } from '../state/reconstruct.js';
 import type { MergeObserver } from '../runtime/merge.js';
@@ -298,7 +298,7 @@ export class MergeManager {
         const cachedRisk = riskKey ? this.events(f).find(e => e.data.type === 'merge_risk' && e.data.riskKey === riskKey) : undefined;
         let context: Promise<ReviewInput> | undefined;
         const current = f;
-        const { maxFiles, maxContextBytes, maxParts } = this.config.merge.review;
+        const { maxFiles, maxContextBytes } = this.config.merge.review, maxParts = this.config.merge.review.maxParts ?? defaultMaxParts;
         // The whole context may span maxParts review parts; each part stays under maxContextBytes (issue #189).
         const load = () => context ??= this.api.context(current, maxFiles, maxContextBytes * maxParts).then(input => {
           if (sourceTask) input.sourceTask = sourceTask; return input; });
@@ -418,7 +418,7 @@ export class MergeManager {
         const reasons: Record<string, string> = {
           'Change set exceeds review file limit': 'Die Änderung überschreitet das konfigurierte Dateilimit für einen vollständigen KI-Review.',
           [contextLimitError]: 'Der vollständige Review-Kontext überschreitet das konfigurierte Größenlimit, auch bei Prüfung in Teilen (merge.review.maxParts); eine gekürzte Prüfung genügt nicht. Bitte den PR in kleinere PRs aufteilen.',
-          [partsLimitError]: `Die Prüfung bräuchte mehr als ${this.config.merge.review.maxParts} Teile (merge.review.maxParts). Bitte den PR in kleinere PRs aufteilen (workers.coding.smallPullRequests).`,
+          [partsLimitError]: `Die Prüfung bräuchte mehr als ${this.config.merge.review.maxParts ?? defaultMaxParts} Teile (merge.review.maxParts). Bitte den PR in kleinere PRs aufteilen (workers.coding.smallPullRequests).`,
           'Diff is incomplete or contains binary changes': 'Der Diff ist unvollständig oder enthält nicht prüfbare Binäränderungen.',
           'File cannot be reviewed completely': 'Mindestens eine Datei kann nicht vollständig geprüft werden.',
           'Merge review incomplete or refused': 'Die KI-Prüfung wurde nicht vollständig abgeschlossen oder abgelehnt.',

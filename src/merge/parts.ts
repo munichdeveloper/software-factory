@@ -15,6 +15,8 @@ export const partsLimitError = 'Review needs more parts than allowed';
 export const contextLimitError = 'Review context exceeds limit; no truncated approval';
 /** Lines of surrounding content kept on each side of a hunk when a single file is too large for one part. */
 export const excerptWindow = 200;
+/** Parts when merge.review.maxParts is not set. */
+export const defaultMaxParts = 4;
 
 /** Size of a review input exactly as the merge manager measures it (comments are never part of a review). */
 export const reviewBytes = (input: ReviewInput) => Buffer.byteLength(JSON.stringify({ ...input, facts: { ...input.facts, comments: [] } }));
