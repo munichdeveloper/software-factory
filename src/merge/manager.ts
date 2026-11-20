@@ -91,6 +91,29 @@ export class MergeManager {
     await this.api.comment(task.number, journal + summary.subarray(0, Math.max(0, 60000 - Buffer.byteLength(journal) - 4)).toString('utf8'));
   }
   /**
+   * Sets or removes `sf:needs-human` on the pull request and, when given, on its task. Only changes what differs, so a
+   * pass that finds the same state touches nothing.
+   */
+  private async needsHuman(f: MergeFacts, on: boolean, task?: Snapshot['issues'][number]) {
+    if (!this.api.needsHuman) return;
+    if (on !== f.labels.includes(needsHumanLabel)) {
+      await this.api.needsHuman(f.number, on);
+      f.labels = on ? [...f.labels, needsHumanLabel] : f.labels.filter(l => l !== needsHumanLabel);
+    }
+    if (task && on !== task.labels.includes(needsHumanLabel)) {
+      await this.api.needsHuman(task.number, on);
+      task.labels = on ? [...task.labels, needsHumanLabel] : task.labels.filter(l => l !== needsHumanLabel);
+    }
+  }
+  /** Tells the task, once per approval request, that its pull request waits for a person, why, and how to approve. */
+  private async approvalOnTask(task: Snapshot['issues'][number], snapshot: Snapshot, data: Extract<HarnessEvent['data'], { type: 'merge_approval_required' }>) {
+    const key = `merge-approval-required:${data.approvalId}`;
+    if ((snapshot.comments.get(task.number) ?? []).some(c => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) return;
+    const journal = encodeEvent({ version: 1, key, at: new Date().toISOString(), correlationId: this.correlationId, data });
+    const summary = Buffer.from(`\n\n### Software Factory – Freigabe nötig\n\n${safe(`PR #${data.prNumber} ist geprüft, wartet aber auf eine menschliche Freigabe: Risiko ${data.riskClass} liegt über der Schwelle ${data.autoMergeUpTo} für automatisches Mergen. Freigeben mit diesem Kommentar am PR #${data.prNumber}:`)}\n\n\`/harness approve ${data.approvalId}\``);
+    await this.api.comment(task.number, journal + summary.subarray(0, Math.max(0, 60000 - Buffer.byteLength(journal) - 4)).toString('utf8'));
+  }
+  /**
    * Commits pushed onto a Factory pull request after it was published (a person fixed review findings, or updated the
    * branch). They are adopted when every one of them comes from an account that may write to the repository, which could
    * merge the pull request itself anyway: the new head then goes through the required checks, the validation workflow
@@ -365,13 +388,16 @@ export class MergeManager {
         const handOver = !!owner && !adopted && ((blocked && !this.config.execution.rework) || review.decision === 'defer');
         if (handOver) await this.event(f, `merge-handover:${reviewKey}`, { type: 'merge_handover', prNumber: number, head: f.head, base: f.base,
           reviewKey, decision: review.decision === 'defer' ? 'defer' : 'request_changes' });
-        if (this.api.needsHuman && handOver !== f.labels.includes(needsHumanLabel)) { phase = 'Übergabe-Label setzen'; await this.api.needsHuman(number, handOver); }
+        // sf:needs-human marks what waits for a person: a hand-over, or an approval (below). Another rejection takes it off;
+        // the approval and merge path decides it for a review that lets the change through.
+        if (handOver || rejects(review)) { phase = 'Übergabe-Label setzen'; await this.needsHuman(f, handOver); }
         if (rejects(review)) { this.note(number, handOver ? 'handover' : 'review-rejected', `KI-Entscheidung: ${review.decision}.`); continue; }
         const live = await this.api.facts(number);
         if (hash(factsKey(live)) !== hash(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== 'open' || live.draft || !live.sameRepository ||
           live.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) { this.note(number, 'review', 'Stand hat sich während der KI-Prüfung geändert; erneute Prüfung folgt.'); await this.explain(live, 'PR, Head, Basis oder Freigabe hat sich während der KI-Prüfung geändert; erneute Prüfung erforderlich.'); continue; }
+        let liveOwner: Snapshot['issues'][number] | undefined;
         if (owner) {
-          const liveOwner = this.tasks ? await this.tasks.getIssue(owner.number) : owner;
+          liveOwner = this.tasks ? await this.tasks.getIssue(owner.number) : owner;
           if (liveOwner.state !== 'open' || liveOwner.labels.includes('harness:blocked') || !liveOwner.labels.includes('harness:managed') ||
             taskVersion(liveOwner) !== taskVersion(owner) || untrustedEdit(liveOwner)) {
             this.note(number, 'stopped', 'Die zugehörige Aufgabe wurde während des Reviews verändert.');
@@ -397,9 +423,17 @@ export class MergeManager {
             this.note(number, 'approval-required', riskGate ? `Risiko ${riskRecord!.class} über der Schwelle ${risk.autoMergeUpTo}: menschliche Freigabe nötig.` : 'Menschliche Freigabe nötig.');
             if (riskGate) await this.event(live, `merge-approval-required:${approvalId}`, { type: 'merge_approval_required', prNumber: number,
               head: f.head, base: f.base, approvalId, riskClass: riskRecord!.class, autoMergeUpTo: risk.autoMergeUpTo });
+            // Visible where people look: on the pull request and on its task, with the reason and the command (issue #204).
+            phase = 'Übergabe-Label setzen';
+            await this.needsHuman(live, true, liveOwner);
+            if (liveOwner && riskGate) await this.approvalOnTask(liveOwner, snapshot, { type: 'merge_approval_required', prNumber: number,
+              head: f.head, base: f.base, approvalId, riskClass: riskRecord!.class, autoMergeUpTo: risk.autoMergeUpTo });
             await this.explain(live, `${riskGate ? `Risiko ${riskRecord!.class} liegt über der Schwelle ${risk.autoMergeUpTo}. ` : ''}Menschliche Freigabe erforderlich: /harness approve ${approvalId}`); continue;
           }
         }
+        // Nothing waits for a person any more: the review lets the change through and no approval is (still) missing.
+        phase = 'Übergabe-Label setzen';
+        await this.needsHuman(live, false, liveOwner);
         if (review.decision === 'update_branch') {
           if (!this.config.merge.updateBranch || !behind(live, this.config) || live.unresolvedThreads.length ||
             ['CHANGES_REQUESTED', 'REVIEW_REQUIRED'].includes(live.reviewDecision ?? '')) { this.note(number, 'gate', 'Branch-Aktualisierung ist nicht erlaubt oder durch offene Reviews blockiert.'); await this.explain(live, 'Branch-Aktualisierung ist nicht erlaubt oder durch offene Reviews blockiert.'); continue; }

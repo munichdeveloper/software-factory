@@ -56,6 +56,9 @@ export interface MergePort {
    * '' where it knows neither); null when `head` does not contain `from`.
    */
   pushedSince?(from: string, head: string): Promise<string[] | null>;
-  /** Adds (`on`) or removes the pull request's `sf:needs-human` label (display and filter only; never read as authorization). */
+  /**
+   * Adds (`on`) or removes the `sf:needs-human` label of a pull request or of its task (display and filter only; never
+   * read as authorization).
+   */
   needsHuman?(number: number, on: boolean): Promise<void>;
 }
