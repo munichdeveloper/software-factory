@@ -10,6 +10,7 @@ import type { Finding, FindingKind, SanityStore } from './sanity.js';
 import type { LlmCallRecord } from '../llm/analytics.js';
 import { tokensOf, type AnalyticsCall, type AnalyticsIssue } from './analytics.js';
 import { escalationMarker } from './coding-context.js';
+import type { RuntimeEvent, RuntimeEventStore, RuntimeEventType, StoredRuntimeEvent } from './events.js';
 
 export interface Registration { repositoryId: number; repository: string; githubInstallationId: number }
 export interface StoredRun {
@@ -22,7 +23,7 @@ const decode = (row: Row): StoredRun => ({ snapshot: snapshotSchema.parse(row.sn
   workflowId: row.workflow_id, runId: row.run_id, createdAt: row.created_at.toISOString(), approved: row.approved,
   cancelled: row.cancelled, terminal: row.terminal, result: row.result === null ? null : workerResultSchema.parse(row.result) });
 export interface StoredFinding extends Finding { firstSeen: string; lastSeen: string; resolvedAt: string | null }
-export class RuntimeStore implements SanityStore {
+export class RuntimeStore implements SanityStore, RuntimeEventStore {
   private context = new AsyncLocalStorage<PoolClient>();
   private db() { return this.context.getStore() ?? this.pool; }
   constructor(readonly pool: Pool) {}
@@ -72,7 +73,12 @@ export class RuntimeStore implements SanityStore {
         merged_at timestamptz, merged_by text, updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(repository,issue_number));
       ALTER TABLE factory_analytics_calls ADD COLUMN IF NOT EXISTS price_source text;
       ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS price_source text;
-      ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS agent_estimate_usd double precision;`);
+      ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS agent_estimate_usd double precision;
+      CREATE TABLE IF NOT EXISTS factory_runtime_events (
+        id bigserial PRIMARY KEY, repository_id bigint NOT NULL, repository text NOT NULL, key text NOT NULL, type text NOT NULL,
+        issue_number integer NOT NULL, task_version text NOT NULL, execution_id text, data jsonb NOT NULL,
+        occurred_at timestamptz NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(), UNIQUE(repository_id,key));
+      CREATE INDEX IF NOT EXISTS factory_runtime_events_time ON factory_runtime_events(recorded_at);`);
   }
   /** One broker model call (merge review, risk assessment, planner) for the cost analytics. */
   async recordLlmCall(r: LlmCallRecord): Promise<void> {
@@ -291,6 +297,26 @@ export class RuntimeStore implements SanityStore {
     if (!artifact || hash(artifact) !== report.artifactHash) throw new Error('VALIDATION_ARTIFACT_CONFLICT');
     await this.db().query('UPDATE factory_runtime_artifacts SET validation=$3,validation_digest=$4 WHERE repository_id=$1 AND execution_id=$2 AND (validation IS NULL OR validation_digest=$4)', [repositoryId, executionId, JSON.stringify(report), digest]);
     if (hash(await this.validation(repositoryId, executionId)) !== digest) throw new Error('VALIDATION_REPORT_CONFLICT');
+  }
+  /** Runtime events (issue #188): stored once per key; returns the ones this call added. */
+  async recordEvents(repositoryId: number, repository: string, events: RuntimeEvent[]): Promise<RuntimeEvent[]> {
+    const added: RuntimeEvent[] = [];
+    for (const e of events) {
+      const { rowCount } = await this.pool.query(`INSERT INTO factory_runtime_events(repository_id,repository,key,type,issue_number,task_version,execution_id,data,occurred_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(repository_id,key) DO NOTHING`,
+      [repositoryId, repository, e.key, e.type, e.issueNumber, e.taskVersion, e.executionId, JSON.stringify(e.data), e.at]);
+      if (rowCount) added.push(e);
+    }
+    return added;
+  }
+  /** Events recorded since `since` (all repositories without `repositoryId`), oldest first, at most `limit`. */
+  async events(repositoryId: number | null, since: Date, limit = 500): Promise<StoredRuntimeEvent[]> {
+    const { rows } = await this.db().query<{ id: string; repository: string; key: string; type: RuntimeEventType; issue_number: number; task_version: string;
+      execution_id: string | null; data: RuntimeEvent['data']; occurred_at: Date; recorded_at: Date }>(
+      `SELECT * FROM factory_runtime_events WHERE recorded_at > $1 AND ($2::bigint IS NULL OR repository_id=$2) ORDER BY recorded_at, id LIMIT $3`,
+      [since, repositoryId, limit]);
+    return rows.map(r => ({ id: Number(r.id), repository: r.repository, key: r.key, type: r.type, issueNumber: r.issue_number, taskVersion: r.task_version,
+      executionId: r.execution_id, data: r.data, at: r.occurred_at.toISOString(), recordedAt: r.recorded_at.toISOString() }));
   }
   /** Open findings and those resolved in the last week, newest first. */
   async findings(repositoryId: number): Promise<StoredFinding[]> {

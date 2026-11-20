@@ -1,6 +1,14 @@
 # Konzept: Ereignisse für gescheiterte Prüfschritte und abgelehnte Starts
 
-Status: **Konzept, nicht umgesetzt.** Alle Entscheidungen sind getroffen (Abschnitt 8). Umsetzung: Issue #188 (verwandt: #189).
+Status: **in Umsetzung** (Issue #188, verwandt: #189). Alle Entscheidungen sind getroffen (Abschnitt 8).
+
+- Schritt 1 umgesetzt: `src/runtime/events.ts` leitet die Ereignisse nach jedem Abgleich aus dem rekonstruierten
+  Zustand ab (nur offene Issues, nur die aktuelle Task-Version) und speichert sie idempotent in
+  `factory_runtime_events`. `start_resumed.trigger` ist bis Schritt 3 `manual` (Start vor Ablauf des Backoffs, also nach
+  geänderter Freigabe oder Policy) oder `backoff`. `attention_required.reason` kennt `retries_exhausted`,
+  `rework_exhausted` und `blocked_without_pr`. Lesen: `GET /v1/repositories/{id}/events?since=<ISO>` (Manager-Token)
+  und `GET /v1/events?since=<ISO>` (Manager- oder Monitor-Token); ohne `since` die letzten 24 Stunden, höchstens
+  30 Tage zurück, höchstens 500 Ereignisse, älteste zuerst.
 
 Dieses Dokument beschreibt, wie der Broker einen gescheiterten Prüfschritt, einen abgelehnten Start oder einen
 festhängenden Lauf als **Ereignis** veröffentlicht. Wer will, kann es abonnieren: Slack, der Factory-Monitor, ein
