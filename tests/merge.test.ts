@@ -132,6 +132,22 @@ it('updates a branch behind its base before any review, dispatches CI for the ne
   x.f.checks = x.cfg.merge.requiredChecks.map(name => ({ name, state: 'success' }));
   await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(1); expect(x.api.merge).toHaveBeenCalledWith(52, 'c'.repeat(40), 'squash');
 });
+it('skips the validation dispatch for a workflow without workflow_dispatch after a branch update; review and merge go on (issue #195)', async () => {
+  const x = fixture(); x.f.mergeState = 'BEHIND'; vi.mocked(x.api.workflowAvailable).mockResolvedValue(false);
+  expect((await x.run()).updated).toBe(1); expect(x.api.workflowAvailable).toHaveBeenCalledWith('test.yml', 'feature');
+  x.f.checks = x.cfg.merge.requiredChecks.map(name => ({ name, state: 'success' }));
+  const report = await x.run(); expect(report.errors).toEqual([]);
+  expect(x.api.dispatch).not.toHaveBeenCalled(); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
+  expect(x.api.merge).toHaveBeenCalledWith(52, 'c'.repeat(40), 'squash');
+});
+it('names the dispatch phase when the validation dispatch after a branch update fails anyway (issue #195)', async () => {
+  const x = fixture(); x.f.mergeState = 'BEHIND';
+  vi.mocked(x.api.dispatch).mockRejectedValue(Object.assign(new Error('Unprocessable'), { status: 422 }));
+  await x.run(); x.f.checks = x.cfg.merge.requiredChecks.map(name => ({ name, state: 'success' }));
+  const report = await x.run(); expect(report.errors).toHaveLength(1); expect(x.api.merge).not.toHaveBeenCalled();
+  expect(x.f.comments.at(-1)!.body).toContain('Validierung nach Branch-Aktualisierung starten konnte nicht bestätigt werden (422)');
+  expect(x.f.comments.at(-1)!.body).not.toContain('GitHub-Zustand lesen');
+});
 it('leaves a stale branch alone when merge.updateBranch is off', async () => {
   const x = fixture(); x.f.mergeState = 'BEHIND'; x.cfg.merge.updateBranch = false;
   await x.run(); expect(x.api.update).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
