@@ -1,6 +1,24 @@
 # Konzept: Ereignisse für gescheiterte Prüfschritte und abgelehnte Starts
 
-Status: **Konzept, nicht umgesetzt.** Alle Entscheidungen sind getroffen (Abschnitt 8). Umsetzung: Issue #188 (verwandt: #189).
+Status: **in Umsetzung** (Issue #188, verwandt: #189). Alle Entscheidungen sind getroffen (Abschnitt 8).
+
+- Schritt 1 umgesetzt: `src/runtime/events.ts` leitet die Ereignisse nach jedem Abgleich aus dem rekonstruierten
+  Zustand ab (nur offene Issues, nur die aktuelle Task-Version) und speichert sie idempotent in
+  `factory_runtime_events`. `start_resumed.trigger` ist bis Schritt 3 `manual` (Start vor Ablauf des Backoffs, also nach
+  geänderter Freigabe oder Policy) oder `backoff`. `attention_required.reason` kennt `retries_exhausted`,
+  `rework_exhausted` und `blocked_without_pr`. Lesen: `GET /v1/repositories/{id}/events?since=<ISO>` (Manager-Token)
+  und `GET /v1/events?since=<ISO>` (Manager- oder Monitor-Token); ohne `since` die letzten 24 Stunden, höchstens
+  30 Tage zurück, höchstens 500 Ereignisse, älteste zuerst.
+- Schritt 2 (Slack) umgesetzt: `notifications.slack.events.{validation_failed,start_refused,attention_required}`
+  (`enabled`, `channel`, ohne Default). Der Broker postet neue Ereignisse mit dem Bot-Token; `start_refused` nur für
+  repo-weite Codes, einmal pro Repository, Code und Tag. Ereignisse, die älter als 6 Stunden sind (etwa der erste
+  Abgleich nach dem Deploy), werden nur gespeichert. Empfehlung laut Entscheidung 3: `attention_required` und
+  `start_refused` mit `channel: C0CJZDHJMSB` (`#factory-todo`), `validation_failed` aus.
+- Schritt 3, Stand: `EXECUTOR_WRAPPER_RELEASE_MISMATCH` wird seit #124 schon im Preflight abgelehnt, also vor jedem
+  Intent und ohne Backoff; der Preflight läuft bei jedem Abgleich erneut, ein Start läuft also wenige Minuten nach dem
+  Rollout von selbst an. Diese Ablehnungen stehen in keinem Journal; der Broker meldet sie jetzt trotzdem als
+  `start_refused` (`stage: preflight`, `retryAt: null`) und den folgenden Start als `start_resumed` mit
+  `trigger: cause_cleared`. Offen bleibt das Aufheben journalisierter Ablehnungen (Backoff) nach behobener Ursache.
 
 Dieses Dokument beschreibt, wie der Broker einen gescheiterten Prüfschritt, einen abgelehnten Start oder einen
 festhängenden Lauf als **Ereignis** veröffentlicht. Wer will, kann es abonnieren: Slack, der Factory-Monitor, ein

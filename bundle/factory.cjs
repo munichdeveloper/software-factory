@@ -65475,6 +65475,11 @@ var configSchema = external_exports.strictObject({
       grant_required: notificationRule.optional(),
       // A Factory PR the review handed over to a person (merge_handover); optional for the same reason.
       handover_required: notificationRule.optional(),
+      // Runtime events (docs/failure-events.md, issue #188), posted by the broker; optional for the same reason.
+      // start_refused posts only refusals that hold for the whole repository, once per repository, code and day.
+      validation_failed: notificationRule.optional(),
+      start_refused: notificationRule.optional(),
+      attention_required: notificationRule.optional(),
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: external_exports.array(external_exports.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
@@ -71123,6 +71128,10 @@ var Manager = class {
   /** Definite admission refusals of the last run, by issue: their codes. */
   get lastRejections() {
     return new Map(this.rejections.map((r) => [r.issueNumber, r.code]));
+  }
+  /** Refusals of the runtime's preflight in the last run: before any intent, so the journal does not know them. */
+  get lastPreflightRefusals() {
+    return new Map(this.rejections.filter((r) => !r.recorded).map((r) => [r.issueNumber, r.code]));
   }
   async snapshot() {
     const snapshot = await this.github.snapshot(this.config.execution.engine === "temporal" ? null : this.config.manager.workflow);

@@ -26,6 +26,7 @@ import { QueueBoard } from './queue.js';
 import { AnalyticsIssueSync } from './analytics.js';
 import { configurePrices, setLlmCallSink } from '../llm/analytics.js';
 import { SanityMonitor } from './sanity.js';
+import { RuntimeEvents } from './events.js';
 import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
 import { CreditAlerts } from './credit-alerts.js';
 import { dailyUsageReport, UsageAlerts, usageThresholds } from './usage.js';
@@ -293,14 +294,16 @@ export async function main(args = process.argv.slice(2)) {
     const queue = new QueueBoard(undefined, interval || null);
     // Cost analytics (GET /v1/analytics, same token as the queue): issue titles and merges from each reconciliation.
     const analytics = new AnalyticsIssueSync(store);
-    const serverOptions = { monitor, queue, analytics, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
+    // Runtime events (issue #188): failed validations, refused and resumed starts, failed runs, tasks that need a person.
+    const events = new RuntimeEvents(store, undefined, process.env.SLACK_BOT_TOKEN ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined);
+    const serverOptions = { monitor, queue, analytics, events, managerToken: process.env.FACTORY_MANAGER_TOKEN ?? '', workerToken: process.env.FACTORY_WORKER_TOKEN ?? '', bindings, store, register,
       monitorToken: process.env.FACTORY_MONITOR_TOKEN ?? '', ...(notifications ? { notifications } : {}) };
     const port = z.coerce.number().int().min(1024).max(65535).parse(process.env.FACTORY_RUNTIME_PORT ?? '8095');
     const addresses = await listenAddresses(process.env.FACTORY_RUNTIME_LISTEN_ALIAS);
     // One server per address; they share the options, so a registration through either is served by both.
     const servers = addresses.map(() => runtimeServer(serverOptions));
     await Promise.all(servers.map((server, i) => new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, addresses[i], resolve); })));
-    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, queue, analytics, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
+    const stopSchedule = interval ? startReconcileSchedule(bindings, { store, monitor, queue, analytics, events, ...(notifications ? { notifications } : {}) }, interval * 1000) : async () => {};
     // Off unless the deployment turns it on: the App needs Administration and Variables write for it.
     const stopRunners = process.env.FACTORY_RUNNER_FALLBACK === 'on' ? (() => {
       const channel = process.env.FACTORY_RUNNER_ALERT_CHANNEL, slack = process.env.SLACK_BOT_TOKEN && channel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;

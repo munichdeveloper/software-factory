@@ -13,7 +13,7 @@ async function fixture(merge?: { start: ReturnType<typeof vi.fn>; errors?: strin
   const controller = { observations: vi.fn(async () => []), gateApproved: vi.fn(async () => false), authorize: vi.fn(async () => ({})),
     publish: vi.fn(), gate: vi.fn(async () => {}), cancel: vi.fn(async () => {}), start: vi.fn(), deployment: vi.fn(async () => ({ workerReady: true })) };
   const repository = { repositoryId: 42, github, config: async () => cfg };
-  const store = { list: vi.fn(async () => []), findings: vi.fn(async () => [{ key: 'run_stuck:7:x', kind: 'run_stuck', issueNumber: 7 }]), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()),
+  const store = { list: vi.fn(async () => []), events: vi.fn(async () => [{ key: 'run_failed:x', type: 'run_failed', issueNumber: 7 }]), findings: vi.fn(async () => [{ key: 'run_stuck:7:x', kind: 'run_stuck', issueNumber: 7 }]), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()),
     tryLocked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
   const managerToken = 'm'.repeat(32), workerToken = 'w'.repeat(32);
   const server = runtimeServer({ managerToken, workerToken, bindings: [{ repository, controller, planner: new MockPlanner(), merge } as unknown as RuntimeBinding], store: store as unknown as RuntimeStore });
@@ -46,6 +46,17 @@ describe('private runtime HTTP boundaries', () => {
     expect((await f.call('/v1/repositories/42/findings', undefined, f.workerToken)).status).toBe(401);
     expect(await (await f.call('/v1/repositories/42/findings')).json()).toEqual({ findings: [{ key: 'run_stuck:7:x', kind: 'run_stuck', issueNumber: 7 }] });
     expect(f.store.findings).toHaveBeenCalledWith(42);
+  });
+  it('serves runtime events per repository and for all repositories, bounded in time', async () => {
+    const f = await fixture();
+    expect((await f.call('/v1/repositories/42/events', undefined, f.workerToken)).status).toBe(401);
+    expect(await (await f.call('/v1/repositories/42/events?since=2026-11-19T10:00:00Z')).json()).toEqual({ events: [{ key: 'run_failed:x', type: 'run_failed', issueNumber: 7 }] });
+    const since = f.store.events.mock.calls[0] as unknown as [number, Date];
+    expect(since[0]).toBe(42); expect(since[1].getTime()).toBeGreaterThanOrEqual(Date.now() - 30 * 86400000 - 1000);
+    expect((await f.call('/v1/events')).status).toBe(200);
+    expect((f.store.events.mock.calls[1] as unknown as [number | null])[0]).toBeNull();
+    expect((await f.call('/v1/events?since=yesterday')).status).toBe(400);
+    expect((await f.call('/v1/events', undefined, f.workerToken)).status).toBe(401);
   });
   it('rejects unknown repositories, invalid commands and extra actor fields', async () => {
     const f = await fixture(); expect((await f.call('/v1/repositories/43/runs')).status).toBe(409);

@@ -11,6 +11,7 @@ import type { Registration, RuntimeStore } from './store.js';
 import type { RuntimeMerge } from './merge.js';
 import type { NotificationSink } from '../notifications/slack.js';
 import type { SanityMonitor } from './sanity.js';
+import type { RuntimeEvents } from './events.js';
 import type { QueueBoard } from './queue.js';
 import { loadAnalytics, type AnalyticsIssueSync } from './analytics.js';
 
@@ -31,7 +32,16 @@ export interface ServerOptions { managerToken: string; workerToken: string; bind
   /** Read-only credential for GET /v1/queue and GET /v1/analytics (software-factory-monitor); it grants nothing else. */
   monitorToken?: string;
   /** Keeps issue titles and merges for the cost analytics, told about every reconciliation. */
-  analytics?: AnalyticsIssueSync }
+  analytics?: AnalyticsIssueSync;
+  /** Runtime events (validation_failed, start_refused …), derived from every reconciliation; served at GET …/events. */
+  events?: RuntimeEvents }
+/** `since` of an events request: an ISO time, default the last 24 hours, never more than 30 days back. */
+function eventsSince(url: string | undefined): Date {
+  const value = new URL(url ?? '/', 'http://localhost').searchParams.get('since');
+  const floor = Date.now() - 30 * 86400000;
+  const since = value === null ? Date.now() - 86400000 : Date.parse(z.iso.datetime({ offset: true }).parse(value));
+  return new Date(Math.max(since, floor));
+}
 const registrationSchema = z.strictObject({ repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/), githubInstallationId: z.number().int().positive().safe() });
 const secureEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 const actorSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}(?:\[bot\])?$/);
@@ -56,7 +66,7 @@ const send = (response: ServerResponse, code: number, body: unknown) => { respon
  */
 /** Observations as the HTTP API answers them: without the broker-internal routing decision (see observationSchema). */
 const wire = <T extends { route?: unknown; usage?: unknown }>(observation: T): Omit<T, 'route' | 'usage'> => { const { route: _route, usage: _usage, ...rest } = observation; void _route; void _usage; return rest; };
-export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor' | 'queue' | 'analytics'>) {
+export async function reconcileBinding(binding: RuntimeBinding, options: Pick<ServerOptions, 'store' | 'notifications' | 'monitor' | 'queue' | 'analytics' | 'events'>) {
   const config = await binding.repository.config();
   if (config.execution.engine !== 'temporal') throw new Error('TEMPORAL_NOT_ENABLED');
   // Runs the previous release still serves end after their retention, so the planner can retry them on this release.
@@ -77,6 +87,7 @@ export async function reconcileBinding(binding: RuntimeBinding, options: Pick<Se
   if (executed.length || report.errors.length || report.blockers.length) console.log(JSON.stringify({ event: 'factory-reconcile',
     repositoryId: binding.repository.repositoryId, outcome: report.outcome, executed, errors: report.errors, blockers: report.blockers }));
   await options.monitor?.observed(binding.repository, config, manager.lastSnapshot, report);
+  await options.events?.observed(binding.repository, config, manager.lastSnapshot, manager.lastPreflightRefusals);
   options.queue?.observed(binding.repository, config, manager.settledSnapshot, report, manager.lastRejections, binding.merge?.progress());
   await options.analytics?.observed(binding.repository.repository, manager.settledSnapshot);
   return report;
@@ -97,6 +108,12 @@ export function runtimeServer(options: ServerOptions) {
         if (request.method !== 'GET') throw new Error('METHOD');
         if (!options.queue) { send(response, 404, { code: 'NOT_FOUND' }); return; }
         send(response, 200, options.queue.view(options.bindings.map(b => b.repository))); return;
+      }
+      if (path === '/v1/events') {
+        // Read-only, like the queue: the runtime events of all repositories since a point in time (monitor, subscribers).
+        if (!(monitorToken && secureEqual(token, monitorToken)) && !secureEqual(token, options.managerToken)) { send(response, 401, { code: 'UNAUTHORIZED' }); return; }
+        if (request.method !== 'GET') throw new Error('METHOD');
+        send(response, 200, { events: await options.store.events(null, eventsSince(request.url)) }); return;
       }
       if (path === '/v1/analytics') {
         // Read-only, like the queue: cost per issue, step and model (software-factory-monitor's analytics page).
@@ -136,13 +153,16 @@ export function runtimeServer(options: ServerOptions) {
         console.log(JSON.stringify({ event: 'factory-repository-registered', repositoryId }));
         send(response, 200, { repositoryId, registered: true }); return;
       }
-      const match = path.match(/^\/v1\/repositories\/([1-9][0-9]*)\/(runs|observations|reconcile|deployment|findings)(?:\/([a-f0-9]{32})(?:\/(approve|revoke|cancel))?)?$/);
+      const match = path.match(/^\/v1\/repositories\/([1-9][0-9]*)\/(runs|observations|reconcile|deployment|findings|events)(?:\/([a-f0-9]{32})(?:\/(approve|revoke|cancel))?)?$/);
       if (!match) { send(response, 404, { code: 'NOT_FOUND' }); return; }
       const binding = options.bindings.find(b => b.repository.repositoryId === Number(match[1]));
       if (!binding) throw new Error('UNKNOWN_REPOSITORY');
       const [, , resource, id, action] = match;
       if (request.method === 'GET' && resource === 'deployment' && !id) {
         send(response, 200, await binding.controller.deployment()); return;
+      }
+      if (request.method === 'GET' && resource === 'events' && !id) {
+        send(response, 200, { events: await options.store.events(binding.repository.repositoryId, eventsSince(request.url)) }); return;
       }
       if (request.method === 'GET' && resource === 'findings' && !id) {
         send(response, 200, { findings: await options.store.findings(binding.repository.repositoryId) }); return;
