@@ -13,6 +13,7 @@ import { escalated } from './coding-context.js';
 import { GitHubClient } from '../github/client.js';
 import { CodingRepository } from '../github/coding.js';
 import { ClaudePlanner, FallbackPlanner, StaticPlanner, OpenAIPlanner } from '../llm/provider.js';
+import { JevPlanner } from '../llm/jev-planner.js';
 import { claudeModels, claudeStructured } from '../llm/claude.js';
 import { ModelRouter, RouterAlerts, Routing, routerEndpoint } from '../llm/router.js';
 import { routedAssessor, routedPlanner, routedReviewer, type RoutedModels } from '../llm/routed-models.js';
@@ -242,7 +243,8 @@ export async function main(args = process.argv.slice(2)) {
       // A purpose the repository routes (router: review, risk, planner) asks the router first; its configured chain
       // below stays the fallback.
       const routed: RoutedModels = { routing, repository: item.repository, claude, openaiKey: process.env.OPENAI_API_KEY ?? '' };
-      const openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? ''), deterministic = new StaticPlanner();
+      const openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? ''), deterministic = new StaticPlanner(),
+        jev = new JevPlanner(routing, item.repository, deterministic);
       const planner = routedPlanner(routed, claude ? new FallbackPlanner(new ClaudePlanner(claude, models.planner), openai) : openai);
       const reviewer = (config: Config) => { const plain = new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config);
         return routedReviewer(routed, config, claude ? new FallbackMergeReviewer(new ClaudeMergeReviewer(claude, models.review, config), plain) : plain); };
@@ -253,7 +255,7 @@ export async function main(args = process.argv.slice(2)) {
         new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
         config, reviewer(config), `temporal-merge:${item.repositoryId}`, github,
         { ownedOnly: !!item.issueNumbers, assessor: assessor(config), observe }).run(snapshot));
-      return { repository, controller, planner: config => config.llm.provider === 'static' ? deterministic : planner, merge };
+      return { repository, controller, planner: config => config.llm.provider === 'static' ? deterministic : config.llm.provider === 'jev' ? jev : planner, merge };
     };
     const bindings: RuntimeBinding[] = [];
     for (const item of registry.repositories) bindings.push(await bind(item));

@@ -188,7 +188,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         new HarnessProcessClient(process.env.HARNESS_ENTRYPOINT ?? ''));
       console.log(JSON.stringify({ correlationId, executionId: result.executionId, status: result.status })); return;
     }
-    const planner = config.llm.provider === 'static' ? new StaticPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
+    const planner = config.llm.provider !== 'openai' ? new StaticPlanner() : new OpenAIPlanner(process.env.OPENAI_API_KEY ?? '');
     const report = await new Manager(github, config, planner, { correlationId,
       workerRuntime: config.execution.engine === 'temporal' ? new RuntimeHttpClient(process.env.FACTORY_RUNTIME_URL ?? '',
         process.env.FACTORY_RUNTIME_TOKEN ?? '', Number(process.env.GITHUB_REPOSITORY_ID)) : undefined,

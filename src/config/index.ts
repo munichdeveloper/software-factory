@@ -121,7 +121,9 @@ export const configSchema = z.strictObject({
   llm: z.strictObject({
     // 'static' plans deterministically without a model (every startable issue by priority label, then number); 'mock' is
     // its former name and still read as 'static', so existing repository configurations keep working (SF #200).
-    provider: z.enum(['static', 'mock', 'openai']).default('static').transform(p => p === 'mock' ? 'static' as const : p), model: z.string().min(1).default('gpt-4.1-mini'),
+    // 'jev' (SF #203): the static selection, with TypeSafe Jev deciding start order and start readiness in the broker;
+    // its settings come from the router block, and every router skip plans like 'static'.
+    provider: z.enum(['static', 'mock', 'openai', 'jev']).default('static').transform(p => p === 'mock' ? 'static' as const : p), model: z.string().min(1).default('gpt-4.1-mini'),
     reasoningEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']).nullable().default(null),
     maxOutputTokens: bounded(256, 16000, 4000), timeoutSeconds: bounded(1, 120, 60),
     maxCalls: bounded(0, 3, 1)

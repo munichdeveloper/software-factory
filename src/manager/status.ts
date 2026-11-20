@@ -85,6 +85,7 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
     needs = task.blockReason.startsWith('Unresolved dependencies') ? 'Close the issues this task depends on, or remove them from its `Depends on:` line.'
       : task.blockReason.startsWith('Missing Acceptance') ? 'Add a section `## Acceptance criteria` with at least one list item to the task text.'
       : task.blockReason.startsWith(protectedPathBlockPrefix) ? 'The coding worker may not change CI workflows (`.github/`), agent instruction files or CODEOWNERS. A maintainer makes that part of the change, then removes it from the task text (or moves it to a section `## Out of scope` / `## Nicht enthalten`); the task then starts normally.'
+      : task.automaticBlockCause === 'planner' ? 'The planner judged this task text unclear or too large for one run. Revise the task text (a revised text is judged again), or remove the label `harness:blocked` to start it as it is.'
       : 'Remove the label `harness:blocked` when the task may continue.';
   } else if (rejection) {
     const ready = rejection.startsWith('READY_');

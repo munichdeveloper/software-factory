@@ -75,6 +75,9 @@ export function endpointModel(api: RouterApi, model: string): string {
 /** At most this many characters of the request reach Jev; more adds cost, not a better choice. */
 export const maxRouterState = 8000;
 
+/** A routing decision with Jev's probability per option (null where Jev gave none). */
+export interface Decision { record: RouteRecord; probabilities: Record<string, number> | null }
+
 export class ModelRouter {
   private key: string | undefined;
   readonly api: RouterApi;
@@ -84,6 +87,19 @@ export class ModelRouter {
   }
   /** Never throws: an unusable answer comes back as a record with used false. */
   async route(purpose: RouterPurpose, state: string, options: RouterOption[], settings: RouterSettings): Promise<RouteRecord> {
+    return (await this.decide(purpose, questions[purpose], state, options, settings)).record;
+  }
+  /**
+   * Any choice question to Jev (the planner's start order and readiness ask their own): the decision record and Jev's
+   * probability per option, where it gave them. Never throws.
+   */
+  async decide(purpose: RouterPurpose, question: string, state: string, options: RouterOption[], settings: RouterSettings): Promise<Decision> {
+    let probabilities: Record<string, number> | null = null;
+    const record = await this.ask(purpose, question, state, options, settings, p => { probabilities = p; });
+    return { record, probabilities };
+  }
+  private async ask(purpose: RouterPurpose, question: string, state: string, options: RouterOption[], settings: RouterSettings,
+    onProbabilities: (p: Record<string, number>) => void): Promise<RouteRecord> {
     const skip = (reason: RouterSkip, code: string | null = null, choice: string | null = null, confidence: number | null = null): RouteRecord =>
       ({ used: false, purpose, reason, code, choice, confidence, model: settings.model });
     if (!this.key) return skip('no-key');
@@ -92,7 +108,7 @@ export class ModelRouter {
       response = await this.fetcher(this.api === 'typesafe' ? typesafeUrl : decisionsUrl, { method: 'POST', signal: AbortSignal.timeout(settings.timeoutSeconds * 1000),
         headers: { authorization: `Bearer ${this.key}`, 'content-type': 'application/json' },
         body: JSON.stringify({ model: endpointModel(this.api, settings.model), state: state.slice(0, maxRouterState),
-          questions: { route: { type: 'choice', instructions: questions[purpose], criteria: Object.fromEntries(options.map(o => [o.id, describeOption(o)])) } } }) });
+          questions: { route: { type: 'choice', instructions: question, criteria: Object.fromEntries(options.map(o => [o.id, describeOption(o)])) } } }) });
     } catch (error) {
       return skip('unavailable', error instanceof Error && error.name === 'TimeoutError' ? 'TIMEOUT' : 'TRANSPORT');
     }
@@ -101,6 +117,7 @@ export class ModelRouter {
     try { answer = decisionSchema.parse(await response.json()).answers.route; }
     catch { return skip('invalid-answer', 'INVALID_JSON'); }
     if (!options.some(o => o.id === answer.choice)) return skip('invalid-answer', 'UNKNOWN_CHOICE');
+    if (answer.probabilities) onProbabilities(Object.fromEntries(Object.entries(answer.probabilities).filter(([id, p]) => options.some(o => o.id === id) && Number.isFinite(p))));
     // The threshold applies to the probability Jev gives the chosen candidate. Jev's own `confidence` is a different
     // measure, (p_max - 1/n) / (1 - 1/n): 0 for an even split, so with two candidates a clear 66 % lean is only 32 %
     // confidence (docs.typesafe.ai/confidence; Johannes, 2026-11-19: constant "low confidence" fallbacks). Without
@@ -165,7 +182,15 @@ export class RouterAlerts {
 export class Routing {
   constructor(private router: ModelRouter, private alerts?: RouterAlerts) {}
   async route(repository: string, purpose: RouterPurpose, state: string, options: RouterOption[], settings: RouterSettings): Promise<RouteRecord> {
-    const record = await this.router.route(purpose, state, options, settings);
+    return this.observed(repository, await this.router.route(purpose, state, options, settings), options);
+  }
+  /** A choice question of the caller's own (the Jev planner), logged and reported like a routing decision. */
+  async decide(repository: string, purpose: RouterPurpose, question: string, state: string, options: RouterOption[], settings: RouterSettings): Promise<Decision> {
+    const decision = await this.router.decide(purpose, question, state, options, settings);
+    await this.observed(repository, decision.record, options);
+    return decision;
+  }
+  private async observed(repository: string, record: RouteRecord, options: RouterOption[]): Promise<RouteRecord> {
     logRoute(repository, record);
     const chosen = record.used ? options.find(o => o.id === record.choice) as (RouterOption & ChosenDetails) | undefined : undefined;
     try { await this.alerts?.observe(repository, record, chosen); } catch { /* an alert never fails the work */ }

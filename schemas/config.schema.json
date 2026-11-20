@@ -186,7 +186,8 @@
           "enum": [
             "static",
             "mock",
-            "openai"
+            "openai",
+            "jev"
           ]
         },
         "model": {
