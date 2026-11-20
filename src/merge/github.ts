@@ -80,6 +80,7 @@ export class GitHubMergePort implements MergePort {
     }
     return checks;
   }
+  /** `maxBytes` bounds the whole loaded context; a context larger than one review part is split by merge/parts.ts. */
   async context(facts: MergeFacts, maxFiles: number, maxBytes: number): Promise<ReviewInput> {
     // Compare immutable commit IDs, not a mutable pull-request diff endpoint.
     const { data: comparison } = await this.api.repos.compareCommitsWithBasehead({ ...this.target, basehead: `${facts.base}...${facts.head}`, per_page: 1 });

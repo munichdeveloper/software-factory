@@ -8,6 +8,7 @@ import { permission, policyVersion } from '../policies/engine.js';
 import { mergeReviewSchema, needsHumanLabel, type MergeFacts, type MergePort, type MergeReview, type MergeReviewer, type ReviewInput } from './contract.js';
 import { aboveThreshold, builtinCriticalPaths, classifyRisk, describeRisk, type RiskAssessor, type RiskRecord } from './risk.js';
 import { routeNoteDe, routeOutcome } from '../llm/router.js';
+import { combineReviews, contextLimitError, partsLimitError, reviewParts } from './parts.js';
 import { setLlmSubject, withLlmContext } from '../llm/analytics.js';
 import { reconstruct } from '../state/reconstruct.js';
 import type { MergeObserver } from '../runtime/merge.js';
@@ -297,7 +298,12 @@ export class MergeManager {
         const cachedRisk = riskKey ? this.events(f).find(e => e.data.type === 'merge_risk' && e.data.riskKey === riskKey) : undefined;
         let context: Promise<ReviewInput> | undefined;
         const current = f;
-        const load = () => context ??= this.api.context(current, this.config.merge.review.maxFiles, this.config.merge.review.maxContextBytes);
+        const { maxFiles, maxContextBytes, maxParts } = this.config.merge.review;
+        // The whole context may span maxParts review parts; each part stays under maxContextBytes (issue #189).
+        const load = () => context ??= this.api.context(current, maxFiles, maxContextBytes * maxParts).then(input => {
+          if (sourceTask) input.sourceTask = sourceTask; return input; });
+        let planned: Promise<ReviewInput[]> | undefined;
+        const plan = () => planned ??= load().then(input => reviewParts(input, maxContextBytes, maxParts));
         // Which model did the work, when the model router was asked (router.review, router.risk); shown, never journaled.
         let reviewNote = '', riskNote = '';
         const configuredAssessor = this.options.assessor;
@@ -307,17 +313,24 @@ export class MergeManager {
         const reviewing: Promise<MergeReview> = cached?.data.type === 'merge_review' ? Promise.resolve(cached.data.review) : (async () => {
           report.reviewed++;
           phase = 'Vollständigen Änderungskontext laden';
-          const input = await load();
-          if (sourceTask) input.sourceTask = sourceTask;
-          if (Buffer.byteLength(JSON.stringify({ ...input, facts: factsKey(current) })) > this.config.merge.review.maxContextBytes) throw new Error('Review context exceeds limit; no truncated approval');
-          phase = 'KI-Review';
-          this.note(number, 'review');
-          const reviewed = await this.reviewer.review(input);
-          reviewNote = routeNoteDe(routeOutcome(reviewed));
-          return mergeReviewSchema.parse(reviewed);
+          const parts = await plan();
+          phase = parts.length > 1 ? `KI-Review in ${parts.length} Teilen` : 'KI-Review';
+          this.note(number, 'review', parts.length > 1 ? `KI-Review in ${parts.length} Teilen.` : null);
+          const reviews: MergeReview[] = [];
+          for (const part of parts) {
+            const reviewed = await this.reviewer.review(part);
+            reviewNote = routeNoteDe(routeOutcome(reviewed));
+            const parsed = mergeReviewSchema.parse(reviewed); reviews.push(parsed);
+            // A part that does not approve decides for the whole pull request; the remaining parts are not reviewed.
+            if (rejects(parsed)) break;
+          }
+          return parts.length > 1 ? mergeReviewSchema.parse(combineReviews(reviews, parts.length)) : reviews[0]!;
         })();
         const assessing: Promise<RiskRecord | null> = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === 'merge_risk' ? Promise.resolve(cachedRisk.data.risk)
-          : load().then(input => classifyRisk(input.changes, risk, assessor), () => classifyRisk([], risk, { assess: () => Promise.reject(new Error('No context')) }));
+          // Without a review plan (more than maxParts parts) the whole change set is assessed at once, as before parts existed.
+          : load().then(input => plan().then(parts => parts.map(p => p.changes), () => [input.changes])
+            .then(parts => classifyRisk(input.changes, risk, assessor, parts)),
+            () => classifyRisk([], risk, { assess: () => Promise.reject(new Error('No context')) }));
         const [review, riskRecord] = await Promise.all([reviewing, assessing]);
         await this.event(f, `merge-review:${reviewKey}`, { type: 'merge_review', head: f.head, base: f.base, reviewKey, review, verdictKey },
           `**KI-Entscheidung: ${review.decision}**\n\n${review.reason}\n\n${review.findings.map(x => `- ${x.severity}: ${x.path} – ${x.explanation}`).join('\n')}\n\n${reviewNote ? `${reviewNote}\n\n` : ''}Head: \`${f.head}\`; Basis: \`${f.base}\`.`);
@@ -404,7 +417,8 @@ export class MergeManager {
         this.note(number, 'error', `${phase} konnte nicht bestätigt werden (${status}).`);
         const reasons: Record<string, string> = {
           'Change set exceeds review file limit': 'Die Änderung überschreitet das konfigurierte Dateilimit für einen vollständigen KI-Review.',
-          'Review context exceeds limit; no truncated approval': 'Der vollständige Review-Kontext überschreitet das konfigurierte Größenlimit; eine gekürzte Prüfung genügt nicht.',
+          [contextLimitError]: 'Der vollständige Review-Kontext überschreitet das konfigurierte Größenlimit, auch bei Prüfung in Teilen (merge.review.maxParts); eine gekürzte Prüfung genügt nicht. Bitte den PR in kleinere PRs aufteilen.',
+          [partsLimitError]: `Die Prüfung bräuchte mehr als ${this.config.merge.review.maxParts} Teile (merge.review.maxParts). Bitte den PR in kleinere PRs aufteilen (workers.coding.smallPullRequests).`,
           'Diff is incomplete or contains binary changes': 'Der Diff ist unvollständig oder enthält nicht prüfbare Binäränderungen.',
           'File cannot be reviewed completely': 'Mindestens eine Datei kann nicht vollständig geprüft werden.',
           'Merge review incomplete or refused': 'Die KI-Prüfung wurde nicht vollständig abgeschlossen oder abgelehnt.',

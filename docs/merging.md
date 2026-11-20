@@ -41,8 +41,21 @@ merge:
     maxOutputTokens: 12000
     maxFiles: 60
     maxContextBytes: 250000
+    maxParts: 4 # Larger change sets are reviewed in up to this many parts (1: never).
   postMergeWorkflows: [] # Explicit workflow_dispatch hooks, e.g. docker-publish.yml.
 ```
+
+A change set whose full review context exceeds `maxContextBytes` is reviewed in
+parts (issue #189). Each part stays under the limit and carries `AGENTS.md`, the
+PR facts, the list of all other changed files (with their patches while they fit)
+and the full content of its own files; a module and its test stay together. A
+file that alone does not fit is reviewed by its patch with 200 lines of context
+around every hunk, so every changed line is still reviewed. The PR merges only
+when every part approves the same head; a part that rejects or defers decides
+for the whole PR, and later parts are not reviewed. The review comment names the
+number of parts. More than `maxParts` parts are refused with a hint to split the
+PR. The risk assessment uses the same parts and keeps the highest class; the
+deterministic size and area rules still apply to the whole change set.
 
 Only proven Factory PRs or same-repository PRs explicitly labeled `sf:automerge`
 are eligible. The label is an authorization by a repository maintainer to enter
