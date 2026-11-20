@@ -291,7 +291,13 @@ export const configSchema = z.strictObject({
       issue_created: notificationRule.prefault({}),
       pr_merged: notificationRule.extend({ actors: z.array(z.string().regex(/^[A-Za-z0-9_-]+(?:\[bot\])?$/)).max(20).default([]) }).prefault({})
     }).prefault({})
-  }).prefault({}) }).prefault({}),
+  }).prefault({}),
+  // Signed POSTs of runtime events (docs/failure-events.md 5.2, issue #188 step 4), signed with the broker's
+  // FACTORY_WEBHOOK_SECRET. Optional without a default, so the configuration hash of existing repositories stays.
+  webhooks: z.array(z.strictObject({
+    url: z.url({ protocol: /^https$/ }).max(500),
+    events: z.array(z.enum(['validation_failed', 'start_refused', 'start_resumed', 'run_failed', 'attention_required'])).min(1).max(5)
+  })).max(5).optional() }).prefault({}),
   monitoring: monitoringSchema.partial().optional(),
   router: routerSchema.optional()
 }).superRefine((config, context) => {

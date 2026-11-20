@@ -19,6 +19,12 @@ Status: **in Umsetzung** (Issue #188, verwandt: #189). Alle Entscheidungen sind 
   Rollout von selbst an. Diese Ablehnungen stehen in keinem Journal; der Broker meldet sie jetzt trotzdem als
   `start_refused` (`stage: preflight`, `retryAt: null`) und den folgenden Start als `start_resumed` mit
   `trigger: cause_cleared`. Offen bleibt das Aufheben journalisierter Ablehnungen (Backoff) nach behobener Ursache.
+- Schritt 4 umgesetzt (5.2): `notifications.webhooks: [{ url, events }]` (höchstens 5 Regeln, nur `https`, keine internen
+  Hosts, ohne Default). Der Broker signiert jeden POST mit `FACTORY_WEBHOOK_SECRET` (Deploy-Secret `BROKER_WEBHOOK_SECRET`
+  in der Umgebung `production`) als `X-Factory-Signature-256: sha256=<HMAC des Bodys>`; ohne Secret sendet er nichts.
+  Header `X-Factory-Event` und `X-Factory-Delivery` (`<repositoryId>:<key>`, zum Entdoppeln). Fehlversuche wiederholt er
+  nach 30 s und 2 min; jeder Versuch steht im Broker-Log (`factory-webhook-delivery`, ohne URL). Der Claude-Abonnent (6.3)
+  ist noch offen.
 - Schritt 5 umgesetzt (6.2, Variante A): Wird der Issue-Text geändert, während der offene PR eines Versuchs auf eine
   Nachbesserung wartet, startet die Nachbesserung für die neue Task-Version auf diesem PR (`urn:sf-rework:<alter Versuch>`).
   Die Freigabe des alten Versuchs gilt nicht für den neuen Text: Wo `harness:ready` eine Freigabe ist, wartet das Issue
@@ -113,7 +119,7 @@ Nächstes tut („Nachbesserung startet“, „wartet auf Rollout von 0.17.3“,
 ### 5.2 Webhook
 
 `notifications.webhooks: [{ url, events: [...], secret }]`. Signierter POST (HMAC über den Body), Wiederholung mit
-Backoff, Zustellung im Broker protokolliert. Damit kann zum Beispiel ein Claude-Projekt-Thread oder n8n auf ein
+Backoff, Zustellung im Broker protokolliert. (Umgesetzt mit einem gemeinsamen Secret statt einem pro Regel, siehe Stand oben.) Damit kann zum Beispiel ein Claude-Projekt-Thread oder n8n auf ein
 Ereignis reagieren. Das Secret liegt wie andere Broker-Secrets in der Umgebung `production`.
 
 ### 5.3 Monitor

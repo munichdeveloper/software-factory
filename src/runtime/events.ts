@@ -1,6 +1,7 @@
 import type { Config } from '../config/index.js';
 import type { SanityAlertSink } from '../notifications/sanity-alerts.js';
 import type { Snapshot } from '../types.js';
+import type { EventWebhooks } from './webhooks.js';
 import { admissionBackoffMinutes, infrastructureFailureCode, reconstruct, type Execution, type Task } from '../state/reconstruct.js';
 
 /**
@@ -156,7 +157,7 @@ export function preflightEvents(tasks: Task[], refused: ReadonlyMap<number, stri
 export class RuntimeEvents {
   /** Preflight refusals of the previous reconciliation per repository (in memory: a broker restart starts over). */
   private preflight = new Map<number, Map<number, { code: string; version: string; at: string }>>();
-  constructor(private store: RuntimeEventStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink) {}
+  constructor(private store: RuntimeEventStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink, private webhooks?: EventWebhooks) {}
   async observed(target: { repositoryId: number; repository: string }, config: Config, snapshot: Snapshot | undefined,
     refused: ReadonlyMap<number, string> = new Map()): Promise<RuntimeEvent[]> {
     if (!snapshot) return [];
@@ -182,6 +183,10 @@ export class RuntimeEvents {
    * store and the monitor. At most once: a message lost to Slack is not repeated.
    */
   async notify(target: { repositoryId: number; repository: string }, config: Config, added: RuntimeEvent[]) {
+    // Webhooks get every new event their rule names, also the ones Slack leaves out; stale ones (first reconciliation
+    // after a deploy) are only stored, as for Slack.
+    const fresh = added.filter(e => this.now().getTime() - Date.parse(e.at) <= notifyWithinMs);
+    try { this.webhooks?.deliver(target, config.notifications.webhooks, fresh); } catch { /* never blocks the Factory */ }
     const slack = config.notifications.slack;
     if (!this.alerts || !slack.enabled) return;
     const now = this.now().getTime();

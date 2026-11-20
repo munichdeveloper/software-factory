@@ -1172,6 +1172,40 @@
             }
           },
           "additionalProperties": false
+        },
+        "webhooks": {
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "maxLength": 500,
+                "format": "uri"
+              },
+              "events": {
+                "minItems": 1,
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "validation_failed",
+                    "start_refused",
+                    "start_resumed",
+                    "run_failed",
+                    "attention_required"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "url",
+              "events"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
