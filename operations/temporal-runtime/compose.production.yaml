@@ -37,7 +37,7 @@ x-service: &service
 services:
   runtime-db:
     <<: *service
-    # Clients that share runtime-broker's network namespace lose it whenever a deploy recreates the broker, under
+    # Clients in the shared network namespace (runtime-net) lost it whenever a deploy recreated the broker, under
     # their open connections and without closing them; TCP keepalives let
     # Postgres drop such dead connections after about 90 seconds instead of two hours (max_connections ran out).
     command: [postgres, -c, tcp_keepalives_idle=60, -c, tcp_keepalives_interval=10, -c, tcp_keepalives_count=3]
@@ -52,6 +52,26 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+  # Holds the network namespace that the broker and both workers share (software-factory#194). The workers reach
+  # the broker on loopback, which is why they cannot have networks of their own. They used to join the broker's own
+  # namespace (network_mode: service:runtime-broker): when the broker died and Docker restarted it, it came back in a
+  # new namespace and the workers stayed in the old, empty one ("dns error" on every Temporal poll) until the whole
+  # project was restarted by hand. This container does nothing but keep the namespace and its networks, so a crash,
+  # restart or redeploy of the broker or of a worker leaves the others connected. Change it only together with them.
+  runtime-net:
+    <<: *service
+    image: node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
+    entrypoint: [tail, -f, /dev/null]
+    user: node
+    read_only: true
+    networks:
+      private: {}
+      temporal: {}
+      # Besides loopback the broker listens only on its address in runtime-api (factory-runtime-api exists only
+      # there), so the SF Manager's and the monitor's own Compose projects reach http://runtime-broker:8095 and the
+      # Temporal network does not.
+      runtime-api: { aliases: [factory-runtime-api, runtime-broker] }
+    mem_limit: 32m
   runtime-broker:
     <<: *service
     build:
@@ -69,8 +89,7 @@ services:
       - .sf-deploy.env
     environment:
       TEMPORAL_ADDRESS: temporal:7233
-      # Besides loopback the broker listens only on its address in runtime-api (this alias exists only there), so
-      # the SF Manager's own Compose project reaches http://runtime-broker:8095 and the Temporal network does not.
+      # The alias of runtime-net in runtime-api: the broker listens on that address and on loopback only.
       FACTORY_RUNTIME_LISTEN_ALIAS: factory-runtime-api
       # GitHub webhooks nudge the broker through the SF Manager (software-factory#197), so the schedule is only a safety
       # net for lost deliveries and time-based work. 180 s used about 3,400 counted App requests per hour (2026-11-20).
@@ -100,12 +119,10 @@ services:
       - runner-slot-1:/run/factory/runners/1
       - runner-slot-2:/run/factory/runners/2
     tmpfs: [/tmp]
-    networks:
-      private: {}
-      temporal: {}
-      runtime-api: { aliases: [factory-runtime-api] }
+    network_mode: service:runtime-net
     mem_limit: 1g
     depends_on:
+      runtime-net: { condition: service_started }
       runtime-db: { condition: service_healthy }
     healthcheck:
       test:
@@ -126,7 +143,7 @@ services:
       dockerfile: operations/temporal-runtime/Dockerfile
       target: worker
       args: *worker-release
-    network_mode: service:runtime-broker
+    network_mode: service:runtime-net
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/worker.env
     environment:
@@ -136,6 +153,7 @@ services:
     tmpfs: [/tmp]
     mem_limit: 1g
     depends_on:
+      runtime-net: { condition: service_started }
       runtime-broker: { condition: service_healthy }
   # Same deployment and queue as runtime-worker, pinned to the previous release: Temporal routes the PINNED runs of
   # that build here. Idle once they ended.
@@ -146,7 +164,7 @@ services:
       dockerfile: operations/temporal-runtime/Dockerfile
       target: previous-worker
       args: *worker-release
-    network_mode: service:runtime-broker
+    network_mode: service:runtime-net
     read_only: true
     env_file: ${SFM_CONFIG_DIR:-/home/deploy/sfm-runtime}/worker.env
     environment:
@@ -156,6 +174,7 @@ services:
     tmpfs: [/tmp]
     mem_limit: 1g
     depends_on:
+      runtime-net: { condition: service_started }
       runtime-broker: { condition: service_healthy }
   # Self-hosted runner pool (software-factory#110): two slots, each a runner and its own Docker daemon sharing one
   # network namespace, so a job's containers are reachable on localhost as on a hosted runner. The broker hands out

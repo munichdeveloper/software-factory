@@ -35,21 +35,51 @@ const usage = new GitHubUsage();
  * issues, timelines and permissions again, and one pass over six repositories cost about 450 requests, so the broker
  * alone used the installation's 5000 per hour. GitHub answers an unchanged resource with 304 when the request names its
  * ETag, and a 304 does not count against the limit. The cache keeps the last answer per URL and repository.
+ *
+ * Bounded by size, not only by count (software-factory#194, 2026-11-20): 3000 whole answers as live objects (issue
+ * lists and timelines of 100 items with their bodies) filled the broker's 505 MB heap in about 4.5 hours, and it died
+ * with "JavaScript heap out of memory" twice a day. Answers are kept as their JSON text, which is smaller than the
+ * object graph and gives every hit a fresh copy; the least recently used ones go first once `maxBytes` is reached.
+ * Binary answers (ArrayBuffer) and single answers above an eighth of the budget are not cached.
  */
 export class ConditionalCache {
-  private entries = new Map<string, { etag: string; response: unknown }>();
-  constructor(private maxEntries = 3000) {}
+  private entries = new Map<string, { etag: string; json: string }>();
+  private size = 0;
+  constructor(private maxBytes = 64 * 1024 * 1024, private maxEntries = 3000) {}
   etag(key: string) { return this.entries.get(key)?.etag; }
   /** A copy, so callers (Octokit's paginate normalises list responses in place) never change the cached answer. */
-  cached<T>(key: string): T | undefined { const entry = this.entries.get(key); return entry ? structuredClone(entry.response) as T : undefined; }
-  store(key: string, etag: unknown, response: unknown) {
-    if (typeof etag !== 'string' || !etag) return;
-    this.entries.delete(key);
-    if (this.entries.size >= this.maxEntries) this.entries.delete(this.entries.keys().next().value!);
-    this.entries.set(key, { etag, response: structuredClone(response) });
+  cached<T>(key: string): T | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    this.entries.delete(key); this.entries.set(key, entry);
+    return JSON.parse(entry.json) as T;
+  }
+  store(key: string, etag: unknown, response: { data?: unknown }) {
+    this.remove(key);
+    if (typeof etag !== 'string' || !etag || !cacheable(response.data)) return;
+    let json: string;
+    try { json = JSON.stringify(response); } catch { return; }
+    // String length counts UTF-16 units; V8 keeps Latin-1 text in one byte per unit, so this errs on the large side.
+    const bytes = json.length;
+    if (bytes > this.maxBytes / 8) return;
+    while (this.entries.size && (this.size + bytes > this.maxBytes || this.entries.size >= this.maxEntries)) this.remove(this.entries.keys().next().value!);
+    this.entries.set(key, { etag, json }); this.size += bytes;
+  }
+  stats() { return { entries: this.entries.size, mb: Math.round(this.size / 104857.6) / 10 }; }
+  private remove(key: string) {
+    const entry = this.entries.get(key);
+    if (entry) { this.size -= entry.json.length; this.entries.delete(key); }
   }
 }
-const conditional = new ConditionalCache();
+function cacheable(data: unknown) {
+  return data === null || data === undefined || typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean' ||
+    (typeof data === 'object' && !(data instanceof ArrayBuffer) && !ArrayBuffer.isView(data) && !(data instanceof Blob));
+}
+function cacheBudget(value = process.env.FACTORY_GITHUB_CACHE_MB) {
+  const mb = Number(value);
+  return Number.isFinite(mb) && mb >= 1 && mb <= 512 ? mb * 1024 * 1024 : undefined;
+}
+const conditional = new ConditionalCache(cacheBudget());
 /**
  * A full list page without a next link (controla#133, 2026-11-19): GitHub's ETag covers the page's items, not its Link
  * header. Cached when an issue had exactly 100 comments, page 1 stayed "unchanged" (304) after comment 101, the cached
@@ -62,7 +92,11 @@ export function openEndedPage(url: string, response: { data: unknown; headers: R
   const link = typeof response.headers.link === 'string' ? response.headers.link : '';
   return response.data.length >= perPage && !/rel="next"/.test(link);
 }
-setInterval(() => { const summary = usage.flush(); if (summary) console.log(JSON.stringify(summary)); }, 60000).unref();
+// The cache and the heap ride along, so a growing broker shows in its logs long before it runs out (software-factory#194).
+setInterval(() => {
+  const summary = usage.flush();
+  if (summary) console.log(JSON.stringify({ ...summary, cache: conditional.stats(), heapMb: Math.round(process.memoryUsage().heapUsed / 1048576) }));
+}, 60000).unref();
 /** The App's installation on one repository, asked with the App's own JWT (no installation token is created). */
 export async function appInstallationId(options: { appId: string; privateKey: string }, owner: string, repo: string, fetcher: typeof fetch = fetch): Promise<number> {
   const silent = { debug() {}, info() {}, warn() {}, error() {} };
