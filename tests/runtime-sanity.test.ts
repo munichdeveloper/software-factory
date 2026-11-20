@@ -17,7 +17,7 @@ const task = (number: number, over: Partial<Task> = {}, body?: string): Task => 
   const executions = over.executions ?? [];
   return { issue: { ...issue(number), ...(body ? { body } : {}) }, version, status: 'running', desiredStatus: 'running', events: [], executions,
     latest: [...executions].sort((a, b) => a.attempt - b.attempt).at(-1), attemptsUsed: executions.filter(e => !e.rejected).length,
-    nextAttempt: executions.length ? Math.max(...executions.map(e => e.attempt)) + 1 : 0, blocked: false, hasOpenPR: false, hasClosingMerge: false, criteria: ['x'], reworkable: false, ...over };
+    nextAttempt: executions.length ? Math.max(...executions.map(e => e.attempt)) + 1 : 0, blocked: false, hasOpenPR: false, hasClosingMerge: false, criteria: ['x'], reworkable: false, attemptLimit: 3, ...over };
 };
 const settings = monitoringSettings(config());
 const kinds = (found: Finding[]) => found.map(f => `${f.kind}#${f.issueNumber}`);
@@ -37,10 +37,10 @@ it('reports a run that outlives its worker timeout plus the grace, and a long ap
 
 it('reports exhausted retries and the same error code ending several attempts in a row, without worker text', () => {
   const cfg = config(); cfg.execution.maxRetries = 5;
-  const stale = task(1, { status: 'failed', desiredStatus: 'failed', executions: [failed(0, 'STALE_SNAPSHOT'), failed(1, 'STALE_SNAPSHOT'), failed(2, 'STALE_SNAPSHOT')] });
+  const stale = task(1, { status: 'failed', desiredStatus: 'failed', attemptLimit: 6, executions: [failed(0, 'STALE_SNAPSHOT'), failed(1, 'STALE_SNAPSHOT'), failed(2, 'STALE_SNAPSHOT')] });
   const found = inspect([stale], cfg, settings, clock);
   expect(found).toEqual([{ key: 'repeated_failure:1:STALE_SNAPSHOT', kind: 'repeated_failure', issueNumber: 1, detail: '3 attempts in a row ended with STALE_SNAPSHOT' }]);
-  expect(kinds(inspect([task(1, { executions: [failed(0, 'BASE_MOVED'), failed(1, 'STALE_SNAPSHOT'), failed(2, 'STALE_SNAPSHOT')] })], cfg, settings, clock))).toEqual([]);
+  expect(kinds(inspect([task(1, { attemptLimit: 6, executions: [failed(0, 'BASE_MOVED'), failed(1, 'STALE_SNAPSHOT'), failed(2, 'STALE_SNAPSHOT')] })], cfg, settings, clock))).toEqual([]);
   cfg.execution.maxRetries = 2;
   const exhausted = inspect([task(1, { executions: [failed(0, null), failed(1, null), failed(2, 'free text from upstream')] })], cfg, settings, clock);
   expect(exhausted.map(f => f.detail)).toEqual(['Retry budget used up after 3 attempts (failed); the task cannot progress without a person']);

@@ -65306,7 +65306,13 @@ var configSchema = external_exports.strictObject({
     workerTimeoutMinutes: bounded(1, 30, 30),
     dispatchGraceMinutes: bounded(1, 60, 10),
     /** A failed independent validation starts a further attempt, within maxRetries, instead of waiting for a person. */
-    rework: external_exports.boolean().default(false)
+    rework: external_exports.boolean().default(false),
+    /**
+     * Rescue attempt (docs/failure-events.md 6.5, tier 3; issue #188 step 7): once maxRetries is used up for a reason the
+     * agent owns, one further attempt on workers.coding.retryAgents, at most once per task version and maxPerDay per
+     * repository. Optional without a default, so the configuration hash of existing repositories stays.
+     */
+    rescue: external_exports.strictObject({ enabled: external_exports.boolean().default(false), maxPerDay: bounded(1, 20, 3) }).optional()
   }).prefault({}),
   llm: external_exports.strictObject({
     // 'static' plans deterministically without a model (every startable issue by priority label, then number); 'mock' is
@@ -65508,7 +65514,7 @@ var configSchema = external_exports.strictObject({
     // FACTORY_WEBHOOK_SECRET. Optional without a default, so the configuration hash of existing repositories stays.
     webhooks: external_exports.array(external_exports.strictObject({
       url: external_exports.url({ protocol: /^https$/ }).max(500),
-      events: external_exports.array(external_exports.enum(["validation_failed", "start_refused", "start_resumed", "run_failed", "attention_required"])).min(1).max(5)
+      events: external_exports.array(external_exports.enum(["validation_failed", "start_refused", "start_resumed", "run_failed", "rescue_started", "attention_required"])).min(1).max(6)
     })).max(5).optional()
   }).prefault({}),
   monitoring: monitoringSchema.partial().optional(),
@@ -70121,7 +70127,7 @@ function evaluate(action, ctx) {
     if (action.kind === "retry_worker") {
       const source = task.latest ?? (rework ? task.reworkFrom : void 0);
       if (!source?.result || !rework && !["failed", "cancelled"].includes(source.result.status)) return deny("No failed execution to retry");
-      if (task.attemptsUsed > config2.execution.maxRetries) return deny("Maximum retries reached");
+      if (task.attemptsUsed >= task.attemptLimit) return deny("Maximum retries reached");
       if (action.attempt !== task.nextAttempt) return deny("Retry proposal is not bound to the next concrete attempt");
     } else {
       if (task.latest) return deny("Current task version already executed; use retry for failures or revise the task");
@@ -70158,7 +70164,13 @@ var freeInfrastructureFailures = 3;
 var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refusals - 1), 360);
 var clearableRefusals = ["EXECUTOR_WRAPPER_RELEASE_MISMATCH", "UNKNOWN_WORKER_DEPLOYMENT_VERSION"];
 var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
+var rescueMarker = "urn:sf-rescue";
 function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
+  const dayAgo = now.getTime() - 24 * 3600 * 1e3;
+  const rescuesToday = [...snapshot.comments.values()].reduce((n, comments) => n + comments.filter((c) => {
+    const event = c.body.includes(rescueMarker) ? decodeEvent(c, config2.manager.trustedActors) : null;
+    return event?.data.type === "intent" && event.data.input.contextReferences.includes(rescueMarker) && new Date(event.at).getTime() >= dayAgo;
+  }).length, 0);
   return snapshot.issues.map((issue2) => {
     const version2 = taskVersion(issue2);
     const events = (snapshot.comments.get(issue2.number) ?? []).flatMap((c) => {
@@ -70254,7 +70266,12 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     const requestedBy = source?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === source.input.executionId ? [e.data] : []).at(-1) : void 0;
     const requested = requestedBy?.review;
     const repairable = source?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" || !!requested;
-    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && repairable && attemptsUsed <= config2.execution.maxRetries;
+    const rescue = config2.execution.rescue, coding = config2.workers.coding;
+    const rescueUsed = real.some((e) => e.input.contextReferences.includes(rescueMarker));
+    const agentOwned = !!source?.result && (repairable || source.result.status === "failed" && source.result.error !== infrastructureFailureCode);
+    const rescueAvailable = !rescueUsed && !!rescue?.enabled && config2.execution.engine === "temporal" && !!coding && coding.enabled && !!coding.retryAgents && agentOwned && attemptsUsed === config2.execution.maxRetries + 1 && rescuesToday < rescue.maxPerDay;
+    const attemptLimit = config2.execution.maxRetries + 1 + (rescueUsed || rescueAvailable ? 1 : 0);
+    const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && repairable && attemptsUsed < attemptLimit;
     const reworkReview = reworkable && source?.result?.status === "success" ? requested : void 0;
     const reworkFrom = reworkable && !latest ? carried : void 0;
     let desiredStatus = issueStatus(issue2) ?? "backlog";
@@ -70265,7 +70282,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     else if (hasClosingMerge) desiredStatus = "done";
     else if (blockReason) desiredStatus = "blocked";
     else if (reworkable) desiredStatus = reworkFrom && snapshot.readyIsGrant ? "ready" : "failed";
-    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed <= config2.execution.maxRetries) desiredStatus = "ready";
+    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed < attemptLimit) desiredStatus = "ready";
     else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
     else if (hasOpenPR) desiredStatus = "awaiting-pr";
     else if (snapshot.readyIsGrant) {
@@ -70282,6 +70299,8 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       latest,
       attemptsUsed,
       nextAttempt,
+      attemptLimit,
+      ...rescueAvailable ? { rescueDue: true } : {},
       ...refusal ? { refusal } : {},
       openFollowups,
       blocked: !!blockReason,
@@ -70664,7 +70683,7 @@ function reviewEntries(review, limit3 = 8) {
 }
 
 // src/manager/plan.ts
-function reconciliationPlan(tasks, config2) {
+function reconciliationPlan(tasks) {
   return tasks.flatMap((t) => {
     const actions = [];
     if (t.executions.some((e) => e.active && e.timedOut && (e.run || e.runtime))) actions.push(proposal(t, "cancel_worker", "Worker exceeded its configured time limit"));
@@ -70675,7 +70694,7 @@ function reconciliationPlan(tasks, config2) {
       actions.push(proposal(t, "transition", "Reconcile lifecycle with GitHub facts", { status: t.desiredStatus }));
     }
     if (t.reworkable) actions.push(proposal(t, "retry_worker", t.reworkReview ? "Rework after the independent merge review asked for changes, within the configured limit" : "Rework after a failed independent validation, within the configured limit"));
-    else if (t.issue.state === "open" && !t.blocked && !t.hasClosingMerge && !t.hasOpenPR && t.latest?.result && ["failed", "cancelled"].includes(t.latest.result.status) && !t.executions.some((e) => e.active) && t.attemptsUsed <= config2.execution.maxRetries && !t.refusal?.waiting) {
+    else if (t.issue.state === "open" && !t.blocked && !t.hasClosingMerge && !t.hasOpenPR && t.latest?.result && ["failed", "cancelled"].includes(t.latest.result.status) && !t.executions.some((e) => e.active) && t.attemptsUsed < t.attemptLimit && !t.refusal?.waiting) {
       actions.push(proposal(t, "retry_worker", "Retry failed execution within configured limit"));
     }
     return actions;
@@ -71022,7 +71041,7 @@ function blocked(task, repository, readyIsGrant, config2) {
       `Output of the checks: download the artifact \`coding-validation-logs-${task.latest.input.executionId}\` in the "Artifacts" section at the bottom of that run page (one log file per check, kept for 7 days).`
     );
     state.push(model2 === "success" ? "The worker itself reported success; it could not run these checks in its isolated environment." : `The worker itself reported \`${model2 ?? "blocked"}\`.`);
-    needs = `${task.reworkable ? "" : config2.execution.rework && task.attemptsUsed > 1 ? `The automatic rework attempts are used up (${task.attemptsUsed} of ${config2.execution.maxRetries + 1} attempts). ` : "The Factory does not repair a failed validation on its own in this installation. "}Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
+    needs = `${task.reworkable ? "" : config2.execution.rework && task.attemptsUsed > 1 ? `The automatic rework attempts are used up (${task.attemptsUsed} of ${task.attemptLimit} attempts). ` : "The Factory does not repair a failed validation on its own in this installation. "}Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
   } else {
     state.push(`**Blocked because the worker itself stopped**${verdict === "passed" ? ", although the independent validation passed" : ""}. It did not consider the task complete.`);
     needs = `Read the worker's explanation below. If its changes are acceptable, continue in the draft pull request yourself; if the task has to change, ${again}.`;
@@ -71057,7 +71076,7 @@ function statusView(task, config2, context2) {
     needs = task.blockReason.startsWith("Unresolved dependencies") ? "Close the issues this task depends on, or remove them from its `Depends on:` line." : task.blockReason.startsWith("Missing Acceptance") ? "Add a section `## Acceptance criteria` with at least one list item to the task text." : task.blockReason.startsWith(protectedPathBlockPrefix) ? "The coding worker may not change CI workflows (`.github/`), agent instruction files or CODEOWNERS. A maintainer makes that part of the change, then removes it from the task text (or moves it to a section `## Out of scope` / `## Nicht enthalten`); the task then starts normally." : task.automaticBlockCause === "planner" ? "The planner judged this task text unclear or too large for one run. Revise the task text (a revised text is judged again), or remove the label `harness:blocked` to start it as it is." : "Remove the label `harness:blocked` when the task may continue.";
   } else if (rejection) {
     const ready = rejection.startsWith("READY_");
-    const previous = result && ["failed", "cancelled"].includes(result.status) ? `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}). ` : "";
+    const previous = result && ["failed", "cancelled"].includes(result.status) ? `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"} (attempt ${task.attemptsUsed} of ${task.attemptLimit}). ` : "";
     awaitsGrant = ready;
     stage = ready ? "awaiting-grant" : "refused";
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : "Ready to run. **Waiting only for the grant.**"] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
@@ -71092,7 +71111,7 @@ function statusView(task, config2, context2) {
     needs = `Read the worker's request: ${quoted(result.summary)}`;
   } else if (result) {
     const left = task.attemptsUsed <= config2.execution.maxRetries, code = result.error && /^[A-Z_]{1,60}$/.test(result.error) ? ` (\`${result.error}\`)` : "";
-    state = [task.latest.infrastructure ? `The last run failed before the agent started${code}, while setting up the runner or workspace. Nothing of the task ran, so this costs no attempt (${task.attemptsUsed} of ${config2.execution.maxRetries + 1} used).` : `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"}${code} (attempt ${task.attemptsUsed} of ${config2.execution.maxRetries + 1}).`];
+    state = [task.latest.infrastructure ? `The last run failed before the agent started${code}, while setting up the runner or workspace. Nothing of the task ran, so this costs no attempt (${task.attemptsUsed} of ${config2.execution.maxRetries + 1} used).` : `The last run ${result.status === "cancelled" ? "was cancelled" : "failed"}${code} (attempt ${task.attemptsUsed} of ${task.attemptLimit}).`];
     needs = left ? "Nothing; the Factory retries on its own." : "The retry limit is reached. Revise the task text to start over.";
     stage = left ? "retry" : "failed";
   } else if (task.hasOpenPR) {
@@ -71404,7 +71423,8 @@ ${marker2}`;
         const rework = action.kind === "retry_worker" && task.reworkable && this.config.execution.engine === "temporal";
         const retry = action.kind === "retry_worker" && !rework && task.latest?.result?.status === "failed" && this.config.execution.engine === "temporal";
         const previous = rework ? (task.reworkFrom ?? task.latest).input.executionId : retry ? task.latest.input.executionId : void 0;
-        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework && task.reworkCause !== "conflict" || task.executions.some((e) => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== "success" && e.result.error !== infrastructureFailureCode));
+        const rescue = !!previous && !!task.rescueDue;
+        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rescue || rework && task.reworkCause !== "conflict" || task.executions.some((e) => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== "success" && e.result.error !== infrastructureFailureCode));
         if (this.config.execution.engine === "temporal" && this.options.workerRuntime?.preflight) {
           try {
             await this.options.workerRuntime.preflight(live2.number, previous);
@@ -71425,6 +71445,7 @@ ${marker2}`;
             `https://github.com/${this.github.repository}/issues/${live2.number}`,
             ...previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : [],
             ...escalate ? [escalationMarker] : [],
+            ...rescue ? [rescueMarker] : [],
             // A rework after a merge review hands the worker what the review asked to change.
             ...rework && task.reworkReview ? reviewEntries(task.reworkReview) : []
           ],
@@ -71510,9 +71531,9 @@ ${marker2}`;
         report.nextSteps.push(`#${t.issue.number}: inspect actual Actions runs before manually resolving the original execution`);
       }
       if (t.issue.state === "open" && t.latest?.result && ["blocked", "needs_approval"].includes(t.latest.result.status)) report.blockers.push(`#${t.issue.number}: worker reports ${t.latest.result.status}; revise task or provide missing input`);
-      if (t.issue.state === "open" && t.latest?.result && ["failed", "cancelled"].includes(t.latest.result.status) && t.attemptsUsed > this.config.execution.maxRetries) report.blockers.push(`#${t.issue.number}: retry budget exhausted`);
+      if (t.issue.state === "open" && t.latest?.result && ["failed", "cancelled"].includes(t.latest.result.status) && t.attemptsUsed >= t.attemptLimit) report.blockers.push(`#${t.issue.number}: retry budget exhausted`);
     }
-    const entries = reconciliationPlan(tasks, this.config).map((action) => ({ action, source: "reconcile" }));
+    const entries = reconciliationPlan(tasks).map((action) => ({ action, source: "reconcile" }));
     const eligible = tasks.filter((t) => t.issue.state === "open" && !t.blocked && !t.hasClosingMerge && !t.executions.some((e) => e.active));
     if (eligible.length && this.config.llm.maxCalls > 0) {
       try {

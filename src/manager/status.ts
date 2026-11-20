@@ -39,7 +39,7 @@ function blocked(task: Task, repository: string, readyIsGrant: boolean, config: 
       // The job log only carries the verdict; the output of each check is uploaded as a separate artifact of that run.
       `Output of the checks: download the artifact \`coding-validation-logs-${task.latest!.input.executionId}\` in the "Artifacts" section at the bottom of that run page (one log file per check, kept for 7 days).`);
     state.push(model === 'success' ? 'The worker itself reported success; it could not run these checks in its isolated environment.' : `The worker itself reported \`${model ?? 'blocked'}\`.`);
-    needs = `${task.reworkable ? '' : config.execution.rework && task.attemptsUsed > 1 ? `The automatic rework attempts are used up (${task.attemptsUsed} of ${config.execution.maxRetries + 1} attempts). ` : 'The Factory does not repair a failed validation on its own in this installation. '}Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
+    needs = `${task.reworkable ? '' : config.execution.rework && task.attemptsUsed > 1 ? `The automatic rework attempts are used up (${task.attemptsUsed} of ${task.attemptLimit} attempts). ` : 'The Factory does not repair a failed validation on its own in this installation. '}Either fix the failing checks in the draft pull request and merge it yourself, or ${again}.`;
   } else {
     state.push(`**Blocked because the worker itself stopped**${verdict === 'passed' ? ', although the independent validation passed' : ''}. It did not consider the task complete.`);
     needs = `Read the worker's explanation below. If its changes are acceptable, continue in the draft pull request yourself; if the task has to change, ${again}.`;
@@ -91,7 +91,7 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
     const ready = rejection.startsWith('READY_');
     // A retry after a failed attempt says so; "ready to run" alone hid that the previous run had failed.
     const previous = result && ['failed', 'cancelled'].includes(result.status)
-      ? `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}). ` : '';
+      ? `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'} (attempt ${task.attemptsUsed} of ${task.attemptLimit}). ` : '';
     awaitsGrant = ready; stage = ready ? 'awaiting-grant' : 'refused';
     state = ready ? [previous ? `${previous}**A further attempt waits only for the grant.**` : 'Ready to run. **Waiting only for the grant.**'] : [`**The runtime refused to start this task (\`${rejection}\`).** Nothing ran, so this costs no attempt.`];
     // The label is there but was applied by an account that cannot grant, typically the Factory's own App (software-factory#109).
@@ -128,7 +128,7 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
     const left = task.attemptsUsed <= config.execution.maxRetries, code = result.error && /^[A-Z_]{1,60}$/.test(result.error) ? ` (\`${result.error}\`)` : '';
     state = [task.latest!.infrastructure
       ? `The last run failed before the agent started${code}, while setting up the runner or workspace. Nothing of the task ran, so this costs no attempt (${task.attemptsUsed} of ${config.execution.maxRetries + 1} used).`
-      : `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'}${code} (attempt ${task.attemptsUsed} of ${config.execution.maxRetries + 1}).`];
+      : `The last run ${result.status === 'cancelled' ? 'was cancelled' : 'failed'}${code} (attempt ${task.attemptsUsed} of ${task.attemptLimit}).`];
     needs = left ? 'Nothing; the Factory retries on its own.' : 'The retry limit is reached. Revise the task text to start over.';
     stage = left ? 'retry' : 'failed';
   } else if (task.hasOpenPR) { stage = 'awaiting-pr'; state = ['A pull request for this task is open.']; needs = 'Review and merge the pull request.'; }

@@ -4,7 +4,7 @@ import { planningCode, type Planner } from '../llm/provider.js';
 import { actionSchema, planSchema, type Action, type Snapshot } from '../types.js';
 import { actionId, executionId, hash, taskVersion } from '../state/identity.js';
 import { decodeEvent, type HarnessEvent } from '../state/events.js';
-import { admissionRejectedSummary, clearableRefusals, infrastructureFailureCode, reconstruct, type Task } from '../state/reconstruct.js';
+import { admissionRejectedSummary, clearableRefusals, rescueMarker, infrastructureFailureCode, reconstruct, type Task } from '../state/reconstruct.js';
 import { lastBlockLabelEventId } from '../state/blocks.js';
 import { managedLabel, priorityLabels, withStatus } from '../state/lifecycle.js';
 import { evaluate, policyVersion, type Budget } from '../policies/engine.js';
@@ -243,7 +243,9 @@ export class Manager {
         // Escalate to workers.coding.retryAgents only when an earlier attempt failed for a reason the agent owns: a
         // rework, or a failed, blocked or cancelled result other than a runner failure before the agent started.
         // A conflict with the base is mechanical work and stays on the first-attempt agents (Johannes, 2026-11-19).
-        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework && task.reworkCause !== 'conflict' ||
+        // The rescue attempt (issue #188 step 7) always runs on retryAgents and says so in its context.
+        const rescue = !!previous && !!task.rescueDue;
+        const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rescue || rework && task.reworkCause !== 'conflict' ||
           task.executions.some(e => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== 'success' &&
             e.result.error !== infrastructureFailureCode));
         // A missing grant is known before anything durable exists: do not leave an intent that can never start.
@@ -257,7 +259,7 @@ export class Manager {
         // Intent first. If dispatch or subsequent writes fail, a future run observes this intent AND actual runs.
         const input = workerInputSchema.parse({ contractVersion: '1.0', repository: this.github.repository,
           issueNumber: live.number, taskVersion: action.taskVersion, description: live.body, acceptanceCriteria: task.criteria,
-          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : []), ...(escalate ? [escalationMarker] : []),
+          contextReferences: [`https://github.com/${this.github.repository}/issues/${live.number}`, ...(previous ? [rework ? reworkMarker(previous) : retryMarker(previous)] : []), ...(escalate ? [escalationMarker] : []), ...(rescue ? [rescueMarker] : []),
             // A rework after a merge review hands the worker what the review asked to change.
             ...(rework && task.reworkReview ? reviewEntries(task.reworkReview) : [])], executionId: id,
           allowedActions: ['publish_result'], limits: { timeoutMinutes: this.config.execution.workerTimeoutMinutes, maxOutputBytes: 16000 },
@@ -319,9 +321,9 @@ export class Manager {
         report.nextSteps.push(`#${t.issue.number}: inspect actual Actions runs before manually resolving the original execution`);
       }
       if (t.issue.state === 'open' && t.latest?.result && ['blocked', 'needs_approval'].includes(t.latest.result.status)) report.blockers.push(`#${t.issue.number}: worker reports ${t.latest.result.status}; revise task or provide missing input`);
-      if (t.issue.state === 'open' && t.latest?.result && ['failed', 'cancelled'].includes(t.latest.result.status) && t.attemptsUsed > this.config.execution.maxRetries) report.blockers.push(`#${t.issue.number}: retry budget exhausted`);
+      if (t.issue.state === 'open' && t.latest?.result && ['failed', 'cancelled'].includes(t.latest.result.status) && t.attemptsUsed >= t.attemptLimit) report.blockers.push(`#${t.issue.number}: retry budget exhausted`);
     }
-    const entries: { action: Action; source: 'reconcile' | 'planner' | 'worker' }[] = reconciliationPlan(tasks, this.config).map(action => ({ action, source: 'reconcile' }));
+    const entries: { action: Action; source: 'reconcile' | 'planner' | 'worker' }[] = reconciliationPlan(tasks).map(action => ({ action, source: 'reconcile' }));
     const eligible = tasks.filter(t => t.issue.state === 'open' && !t.blocked && !t.hasClosingMerge && !t.executions.some(e => e.active));
     if (eligible.length && this.config.llm.maxCalls > 0) {
       try { entries.push(...planSchema.parse(await this.planner.plan(eligible, this.config)).actions.map(action => ({ action: ownFields(action), source: 'planner' as const }))); }

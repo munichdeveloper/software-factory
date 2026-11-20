@@ -63,7 +63,7 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
       // A rework of a revised task continues the attempt at the earlier text whose pull request is still open (#188 step 5).
       const source = task.latest ?? (rework ? task.reworkFrom : undefined);
       if (!source?.result || !rework && !['failed', 'cancelled'].includes(source.result.status)) return deny('No failed execution to retry');
-      if (task.attemptsUsed > config.execution.maxRetries) return deny('Maximum retries reached');
+      if (task.attemptsUsed >= task.attemptLimit) return deny('Maximum retries reached');
       if (action.attempt !== task.nextAttempt) return deny('Retry proposal is not bound to the next concrete attempt');
     } else {
       if (task.latest) return deny('Current task version already executed; use retry for failures or revise the task');

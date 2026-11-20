@@ -2,7 +2,7 @@ import type { Config } from '../config/index.js';
 import type { SanityAlertSink } from '../notifications/sanity-alerts.js';
 import type { Snapshot } from '../types.js';
 import type { EventWebhooks } from './webhooks.js';
-import { admissionBackoffMinutes, clearableRefusals, infrastructureFailureCode, reconstruct, type Execution, type Task } from '../state/reconstruct.js';
+import { admissionBackoffMinutes, clearableRefusals, rescueMarker, infrastructureFailureCode, reconstruct, type Execution, type Task } from '../state/reconstruct.js';
 
 /**
  * Runtime events (docs/failure-events.md, issue #188 step 1). The broker derives them from what every reconciliation
@@ -13,7 +13,7 @@ import { admissionBackoffMinutes, clearableRefusals, infrastructureFailureCode, 
  * Slack or a webhook. Every event has a key from its type, the execution and its code: deriving it again on the next
  * reconciliation stores nothing new.
  */
-export const runtimeEventTypes = ['validation_failed', 'start_refused', 'start_resumed', 'run_failed', 'attention_required'] as const;
+export const runtimeEventTypes = ['validation_failed', 'start_refused', 'start_resumed', 'run_failed', 'rescue_started', 'attention_required'] as const;
 export type RuntimeEventType = typeof runtimeEventTypes[number];
 export type EventValue = string | number | boolean | null | { name: string; exitCode: number | null }[];
 export interface RuntimeEvent {
@@ -31,7 +31,7 @@ const resultAt = (task: Task, e: Execution) =>
   task.events.find(x => x.data.type === 'result' && x.data.result.executionId === e.input.executionId)?.at ?? e.runtime?.createdAt ?? e.at;
 
 /** The events one reconciliation's view implies, for the current version of every open task. */
-export function deriveEvents(tasks: Task[], config: Config): RuntimeEvent[] {
+export function deriveEvents(tasks: Task[]): RuntimeEvent[] {
   const events: RuntimeEvent[] = [];
   for (const task of tasks.filter(t => t.issue.state === 'open')) {
     const n = task.issue.number, version = task.version;
@@ -58,19 +58,21 @@ export function deriveEvents(tasks: Task[], config: Config): RuntimeEvent[] {
           trigger: Date.parse(e.at) >= until ? 'backoff' : clearableRefusals.includes(before.rejected) && !regranted ? 'cause_cleared' : 'manual' });
       }
       refused = 0;
+      // Tier 3 of the reaction chain (concept 6.5): the rescue attempt on retryAgents after maxRetries was used up.
+      if (e.input.contextReferences.includes(rescueMarker)) push('rescue_started', e, '', e.at, { tier: 3, attempt: e.attempt });
       const validation = e.runtime?.validation;
       if (validation?.status === 'failed') {
         push('validation_failed', e, '', resultAt(task, e), { reason: code(validation.reason) ?? 'UNKNOWN', steps: validation.failed,
           validationRunId: validation.runId, attempt: e.attempt,
-          next: task.latest === e && task.reworkable ? 'rework' : 'none' });
+          next: task.latest === e && task.reworkable ? task.rescueDue ? 'rescue' : 'rework' : 'none' });
       }
       if (e.result && ['failed', 'cancelled'].includes(e.result.status)) {
         push('run_failed', e, '', resultAt(task, e), { status: e.result.status, error: code(e.result.error),
           infrastructure: e.result.error === infrastructureFailureCode, attempt: e.attempt,
-          remainingAttempts: Math.max(0, config.execution.maxRetries + 1 - task.attemptsUsed) });
+          remainingAttempts: Math.max(0, task.attemptLimit - task.attemptsUsed) });
       }
     }
-    const reason = attention(task, config);
+    const reason = attention(task);
     if (reason) push('attention_required', task.latest ?? null, reason, task.latest ? resultAt(task, task.latest) : task.issue.updatedAt ?? new Date(0).toISOString(),
       { reason, attempts: task.attemptsUsed, error: code(task.latest?.result?.error) });
   }
@@ -78,15 +80,15 @@ export function deriveEvents(tasks: Task[], config: Config): RuntimeEvent[] {
 }
 
 /** Why no automatic step can move this task any more; null while the Factory can still act on its own. */
-export function attention(task: Task, config: Config): typeof attentionReasons[number] | null {
+export function attention(task: Task): typeof attentionReasons[number] | null {
   const latest = task.latest, active = task.executions.some(e => e.active);
   if (task.issue.state !== 'open' || active || !latest?.result) {
     // A Factory block without a pull request and without any attempt (specification, planner) also needs a person.
     return task.issue.state === 'open' && !active && blockedWithoutPr(task) ? 'blocked_without_pr' : null;
   }
-  if (['failed', 'cancelled'].includes(latest.result.status) && task.attemptsUsed > config.execution.maxRetries) return 'retries_exhausted';
+  if (['failed', 'cancelled'].includes(latest.result.status) && task.attemptsUsed >= task.attemptLimit) return 'retries_exhausted';
   if (latest.result.status === 'blocked' && latest.runtime?.validation?.status === 'failed' && !task.reworkable &&
-    task.attemptsUsed > config.execution.maxRetries) return 'rework_exhausted';
+    task.attemptsUsed >= task.attemptLimit) return 'rework_exhausted';
   return blockedWithoutPr(task) ? 'blocked_without_pr' : null;
 }
 /** The same dead end the sanity check reports: blocked by the Factory, no pull request, not waiting for anything. */
@@ -127,7 +129,7 @@ export function eventText(repository: string, e: RuntimeEvent): string {
   }
   if (e.type === 'validation_failed') {
     const steps = Array.isArray(e.data.steps) && e.data.steps.length ? e.data.steps.map(s => `${s.name} (Exit ${s.exitCode ?? '?'})`).join(', ') : String(e.data.reason);
-    return `SF Validierung fehlgeschlagen: ${repository}#${e.issueNumber}\nSchritt: ${steps}. Nächster Schritt: ${e.data.next === 'rework' ? 'Nachbesserung startet automatisch' : 'keiner automatisch'}.` +
+    return `SF Validierung fehlgeschlagen: ${repository}#${e.issueNumber}\nSchritt: ${steps}. Nächster Schritt: ${e.data.next === 'rework' ? 'Nachbesserung startet automatisch' : e.data.next === 'rescue' ? 'Rettungsversuch mit dem stärkeren Modell startet automatisch' : 'keiner automatisch'}.` +
       `\n${issue}\nValidierungslauf: https://github.com/${repository}/actions/runs/${String(e.data.validationRunId)}`;
   }
   return `SF ${e.type}: ${repository}#${e.issueNumber}\n${issue}`;
@@ -167,7 +169,7 @@ export class RuntimeEvents {
       const pre = preflightEvents(tasks, refused, this.preflight.get(target.repositoryId) ?? new Map(), this.now());
       this.preflight.set(target.repositoryId, new Map(pre.filter(e => e.type === 'start_refused')
         .map(e => [e.issueNumber, { code: String(e.data.code), version: e.taskVersion, at: e.at }])));
-      const found = [...deriveEvents(tasks, config), ...pre];
+      const found = [...deriveEvents(tasks), ...pre];
       const added = found.length ? await this.store.recordEvents(target.repositoryId, target.repository, found) : [];
       if (added.length) console.log(JSON.stringify({ event: 'factory-runtime-events', repositoryId: target.repositoryId,
         added: added.map(e => ({ type: e.type, issue: e.issueNumber, ...(e.data.code ? { code: e.data.code } : {}), ...(e.data.reason ? { reason: e.data.reason } : {}) })) }));

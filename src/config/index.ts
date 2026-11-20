@@ -116,7 +116,13 @@ export const configSchema = z.strictObject({
     maxRetries: bounded(0, 5, 2), maxNewIssues: bounded(0, 20, 3),
     workerTimeoutMinutes: bounded(1, 30, 30), dispatchGraceMinutes: bounded(1, 60, 10),
     /** A failed independent validation starts a further attempt, within maxRetries, instead of waiting for a person. */
-    rework: z.boolean().default(false)
+    rework: z.boolean().default(false),
+    /**
+     * Rescue attempt (docs/failure-events.md 6.5, tier 3; issue #188 step 7): once maxRetries is used up for a reason the
+     * agent owns, one further attempt on workers.coding.retryAgents, at most once per task version and maxPerDay per
+     * repository. Optional without a default, so the configuration hash of existing repositories stays.
+     */
+    rescue: z.strictObject({ enabled: z.boolean().default(false), maxPerDay: bounded(1, 20, 3) }).optional()
   }).prefault({}),
   llm: z.strictObject({
     // 'static' plans deterministically without a model (every startable issue by priority label, then number); 'mock' is
@@ -303,7 +309,7 @@ export const configSchema = z.strictObject({
   // FACTORY_WEBHOOK_SECRET. Optional without a default, so the configuration hash of existing repositories stays.
   webhooks: z.array(z.strictObject({
     url: z.url({ protocol: /^https$/ }).max(500),
-    events: z.array(z.enum(['validation_failed', 'start_refused', 'start_resumed', 'run_failed', 'attention_required'])).min(1).max(5)
+    events: z.array(z.enum(['validation_failed', 'start_refused', 'start_resumed', 'run_failed', 'rescue_started', 'attention_required'])).min(1).max(6)
   })).max(5).optional() }).prefault({}),
   monitoring: monitoringSchema.partial().optional(),
   router: routerSchema.optional()

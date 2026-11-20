@@ -61,6 +61,10 @@ export interface Task {
    * attempt at the earlier text still waited for its rework (issue #188 step 5, variant A).
    */
   reworkFrom?: Execution;
+  /** Real attempts this task version may use: maxRetries + 1, plus a rescue attempt while one is due or used (issue #188 step 7). */
+  attemptLimit: number;
+  /** The next attempt is the rescue attempt: it runs on retryAgents and names rescueMarker. */
+  rescueDue?: boolean;
   /** Why the merge side asked for that rework: review findings, or a conflict of the branch with the base. */
   reworkCause?: 'review' | 'conflict';
   automaticBlockCause?: BlockCause;
@@ -70,7 +74,15 @@ export interface Task {
 /** A Factory follow-up names its origin task and carries the follow-up marker. */
 export const followupOrigin = (body: string): number | null =>
   body.includes('<!-- harness:followup:') ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
+/** Context reference of a rescue attempt (issue #188 step 7). */
+export const rescueMarker = 'urn:sf-rescue';
 export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()): Task[] {
+  // Rescue attempts of the whole repository within the last 24 hours (execution.rescue.maxPerDay).
+  const dayAgo = now.getTime() - 24 * 3600 * 1000;
+  const rescuesToday = [...snapshot.comments.values()].reduce((n, comments) => n + comments.filter(c => {
+    const event = c.body.includes(rescueMarker) ? decodeEvent(c, config.manager.trustedActors) : null;
+    return event?.data.type === 'intent' && event.data.input.contextReferences.includes(rescueMarker) && new Date(event.at).getTime() >= dayAgo;
+  }).length, 0);
   return snapshot.issues.map(issue => {
     const version = taskVersion(issue);
     const events = (snapshot.comments.get(issue.number) ?? []).flatMap(c => {
@@ -160,8 +172,15 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
       e.data.executionId === source.input.executionId ? [e.data] : []).at(-1) : undefined;
     const requested = requestedBy?.review;
     const repairable = source?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' || !!requested;
+    // Tier 3 (issue #188 step 7): after maxRetries, one rescue attempt on retryAgents when the agent owns the failure.
+    const rescue = config.execution.rescue, coding = config.workers.coding;
+    const rescueUsed = real.some(e => e.input.contextReferences.includes(rescueMarker));
+    const agentOwned = !!source?.result && (repairable || source.result.status === 'failed' && source.result.error !== infrastructureFailureCode);
+    const rescueAvailable = !rescueUsed && !!rescue?.enabled && config.execution.engine === 'temporal' && !!coding && coding.enabled && !!coding.retryAgents &&
+      agentOwned && attemptsUsed === config.execution.maxRetries + 1 && rescuesToday < rescue.maxPerDay;
+    const attemptLimit = config.execution.maxRetries + 1 + (rescueUsed || rescueAvailable ? 1 : 0);
     const reworkable = config.execution.rework && issue.state === 'open' && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some(e => e.active) &&
-      repairable && attemptsUsed <= config.execution.maxRetries;
+      repairable && attemptsUsed < attemptLimit;
     const reworkReview = reworkable && source?.result?.status === 'success' ? requested : undefined;
     const reworkFrom = reworkable && !latest ? carried : undefined;
     let desiredStatus: Status = issueStatus(issue) ?? 'backlog';
@@ -177,7 +196,7 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     // The Manager must leave that label alone until the retry has started; replacing it with `failed` would
     // consume the grant it is waiting for.
     else if (snapshot.readyIsGrant && issue.labels.includes('harness:ready') && !hasOpenPR && latest?.result &&
-      ['failed', 'cancelled'].includes(latest.result.status) && attemptsUsed <= config.execution.maxRetries) desiredStatus = 'ready';
+      ['failed', 'cancelled'].includes(latest.result.status) && attemptsUsed < attemptLimit) desiredStatus = 'ready';
     else if (latest?.result) desiredStatus = ({ success: 'awaiting-pr', failed: 'failed', cancelled: 'failed', blocked: 'blocked', needs_approval: 'awaiting-approval' } as const)[latest.result.status];
     else if (hasOpenPR) desiredStatus = 'awaiting-pr';
     // A runnable task rests in ready. Where ready is a person's grant, the Manager leaves the label to that
@@ -185,7 +204,8 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     else if (snapshot.readyIsGrant) { if (['backlog', 'ready', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = issue.labels.includes('harness:ready') ? 'ready' : 'backlog'; }
     else if (['backlog', 'blocked', 'awaiting-pr'].includes(desiredStatus)) desiredStatus = 'ready';
     const openFollowups = snapshot.issues.filter(i => i.state === 'open' && followupOrigin(i.body) === issue.number).map(i => i.number);
-    return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, attemptsUsed, nextAttempt,
+    return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, attemptsUsed, nextAttempt, attemptLimit,
+      ...(rescueAvailable ? { rescueDue: true } : {}),
       ...(refusal ? { refusal } : {}), openFollowups,
       blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable,
       ...(reworkReview ? { reworkReview, reworkCause: requestedBy?.cause ?? 'review' } : {}), ...(reworkFrom ? { reworkFrom } : {}) };
