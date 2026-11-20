@@ -17,9 +17,16 @@ export interface MergeFacts {
   /** Commits of the current base that the head does not contain; null when unknown. */
   behindBy?: number | null;
 }
+/**
+ * One changed file. `contentScope` 'excerpt': the file alone exceeds a review part, so `content` holds the lines around
+ * every hunk (see merge/parts.ts) instead of the whole file; every changed line is still included.
+ */
+export interface ReviewChange { path: string; status: string; patch: string; content: string | null; contentScope?: 'excerpt' }
 export interface ReviewInput { facts: MergeFacts; trustedScope: string; trustedInstructions: string;
   sourceTask?: { number: number; title: string; body: string };
-  changes: { path: string; status: string; patch: string; content: string | null }[] }
+  changes: ReviewChange[];
+  /** Set when a large change set is reviewed in parts: which part this is and the pull request's other changed files. */
+  part?: { index: number; total: number; otherFiles: { path: string; status: string; lines: number; patch?: string }[] } }
 export interface MergeReviewer { review(input: ReviewInput): Promise<MergeReview> }
 export interface MergePort {
   readonly repository: string;

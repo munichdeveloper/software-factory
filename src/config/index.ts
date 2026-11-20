@@ -197,7 +197,11 @@ export const configSchema = z.strictObject({
       model: z.string().min(1).max(100).default('gpt-6.1-sol'),
       reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).default('high'),
       timeoutSeconds: bounded(10, 120, 120), maxOutputTokens: bounded(1000, 12000, 6000),
-      maxFiles: bounded(1, 100, 60), maxContextBytes: bounded(10000, 500000, 250000)
+      maxFiles: bounded(1, 100, 60), maxContextBytes: bounded(10000, 500000, 250000),
+      // A larger change set is reviewed in up to maxParts parts of maxContextBytes each (1: no parts, rejected as before).
+      // Optional without a default (4 applies, reviewParts): configurations that leave it out keep their hash, so runs
+      // in flight across the broker deploy stay current.
+      maxParts: z.number().int().min(1).max(8).optional()
     }).prefault({}),
     postMergeWorkflows: z.array(z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/)).max(10).default([]),
     // Risk-based auto-merge: a risk class per head decides whether merge_pr 'allow' merges on its own or needs approval.

@@ -97,7 +97,12 @@ export interface RiskAssessor { assess(input: RiskInput): Promise<RiskAssessment
  * Classifies one head. Built-in paths make it critical; a change covered completely by areas takes the highest area
  * class without a model call; otherwise the AI class is raised to the area and size floor. Any assessor failure is critical.
  */
-export async function classifyRisk(changes: ReviewInput['changes'], risk: Config['merge']['risk'], assessor: RiskAssessor | undefined): Promise<RiskRecord> {
+/**
+ * `parts`: the review parts of a change set too large for one review context (merge/parts.ts). Each part is assessed on
+ * its own with the metrics of the whole change set, and the highest class holds (issue #189).
+ */
+export async function classifyRisk(changes: ReviewInput['changes'], risk: Config['merge']['risk'], assessor: RiskAssessor | undefined,
+  parts: ReviewInput['changes'][] = [changes]): Promise<RiskRecord> {
   const rules = riskRules(changes, risk);
   const base = { matchedAreas: rules.matchedAreas, builtinPaths: rules.builtinPaths, lines: rules.lines };
   if (rules.builtinPaths.length) return { ...base, class: 'critical', source: 'builtin', aiClass: null, factors: [],
@@ -109,13 +114,17 @@ export async function classifyRisk(changes: ReviewInput['changes'], risk: Config
   }
   try {
     if (!assessor) throw new Error('No risk assessor configured');
-    const assessment = riskAssessmentSchema.parse(await assessor.assess({
-      changes, guidance: risk.guidance,
-      touchedAreas: risk.areas.filter(a => rules.matchedAreas.includes(a.name)).map(a => ({ name: a.name, class: a.class })),
-      metrics: { files: changes.length, lines: rules.lines, directories: [...new Set(changes.map(c => c.path.split('/')[0]!))].sort(),
-        testsChanged: changes.some(c => /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[a-z]+$/i.test(c.path)) }
-    }));
-    return { ...base, class: highest([assessment.class, rules.floor]), source: 'ai', aiClass: assessment.class, reason: assessment.reason, factors: assessment.factors };
+    const metrics = { files: changes.length, lines: rules.lines, directories: [...new Set(changes.map(c => c.path.split('/')[0]!))].sort(),
+      testsChanged: changes.some(c => /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[a-z]+$/i.test(c.path)) };
+    const touchedAreas = risk.areas.filter(a => rules.matchedAreas.includes(a.name)).map(a => ({ name: a.name, class: a.class }));
+    const assessments: RiskAssessment[] = [];
+    // Sequential: a failed part makes the whole assessment fail (critical) without paying for the remaining parts.
+    for (const part of parts) assessments.push(riskAssessmentSchema.parse(await assessor.assess({ changes: part, guidance: risk.guidance, touchedAreas, metrics })));
+    const aiClass = highest(assessments.map(a => a.class));
+    const reason = assessments.length === 1 ? assessments[0]!.reason
+      : `Bewertung in ${assessments.length} Teilen; die höchste Klasse gilt.\n${assessments.map((a, i) => `Teil ${i + 1} (${a.class}): ${a.reason}`).join('\n')}`.slice(0, 2000);
+    const factors = assessments.flatMap(a => a.factors).slice(0, 15);
+    return { ...base, class: highest([aiClass, rules.floor]), source: 'ai', aiClass, reason, factors };
   } catch (error) {
     // Only a fixed code of the cause, never provider text: it is shown in the pull request.
     const status = error && typeof error === 'object' && 'status' in error && /^[0-9]{3}$/.test(String(error.status)) ? ` Ursache: HTTP ${String(error.status)} des Bewertungsanbieters.` : '';
