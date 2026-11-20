@@ -54,6 +54,11 @@ export interface Task {
   reworkable: boolean;
   /** The merge review a rework answers, when the review (not the validation) is what it repairs. */
   reworkReview?: MergeReview;
+  /**
+   * The attempt a rework continues when it is not `latest`: the task text was revised while the open pull request of an
+   * attempt at the earlier text still waited for its rework (issue #188 step 5, variant A).
+   */
+  reworkFrom?: Execution;
   /** Why the merge side asked for that rework: review findings, or a conflict of the branch with the base. */
   reworkCause?: 'review' | 'conflict';
   automaticBlockCause?: BlockCause;
@@ -138,16 +143,23 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
       (!issue.reopenedAt || (!!p.mergedAt && p.mergedAt > issue.reopenedAt)));
     // The only open pull requests are the ones the Factory published for this task's own attempts: a rework replaces them.
     const ownPRsOnly = linked.filter(p => p.state === 'open').every(p => executions.some(e => p.headRefName === `sf/issue-${issue.number}/${e.input.executionId}`));
-    const failedValidation = latest?.runtime?.validation;
+    // A revised task without an attempt of its own continues the open pull request of the last attempt at an earlier text
+    // when that one waited for a rework (issue #188 step 5, variant A): editing the issue no longer drops the rework.
+    // Where ready is a person's grant, the revised text needs its own grant first; until then the task waits on its pull request.
+    const carried = !latest && hasOpenPR && (!snapshot.readyIsGrant || issue.labels.includes('harness:ready')) ? executions.filter(e => e.input.taskVersion !== version && !e.rejected && !!e.result &&
+      linked.some(p => p.state === 'open' && p.headRefName === `sf/issue-${issue.number}/${e.input.executionId}`)).sort((a, b) => b.at.localeCompare(a.at))[0] : undefined;
+    const source = latest ?? carried;
+    const failedValidation = source?.runtime?.validation;
     // The broker's merge review asked for changes to the pull request this very attempt published (and it is still open).
     // Or its branch conflicts with the base (cause conflict): the same rework, which resolves the conflict on the current base.
-    const requestedBy = latest?.result?.status === 'success' && hasOpenPR ? events.flatMap(e => e.data.type === 'merge_changes_requested' &&
-      e.data.executionId === latest.input.executionId ? [e.data] : []).at(-1) : undefined;
+    const requestedBy = source?.result?.status === 'success' && hasOpenPR ? events.flatMap(e => e.data.type === 'merge_changes_requested' &&
+      e.data.executionId === source.input.executionId ? [e.data] : []).at(-1) : undefined;
     const requested = requestedBy?.review;
-    const repairable = latest?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' || !!requested;
+    const repairable = source?.result?.status === 'blocked' && failedValidation?.status === 'failed' && failedValidation.reason === 'CHECK_FAILED' || !!requested;
     const reworkable = config.execution.rework && issue.state === 'open' && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some(e => e.active) &&
       repairable && attemptsUsed <= config.execution.maxRetries;
-    const reworkReview = reworkable && latest?.result?.status === 'success' ? requested : undefined;
+    const reworkReview = reworkable && source?.result?.status === 'success' ? requested : undefined;
+    const reworkFrom = reworkable && !latest ? carried : undefined;
     let desiredStatus: Status = issueStatus(issue) ?? 'backlog';
     if (issue.state === 'closed') desiredStatus = 'done';
     else if (explicitBlock) desiredStatus = 'blocked';
@@ -155,7 +167,8 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     else if (executions.some(e => e.active)) desiredStatus = executions.some(e => e.ambiguous) ? 'blocked' : executions.some(e => e.runtime?.phase === 'awaiting-approval') ? 'awaiting-approval' : 'running';
     else if (hasClosingMerge) desiredStatus = 'done';
     else if (blockReason) desiredStatus = 'blocked';
-    else if (reworkable) desiredStatus = 'failed';
+    // A rework of revised text runs on a grant for that text (issue #188 step 5): the label stays until the rework started.
+    else if (reworkable) desiredStatus = reworkFrom && snapshot.readyIsGrant ? 'ready' : 'failed';
     // Where ready is a person's grant, a fresh grant on a task whose last attempt failed is what admits the retry.
     // The Manager must leave that label alone until the retry has started; replacing it with `failed` would
     // consume the grant it is waiting for.
@@ -171,6 +184,6 @@ export function reconstruct(snapshot: Snapshot, config: Config, now = new Date()
     return { issue, version, status: issueStatus(issue) ?? 'backlog', desiredStatus, events, executions, latest, attemptsUsed, nextAttempt,
       ...(refusal ? { refusal } : {}), openFollowups,
       blocked: !!blockReason, blockReason, automaticBlockCause: reworkable && automaticBlockCause === 'worker' ? undefined : automaticBlockCause, hasOpenPR, hasClosingMerge, criteria, reworkable,
-      ...(reworkReview ? { reworkReview, reworkCause: requestedBy?.cause ?? 'review' } : {}) };
+      ...(reworkReview ? { reworkReview, reworkCause: requestedBy?.cause ?? 'review' } : {}), ...(reworkFrom ? { reworkFrom } : {}) };
   });
 }

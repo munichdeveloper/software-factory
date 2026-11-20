@@ -70091,7 +70091,8 @@ function evaluate(action, ctx) {
     if (budget.activeWorkers >= config2.execution.maxParallelWorkers) return deny("Maximum parallel workers reached");
     if (task.refusal?.waiting) return deny(`Runtime refused the last start (${task.refusal.code}); waiting for a new grant, a policy or configuration change, or until ${task.refusal.until}`);
     if (action.kind === "retry_worker") {
-      if (!task.latest?.result || !rework && !["failed", "cancelled"].includes(task.latest.result.status)) return deny("No failed execution to retry");
+      const source = task.latest ?? (rework ? task.reworkFrom : void 0);
+      if (!source?.result || !rework && !["failed", "cancelled"].includes(source.result.status)) return deny("No failed execution to retry");
       if (task.attemptsUsed > config2.execution.maxRetries) return deny("Maximum retries reached");
       if (action.attempt !== task.nextAttempt) return deny("Retry proposal is not bound to the next concrete attempt");
     } else {
@@ -70216,12 +70217,15 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     const hasOpenPR = linked.some((p) => p.state === "open");
     const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
     const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
-    const failedValidation = latest?.runtime?.validation;
-    const requestedBy = latest?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === latest.input.executionId ? [e.data] : []).at(-1) : void 0;
+    const carried = !latest && hasOpenPR && (!snapshot.readyIsGrant || issue2.labels.includes("harness:ready")) ? executions.filter((e) => e.input.taskVersion !== version2 && !e.rejected && !!e.result && linked.some((p) => p.state === "open" && p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`)).sort((a, b) => b.at.localeCompare(a.at))[0] : void 0;
+    const source = latest ?? carried;
+    const failedValidation = source?.runtime?.validation;
+    const requestedBy = source?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === source.input.executionId ? [e.data] : []).at(-1) : void 0;
     const requested = requestedBy?.review;
-    const repairable = latest?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" || !!requested;
+    const repairable = source?.result?.status === "blocked" && failedValidation?.status === "failed" && failedValidation.reason === "CHECK_FAILED" || !!requested;
     const reworkable = config2.execution.rework && issue2.state === "open" && !blockReason && !hasClosingMerge && ownPRsOnly && !executions.some((e) => e.active) && repairable && attemptsUsed <= config2.execution.maxRetries;
-    const reworkReview = reworkable && latest?.result?.status === "success" ? requested : void 0;
+    const reworkReview = reworkable && source?.result?.status === "success" ? requested : void 0;
+    const reworkFrom = reworkable && !latest ? carried : void 0;
     let desiredStatus = issueStatus(issue2) ?? "backlog";
     if (issue2.state === "closed") desiredStatus = "done";
     else if (explicitBlock) desiredStatus = "blocked";
@@ -70229,7 +70233,7 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : executions.some((e) => e.runtime?.phase === "awaiting-approval") ? "awaiting-approval" : "running";
     else if (hasClosingMerge) desiredStatus = "done";
     else if (blockReason) desiredStatus = "blocked";
-    else if (reworkable) desiredStatus = "failed";
+    else if (reworkable) desiredStatus = reworkFrom && snapshot.readyIsGrant ? "ready" : "failed";
     else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed <= config2.execution.maxRetries) desiredStatus = "ready";
     else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
     else if (hasOpenPR) desiredStatus = "awaiting-pr";
@@ -70256,7 +70260,8 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       hasClosingMerge,
       criteria,
       reworkable,
-      ...reworkReview ? { reworkReview, reworkCause: requestedBy?.cause ?? "review" } : {}
+      ...reworkReview ? { reworkReview, reworkCause: requestedBy?.cause ?? "review" } : {},
+      ...reworkFrom ? { reworkFrom } : {}
     };
   });
 }
@@ -71353,7 +71358,7 @@ ${marker2}`;
         const id = executionId(this.github.repository, live2, attempt);
         const rework = action.kind === "retry_worker" && task.reworkable && this.config.execution.engine === "temporal";
         const retry = action.kind === "retry_worker" && !rework && task.latest?.result?.status === "failed" && this.config.execution.engine === "temporal";
-        const previous = rework || retry ? task.latest.input.executionId : void 0;
+        const previous = rework ? (task.reworkFrom ?? task.latest).input.executionId : retry ? task.latest.input.executionId : void 0;
         const escalate = !!previous && !!this.config.workers.coding && !!this.config.workers.coding.retryAgents && (rework && task.reworkCause !== "conflict" || task.executions.some((e) => e.input.taskVersion === task.version && !e.rejected && !!e.result && e.result.status !== "success" && e.result.error !== infrastructureFailureCode));
         if (this.config.execution.engine === "temporal" && this.options.workerRuntime?.preflight) {
           try {
@@ -72358,6 +72363,7 @@ function reviewInput(input2, config2) {
   return JSON.stringify({
     trustedScope: input2.trustedScope,
     trustedInstructions: input2.trustedInstructions,
+    ...input2.validationNote ? { trustedValidationNote: input2.validationNote } : {},
     trustedMergeRequirements: {
       requiredChecks: config2.merge.requiredChecks,
       updateBranch: config2.merge.updateBranch,
@@ -72739,6 +72745,7 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
           continue;
         }
         const ownership = this.ownership(f, snapshot), owner = ownership?.task;
+        let revalidated = null;
         if (owner && (owner.state === "closed" || owner.labels.includes("harness:blocked"))) {
           this.note(number4, "stopped", "Die zugeh\xF6rige Aufgabe wurde geschlossen oder blockiert.");
           await this.explain(f, "Die zugeh\xF6rige Aufgabe wurde geschlossen oder blockiert.");
@@ -72746,12 +72753,14 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
         }
         const adopted = !this.options.ownedOnly && f.labels.includes(this.config.merge.adoptLabel);
         if (ownership && !adopted) {
-          if (ownership.status !== "success") {
+          const repaired = ownership.status === "blocked" && !!ownership.publishedHead && f.head !== ownership.publishedHead;
+          if (ownership.status !== "success" && !repaired) {
             this.note(number4, "stopped", `Lauf mit Status ${ownership.status} ver\xF6ffentlicht, nicht als erfolgreich validiert.`);
-            await this.explain(f, `Der Lauf wurde mit Status ${ownership.status} ver\xF6ffentlicht, nicht als erfolgreich validiert; die Factory mergt ihn nicht.`);
+            await this.explain(f, `Der Lauf wurde mit Status ${ownership.status} ver\xF6ffentlicht, nicht als erfolgreich validiert; die Factory mergt ihn nicht. Ein neuer Commit auf dem Branch (von jemandem mit Schreibrecht) wird erneut validiert und gepr\xFCft.`);
             continue;
           }
-          if (ownership.publishedHead && f.head !== ownership.publishedHead && !this.events(f).some((e) => e.data.type === "branch_update")) {
+          if (repaired) revalidated = ownership.publishedHead;
+          if (ownership.publishedHead && f.head !== ownership.publishedHead && (repaired || !this.events(f).some((e) => e.data.type === "branch_update"))) {
             phase = "Nachtr\xE4gliche Commits pr\xFCfen";
             const refusal = await this.laterCommits(f, ownership.publishedHead);
             if (refusal) {
@@ -72864,6 +72873,7 @@ Gepr\xFCfter Head: \`${f.head}\`.`
         const { maxFiles, maxContextBytes } = this.config.merge.review, maxParts = this.config.merge.review.maxParts ?? defaultMaxParts;
         const load = () => context2 ??= this.api.context(current, maxFiles, maxContextBytes * maxParts).then((input2) => {
           if (sourceTask) input2.sourceTask = sourceTask;
+          if (revalidated) input2.validationNote = `The Factory run that published this pull request was blocked by its independent validation at commit ${revalidated}. The pull request text still describes that commit. People with write access pushed fixes since; the current head was validated again and is judged by its current checks.`;
           return input2;
         });
         let planned;

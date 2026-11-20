@@ -343,7 +343,7 @@ describe('rework after a failed independent validation', () => {
     await healthy(w);
     expect(w.status(1)).toEqual(['awaiting-pr']);
   });
-  it('does not rework a task that a person blocked or revised after the failed validation', async () => {
+  it('does not rework a task that a person blocked, or revised without a grant for the new text, after the failed validation', async () => {
     for (const change of ['block', 'revise'] as const) {
       const w = new World({ rework: true, readyLabel: true }); w.open(1); w.grant(1); await w.tick();
       await w.finishCoding(execution(w, 1), 'failed');
@@ -352,6 +352,37 @@ describe('rework after a failed independent validation', () => {
       expect(attempts(w, 1), change).toHaveLength(1);
       expect(w.running(), change).toEqual([]);
     }
+  });
+  it('continues the open pull request when the task is revised while its rework waits (issue #188 step 5, variant A)', async () => {
+    const w = new World({ rework: true }); w.open(1); await w.tick();
+    const first = execution(w, 1);
+    await w.finishCoding(first, 'failed');
+    w.revise(1); await w.tick(); await w.tick(); await w.tick();
+    const second = execution(w, 1);
+    expect(second).not.toBe(first);
+    const input = w.store.rows.get(second)!.snapshot.admission.input;
+    expect(input.contextReferences).toContain(`urn:sf-rework:${first}`);
+    expect(input.taskVersion).not.toBe(w.store.rows.get(first)!.snapshot.admission.input.taskVersion);
+    await w.finishCoding(second, 'passed'); await w.tick(); await w.tick();
+    expect(w.status(1)).toEqual(['awaiting-pr']);
+    expect(openPRs(w).map(p => p.headRefName)).toEqual([`sf/issue-1/${second}`]);
+    await healthy(w);
+  });
+  it('needs a fresh grant for the revised text before it continues the open pull request (issue #188 step 5)', async () => {
+    const w = new World({ rework: true, readyLabel: true }); w.open(1); w.grant(1); await w.tick();
+    const first = execution(w, 1);
+    await w.finishCoding(first, 'failed');
+    w.revise(1); await w.tick(); await w.tick();
+    expect(w.running()).toEqual([]);
+    expect(w.status(1)).toEqual(['awaiting-pr']);
+    w.advance(5); w.grant(1); await w.tick(); await w.tick(); await w.tick();
+    const second = execution(w, 1);
+    expect(w.store.rows.get(second)!.snapshot.admission.input.contextReferences).toContain(`urn:sf-rework:${first}`);
+    expect(w.store.rows.get(second)!.snapshot.readyApproval).toBeDefined();
+    expect(w.store.rows.get(second)!.snapshot.readyApproval).not.toEqual(w.store.rows.get(first)!.snapshot.readyApproval);
+    await w.finishCoding(second, 'passed');
+    await healthy(w);
+    expect(w.status(1)).toEqual(['awaiting-pr']);
   });
   it('refuses a rework whose named attempt did not fail its validation', async () => {
     const w = new World({ rework: true }); w.open(1); await w.tick();

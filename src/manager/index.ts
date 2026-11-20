@@ -226,7 +226,7 @@ export class Manager {
         const rework = action.kind === 'retry_worker' && task.reworkable && this.config.execution.engine === 'temporal';
         // A retry after a failed run names it too, so the grant that admitted it carries over (software-factory#93).
         const retry = action.kind === 'retry_worker' && !rework && task.latest?.result?.status === 'failed' && this.config.execution.engine === 'temporal';
-        const previous = rework || retry ? task.latest!.input.executionId : undefined;
+        const previous = rework ? (task.reworkFrom ?? task.latest)!.input.executionId : retry ? task.latest!.input.executionId : undefined;
         // Escalate to workers.coding.retryAgents only when an earlier attempt failed for a reason the agent owns: a
         // rework, or a failed, blocked or cancelled result other than a runner failure before the agent started.
         // A conflict with the base is mechanical work and stays on the first-attempt agents (Johannes, 2026-11-19).

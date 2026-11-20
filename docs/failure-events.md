@@ -19,6 +19,12 @@ Status: **in Umsetzung** (Issue #188, verwandt: #189). Alle Entscheidungen sind 
   Rollout von selbst an. Diese Ablehnungen stehen in keinem Journal; der Broker meldet sie jetzt trotzdem als
   `start_refused` (`stage: preflight`, `retryAt: null`) und den folgenden Start als `start_resumed` mit
   `trigger: cause_cleared`. Offen bleibt das Aufheben journalisierter Ablehnungen (Backoff) nach behobener Ursache.
+- Schritt 5 umgesetzt (6.2, Variante A): Wird der Issue-Text geändert, während der offene PR eines Versuchs auf eine
+  Nachbesserung wartet, startet die Nachbesserung für die neue Task-Version auf diesem PR (`urn:sf-rework:<alter Versuch>`).
+  Die Freigabe des alten Versuchs gilt nicht für den neuen Text: Wo `harness:ready` eine Freigabe ist, wartet das Issue
+  auf `awaiting-pr`, bis jemand den neuen Text freigibt.
+- Schritt 6 umgesetzt: Pusht jemand mit Schreibrechten auf den Branch eines blockierten Laufs, prüft die Factory den PR
+  neu (unabhängige Validierung, Pflicht-Checks, KI-Review mit Hinweis auf die Reparatur) und kann ihn danach mergen.
 
 Dieses Dokument beschreibt, wie der Broker einen gescheiterten Prüfschritt, einen abgelehnten Start oder einen
 festhängenden Lauf als **Ereignis** veröffentlicht. Wer will, kann es abonnieren: Slack, der Factory-Monitor, ein
