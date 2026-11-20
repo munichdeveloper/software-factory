@@ -13,6 +13,7 @@ A large pull request may be reviewed in parts (reviewPart present): you review p
 function reviewInput(input: ReviewInput, config: Config): string {
   const { comments: _comments, ...facts } = input.facts; void _comments;
   return JSON.stringify({ trustedScope: input.trustedScope, trustedInstructions: input.trustedInstructions,
+    ...(input.validationNote ? { trustedValidationNote: input.validationNote } : {}),
     trustedMergeRequirements: { requiredChecks: config.merge.requiredChecks, updateBranch: config.merge.updateBranch,
       method: config.merge.method, requireResolvedThreads: true, requireStrictUpToDate: true, protection: config.merge.protection },
     untrustedFacts: facts, untrustedSourceTask: input.sourceTask ?? null, untrustedChanges: input.changes,

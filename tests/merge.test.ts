@@ -212,6 +212,18 @@ it('never marks ready or merges a draft that was published with a blocked status
   expect(x.ready).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.reviewer.review).not.toHaveBeenCalled();
   expect(x.f.comments.at(-1)!.body).toContain('Status blocked');
 });
+it('validates and reviews a blocked run again once people with write access repaired its branch (issue #188 step 6)', async () => {
+  const x = temporal('blocked'); x.f.head = 'f'.repeat(40);
+  const pushedSince = vi.fn(async () => ['maintainer']); Object.assign(x.api, { pushedSince });
+  expect((await x.owned()).merged).toBe(0); expect(x.ready).toHaveBeenCalledWith(52, 'f'.repeat(40));
+  expect(x.api.dispatch).toHaveBeenCalledWith('test.yml', x.f.headBranch);
+  x.f.draft = false;
+  expect((await x.owned()).merged).toBe(1); expect(x.api.merge).toHaveBeenCalledWith(52, 'f'.repeat(40), 'squash');
+  expect(x.reviewer.review.mock.calls[0]![0].validationNote).toContain(`blocked by its independent validation at commit ${'a'.repeat(40)}`);
+  const y = temporal('blocked'); y.f.head = 'f'.repeat(40); Object.assign(y.api, { pushedSince: vi.fn(async () => ['stranger']) });
+  await y.owned(); y.f.draft = false; await y.owned();
+  expect(y.api.merge).not.toHaveBeenCalled(); expect(y.reviewer.review).not.toHaveBeenCalled();
+});
 it('does not merge a Factory pull request whose head was changed by someone else', async () => {
   const x = temporal(); x.f.draft = false; x.f.head = 'f'.repeat(40);
   await x.owned(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.f.comments.at(-1)!.body).toContain('fremden Änderungen');
