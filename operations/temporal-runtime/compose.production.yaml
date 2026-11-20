@@ -72,6 +72,9 @@ services:
       # Besides loopback the broker listens only on its address in runtime-api (this alias exists only there), so
       # the SF Manager's own Compose project reaches http://runtime-broker:8095 and the Temporal network does not.
       FACTORY_RUNTIME_LISTEN_ALIAS: factory-runtime-api
+      # GitHub webhooks nudge the broker through the SF Manager (software-factory#197), so the schedule is only a safety
+      # net for lost deliveries and time-based work. 180 s used about 3,400 counted App requests per hour (2026-11-20).
+      FACTORY_RECONCILE_INTERVAL_SECONDS: '900'
       # Acceptance repository of the deployment canary (deploy.verify, software-factory#27): test worker only, no
       # code changes. Its App installation is looked up by the broker and must be in GITHUB_ALLOWED_INSTALLATION_IDS.
       FACTORY_CANARY_REPOSITORY: '{"repositoryId":1450715381,"repository":"munichdeveloper/sf-temporal-acceptance-a-20261108"}'
