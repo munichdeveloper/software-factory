@@ -89,11 +89,17 @@ export class RuntimeController implements WorkerRuntimePort {
   private async reworked(input: { issueNumber: number; taskVersion: string; contextReferences: string[] }, previousId = reworkOf(input)): Promise<StoredRun | null> {
     if (!previousId) return this.retried(input);
     const previous = await this.store.get(this.repo.repositoryId, previousId);
-    if (!previous || previous.snapshot.admission.input.issueNumber !== input.issueNumber || previous.snapshot.admission.input.taskVersion !== input.taskVersion) throw new Error('REWORK_SOURCE_INVALID');
+    if (!previous || previous.snapshot.admission.input.issueNumber !== input.issueNumber) throw new Error('REWORK_SOURCE_INVALID');
     const validation = (await this.store.validation(this.repo.repositoryId, previousId))?.status;
     const failedValidation = previous.result?.status === 'blocked' && validation === 'failed';
     const reviewed = !failedValidation && previous.result?.status === 'success' && validation !== 'failed' && await this.changesRequested(input.issueNumber, previousId);
     if (!failedValidation && !reviewed) throw new Error('REWORK_SOURCE_INVALID');
+    // A revised task may continue the open pull request of an attempt at its earlier text (issue #188 step 5, variant A).
+    // The ready grant of that attempt was for the earlier text: it does not carry over, the revised text needs its own.
+    if (previous.snapshot.admission.input.taskVersion !== input.taskVersion) {
+      const { readyApproval: _grant, ...snapshot } = previous.snapshot; void _grant;
+      return { ...previous, snapshot };
+    }
     return previous;
   }
   /** The merge review journaled on the task that it asked for changes to exactly this attempt's pull request. */

@@ -60,7 +60,9 @@ export function evaluate(action: Action, ctx: PolicyContext): Decision {
     // A start the runtime refused is not repeated until something it depends on changed (software-factory#53).
     if (task.refusal?.waiting) return deny(`Runtime refused the last start (${task.refusal.code}); waiting for a new grant, a policy or configuration change, or until ${task.refusal.until}`);
     if (action.kind === 'retry_worker') {
-      if (!task.latest?.result || !rework && !['failed', 'cancelled'].includes(task.latest.result.status)) return deny('No failed execution to retry');
+      // A rework of a revised task continues the attempt at the earlier text whose pull request is still open (#188 step 5).
+      const source = task.latest ?? (rework ? task.reworkFrom : undefined);
+      if (!source?.result || !rework && !['failed', 'cancelled'].includes(source.result.status)) return deny('No failed execution to retry');
       if (task.attemptsUsed > config.execution.maxRetries) return deny('Maximum retries reached');
       if (action.attempt !== task.nextAttempt) return deny('Retry proposal is not bound to the next concrete attempt');
     } else {

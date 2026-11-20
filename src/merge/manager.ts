@@ -212,13 +212,20 @@ export class MergeManager {
           continue;
         }
         const ownership = this.ownership(f, snapshot), owner = ownership?.task;
+        // The published head of a blocked run whose branch was repaired afterwards (its PR text describes that head).
+        let revalidated: string | null = null;
         if (owner && (owner.state === 'closed' || owner.labels.includes('harness:blocked'))) { this.note(number, 'stopped', 'Die zugehörige Aufgabe wurde geschlossen oder blockiert.'); await this.explain(f, 'Die zugehörige Aufgabe wurde geschlossen oder blockiert.'); continue; }
         const adopted = !this.options.ownedOnly && f.labels.includes(this.config.merge.adoptLabel);
         if (ownership && !adopted) {
           // Only a successful run whose independent validation passed is a merge candidate; a draft kept for review is not.
-          if (ownership.status !== 'success') { this.note(number, 'stopped', `Lauf mit Status ${ownership.status} veröffentlicht, nicht als erfolgreich validiert.`); await this.explain(f, `Der Lauf wurde mit Status ${ownership.status} veröffentlicht, nicht als erfolgreich validiert; die Factory mergt ihn nicht.`); continue; }
+          // Exception (issue #188 step 6, concept 6.4): a blocked run whose branch people with write access repaired
+          // afterwards. Its new head is validated again (validationWorkflow), must pass the required checks and gets a new
+          // AI review, like any later commit on a successful run.
+          const repaired = ownership.status === 'blocked' && !!ownership.publishedHead && f.head !== ownership.publishedHead;
+          if (ownership.status !== 'success' && !repaired) { this.note(number, 'stopped', `Lauf mit Status ${ownership.status} veröffentlicht, nicht als erfolgreich validiert.`); await this.explain(f, `Der Lauf wurde mit Status ${ownership.status} veröffentlicht, nicht als erfolgreich validiert; die Factory mergt ihn nicht. Ein neuer Commit auf dem Branch (von jemandem mit Schreibrecht) wird erneut validiert und geprüft.`); continue; }
+          if (repaired) revalidated = ownership.publishedHead;
           // The published, validated commit or a base update the Factory itself requested; nothing pushed by others.
-          if (ownership.publishedHead && f.head !== ownership.publishedHead && !this.events(f).some(e => e.data.type === 'branch_update')) {
+          if (ownership.publishedHead && f.head !== ownership.publishedHead && (repaired || !this.events(f).some(e => e.data.type === 'branch_update'))) {
             phase = 'Nachträgliche Commits prüfen';
             const refusal = await this.laterCommits(f, ownership.publishedHead);
             if (refusal) { this.note(number, 'stopped', refusal); await this.explain(f, refusal); continue; }
@@ -301,7 +308,9 @@ export class MergeManager {
         const { maxFiles, maxContextBytes } = this.config.merge.review, maxParts = this.config.merge.review.maxParts ?? defaultMaxParts;
         // The whole context may span maxParts review parts; each part stays under maxContextBytes (issue #189).
         const load = () => context ??= this.api.context(current, maxFiles, maxContextBytes * maxParts).then(input => {
-          if (sourceTask) input.sourceTask = sourceTask; return input; });
+          if (sourceTask) input.sourceTask = sourceTask;
+          if (revalidated) input.validationNote = `The Factory run that published this pull request was blocked by its independent validation at commit ${revalidated}. The pull request text still describes that commit. People with write access pushed fixes since; the current head was validated again and is judged by its current checks.`;
+          return input; });
         let planned: Promise<ReviewInput[]> | undefined;
         const plan = () => planned ??= load().then(input => reviewParts(input, maxContextBytes, maxParts));
         // Which model did the work, when the model router was asked (router.review, router.risk); shown, never journaled.

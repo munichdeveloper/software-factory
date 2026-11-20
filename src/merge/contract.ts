@@ -25,6 +25,8 @@ export interface ReviewChange { path: string; status: string; patch: string; con
 export interface ReviewInput { facts: MergeFacts; trustedScope: string; trustedInstructions: string;
   sourceTask?: { number: number; title: string; body: string };
   changes: ReviewChange[];
+  /** Trusted note from the broker about the validation the PR text describes (a repaired blocked run, issue #188). */
+  validationNote?: string;
   /** Set when a large change set is reviewed in parts: which part this is and the pull request's other changed files. */
   part?: { index: number; total: number; otherFiles: { path: string; status: string; lines: number; patch?: string }[] } }
 export interface MergeReviewer { review(input: ReviewInput): Promise<MergeReview> }
