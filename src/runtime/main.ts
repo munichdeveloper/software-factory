@@ -1,5 +1,5 @@
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -48,6 +48,7 @@ import { RuntimeMerge } from './merge.js';
 import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
+import { BrokerLife, WorkerWatch } from './broker-health.js';
 import { assertCanaryConfig, bindCanaryRepository, canaryLabel, canaryRepository, runCanary } from './canary.js';
 import { ClaudeMergeReviewer, FallbackMergeReviewer, OpenAIMergeReviewer } from '../merge/reviewer.js';
 import { ClaudeRiskAssessor, FallbackRiskAssessor, OpenAIRiskAssessor } from '../merge/risk.js';
@@ -320,11 +321,21 @@ export async function main(args = process.argv.slice(2)) {
       const slots = process.env.FACTORY_RUNNER_SLOTS_DIR;
       return startRunnerFallback(fallback, slots ? new RunnerDispenser(fallback, slots) : null, runnerInterval * 1000);
     })() : () => {};
+    // Crashes of the broker and task queues no worker polls go to Slack (software-factory#194).
+    const runtimeChannel = process.env.FACTORY_RUNTIME_ALERT_CHANNEL, runtimeSink = process.env.SLACK_BOT_TOKEN && runtimeChannel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;
+    const life = new BrokerLife(store, randomUUID(), runtimeSink, runtimeChannel);
+    await life.start();
+    const workers = new WorkerWatch(async taskQueue => {
+      const { pollers } = await temporal.workflowService.describeTaskQueue({ namespace: registry.namespace, taskQueue: { name: taskQueue }, taskQueueType: 1 });
+      return (pollers ?? []).flatMap(p => p.lastAccessTime?.seconds == null ? [] : [new Date(Number(p.lastAccessTime.seconds) * 1000)]);
+    }, () => bindings.map(b => b.repository.release.taskQueue), runtimeSink, runtimeChannel);
+    const watch = setInterval(() => { void workers.check().catch(() => undefined); }, 60000);
+    watch.unref();
     const report = usageSink && usageChannel ? setInterval(() => { void dailyUsageReport(store, usageSink, usageChannel, new Date()).catch(() => undefined); }, 600000) : undefined;
     report?.unref();
     console.log(JSON.stringify({ service: 'factory-runtime', port, addresses, reconcileIntervalSeconds: interval, repositories: bindings.map(b => b.repository.repositoryId) }));
     await new Promise<void>(resolve => {
-      const stop = () => { stopRunners(); if (report) clearInterval(report); void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
+      const stop = () => { void life.stopped(); clearInterval(watch); stopRunners(); if (report) clearInterval(report); void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
       process.once('SIGINT', stop); process.once('SIGTERM', stop);
     });
   } finally { await connection.close(); await store.pool.end(); }
