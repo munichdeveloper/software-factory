@@ -357,3 +357,41 @@ it('reviews a new base again after an approval that could not merge yet', async 
   const x = fixture(); x.f.mergeState = 'BLOCKED'; await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
   x.f.base = 'e'.repeat(40); await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(2);
 });
+it('marks a Factory pull request and its task when the risk needs a person to approve, once, and clears both on merge (issue #204)', async () => {
+  const x = temporal(); x.f.draft = false; x.cfg.merge.risk.enabled = true;
+  const assessor = { assess: vi.fn(async () => ({ class: 'high' as const, reason: 'Schreibt in ein externes System.', factors: [] })) };
+  const task = x.snapshot.issues.find(i => i.number === 7)!;
+  const needsHuman = vi.fn(async (n: number, on: boolean) => {
+    if (n === 52) x.f.labels = on ? [...x.f.labels, 'sf:needs-human'] : x.f.labels.filter(l => l !== 'sf:needs-human');
+    if (n === 7) task.labels = on ? [...task.labels, 'sf:needs-human'] : task.labels.filter(l => l !== 'sf:needs-human');
+  });
+  // Comments on the task land in the snapshot the next pass reads, as they would on GitHub.
+  const prComment = x.api.comment;
+  const comment = vi.fn(async (n: number, body: string) => {
+    if (n !== 7) return prComment(n, body);
+    x.snapshot.comments.set(7, [...x.snapshot.comments.get(7) ?? [], { id: 500 + (x.snapshot.comments.get(7)?.length ?? 0), body, author: 'github-actions[bot]', createdAt: clock.toISOString() }]);
+  });
+  Object.assign(x.api, { needsHuman, comment });
+  const run = () => new MergeManager(x.api, x.cfg, x.reviewer, 'test', undefined, { ownedOnly: true, assessor }).run(structuredClone(x.snapshot));
+
+  await run(); await run();
+  expect(x.api.merge).not.toHaveBeenCalled();
+  expect(x.f.labels).toContain('sf:needs-human'); expect(task.labels).toContain('sf:needs-human');
+  expect(needsHuman.mock.calls).toEqual([[52, true], [7, true]]);
+  const onTask = (x.snapshot.comments.get(7) ?? []).filter(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data.type === 'merge_approval_required');
+  expect(onTask).toHaveLength(1);
+  const id = [...x.f.comments].reverse().find(c => c.body.includes('/harness approve'))!.body.match(/\/harness approve ([a-f0-9]{64})/)![1];
+  expect(onTask[0]!.body).toContain('Risiko high liegt über der Schwelle medium');
+  expect(onTask[0]!.body).toContain(`/harness approve ${id}`);
+  expect(onTask[0]!.body).toContain('PR #52');
+
+  x.f.comments.push({ id: 900, author: 'maintainer', body: `/harness approve ${id}`, createdAt: clock.toISOString() });
+  expect((await run()).merged).toBe(1);
+  expect(x.f.labels).not.toContain('sf:needs-human'); expect(task.labels).not.toContain('sf:needs-human');
+  expect(needsHuman.mock.calls.slice(2)).toEqual([[52, false], [7, false]]);
+});
+it('leaves sf:needs-human alone when nothing waits for a person', async () => {
+  const x = temporal(); x.f.draft = false;
+  const needsHuman = vi.fn(async () => {}); Object.assign(x.api, { needsHuman });
+  expect((await x.owned()).merged).toBe(1); expect(needsHuman).not.toHaveBeenCalled();
+});
