@@ -1,10 +1,9 @@
-import type { Config } from '../config/index.js';
 import type { Task } from '../state/reconstruct.js';
 import { lifecycleLabels } from '../state/lifecycle.js';
 import { proposal } from '../llm/provider.js';
 import type { Action } from '../types.js';
 
-export function reconciliationPlan(tasks: Task[], config: Config): Action[] {
+export function reconciliationPlan(tasks: Task[]): Action[] {
   return tasks.flatMap(t => {
     const actions: Action[] = [];
     if (t.executions.some(e => e.active && e.timedOut && (e.run || e.runtime))) actions.push(proposal(t, 'cancel_worker', 'Worker exceeded its configured time limit'));
@@ -18,7 +17,7 @@ export function reconciliationPlan(tasks: Task[], config: Config): Action[] {
     if (t.reworkable) actions.push(proposal(t, 'retry_worker', t.reworkReview ? 'Rework after the independent merge review asked for changes, within the configured limit'
       : 'Rework after a failed independent validation, within the configured limit'));
     else if (t.issue.state === 'open' && !t.blocked && !t.hasClosingMerge && !t.hasOpenPR && t.latest?.result &&
-      ['failed', 'cancelled'].includes(t.latest.result.status) && !t.executions.some(e => e.active) && t.attemptsUsed <= config.execution.maxRetries &&
+      ['failed', 'cancelled'].includes(t.latest.result.status) && !t.executions.some(e => e.active) && t.attemptsUsed < t.attemptLimit &&
       !t.refusal?.waiting) {
       actions.push(proposal(t, 'retry_worker', 'Retry failed execution within configured limit'));
     }

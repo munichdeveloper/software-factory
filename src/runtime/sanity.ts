@@ -39,7 +39,7 @@ export function inspect(tasks: Task[], config: Config, settings: MonitoringSetti
   }
   for (const task of open) {
     const n = task.issue.number, active = task.executions.some(e => e.active), latest = task.latest;
-    if (!active && latest?.result && ['failed', 'cancelled'].includes(latest.result.status) && task.attemptsUsed > config.execution.maxRetries) {
+    if (!active && latest?.result && ['failed', 'cancelled'].includes(latest.result.status) && task.attemptsUsed >= task.attemptLimit) {
       found.push(finding('retries_exhausted', n, `Retry budget used up after ${task.attemptsUsed} attempts (${code(latest.result.error) ?? latest.result.status}); the task cannot progress without a person`));
     }
     // The same error code at the end of several attempts in a row: a retry would most likely end the same way.

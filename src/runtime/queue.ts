@@ -131,7 +131,7 @@ function entry(task: Task, config: Config, snapshot: Snapshot, repository: strin
   return {
     issueNumber: task.issue.number, title: task.issue.title, url: `https://github.com/${repository}/issues/${task.issue.number}`, stage,
     status: task.desiredStatus, priority: label ? label.replace('harness:priority-', '') as QueueEntry['priority'] : null,
-    attempts: { used: task.attemptsUsed, max: config.execution.maxRetries + 1 },
+    attempts: { used: task.attemptsUsed, max: task.attemptLimit },
     since: startedAt ?? (stage === 'closed' ? merged?.mergedAt ?? task.issue.updatedAt : stage === 'queued' || stage === 'awaiting-grant' ? task.issue.readyAt ?? task.issue.updatedAt : task.latest?.at ?? task.issue.updatedAt),
     run: active && startedAt ? { executionId: active.input.executionId, phase: active.runtime?.phase ?? null, startedAt } : null,
     reason, retryAt: stage === 'refused' && task.refusal?.waiting ? task.refusal.until : null, waitsForSlot: stage === 'queued' && waitsForSlot,

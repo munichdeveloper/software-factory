@@ -172,6 +172,22 @@
         "rework": {
           "default": false,
           "type": "boolean"
+        },
+        "rescue": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "maxPerDay": {
+              "default": 3,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -1193,7 +1209,7 @@
               },
               "events": {
                 "minItems": 1,
-                "maxItems": 5,
+                "maxItems": 6,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -1202,6 +1218,7 @@
                     "start_refused",
                     "start_resumed",
                     "run_failed",
+                    "rescue_started",
                     "attention_required"
                   ]
                 }

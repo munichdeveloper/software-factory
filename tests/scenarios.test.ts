@@ -384,6 +384,26 @@ describe('rework after a failed independent validation', () => {
     await healthy(w);
     expect(w.status(1)).toEqual(['awaiting-pr']);
   });
+  it('starts one rescue attempt on retryAgents after the reworks are used up, then asks a person (issue #188 step 7)', async () => {
+    const w = new World({ rework: true, maxRetries: 1 });
+    const coding = w.cfg.workers.coding as Exclude<typeof w.cfg.workers.coding, false | undefined>;
+    coding.retryAgents = [{ agent: 'codex', model: 'strong-model' } as NonNullable<typeof coding.retryAgents>[number]];
+    w.cfg.execution.rescue = { enabled: true, maxPerDay: 1 };
+    w.open(1); w.open(2); await w.tick();
+    const fail = async (n: number) => { await w.finishCoding(execution(w, n), 'failed'); await w.tick(); await w.tick(); await w.tick(); };
+    await fail(1); await fail(1);
+    // The two regular attempts are used up: the third one is the rescue, escalated, once.
+    const rescue = attempts(w, 1)[2]!;
+    expect(rescue.input.contextReferences).toEqual(expect.arrayContaining(['urn:sf-rescue', 'urn:sf-escalate', `urn:sf-rework:${attempts(w, 1)[1]!.input.executionId}`]));
+    await fail(1);
+    expect(attempts(w, 1)).toHaveLength(3);
+    expect(w.status(1)).toEqual(['blocked']);
+    // The daily cap of the repository (1) is reached: issue 2 goes to a person after its regular attempts.
+    await fail(2); await fail(2);
+    await healthy(w);
+    expect(attempts(w, 2)).toHaveLength(2);
+    expect(attempts(w, 2).some(a => a.input.contextReferences.includes('urn:sf-rescue'))).toBe(false);
+  });
   it('refuses a rework whose named attempt did not fail its validation', async () => {
     const w = new World({ rework: true }); w.open(1); await w.tick();
     const first = execution(w, 1), source = w.store.rows.get(first)!.snapshot.admission;

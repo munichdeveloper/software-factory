@@ -29,6 +29,14 @@ Status: **in Umsetzung** (Issue #188, verwandt: #189). Alle Entscheidungen sind 
   Header `X-Factory-Event` und `X-Factory-Delivery` (`<repositoryId>:<key>`, zum Entdoppeln). Fehlversuche wiederholt er
   nach 30 s und 2 min; jeder Versuch steht im Broker-Log (`factory-webhook-delivery`, ohne URL). Der Claude-Abonnent (6.3)
   ist noch offen.
+- Schritt 7 umgesetzt (6.5, Entscheidung Johannes 20.11.2026: Reaktion im Broker, nicht über SF Manager, n8n oder
+  Webhook): `execution.rescue: { enabled, maxPerDay }` (optional, ohne Default). Sind die regulären Versuche
+  (`maxRetries`) aus einem Grund aufgebraucht, der beim Agenten liegt (Validierung gescheitert, Review verlangt Änderungen,
+  Lauf gescheitert ohne Infrastrukturfehler), startet der Broker genau einen Rettungsversuch auf `workers.coding.retryAgents`
+  (`urn:sf-rescue`, immer eskaliert, auf dem offenen PR). Höchstens einer pro Task-Version, `maxPerDay` (Default 3) pro
+  Repository in 24 Stunden, nie ein Rettungsversuch für einen Rettungsversuch. Er läuft über den Coding-Executor in
+  derselben Sandbox wie jeder Lauf, nicht im Broker-Prozess. Ereignis `rescue_started` (`tier: 3`); `attention_required`
+  kommt erst, wenn auch er scheitert. Webhooks bleiben für externe Abnehmer.
 - Schritt 5 umgesetzt (6.2, Variante A): Wird der Issue-Text geändert, während der offene PR eines Versuchs auf eine
   Nachbesserung wartet, startet die Nachbesserung für die neue Task-Version auf diesem PR (`urn:sf-rework:<alter Versuch>`).
   Die Freigabe des alten Versuchs gilt nicht für den neuen Text: Wo `harness:ready` eine Freigabe ist, wartet das Issue
