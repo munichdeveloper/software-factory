@@ -78,7 +78,26 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
         id bigserial PRIMARY KEY, repository_id bigint NOT NULL, repository text NOT NULL, key text NOT NULL, type text NOT NULL,
         issue_number integer NOT NULL, task_version text NOT NULL, execution_id text, data jsonb NOT NULL,
         occurred_at timestamptz NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(), UNIQUE(repository_id,key));
-      CREATE INDEX IF NOT EXISTS factory_runtime_events_time ON factory_runtime_events(recorded_at);`);
+      CREATE INDEX IF NOT EXISTS factory_runtime_events_time ON factory_runtime_events(recorded_at);
+      CREATE TABLE IF NOT EXISTS factory_runtime_broker_life (
+        id integer PRIMARY KEY CHECK (id = 1), instance text NOT NULL, started_at timestamptz NOT NULL, seen_at timestamptz NOT NULL,
+        ended boolean NOT NULL DEFAULT false);`);
+  }
+  /** The broker's own start (software-factory#194); the previous instance when it ended without a clean shutdown. */
+  async brokerStarted(instance: string, at: Date): Promise<{ startedAt: Date; seenAt: Date } | null> {
+    const { rows } = await this.pool.query<{ started_at: Date; seen_at: Date; ended: boolean }>(
+      `WITH previous AS (SELECT started_at, seen_at, ended FROM factory_runtime_broker_life WHERE id=1)
+       , replaced AS (INSERT INTO factory_runtime_broker_life(id,instance,started_at,seen_at,ended) VALUES(1,$1,$2,$2,false)
+         ON CONFLICT (id) DO UPDATE SET instance=$1, started_at=$2, seen_at=$2, ended=false)
+       SELECT * FROM previous`, [instance, at]);
+    const previous = rows[0];
+    return previous && !previous.ended ? { startedAt: previous.started_at, seenAt: previous.seen_at } : null;
+  }
+  async brokerAlive(instance: string, at: Date): Promise<void> {
+    await this.pool.query('UPDATE factory_runtime_broker_life SET seen_at=$2 WHERE id=1 AND instance=$1', [instance, at]);
+  }
+  async brokerStopped(instance: string): Promise<void> {
+    await this.pool.query('UPDATE factory_runtime_broker_life SET ended=true WHERE id=1 AND instance=$1', [instance]);
   }
   /** One broker model call (merge review, risk assessment, planner) for the cost analytics. */
   async recordLlmCall(r: LlmCallRecord): Promise<void> {

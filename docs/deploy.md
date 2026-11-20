@@ -194,8 +194,11 @@ This repository deploys its own runtime stack (broker, worker and their database
 `operations/temporal-runtime/compose.production.yaml` is the compose file of the release.
 
 - The **broker** is built on the host from the deployed release (`SF_RELEASE_SHA`). A merge to `main`
-  therefore replaces the broker and restarts the worker, which shares its network namespace.
-  Running Temporal workflows keep their Run-ID across this restart.
+  therefore replaces the broker. Broker and workers share one network namespace (the workers reach the broker on
+  loopback), held by the idle container `runtime-net` (software-factory#194): a redeploy, a crash or
+  `docker restart sfm-runtime-broker-1` replaces only the broker, and the workers keep their connection to Temporal.
+  Before, they joined the broker's own namespace and lost all networking whenever the broker restarted.
+  Running Temporal workflows keep their Run-ID across a broker restart.
 - The **PINNED worker release** is named in the compose file itself (`x-worker-release`, a published Factory
   commit). Every deployment builds the worker image from that commit, with its package baked in, and the broker
   serves its repositories with exactly that release; the `release` entries of `registry.json` are superseded.

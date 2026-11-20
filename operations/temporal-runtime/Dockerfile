@@ -85,6 +85,11 @@ FROM base-runtime AS broker
 COPY --from=worker-build /app/package/worker-package.json /app/worker-release.json
 COPY --from=previous-worker-build /app/package/worker-package.json /app/previous-worker-release.json
 ENV FACTORY_RELEASE_FILE=/app/worker-release.json FACTORY_PREVIOUS_RELEASE_FILE=/app/previous-worker-release.json
+# Node's own heap limit was about 505 MB, half of the container's mem_limit (1g) unused when the broker died of
+# "JavaScript heap out of memory" (software-factory#194). 768 MB leaves room for buffers and native memory.
+ENTRYPOINT ["node", "--max-old-space-size=768", "dist/runtime/main.js"]
+# A new ENTRYPOINT clears the inherited CMD.
+CMD ["serve", "--file", "/run/factory/registry.json"]
 
 # Default target: the plain runtime image, as before (CI packaging, manual installations with a registry release).
 FROM base-runtime AS runtime
