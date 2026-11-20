@@ -1,6 +1,6 @@
 # Konzept: Abgleich per GitHub-Webhook statt Dauer-Polling
 
-Stand: 2026-11-18. Status: Konzept, noch nicht umgesetzt.
+Stand: 2026-11-18. Status: in Umsetzung (#197). Broker-Seite: `POST /v1/repositories/{id}/nudge`.
 
 ## 1. Ausgangslage und Problem
 

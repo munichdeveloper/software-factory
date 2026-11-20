@@ -34,7 +34,9 @@ export interface ServerOptions { managerToken: string; workerToken: string; bind
   /** Keeps issue titles and merges for the cost analytics, told about every reconciliation. */
   analytics?: AnalyticsIssueSync;
   /** Runtime events (validation_failed, start_refused …), derived from every reconciliation; served at GET …/events. */
-  events?: RuntimeEvents }
+  events?: RuntimeEvents;
+  /** Asks the schedule for a reconciliation soon (POST …/nudge, GitHub webhooks through the SF Manager); see ReconcileSchedule. */
+  nudge?: (repositoryId: number) => boolean }
 /** `since` of an events request: an ISO time, default the last 24 hours, never more than 30 days back. */
 function eventsSince(url: string | undefined): Date {
   const value = new URL(url ?? '/', 'http://localhost').searchParams.get('since');
@@ -152,6 +154,18 @@ export function runtimeServer(options: ServerOptions) {
         if (!options.bindings.includes(binding)) options.bindings.push(binding);
         console.log(JSON.stringify({ event: 'factory-repository-registered', repositoryId }));
         send(response, 200, { repositoryId, registered: true }); return;
+      }
+      // A webhook nudge (software-factory#197): answered at once, the reconciliation runs in the background. It needs no
+      // actor and no GitHub request, because it decides nothing: the reconciliation reads the state from GitHub itself.
+      const nudge = path.match(/^\/v1\/repositories\/([1-9][0-9]{0,15})\/nudge$/);
+      if (nudge) {
+        if (request.method !== 'POST') throw new Error('METHOD');
+        const input = z.strictObject({ event: z.string().regex(/^[a-z_]{1,40}(?:\.[a-z_]{1,40})?$/).optional() }).parse(await read(request));
+        const repositoryId = Number(nudge[1]);
+        if (!options.nudge) { send(response, 404, { code: 'NOT_FOUND' }); return; }
+        if (!options.nudge(repositoryId)) throw new Error('UNKNOWN_REPOSITORY');
+        console.log(JSON.stringify({ event: 'factory-nudge', repositoryId, ...(input.event ? { trigger: input.event } : {}) }));
+        send(response, 202, { repositoryId, accepted: true }); return;
       }
       const match = path.match(/^\/v1\/repositories\/([1-9][0-9]*)\/(runs|observations|reconcile|deployment|findings|events)(?:\/([a-f0-9]{32})(?:\/(approve|revoke|cancel))?)?$/);
       if (!match) { send(response, 404, { code: 'NOT_FOUND' }); return; }

@@ -24,6 +24,9 @@ describe('queue view', () => {
     await reconcile(w, board); await reconcile(w, board);
     const view = board.view([w.repo]);
     expect(view.reconcileIntervalSeconds).toBe(360);
+    expect([view.passStartedAt, view.nextPassAt]).toEqual([null, null]);
+    board.schedule({ passStartedAt: null, nextPassAt: '2026-11-20T16:08:00.000Z' });
+    expect(board.view([w.repo]).nextPassAt).toBe('2026-11-20T16:08:00.000Z');
     const repo = view.repositories[0]!;
     expect(repo.slots).toEqual({ active: 1, max: 1 });
     expect(repo.observedAt).toBe(w.now.toISOString());
@@ -113,7 +116,7 @@ describe('GET /v1/queue', () => {
     const call = await serve({ monitorToken, queue: new QueueBoard(() => new Date('2026-11-18T12:00:00Z'), 180) });
     const ok = await call('/v1/queue', monitorToken);
     expect(ok.status).toBe(200);
-    expect(await ok.json()).toEqual({ generatedAt: '2026-11-18T12:00:00.000Z', reconcileIntervalSeconds: 180,
+    expect(await ok.json()).toEqual({ generatedAt: '2026-11-18T12:00:00.000Z', reconcileIntervalSeconds: 180, passStartedAt: null, nextPassAt: null,
       repositories: [{ repositoryId: 42, repository: 'owner/target', observedAt: null, outcome: null, failure: null, slots: null, entries: [] }] });
     expect((await call('/v1/queue', managerToken)).status).toBe(200);
     expect((await call('/v1/queue', workerToken)).status).toBe(401);

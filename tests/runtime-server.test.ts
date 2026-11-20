@@ -8,7 +8,7 @@ import { MockPlanner } from '../src/llm/provider.js';
 
 const servers: Server[] = [];
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve())))); });
-async function fixture(merge?: { start: ReturnType<typeof vi.fn>; errors?: string[] }) {
+async function fixture(merge?: { start: ReturnType<typeof vi.fn>; errors?: string[] }, nudge?: (repositoryId: number) => boolean) {
   const cfg = config(), github = new MemoryGitHub(); cfg.execution.engine = 'temporal';
   const controller = { observations: vi.fn(async () => []), gateApproved: vi.fn(async () => false), authorize: vi.fn(async () => ({})),
     publish: vi.fn(), gate: vi.fn(async () => {}), cancel: vi.fn(async () => {}), start: vi.fn(), deployment: vi.fn(async () => ({ workerReady: true })) };
@@ -16,7 +16,7 @@ async function fixture(merge?: { start: ReturnType<typeof vi.fn>; errors?: strin
   const store = { list: vi.fn(async () => []), events: vi.fn(async () => [{ key: 'run_failed:x', type: 'run_failed', issueNumber: 7 }]), findings: vi.fn(async () => [{ key: 'run_stuck:7:x', kind: 'run_stuck', issueNumber: 7 }]), locked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()),
     tryLocked: vi.fn(async (_r: number, _id: string, work: () => Promise<unknown>) => work()) };
   const managerToken = 'm'.repeat(32), workerToken = 'w'.repeat(32);
-  const server = runtimeServer({ managerToken, workerToken, bindings: [{ repository, controller, planner: new MockPlanner(), merge } as unknown as RuntimeBinding], store: store as unknown as RuntimeStore });
+  const server = runtimeServer({ managerToken, workerToken, bindings: [{ repository, controller, planner: new MockPlanner(), merge } as unknown as RuntimeBinding], store: store as unknown as RuntimeStore, ...(nudge ? { nudge } : {}) });
   servers.push(server); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('No test listener');
   const call = (path: string, body?: unknown, token = managerToken, method?: string) => fetch(`http://127.0.0.1:${address.port}${path}`, {
@@ -26,6 +26,23 @@ async function fixture(merge?: { start: ReturnType<typeof vi.fn>; errors?: strin
   return { call, controller, managerToken, workerToken, cfg, store };
 }
 describe('private runtime HTTP boundaries', () => {
+  it('accepts webhook nudges from the manager only, without an actor or a GitHub request (#197)', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const nudge = vi.fn((id: number) => id === 42), f = await fixture(undefined, nudge);
+    const accepted = await f.call('/v1/repositories/42/nudge', { event: 'issues.labeled' });
+    expect(accepted.status).toBe(202);
+    expect(await accepted.json()).toEqual({ repositoryId: 42, accepted: true });
+    expect(nudge).toHaveBeenCalledWith(42);
+    expect(log.mock.calls.map(c => c[0])).toContain(JSON.stringify({ event: 'factory-nudge', repositoryId: 42, trigger: 'issues.labeled' }));
+    expect((await f.call('/v1/repositories/42/nudge', {}, f.workerToken)).status).toBe(401);
+    expect((await f.call('/v1/repositories/43/nudge', {})).status).toBe(409);
+    expect((await f.call('/v1/repositories/42/nudge', { event: 'Issues; rm -rf' })).status).toBe(400);
+    expect((await f.call('/v1/repositories/42/nudge', { actor: 'maintainer' })).status).toBe(400);
+    expect((await f.call('/v1/repositories/42/nudge')).status).toBe(409);
+    expect(nudge).toHaveBeenCalledTimes(2);
+    expect((await (await fixture()).call('/v1/repositories/42/nudge', {})).status).toBe(404);
+    log.mockRestore();
+  });
   it('exposes deployment readiness only to the manager and fails closed on probe errors', async () => {
     const f = await fixture();
     expect((await f.call('/v1/repositories/42/deployment', undefined, f.workerToken)).status).toBe(401);
