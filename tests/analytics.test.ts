@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Server } from 'node:http';
 import { configurePrices, currentPrice, LivePriceList, modelKey, modelPrices, openaiTokens, parsePriceList, priceCall, priceOf, recordLlmCall, setLivePrices, setLlmCallSink, setLlmSubject, withLlmContext, type LlmCallRecord } from '../src/llm/analytics.js';
 import { routedCall, Routing, type ModelRouter } from '../src/llm/router.js';
-import { analyticsIssues, AnalyticsIssueSync, analyticsView, loadAnalytics, weekOf, type AnalyticsCall, type AnalyticsIssue } from '../src/runtime/analytics.js';
+import { analyticsIssues, AnalyticsIssueSync, analyticsView, loadAnalytics, qualifiedAt, weekOf, type AnalyticsCall, type AnalyticsIssue } from '../src/runtime/analytics.js';
 import { runtimeServer, type RuntimeBinding } from '../src/runtime/server.js';
 import type { RuntimeStore } from '../src/runtime/store.js';
 import type { Snapshot } from '../src/types.js';
@@ -160,8 +160,26 @@ describe('issues for the analytics', () => {
       { number: 19, state: 'closed', merged: false, closingIssues: [8], referencedIssues: [] }] } as unknown as Snapshot;
   it('names the merged pull request and who merged it', () => {
     expect(analyticsIssues(snapshot)).toEqual([
-      { issueNumber: 7, title: 'Feature', state: 'closed', prNumber: 20, mergedAt: '2026-11-18T12:00:00Z', mergedBy: 'factory' },
-      { issueNumber: 8, title: 'Open', state: 'open', prNumber: null, mergedAt: null, mergedBy: null }]);
+      { issueNumber: 7, title: 'Feature', state: 'closed', prNumber: 20, mergedAt: '2026-11-18T12:00:00Z', mergedBy: 'factory', qualifiedAt: null, handoverAt: null },
+      { issueNumber: 8, title: 'Open', state: 'open', prNumber: null, mergedAt: null, mergedBy: null, qualifiedAt: null, handoverAt: null }]);
+  });
+  it('takes the intake from the labels the repository requires and the first handover of the merge pass', async () => {
+    const at = (over: object) => ({ number: 9, title: 'T', body: '', state: 'open', labels: [], updatedAt: '', managedAt: '2026-11-18T08:00:00Z', ...over }) as Snapshot['issues'][number];
+    expect(qualifiedAt(at({}), false)).toBe('2026-11-18T08:00:00Z');
+    // Where harness:ready is a person's grant, the issue is taken in when both labels are there.
+    expect(qualifiedAt(at({}), true)).toBeNull();
+    expect(qualifiedAt(at({ readyAt: '2026-11-18T09:00:00Z' }), true)).toBe('2026-11-18T09:00:00Z');
+    expect(qualifiedAt(at({ readyAt: '2026-11-18T07:00:00Z' }), true)).toBe('2026-11-18T08:00:00Z');
+    expect(qualifiedAt(at({ managedAt: undefined, readyAt: '2026-11-18T07:00:00Z' }), false)).toBeNull();
+
+    const written: AnalyticsIssue[] = [];
+    const sync = new AnalyticsIssueSync({ upsertAnalyticsIssues: async (_r, issues) => { written.push(...issues); } });
+    const open = { issues: [at({})], prs: [{ number: 30, state: 'open', merged: false, closingIssues: [9], referencedIssues: [] }] } as unknown as Snapshot;
+    await sync.observed('owner/repo', open, new Map([[30, { pullRequest: 30, step: 'review', at: '2026-11-18T10:00:00Z' }]]));
+    await sync.observed('owner/repo', open, new Map([[30, { pullRequest: 30, step: 'handover', at: '2026-11-18T11:00:00Z' }]]));
+    // The merge pass moves `at` on every pass; the handover stays where it was first seen.
+    await sync.observed('owner/repo', open, new Map([[30, { pullRequest: 30, step: 'handover', at: '2026-11-18T11:03:00Z' }]]));
+    expect(written.map(i => [i.qualifiedAt, i.handoverAt])).toEqual([['2026-11-18T08:00:00Z', null], ['2026-11-18T08:00:00Z', '2026-11-18T11:00:00Z']]);
   });
   it('writes only what changed since the last pass', async () => {
     const writes: number[][] = [];

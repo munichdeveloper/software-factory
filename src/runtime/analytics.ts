@@ -20,9 +20,19 @@ export interface AnalyticsCall {
   agent: string; model: string; effort: string | null; tokens: AnalyticsTokens | null; costUsd: number | null; outcome: string | null; at: string;
   /** Where the price came from: live (price list at the time of the call), table, configured, agent (the coding agent's own estimate); null for older rows. */
   priceSource?: string | null;
+  /** How long a coding run took, as its agent reported it; null for broker calls and older rows. */
+  durationMs?: number | null;
 }
 export interface AnalyticsIssue {
   issueNumber: number; title: string; state: 'open' | 'closed'; prNumber: number | null; mergedAt: string | null; mergedBy: 'factory' | 'human' | null;
+  /**
+   * When the Factory took the issue in (metrics page): `harness:managed` applied, and in a repository where
+   * `harness:ready` is a person's grant also `harness:ready`, whichever came last. Null where the timeline was not read
+   * (settled issues); the store keeps the earliest instant it ever saw.
+   */
+  qualifiedAt?: string | null;
+  /** When the merge pass first handed the issue's pull request to a person (risk above the threshold, approval required). */
+  handoverAt?: string | null;
 }
 export const tokensOf = (value: unknown): AnalyticsTokens | null => {
   if (!value || typeof value !== 'object') return null;
@@ -30,24 +40,42 @@ export const tokensOf = (value: unknown): AnalyticsTokens | null => {
   return { input: n(t.input), output: n(t.output), cacheRead: n(t.cacheRead), cacheWrite: n(t.cacheWrite) };
 };
 
+/** Merge pass steps at which a pull request waits for a person to merge or approve it. */
+export const handoverSteps: ReadonlySet<string> = new Set(['handover', 'approval-required']);
+/** When an issue counts as taken in: see AnalyticsIssue.qualifiedAt. */
+export function qualifiedAt(issue: Snapshot['issues'][number], readyIsGrant: boolean): string | null {
+  if (!issue.managedAt) return null;
+  // Not taken in before the grant: an issue with only harness:managed waits for its person's harness:ready.
+  if (!readyIsGrant) return issue.managedAt;
+  return issue.readyAt ? (issue.readyAt > issue.managedAt ? issue.readyAt : issue.managedAt) : null;
+}
 /** The managed issues of a snapshot with the pull request that closed them, if one was merged. */
-export function analyticsIssues(snapshot: Snapshot, mergeBot: (login: string) => boolean = login => login.endsWith('[bot]')): AnalyticsIssue[] {
+export function analyticsIssues(snapshot: Snapshot, mergeBot: (login: string) => boolean = login => login.endsWith('[bot]'),
+  handovers: ReadonlyMap<number, string> = new Map()): AnalyticsIssue[] {
   return snapshot.issues.map(issue => {
-    const merged = snapshot.prs.filter(p => p.merged && p.closingIssues.includes(issue.number))
-      .sort((a, b) => (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
+    const closing = snapshot.prs.filter(p => p.closingIssues.includes(issue.number));
+    const merged = closing.filter(p => p.merged).sort((a, b) => (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
+    const handoverAt = closing.flatMap(p => handovers.get(p.number) ?? []).sort()[0] ?? null;
     return { issueNumber: issue.number, title: issue.title.slice(0, 300), state: issue.state, prNumber: merged?.number ?? null, mergedAt: merged?.mergedAt ?? null,
-      mergedBy: merged ? (merged.mergedBy && mergeBot(merged.mergedBy.login) ? 'factory' : 'human') : null };
+      mergedBy: merged ? (merged.mergedBy && mergeBot(merged.mergedBy.login) ? 'factory' : 'human') : null,
+      qualifiedAt: qualifiedAt(issue, !!snapshot.readyIsGrant), handoverAt };
   });
 }
+export interface ObservedMerge { pullRequest: number; step: string; at: string }
 export interface AnalyticsIssueStore { upsertAnalyticsIssues(repository: string, issues: AnalyticsIssue[]): Promise<void> }
 /** Writes the issues of each reconciliation that changed since the last one this broker wrote. Never throws. */
 export class AnalyticsIssueSync {
   private seen = new Map<string, string>();
+  /** The first instant this broker saw each pull request handed to a person (merge progress `at` moves on every pass). */
+  private handovers = new Map<string, Map<number, string>>();
   constructor(private store: AnalyticsIssueStore) {}
-  async observed(repository: string, snapshot: Snapshot | undefined): Promise<void> {
+  async observed(repository: string, snapshot: Snapshot | undefined, merges?: ReadonlyMap<number, ObservedMerge>): Promise<void> {
     if (!snapshot) return;
     try {
-      const changed = analyticsIssues(snapshot).filter(i => this.seen.get(`${repository}#${i.issueNumber}`) !== hash(i));
+      const handovers = this.handovers.get(repository) ?? new Map<number, string>();
+      this.handovers.set(repository, handovers);
+      for (const m of merges?.values() ?? []) if (handoverSteps.has(m.step) && !handovers.has(m.pullRequest)) handovers.set(m.pullRequest, m.at);
+      const changed = analyticsIssues(snapshot, undefined, handovers).filter(i => this.seen.get(`${repository}#${i.issueNumber}`) !== hash(i));
       if (!changed.length) return;
       await this.store.upsertAnalyticsIssues(repository, changed);
       for (const i of changed) this.seen.set(`${repository}#${i.issueNumber}`, hash(i));
