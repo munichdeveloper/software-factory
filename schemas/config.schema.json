@@ -1470,11 +1470,13 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "certainty": {
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 1
             }
           },
-          "required": [
-            "candidates"
-          ],
           "additionalProperties": false
         },
         "planner": {

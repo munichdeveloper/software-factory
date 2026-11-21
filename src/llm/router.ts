@@ -214,8 +214,14 @@ export class Routing {
 }
 
 /** What a routed broker call did: the decision, the candidate it named, and who did the work. */
-export interface RouteOutcome { record: RouteRecord; candidate: { id: string; model: string; reasoningEffort: string | null } | null; ran: 'candidate' | 'configured' }
+export interface RouteOutcome { record: RouteRecord; candidate: { id: string; model: string; reasoningEffort: string | null } | null;
+  /** jev: Jev gave the answer himself (risk class, Johannes 2026-11-21); configured: the configured models did the work. */
+  ran: 'candidate' | 'configured' | 'jev';
+  /** Jev was asked for the answer itself, not for a model: the comment says who assessed instead of which model was chosen. */
+  direct?: boolean }
 const outcomes = new WeakMap<object, RouteOutcome>();
+/** Records what produced a result, for the comment that reports it (routeOutcome). */
+export const noteOutcome = <T>(value: T, outcome: RouteOutcome): T => { if (value && typeof value === 'object') outcomes.set(value, outcome); return value; };
 /** The outcome routedCall recorded for a result it returned, so the comment reporting that result can name the model. */
 export const routeOutcome = (value: unknown): RouteOutcome | undefined => value && typeof value === 'object' ? outcomes.get(value) : undefined;
 const pct = (confidence: number) => `${Math.round(confidence * 100)} %`;
@@ -227,6 +233,8 @@ const skipEn: Record<RouterSkip, string> = { 'no-key': 'no Jev key on the broker
 export function routeNoteDe(outcome: RouteOutcome | undefined): string {
   if (!outcome) return '';
   const { record, candidate } = outcome;
+  if (outcome.ran === 'jev') return `Bewertung: Jev (${record.model}) hat die Risikoklasse direkt bestimmt.`;
+  if (outcome.direct) return `Bewertung: ohne Jev (${record.used ? 'Jev hat keine verwertbare Klasse genannt' : skipDe[record.reason]}${!record.used && record.reason === 'low-confidence' && record.confidence !== null ? `, ${pct(record.confidence)}` : ''}); bewertet haben die konfigurierten Modelle.`;
   if (outcome.ran === 'candidate' && record.used && candidate)
     return `Modellwahl: Der Model Router (Jev) wählte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ''}) mit ${pct(record.confidence)} Wahrscheinlichkeit.`;
   if (record.used) return `Modellwahl: Der Model Router wählte \`${record.choice}\`, der Kandidat konnte nicht laufen; geprüft haben die konfigurierten Modelle.`;
