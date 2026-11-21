@@ -171,6 +171,19 @@ it('fails closed when context is incomplete or the review provider is unavailabl
     expect(x.f.comments.some(c => c.body.includes('private secret'))).toBe(false);
   }
 });
+it('hands a binary change over to a person instead of retrying the same head (geschaeftsideen-web#57)', async () => {
+  const x = fixture(); const needsHuman = vi.fn(async () => {});
+  Object.assign(x.api, { needsHuman });
+  vi.mocked(x.api.context).mockRejectedValue(Object.assign(new Error('Diff is incomplete or contains binary changes'), { path: 'public/downloads/x.zip' }));
+  expect((await x.run()).errors).toHaveLength(1); expect(x.api.merge).not.toHaveBeenCalled();
+  expect(needsHuman).toHaveBeenCalledWith(52, true);
+  const last = x.f.comments.at(-1)!.body;
+  expect(last).toContain('Betroffene Datei: `public/downloads/x.zip`'); expect(last).toContain('prüft diesen Head nicht erneut');
+  // A transient failure still promises another try and leaves the label alone.
+  const y = fixture(); const other = vi.fn(async () => {}); Object.assign(y.api, { needsHuman: other });
+  vi.mocked(y.api.context).mockRejectedValue(Object.assign(new Error('Server Error'), { status: 502 }));
+  await y.run(); expect(other).not.toHaveBeenCalled(); expect(y.f.comments.at(-1)!.body).toContain('(502)');
+});
 it('publishes Slack merge notification for an adopted PR only with a matching trusted intent and native bot merge', async () => {
   const x = fixture(); await x.run();
   const gh = new MemoryGitHub(); gh.state.comments.set(52, x.f.comments);
