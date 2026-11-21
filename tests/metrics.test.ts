@@ -70,7 +70,7 @@ afterEach(async () => { await Promise.all(servers.splice(0).map(server => new Pr
 describe('GET /v1/metrics', () => {
   it('serves the monitor and manager tokens only', async () => {
     const managerToken = 'm'.repeat(32), workerToken = 'w'.repeat(32), monitorToken = 'q'.repeat(32);
-    const store = { analyticsCalls: async () => [call({})], analyticsIssues: async () => [issue({ mergedAt: new Date().toISOString() })] } as unknown as RuntimeStore;
+    const store = { analyticsCalls: async () => [call({})], analyticsIssues: async () => [issue({ mergedAt: new Date(Date.now() - 60000).toISOString() })] } as unknown as RuntimeStore;
     const server = runtimeServer({ managerToken, workerToken, monitorToken, bindings: [] as RuntimeBinding[], store });
     servers.push(server); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     const address = server.address(); if (!address || typeof address === 'string') throw new Error('No test listener');
