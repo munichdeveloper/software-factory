@@ -576,6 +576,9 @@
             "pattern": "^[a-zA-Z0-9_-]+\\.ya?ml$"
           }
         },
+        "checkRun": {
+          "type": "boolean"
+        },
         "risk": {
           "default": {},
           "type": "object",

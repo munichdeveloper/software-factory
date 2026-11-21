@@ -50,6 +50,7 @@ import { RuntimeMerge } from './merge.js';
 import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
+import { GitHubCheckRuns } from '../merge/check-run.js';
 import { BrokerLife, WorkerWatch } from './broker-health.js';
 import { assertCanaryConfig, bindCanaryRepository, canaryLabel, canaryRepository, runCanary } from './canary.js';
 import { ClaudeMergeReviewer, FallbackMergeReviewer, OpenAIMergeReviewer } from '../merge/reviewer.js';
@@ -255,11 +256,16 @@ export async function main(args = process.argv.slice(2)) {
         return routedReviewer(routed, config, claude ? new FallbackMergeReviewer(new ClaudeMergeReviewer(claude, models.review, config), plain) : plain); };
       const assessor = (config: Config) => { const plain = new OpenAIRiskAssessor(process.env.OPENAI_API_KEY ?? '', config);
         return routedAssessor(routed, config, claude ? new FallbackRiskAssessor(new ClaudeRiskAssessor(claude, models.risk, config), plain) : plain); };
+      // The merge pass as a check run on each pull request (issue #208), with its own token limited to checks:write so
+      // that an installation without that permission only loses the check run, never the broker's other tokens.
+      const checkRuns = item.githubInstallationId ? new GitHubCheckRuns(item.repository, scopedRuntimeGitHub({ appId: process.env.GITHUB_APP_ID ?? '',
+        privateKey: process.env.GITHUB_APP_PRIVATE_KEY ?? '', installationId: item.githubInstallationId, repositoryId: item.repositoryId,
+        permissions: { checks: 'write' } })) : undefined;
       // Only pull requests the Factory published for its tasks in an issue-scoped registry entry; closed ones while a merge's follow-up may be open.
       const merge = new RuntimeMerge(item.repositoryId, (config, snapshot, observe) => new MergeManager(
         new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
         config, reviewer(config), `temporal-merge:${item.repositoryId}`, github,
-        { ownedOnly: !!item.issueNumbers, assessor: assessor(config), observe }).run(snapshot));
+        { ownedOnly: !!item.issueNumbers, assessor: assessor(config), observe, checkRuns }).run(snapshot));
       return { repository, controller, planner: config => config.llm.provider === 'static' ? deterministic : config.llm.provider === 'jev' ? jev : planner, merge };
     };
     const bindings: RuntimeBinding[] = [];

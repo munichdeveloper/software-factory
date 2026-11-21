@@ -12,6 +12,7 @@ import { combineReviews, contextLimitError, defaultMaxParts, partsLimitError, re
 import { setLlmSubject, withLlmContext } from '../llm/analytics.js';
 import { reconstruct } from '../state/reconstruct.js';
 import type { MergeObserver } from '../runtime/merge.js';
+import { checkRunName, checkRunView, type MergeCheckRuns } from './check-run.js';
 
 const safe = (s: string) => s.replaceAll('@', '@\u200b').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 // The broker's own display-only risk and hand-over labels are no input of a review: setting them must not invalidate it.
@@ -55,6 +56,8 @@ export interface MergeOptions {
   assessor?: RiskAssessor;
   /** Told where each pull request stands after this pass looked at it (the queue view's merge step); display only. */
   observe?: MergeObserver;
+  /** Shows the same steps as a check run on the head of each pull request (issue #208); display only. */
+  checkRuns?: MergeCheckRuns;
 }
 /** A pull request the Factory published for a task, with the outcome it was published with. */
 interface Ownership { task: Snapshot['issues'][number]; status: string; publishedHead: string | null }
@@ -172,7 +175,7 @@ export class MergeManager {
       if (!(error instanceof Error && error.message === 'MERGE_CONFLICT')) throw error;
       await this.conflict(f, snapshot, ownership, adopted); return false;
     }
-    const updated = await this.api.facts(f.number);
+    const updated = await this.read(f.number);
     if (updated.head !== head) { await this.explain(updated, 'Branch wurde erneut verändert; keine Freigabe für den ungeprüften Stand.'); return true; }
     await this.dispatch(updated, this.config.merge.validationWorkflow, updated.headBranch, head);
     await this.explain(updated, done);
@@ -194,6 +197,20 @@ export class MergeManager {
   }
   private note(n: number, step: Parameters<MergeObserver>[1], detail?: string | null, risk?: string | null) {
     try { this.options.observe?.(n, step, detail, risk); } catch { /* display only: never fails the pass */ }
+    const head = this.heads.get(n);
+    if (!head || this.config.merge.checkRun === false) return;
+    if (risk) this.risks.set(head, risk);
+    try { this.options.checkRuns?.show(n, head, checkRunView(step, detail, risk ?? this.risks.get(head))); } catch { /* display only */ }
+  }
+  /** The head each pull request had when this pass last read it, and the risk class seen for a head (check runs). */
+  private heads = new Map<number, string>();
+  private risks = new Map<string, string>();
+  /** Reads a pull request without the Factory's own check run: it shows the merge pass and must never gate it (issue #208). */
+  private async read(number: number) {
+    const f = await this.api.facts(number);
+    f.checks = f.checks.filter(c => c.name !== checkRunName);
+    this.heads.set(number, f.head);
+    return f;
   }
   private owned(f: MergeFacts, snapshot: Snapshot) { return this.ownership(f, snapshot)?.task; }
   private eligible(f: MergeFacts, snapshot: Snapshot) {
@@ -227,7 +244,7 @@ export class MergeManager {
       let f: MergeFacts | undefined;
       let phase = 'GitHub-Zustand lesen';
       try {
-        f = await this.api.facts(number);
+        f = await this.read(number);
         if (!this.eligible(f, snapshot)) continue;
         if (f.state === 'closed') {
           this.note(number, f.mergeSha ? 'merged' : 'stopped', f.mergeSha ? null : 'PR wurde ohne Merge geschlossen.');
@@ -402,7 +419,7 @@ export class MergeManager {
         // the approval and merge path decides it for a review that lets the change through.
         if (handOver || rejects(review)) { phase = 'Übergabe-Label setzen'; await this.needsHuman(f, handOver); }
         if (rejects(review)) { this.note(number, handOver ? 'handover' : 'review-rejected', `KI-Entscheidung: ${review.decision}.`); continue; }
-        const live = await this.api.facts(number);
+        const live = await this.read(number);
         if (hash(factsKey(live)) !== hash(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== 'open' || live.draft || !live.sameRepository ||
           live.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) { this.note(number, 'review', 'Stand hat sich während der KI-Prüfung geändert; erneute Prüfung folgt.'); await this.explain(live, 'PR, Head, Basis oder Freigabe hat sich während der KI-Prüfung geändert; erneute Prüfung erforderlich.'); continue; }
         let liveOwner: Snapshot['issues'][number] | undefined;
@@ -430,7 +447,7 @@ export class MergeManager {
             if (match?.[2] === approvalId && await this.api.canApprove(c.author)) approved = match[1] === 'approve';
           }
           if (!approved) {
-            this.note(number, 'approval-required', riskGate ? `Risiko ${riskRecord!.class} über der Schwelle ${risk.autoMergeUpTo}: menschliche Freigabe nötig.` : 'Menschliche Freigabe nötig.');
+            this.note(number, 'approval-required', `${riskGate ? `Risiko ${riskRecord!.class} über der Schwelle ${risk.autoMergeUpTo}: menschliche Freigabe nötig.` : 'Menschliche Freigabe nötig.'} Freigeben mit diesem Kommentar am PR: /harness approve ${approvalId}`);
             if (riskGate) await this.event(live, `merge-approval-required:${approvalId}`, { type: 'merge_approval_required', prNumber: number,
               head: f.head, base: f.base, approvalId, riskClass: riskRecord!.class, autoMergeUpTo: risk.autoMergeUpTo });
             // Visible where people look: on the pull request and on its task, with the reason and the command (issue #204).

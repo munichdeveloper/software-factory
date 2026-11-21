@@ -208,6 +208,10 @@ export const configSchema = z.strictObject({
       maxParts: z.number().int().min(1).max(8).optional()
     }).prefault({}),
     postMergeWorkflows: z.array(z.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/)).max(10).default([]),
+    // The merge pass as the check run "Software Factory / Merge" on each pull request's head (issue #208); needs the App
+    // permission Checks: write and switches itself off without it. Optional without a default (on): configurations that
+    // leave it out keep their hash.
+    checkRun: z.boolean().optional(),
     // Risk-based auto-merge: a risk class per head decides whether merge_pr 'allow' merges on its own or needs approval.
     risk: z.strictObject({
       enabled: z.boolean().default(false),
