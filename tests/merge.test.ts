@@ -184,6 +184,15 @@ it('hands a binary change over to a person instead of retrying the same head (ge
   vi.mocked(y.api.context).mockRejectedValue(Object.assign(new Error('Server Error'), { status: 502 }));
   await y.run(); expect(other).not.toHaveBeenCalled(); expect(y.f.comments.at(-1)!.body).toContain('(502)');
 });
+it('merges when GitHub reads UNSTABLE only because of the Factory\'s own check run (geschaeftsideen-web#57)', async () => {
+  const x = fixture(); x.f.mergeState = 'UNSTABLE'; x.f.checks.push({ name: 'Software Factory / Merge', state: 'in_progress' });
+  await x.run(); expect(x.api.merge).toHaveBeenCalled();
+  // Another check still running keeps the gate closed.
+  const y = fixture(); y.f.mergeState = 'UNSTABLE'; y.f.checks.push({ name: 'Software Factory / Merge', state: 'in_progress' }, { name: 'lint', state: 'in_progress' });
+  await y.run(); expect(y.api.merge).not.toHaveBeenCalled();
+  // Without the own check run UNSTABLE stays what GitHub says.
+  const z = fixture(); z.f.mergeState = 'UNSTABLE'; await z.run(); expect(z.api.merge).not.toHaveBeenCalled();
+});
 it('publishes Slack merge notification for an adopted PR only with a matching trusted intent and native bot merge', async () => {
   const x = fixture(); await x.run();
   const gh = new MemoryGitHub(); gh.state.comments.set(52, x.f.comments);

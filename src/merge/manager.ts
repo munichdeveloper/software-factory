@@ -66,6 +66,8 @@ interface Ownership { task: Snapshot['issues'][number]; status: string; publishe
  * Context errors that depend only on the pull request's head and base, not on GitHub or a provider being reachable
  * (geschaeftsideen-web#57 added a ZIP file: every pass failed the same way and the monitor promised another try).
  */
+/** Check and commit status states that do not hold a merge back. */
+const passingStates = new Set(['success', 'neutral', 'skipped']);
 const permanentContextErrors = new Set(['Change set exceeds review file limit', 'Diff is incomplete or contains binary changes',
   'File cannot be reviewed completely', 'Binary file cannot be reviewed', contextLimitError, partsLimitError]);
 
@@ -215,7 +217,12 @@ export class MergeManager {
   /** Reads a pull request without the Factory's own check run: it shows the merge pass and must never gate it (issue #208). */
   private async read(number: number) {
     const f = await this.api.facts(number);
+    const own = f.checks.some(c => c.name === checkRunName);
     f.checks = f.checks.filter(c => c.name !== checkRunName);
+    // GitHub counts that check run into mergeStateStatus: while it is in progress the pull request reads UNSTABLE. Every
+    // review then saw the state change under it and the gate never saw CLEAN (geschaeftsideen-web#57). UNSTABLE with every
+    // other check passing is the Factory's own check run alone.
+    if (own && f.mergeState === 'UNSTABLE' && f.checks.every(c => passingStates.has(c.state))) f.mergeState = 'CLEAN';
     this.heads.set(number, f.head);
     return f;
   }
