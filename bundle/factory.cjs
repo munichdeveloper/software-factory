@@ -69586,6 +69586,7 @@ var Octokit2 = Octokit.plugin(requestLog, legacyRestEndpointMethods, paginateRes
 var statuses = ["backlog", "ready", "running", "awaiting-pr", "awaiting-approval", "blocked", "failed", "done"];
 var statusSchema = external_exports.enum(statuses);
 var riskSplitKeyPrefix = "risk-split.";
+var riskSplitPartMarker = "<!-- harness:risk-split-part -->";
 var followupSchema = external_exports.strictObject({
   key: external_exports.string().regex(/^[a-z0-9][a-z0-9._-]{2,99}$/),
   title: external_exports.string().min(3).max(200),
@@ -69849,15 +69850,20 @@ function untrustedEdit(issue2, since = issue2.managedAt ?? issue2.createdAt) {
 var untrustedEditReason = (edit) => `Task text was changed after its approval by ${edit.actor ? `@${edit.actor}` : "an unknown account"}, who has no write access`;
 
 // src/runtime/ready-approval.ts
-async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected, rework) {
+async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected, rework, origin) {
   if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("READY_APPROVAL_REQUIRED");
   const ordered = [...events].sort((a, b) => a.id - b.id);
   const grant = ordered.filter((e) => e.event === "labeled").at(-1);
   if (!grant) throw new Error("READY_APPROVAL_REQUIRED");
   const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
-  if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error("READY_ACTOR_NOT_AUTHORIZED");
-  const proof = parsed.data;
-  if (untrustedEdit(issue2) || untrustedEdit(issue2, proof.createdAt)) throw new Error("READY_CONTENT_CHANGED");
+  let proof;
+  if (parsed.success && await canApprove(parsed.data.actor)) {
+    proof = parsed.data;
+    if (untrustedEdit(issue2) || untrustedEdit(issue2, proof.createdAt)) throw new Error("READY_CONTENT_CHANGED");
+  } else if (origin && trustedActors.includes(grant.actor)) {
+    if (untrustedEdit(issue2)) throw new Error("READY_CONTENT_CHANGED");
+    proof = await origin();
+  } else throw new Error("READY_ACTOR_NOT_AUTHORIZED");
   if (expected && hash2(proof) !== hash2(expected)) throw new Error("READY_APPROVAL_CHANGED");
   const later = ordered.filter((e) => e.id > grant.id);
   const taken = later.length === 1 && later[0].event === "unlabeled" && trustedActors.includes(later[0].actor);
@@ -69865,6 +69871,16 @@ async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, ex
   const carried = rework && hash2(proof) === hash2(rework) && taken && ["harness:running", "harness:failed", "harness:blocked"].some((l) => issue2.labels.includes(l));
   if (later.length && !consumed && !carried || !issue2.labels.includes("harness:ready") && !consumed && !carried) throw new Error("READY_APPROVAL_REVOKED");
   return proof;
+}
+async function authorizeOriginReady(origin, events, canApprove, trustedActors) {
+  const ordered = [...events].sort((a, b) => a.id - b.id);
+  const grant = ordered.filter((e) => e.event === "labeled").at(-1);
+  if (!grant) throw new Error("READY_APPROVAL_REQUIRED");
+  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error("READY_ACTOR_NOT_AUTHORIZED");
+  if (untrustedEdit(origin) || untrustedEdit(origin, parsed.data.createdAt)) throw new Error("READY_CONTENT_CHANGED");
+  if (ordered.some((e) => e.id > grant.id && !trustedActors.includes(e.actor))) throw new Error("READY_APPROVAL_REVOKED");
+  return parsed.data;
 }
 async function authorizeManagedLabel(issue2, events, canApprove, trustedActors, origin) {
   if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("MANAGED_GRANT_REQUIRED");
@@ -70389,12 +70405,24 @@ var GitHubClient = class {
   }
   async readyApproval(number4, trustedActors, expected, rework) {
     const issue2 = await this.getIssue(number4);
+    const events = await this.readyEvents(number4);
+    const origin = issue2.body.includes(riskSplitPartMarker) ? followupOrigin(issue2.body) : null;
+    return authorizeReadyLabel(
+      issue2,
+      events,
+      (actor) => this.canApprove(actor),
+      trustedActors,
+      expected,
+      rework,
+      origin && origin !== number4 ? async () => authorizeOriginReady(await this.getIssue(origin), await this.readyEvents(origin), (actor) => this.canApprove(actor), trustedActors) : void 0
+    );
+  }
+  async readyEvents(number4) {
     const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number4, per_page: 100 });
-    const events = timeline.flatMap((e) => {
+    return timeline.flatMap((e) => {
       if (e.event !== "labeled" && e.event !== "unlabeled" || !("label" in e) || e.label?.name !== "harness:ready" || !("id" in e) || typeof e.id !== "number" || !("created_at" in e) || typeof e.created_at !== "string") return [];
       return [{ id: e.id, event: e.event, actor: "actor" in e ? e.actor?.login ?? "" : "", createdAt: e.created_at }];
     });
-    return authorizeReadyLabel(issue2, events, (actor) => this.canApprove(actor), trustedActors, expected, rework);
   }
   /** The `managed-label` grant: who applied `harness:managed`; Factory follow-ups inherit their origin's, at most three levels deep. */
   async managedApproval(number4, trustedActors, depth = 0) {
@@ -71394,7 +71422,8 @@ Origin: #${task.issue.number}
 Decision: ${actionId(action, policyVersion(this.config))}
 
 ${marker2}`;
-        await this.github.createIssue(f.title, body, [managedLabel, "harness:backlog"]);
+        const inherits = !!snapshot.readyIsGrant && f.key.startsWith(riskSplitKeyPrefix) && f.context.includes(riskSplitPartMarker);
+        await this.github.createIssue(f.title, body, [managedLabel, inherits ? "harness:ready" : "harness:backlog"]);
         return true;
       }
       case "start_worker":

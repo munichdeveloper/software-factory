@@ -1,7 +1,7 @@
 import type { Config } from '../config/index.js';
 import type { GitHubPort } from '../github/port.js';
 import { planningCode, type Planner } from '../llm/provider.js';
-import { actionSchema, planSchema, type Action, type Snapshot } from '../types.js';
+import { actionSchema, planSchema, riskSplitKeyPrefix, riskSplitPartMarker, type Action, type Snapshot } from '../types.js';
 import { actionId, executionId, hash, taskVersion } from '../state/identity.js';
 import { decodeEvent, type HarnessEvent } from '../state/events.js';
 import { admissionRejectedSummary, clearableRefusals, infrastructureFailureCode, reconstruct, type Task } from '../state/reconstruct.js';
@@ -229,7 +229,10 @@ export class Manager {
         await this.event(live.number, `issue-creation:${key}:${actionId(action, policyVersion(this.config))}`, { type: 'issue_creation_intent', followupKey: key,
           actionId: actionId(action, policyVersion(this.config)) });
         const body = `${f.context}\n\n## Goal\n${f.goal}\n\n## Acceptance criteria\n${f.acceptanceCriteria.map(c => `- ${c}`).join('\n')}\n\nDepends on: ${f.dependencies.map(n => `#${n}`).join(', ') || 'none'}\n\nOrigin: #${task.issue.number}\nDecision: ${actionId(action, policyVersion(this.config))}\n\n${marker}`;
-        await this.github.createIssue(f.title, body, [managedLabel, 'harness:backlog']); return true;
+        // Under the ready-label grant the parts of a risk split start like their origin did: the Factory labels them ready
+        // and the runtime admits them only on the origin's grant by a person (SF #210, Johannes 2026-11-21).
+        const inherits = !!snapshot.readyIsGrant && f.key.startsWith(riskSplitKeyPrefix) && f.context.includes(riskSplitPartMarker);
+        await this.github.createIssue(f.title, body, [managedLabel, inherits ? 'harness:ready' : 'harness:backlog']); return true;
       }
       case 'start_worker':
       case 'retry_worker': {

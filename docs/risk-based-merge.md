@@ -140,8 +140,11 @@ Damit der Großteil einer Aufgabe automatisch gemergt wird, trennt die Factory e
   `blocked` mit einer Zusammenfassung zu melden, die mit `Risk split:` beginnt. Jeder Planner erzeugt daraus dieselben
   zwei Folgeaufgaben.
 - Die Folgeaufgaben laufen über die `create_followup`-Policy. Wo sie verboten ist, bleibt es beim Block mit Begründung;
-  mit `startGrant: ready-label` braucht jede Teilaufgabe wie jede neue Aufgabe `harness:ready`. Teilaufgaben werden nie
-  erneut aufgeteilt.
+  Teilaufgaben werden nie erneut aufgeteilt.
+- **Freigabe:** Unter `startGrant: ready-label` legt die Factory die Teilaufgaben gleich mit `harness:ready` an. Die
+  Runtime lässt sie nur mit der Freigabe der Ursprungsaufgabe zu: Ein Mensch mit Schreibrecht hat dort `harness:ready`
+  gesetzt, und seitdem hat niemand außer der Factory das Label geändert oder den Text ohne Schreibrecht bearbeitet.
+  Unter `managed-label` erben Folgeaufgaben die Freigabe ohnehin.
 
 ## 5. Einbettung in den Merge-Pass und Temporal
 

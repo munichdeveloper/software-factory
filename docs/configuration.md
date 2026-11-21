@@ -284,6 +284,8 @@ startable tasks and lets TypeSafe Jev, the model router's decision model, make t
   then writes two follow-up tasks, a routine part that merges automatically and a small risky part that a person
   approves, and the original task is blocked as their origin. If the model finds the parts inseparable, the task starts
   as it is; if it fails, the task is blocked with the reason. The parts themselves are never split again.
+  Under `autonomy.startGrant: ready-label` the parts are created with `harness:ready` and admitted on the origin's
+  grant (a person with write access labelled the origin ready, and nobody but the Factory changed that label since).
 
 Jev's settings come from the `router` block (`enabled`, `model`, `minConfidence`, `timeoutSeconds`; no candidates
 needed). Without the broker's Jev key, when Jev is unreachable, gives no usable answer or stays below

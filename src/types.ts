@@ -6,6 +6,8 @@ export const statusSchema = z.enum(statuses);
 export type Status = z.infer<typeof statusSchema>;
 /** Prefix of the follow-up keys of a risk split (SF #210); the policy admits these before a run. */
 export const riskSplitKeyPrefix = 'risk-split.';
+/** Marks the issues of a risk split (SF #210): never split again, and under the ready-label grant they inherit their origin's. */
+export const riskSplitPartMarker = '<!-- harness:risk-split-part -->';
 export const followupSchema = z.strictObject({
   key: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,99}$/), title: z.string().min(3).max(200),
   context: z.string().min(1).max(4000), goal: z.string().min(1).max(2000),

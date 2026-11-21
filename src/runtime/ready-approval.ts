@@ -5,17 +5,23 @@ import { untrustedEdit } from '../state/content-trust.js';
 
 /** Native GitHub timeline evidence; neither a comment nor the reconcile caller grants execution. */
 export async function authorizeReadyLabel(issue: Issue, events: BlockLabelEvent[], canApprove: (actor: string) => Promise<boolean>,
-  trustedActors: string[], expected?: ReadyApproval, rework?: ReadyApproval): Promise<ReadyApproval> {
+  trustedActors: string[], expected?: ReadyApproval, rework?: ReadyApproval, origin?: () => Promise<ReadyApproval>): Promise<ReadyApproval> {
   if (issue.state !== 'open' || !issue.labels.includes('harness:managed')) throw new Error('READY_APPROVAL_REQUIRED');
   const ordered = [...events].sort((a, b) => a.id - b.id);
   const grant = ordered.filter(e => e.event === 'labeled').at(-1);
   if (!grant) throw new Error('READY_APPROVAL_REQUIRED');
   // A label applied by an App or the Manager itself (e.g. "name[bot]") is a status, never a grant.
   const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
-  if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error('READY_ACTOR_NOT_AUTHORIZED');
-  const proof = parsed.data;
-  // The grant covers the text as it was when the label was applied, and no later change by someone without write access.
-  if (untrustedEdit(issue) || untrustedEdit(issue, proof.createdAt)) throw new Error('READY_CONTENT_CHANGED');
+  let proof: ReadyApproval;
+  if (parsed.success && await canApprove(parsed.data.actor)) {
+    proof = parsed.data;
+    // The grant covers the text as it was when the label was applied, and no later change by someone without write access.
+    if (untrustedEdit(issue) || untrustedEdit(issue, proof.createdAt)) throw new Error('READY_CONTENT_CHANGED');
+  } else if (origin && trustedActors.includes(grant.actor)) {
+    // A part of a risk split, labelled ready by the Factory itself, carries the grant of the task it was split from (SF #210).
+    if (untrustedEdit(issue)) throw new Error('READY_CONTENT_CHANGED');
+    proof = await origin();
+  } else throw new Error('READY_ACTOR_NOT_AUTHORIZED');
   if (expected && hash(proof) !== hash(expected)) throw new Error('READY_APPROVAL_CHANGED');
   const later = ordered.filter(e => e.id > grant.id);
   // The Manager consumes the ready status when moving the same execution to running.
@@ -27,6 +33,23 @@ export async function authorizeReadyLabel(issue: Issue, events: BlockLabelEvent[
   const carried = rework && hash(proof) === hash(rework) && taken && ['harness:running', 'harness:failed', 'harness:blocked'].some(l => issue.labels.includes(l));
   if (later.length && !consumed && !carried || !issue.labels.includes('harness:ready') && !consumed && !carried) throw new Error('READY_APPROVAL_REVOKED');
   return proof;
+}
+
+/**
+ * The ready grant a risk split inherits (SF #210): a person with write access applied `harness:ready` to the origin task,
+ * nobody without write access changed its text since, and nobody but the Factory removed or re-applied the label since
+ * (the Factory's own start or block of the origin does not revoke it). The proof is the origin's native label event.
+ */
+export async function authorizeOriginReady(origin: Issue, events: BlockLabelEvent[], canApprove: (actor: string) => Promise<boolean>,
+  trustedActors: string[]): Promise<ReadyApproval> {
+  const ordered = [...events].sort((a, b) => a.id - b.id);
+  const grant = ordered.filter(e => e.event === 'labeled').at(-1);
+  if (!grant) throw new Error('READY_APPROVAL_REQUIRED');
+  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error('READY_ACTOR_NOT_AUTHORIZED');
+  if (untrustedEdit(origin) || untrustedEdit(origin, parsed.data.createdAt)) throw new Error('READY_CONTENT_CHANGED');
+  if (ordered.some(e => e.id > grant.id && !trustedActors.includes(e.actor))) throw new Error('READY_APPROVAL_REVOKED');
+  return parsed.data;
 }
 
 /**

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Config } from '../config/index.js';
-import { riskSplitKeyPrefix, type Action, type Plan } from '../types.js';
+import { riskSplitKeyPrefix, riskSplitPartMarker, type Action, type Plan } from '../types.js';
 import type { Task } from '../state/reconstruct.js';
 import { proposal, type Planner } from './provider.js';
 import { claudeEffort, logFallback, type ClaudeCall } from './claude.js';
@@ -20,7 +20,7 @@ export const riskSplitMarker = 'Risk split:';
 export { riskSplitKeyPrefix };
 
 /** Marks the issues of a split; a part is never split again, so a split cannot repeat itself. */
-export const splitPartMarker = '<!-- harness:risk-split-part -->';
+export const splitPartMarker = riskSplitPartMarker;
 export const isSplitPart = (task: Task) => task.issue.body.includes(splitPartMarker);
 /** Risk isolation only pays off where risk decides the merge. */
 export const isolatesRisk = (config: Config) => config.merge.risk.enabled && config.merge.risk.mode === 'enforce';
