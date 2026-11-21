@@ -5,14 +5,14 @@ import type { Client } from '@temporalio/client';
 import { RuntimeController, type RuntimeRepository } from '../src/runtime/controller.js';
 import { RuntimeStore, type StoredRun } from '../src/runtime/store.js';
 import type { ReadyApproval, RuntimeRelease } from '../src/runtime/contract.js';
-import { authorizeManagedLabel, authorizeReadyLabel } from '../src/runtime/ready-approval.js';
+import { authorizeManagedLabel, authorizeOriginReady, authorizeReadyLabel } from '../src/runtime/ready-approval.js';
 import { followupOrigin } from '../src/state/reconstruct.js';
 import { Manager } from '../src/manager/index.js';
 import type { RunReport } from '../src/manager/report.js';
-import { StaticPlanner } from '../src/llm/provider.js';
+import { StaticPlanner, type Planner } from '../src/llm/provider.js';
 import { decodeEvent, type HarnessEvent } from '../src/state/events.js';
 import { lifecycleLabels } from '../src/state/lifecycle.js';
-import type { BlockLabelEvent, Issue } from '../src/types.js';
+import { riskSplitPartMarker, type BlockLabelEvent, type Issue } from '../src/types.js';
 import type { WorkerResult } from '../src/workers/contract.js';
 import { config, issue, MemoryGitHub } from './helpers.js';
 import type { CodingArtifact } from '../src/workers/coding.js';
@@ -50,6 +50,7 @@ export class TimelineGitHub extends MemoryGitHub {
     this.write();
     const created = await super.createIssue(title, body, labels);
     if (labels.includes('harness:managed')) this.managedFor(created.number).push({ id: this.nextReady++, event: 'labeled', actor: bot, createdAt: this.now.toISOString() });
+    if (labels.includes('harness:ready')) this.readyFor(created.number).push({ id: this.nextReady++, event: 'labeled', actor: bot, createdAt: this.now.toISOString() });
     return created;
   }
   private write() { if (this.failWrites > 0) { this.failWrites--; throw transport('GitHub'); } }
@@ -113,7 +114,9 @@ export type WorldOptions = { readyLabel?: boolean; humanGate?: boolean; maxParal
   /** The broker reviews and merges validated pull requests itself, without server-side branch rules (implies coding). */
   merging?: boolean;
   /** Slack delivery of the Manager's notifications; the configuration still decides which events are on. */
-  notifications?: NotificationSink };
+  notifications?: NotificationSink;
+  /** The planner of every reconciliation; static by default. */
+  planner?: Planner };
 /** What GitHub knows about a published pull request beyond the snapshot: draft, head, checks, base it contains, comments. */
 type PullFacts = { draft: boolean; head: string; base: string; checks: { name: string; state: string }[]; comments: MergeFacts['comments']; mergeSha: string | null };
 export type Tick = { report?: RunReport; thrown?: string };
@@ -159,7 +162,9 @@ export class World {
       config: async () => this.cfg, baseSha: async () => 'd'.repeat(40) };
     if (options.readyLabel) this.repo.readyApproval = async (number, expected, rework) => {
       if (this.timelineDown) throw transport('GitHub timeline');
-      return authorizeReadyLabel(await this.github.getIssue(number), this.github.readyFor(number), actor => this.github.canApprove(actor), this.cfg.manager.trustedActors, expected, rework);
+      const task = await this.github.getIssue(number), origin = task.body.includes(riskSplitPartMarker) ? followupOrigin(task.body) : null;
+      return authorizeReadyLabel(task, this.github.readyFor(number), actor => this.github.canApprove(actor), this.cfg.manager.trustedActors, expected, rework,
+        origin ? async () => authorizeOriginReady(await this.github.getIssue(origin), this.github.readyFor(origin), actor => this.github.canApprove(actor), this.cfg.manager.trustedActors) : undefined);
     };
     if (options.readyLabel) this.repo.managedApproval = async number => {
       const managed = async (n: number, depth: number): Promise<ReadyApproval> => {
@@ -204,7 +209,7 @@ export class World {
   /** One Manager reconciliation. A run that cannot even take a snapshot rejects; that is recorded, not thrown. */
   async tick(): Promise<Tick> {
     try {
-      const report = await new Manager(this.github, this.cfg, new StaticPlanner(), { correlationId: 'temporal:42', now: () => this.now, workerRuntime: this.controller, notifications: this.options.notifications }).run();
+      const report = await new Manager(this.github, this.cfg, this.options.planner ?? new StaticPlanner(), { correlationId: 'temporal:42', now: () => this.now, workerRuntime: this.controller, notifications: this.options.notifications }).run();
       this.log.push(`tick ${JSON.stringify({ errors: report.errors, blockers: report.blockers })}`); return { report };
     } catch (error) { const thrown = error instanceof Error ? error.message : String(error); this.log.push(`tick threw ${thrown}`); return { thrown }; }
   }

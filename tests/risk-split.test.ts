@@ -6,6 +6,7 @@ import { StaticPlanner } from '../src/llm/provider.js';
 import { CachedRiskSplitter, FallbackRiskSplitter, RiskSplitPlanner, splitPartMarker, type RiskSplit, type RiskSplitter } from '../src/llm/risk-split.js';
 import { scopeGuidance } from '../src/workers/coding.js';
 import { clock, config, issue, MemoryGitHub, finishedAttempt } from './helpers.js';
+import { World } from './scenario-world.js';
 
 type Answer = { choice: string; probabilities: Record<string, number> };
 const mixed = (): Answer => ({ choice: 'mixed-risk', probabilities: { ready: 0.1, unclear: 0.02, 'too-large': 0.03, 'mixed-risk': 0.85 } });
@@ -112,5 +113,31 @@ describe('risk isolation by splitting tasks (SF #210)', () => {
     expect(scopeGuidance(cfg)).toContain('Risk split:');
     cfg.merge.risk.mode = 'observe'; expect(scopeGuidance(cfg)).not.toContain('Risk split:'); cfg.merge.risk.mode = 'enforce';
     expect(scopeGuidance(cfg).length).toBeLessThanOrEqual(2000);
+  });
+  it('gives the parts of a granted task harness:ready under the ready-label grant, and they start on the origin\'s grant', async () => {
+    const { routing } = jev((_s, risk) => risk ? mixed() : ready()), s = splitter(() => twoParts);
+    const w = new World({ readyLabel: true });
+    Object.assign(w.options, { planner: new RiskSplitPlanner(new JevPlanner(routing, w.github.repository, new StaticPlanner(), s.cached), s.cached) });
+    w.cfg.llm.provider = 'jev'; w.cfg.merge.risk.enabled = true;
+    w.open(1); w.grant(1);
+    await w.tick();
+    expect(w.status(1)).toEqual(['blocked']);
+    const [routine, risky] = parts(w.github);
+    expect(routine!.labels).toContain('harness:ready'); expect(risky!.labels).toContain('harness:ready');
+    expect((await w.tick()).report?.errors ?? []).toEqual([]);
+    expect(w.status(routine!.number)).toEqual(['running']);
+  });
+  it('does not start the parts when the origin\'s grant no longer holds', async () => {
+    const { routing } = jev((_s, risk) => risk ? mixed() : ready()), s = splitter(() => twoParts);
+    const w = new World({ readyLabel: true });
+    Object.assign(w.options, { planner: new RiskSplitPlanner(new JevPlanner(routing, w.github.repository, new StaticPlanner(), s.cached), s.cached) });
+    w.cfg.llm.provider = 'jev'; w.cfg.merge.risk.enabled = true;
+    w.open(1); w.grant(1);
+    await w.tick();
+    const [routine] = parts(w.github);
+    // Someone without write access labels the origin afterwards: the latest grant is no longer a person's with write access.
+    w.github.human(1, [...w.issue(1).labels, 'harness:ready'], 'stranger');
+    await w.tick();
+    expect(w.status(routine!.number)).not.toEqual(['running']);
   });
 });
