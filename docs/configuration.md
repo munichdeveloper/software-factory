@@ -45,6 +45,7 @@ Generated JSON schemas share the executable Zod source.
 | `workers.test.operation` | `sha256` | Digest, deterministic `fail`, or deterministic `blocked` |
 | `workers.coding` | `false` | Or `{enabled: true, agent: codex, model: gpt-6.1-sol, reasoningEffort: high}`; requires coding workflow wrapper. `agent: claude` runs Claude Code instead (Temporal engine only): name a Claude `model` such as `claude-opus-5-5` or `claude-sonnet-5-5`, `reasoningEffort` `low`…`max`, and set the repository secret `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY`. `agents` (instead of `agent`, Temporal engine only) is a priority list of up to three agents, each `{agent, model, reasoningEffort}`: see [Agent priority list](#agent-priority-list). `retryAgents` (optional, same shape) is the list for attempts after the agent failed: see [Escalation on retry](#escalation-on-retry). An entry may add `credential: subscription` to run on a Claude subscription: see [Claude subscription as fallback](#claude-subscription-as-fallback) |
 | `workers.review` | `false` | Must be false; not implemented |
+| `merge.checkRun` | on | Shows the merge pass as the check run `Software Factory / Merge` on each pull request, see [merging](merging.md#check-run-on-the-pull-request); needs the App permission Checks write; optional, leaving it out keeps the configuration hash |
 | `merge.risk.enabled` | `false` | Risk-based auto-merge, see [merging](merging.md#risk-based-auto-merge); requires `merge.enabled` |
 | `merge.risk.mode` | `enforce` | `enforce` gates merges by risk class; `observe` only classifies and shows |
 | `merge.risk.autoMergeUpTo` | `medium` | Highest class the Factory merges on its own: `low`, `medium`, `high`; `critical` never |
@@ -284,6 +285,8 @@ startable tasks and lets TypeSafe Jev, the model router's decision model, make t
   then writes two follow-up tasks, a routine part that merges automatically and a small risky part that a person
   approves, and the original task is blocked as their origin. If the model finds the parts inseparable, the task starts
   as it is; if it fails, the task is blocked with the reason. The parts themselves are never split again.
+  Under `autonomy.startGrant: ready-label` the parts are created with `harness:ready` and admitted on the origin's
+  grant (a person with write access labelled the origin ready, and nobody but the Factory changed that label since).
 
 Jev's settings come from the `router` block (`enabled`, `model`, `minConfidence`, `timeoutSeconds`; no candidates
 needed). Without the broker's Jev key, when Jev is unreachable, gives no usable answer or stays below

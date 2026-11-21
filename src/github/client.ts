@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import type { GitHubPort } from './port.js';
-import type { BlockLabelEvent, Comment, ContentEdit, Issue, PullRequest, Snapshot, WorkflowRun } from '../types.js';
-import { authorizeManagedLabel, authorizeReadyLabel } from '../runtime/ready-approval.js';
+import { riskSplitPartMarker, type BlockLabelEvent, type Comment, type ContentEdit, type Issue, type PullRequest, type Snapshot, type WorkflowRun } from '../types.js';
+import { authorizeManagedLabel, authorizeOriginReady, authorizeReadyLabel } from '../runtime/ready-approval.js';
 import { followupOrigin } from '../state/reconstruct.js';
 import type { ReadyApproval } from '../runtime/contract.js';
 import { allLabels, dependencies, managedLabel } from '../state/lifecycle.js';
@@ -91,13 +91,19 @@ export class GitHubClient implements GitHubPort {
   }
   async readyApproval(number: number, trustedActors: string[], expected?: ReadyApproval, rework?: ReadyApproval): Promise<ReadyApproval> {
     const issue = await this.getIssue(number);
+    const events = await this.readyEvents(number);
+    // A risk split part inherits its origin's ready grant (SF #210).
+    const origin = issue.body.includes(riskSplitPartMarker) ? followupOrigin(issue.body) : null;
+    return authorizeReadyLabel(issue, events, actor => this.canApprove(actor), trustedActors, expected, rework,
+      origin && origin !== number ? async () => authorizeOriginReady(await this.getIssue(origin), await this.readyEvents(origin), actor => this.canApprove(actor), trustedActors) : undefined);
+  }
+  private async readyEvents(number: number): Promise<BlockLabelEvent[]> {
     const timeline = await this.api.paginate(this.api.issues.listEventsForTimeline, { ...this.target, issue_number: number, per_page: 100 });
-    const events: BlockLabelEvent[] = timeline.flatMap(e => {
+    return timeline.flatMap(e => {
       if ((e.event !== 'labeled' && e.event !== 'unlabeled') || !('label' in e) || e.label?.name !== 'harness:ready' ||
         !('id' in e) || typeof e.id !== 'number' || !('created_at' in e) || typeof e.created_at !== 'string') return [];
       return [{ id: e.id, event: e.event as 'labeled' | 'unlabeled', actor: 'actor' in e ? e.actor?.login ?? '' : '', createdAt: e.created_at }];
     });
-    return authorizeReadyLabel(issue, events, actor => this.canApprove(actor), trustedActors, expected, rework);
   }
   /** The `managed-label` grant: who applied `harness:managed`; Factory follow-ups inherit their origin's, at most three levels deep. */
   async managedApproval(number: number, trustedActors: string[], depth = 0): Promise<ReadyApproval> {
