@@ -156,6 +156,21 @@ export function preflightEvents(tasks: Task[], refused: ReadonlyMap<number, stri
   return events;
 }
 
+/**
+ * The preflight refusals to remember for the next reconciliation: this one's, plus earlier ones that no start has
+ * followed yet while the task is open on the same version. A refusal can clear while the task waits for something else
+ * (its grant, a slot); the start that follows later still resumes it (geschaeftsideen-web#54 kept its refusal for a day).
+ */
+export function pendingRefusals(tasks: Task[], pre: RuntimeEvent[], before: ReadonlyMap<number, { code: string; version: string; at: string }>) {
+  const next = new Map(pre.filter(e => e.type === 'start_refused').map(e => [e.issueNumber, { code: String(e.data.code), version: e.taskVersion, at: e.at }]));
+  const resumed = new Set(pre.filter(e => e.type === 'start_resumed').map(e => e.issueNumber));
+  for (const [n, earlier] of before) {
+    const task = tasks.find(t => t.issue.number === n);
+    if (!next.has(n) && !resumed.has(n) && task?.issue.state === 'open' && task.version === earlier.version) next.set(n, earlier);
+  }
+  return next;
+}
+
 /** Records the events of every completed reconciliation. Never throws: events never block the Factory. */
 export class RuntimeEvents {
   /** Preflight refusals of the previous reconciliation per repository (in memory: a broker restart starts over). */
@@ -167,8 +182,7 @@ export class RuntimeEvents {
     try {
       const tasks = reconstruct(snapshot, config, this.now());
       const pre = preflightEvents(tasks, refused, this.preflight.get(target.repositoryId) ?? new Map(), this.now());
-      this.preflight.set(target.repositoryId, new Map(pre.filter(e => e.type === 'start_refused')
-        .map(e => [e.issueNumber, { code: String(e.data.code), version: e.taskVersion, at: e.at }])));
+      this.preflight.set(target.repositoryId, pendingRefusals(tasks, pre, this.preflight.get(target.repositoryId) ?? new Map()));
       const found = [...deriveEvents(tasks), ...pre];
       const added = found.length ? await this.store.recordEvents(target.repositoryId, target.repository, found) : [];
       if (added.length) console.log(JSON.stringify({ event: 'factory-runtime-events', repositoryId: target.repositoryId,

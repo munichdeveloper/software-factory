@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { attention, deriveEvents, preflightEvents, RuntimeEvents, type RuntimeEvent } from '../src/runtime/events.js';
+import { attention, deriveEvents, pendingRefusals, preflightEvents, RuntimeEvents, type RuntimeEvent } from '../src/runtime/events.js';
 import type { Execution, Task } from '../src/state/reconstruct.js';
 import { clock, config, issue } from './helpers.js';
 
@@ -132,6 +132,22 @@ it('reports preflight refusals, which no journal holds, and the start once the c
   expect(resumed).toEqual([expect.objectContaining({ type: 'start_resumed', key: `start_resumed:${id(0)}:cleared`,
     data: { code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', refusals: 1, trigger: 'cause_cleared' } })]);
   expect(preflightEvents([task([])], new Map(), before, new Date(later))).toEqual([]);
+});
+
+it('keeps a cleared preflight refusal until a start resumes it (geschaeftsideen-web#54)', () => {
+  const before = new Map([[1, { code: 'EXECUTOR_WRAPPER_RELEASE_MISMATCH', version, at: clock.toISOString() }]]);
+  // The rollout clears the refusal while the task waits for its grant: nothing starts, nothing is refused.
+  const waiting = new Date(clock.getTime() + 60000);
+  const kept = pendingRefusals([task([])], preflightEvents([task([])], new Map(), before, waiting), before);
+  expect(kept.get(1)).toEqual(before.get(1));
+  // The grant comes later; the start then resumes the remembered refusal.
+  const later = new Date(clock.getTime() + 3600000).toISOString();
+  const started = [task([execution(0, { active: true }, later)])];
+  const pre = preflightEvents(started, new Map(), kept, new Date(later));
+  expect(pre).toEqual([expect.objectContaining({ type: 'start_resumed', data: expect.objectContaining({ trigger: 'cause_cleared' }) })]);
+  expect(pendingRefusals(started, pre, kept).size).toBe(0);
+  // A changed task version forgets the refusal.
+  expect(pendingRefusals([task([])], [], new Map([[1, { ...before.get(1)!, version: 'other' }]])).size).toBe(0);
 });
 
 it('reports the rescue attempt as tier 3 of the reaction chain (issue #188 step 7)', () => {

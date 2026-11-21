@@ -90,16 +90,16 @@ export class GitHubMergePort implements MergePort {
     const read = async (path: string, ref: string, optional = false): Promise<string> => {
       try {
         const { data } = await this.api.repos.getContent({ ...this.target, path, ref });
-        if (!('content' in data) || data.encoding !== 'base64' || data.size > maxBytes) throw new Error('File cannot be reviewed completely');
+        if (!('content' in data) || data.encoding !== 'base64' || data.size > maxBytes) throw Object.assign(new Error('File cannot be reviewed completely'), { path });
         const bytes = Buffer.from(data.content, 'base64');
-        if (bytes.includes(0)) throw new Error('Binary file cannot be reviewed');
+        if (bytes.includes(0)) throw Object.assign(new Error('Binary file cannot be reviewed'), { path });
         return bytes.toString('utf8');
       } catch (error) { if (optional && error instanceof Error && 'status' in error && error.status === 404) return ''; throw error; }
     };
     const instructions = await read('AGENTS.md', facts.base, true);
     const changes: ReviewInput['changes'] = [];
     for (const file of files) {
-      if (!file.patch) throw new Error('Diff is incomplete or contains binary changes');
+      if (!file.patch) throw Object.assign(new Error('Diff is incomplete or contains binary changes'), { path: file.filename });
       const content = file.status === 'removed' ? await read(file.filename, facts.base) : await read(file.filename, facts.head);
       changes.push({ path: file.filename, status: file.status, patch: file.patch, content });
       if (Buffer.byteLength(JSON.stringify({ facts: { ...facts, comments: [] }, instructions, changes })) > maxBytes) throw new Error('Review context exceeds limit; no truncated approval');

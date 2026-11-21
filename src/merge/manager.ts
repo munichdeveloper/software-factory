@@ -62,6 +62,15 @@ export interface MergeOptions {
 /** A pull request the Factory published for a task, with the outcome it was published with. */
 interface Ownership { task: Snapshot['issues'][number]; status: string; publishedHead: string | null }
 
+/**
+ * Context errors that depend only on the pull request's head and base, not on GitHub or a provider being reachable
+ * (geschaeftsideen-web#57 added a ZIP file: every pass failed the same way and the monitor promised another try).
+ */
+/** Check and commit status states that do not hold a merge back. */
+const passingStates = new Set(['success', 'neutral', 'skipped']);
+const permanentContextErrors = new Set(['Change set exceeds review file limit', 'Diff is incomplete or contains binary changes',
+  'File cannot be reviewed completely', 'Binary file cannot be reviewed', contextLimitError, partsLimitError]);
+
 export class MergeManager {
   constructor(private api: MergePort, private config: Config, private reviewer: MergeReviewer, private correlationId: string,
     private tasks?: Pick<GitHubPort, 'getIssue'>, private options: MergeOptions = {}) {}
@@ -208,7 +217,12 @@ export class MergeManager {
   /** Reads a pull request without the Factory's own check run: it shows the merge pass and must never gate it (issue #208). */
   private async read(number: number) {
     const f = await this.api.facts(number);
+    const own = f.checks.some(c => c.name === checkRunName);
     f.checks = f.checks.filter(c => c.name !== checkRunName);
+    // GitHub counts that check run into mergeStateStatus: while it is in progress the pull request reads UNSTABLE. Every
+    // review then saw the state change under it and the gate never saw CLEAN (geschaeftsideen-web#57). UNSTABLE with every
+    // other check passing is the Factory's own check run alone.
+    if (own && f.mergeState === 'UNSTABLE' && f.checks.every(c => passingStates.has(c.state))) f.mergeState = 'CLEAN';
     this.heads.set(number, f.head);
     return f;
   }
@@ -491,12 +505,23 @@ export class MergeManager {
           [partsLimitError]: `Die Prüfung bräuchte mehr als ${this.config.merge.review.maxParts ?? defaultMaxParts} Teile (merge.review.maxParts). Bitte den PR in kleinere PRs aufteilen (workers.coding.smallPullRequests).`,
           'Diff is incomplete or contains binary changes': 'Der Diff ist unvollständig oder enthält nicht prüfbare Binäränderungen.',
           'File cannot be reviewed completely': 'Mindestens eine Datei kann nicht vollständig geprüft werden.',
+          'Binary file cannot be reviewed': 'Eine Binärdatei kann die KI nicht prüfen.',
           'Merge review incomplete or refused': 'Die KI-Prüfung wurde nicht vollständig abgeschlossen oder abgelehnt.',
           'A real OpenAI merge reviewer is required': 'Für den KI-Review ist kein Modellschlüssel konfiguriert (beim Temporal-Broker: OPENAI_API_KEY in seiner Umgebung) oder die Konfiguration verlangt keinen echten Reviewer.',
           'fetch failed': 'Der Review-Anbieter ist nicht erreichbar.',
           'Merge review provider unavailable': 'Der Review-Anbieter hat die Anfrage abgelehnt oder ist nicht verfügbar.'
         };
-        const detail = error instanceof Error ? reasons[error.message] ?? '' : '';
+        const message = error instanceof Error ? error.message : '';
+        const path = error instanceof Error && 'path' in error && typeof error.path === 'string' ? error.path : null;
+        const detail = `${reasons[message] ?? ''}${path ? ` Betroffene Datei: \`${path}\`.` : ''}`;
+        // The same head always gives the same result: a person (or a new commit) has to take over, retrying changes nothing.
+        if (f && permanentContextErrors.has(message)) {
+          const why = `${phase} ist für diesen Stand nicht möglich. ${detail}`.trim();
+          this.note(number, 'stopped', `${why} Ein neuer Commit startet die Prüfung neu.`);
+          await this.explain(f, `${why} Die Factory prüft diesen Head nicht erneut und gibt keinen ungeprüften Stand frei. Ein neuer Commit auf dem Branch (etwa ohne die Datei, oder nachdem die Basis sie enthält) startet die Prüfung neu; sonst entscheidet ein Mensch über den PR.`).catch(() => {});
+          await this.needsHuman(f, true).catch(() => {});
+          continue;
+        }
         if (f) await this.explain(f, `${phase} konnte nicht bestätigt werden (${status}). ${detail} Kein ungeprüfter Stand wird freigegeben; vorhandene Intents bleiben zur Wiederaufnahme erhalten.`).catch(() => {});
         break;
       }
