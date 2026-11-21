@@ -83,7 +83,7 @@ describe('recording broker calls', () => {
   });
   it('names the pull request, issue, step and the routed model', async () => {
     sink();
-    const router = { route: async () => ({ used: true, purpose: 'review', choice: 'sonnet', confidence: 0.8, model: 'typesafe/jev-1.14' }) } as unknown as ModelRouter;
+    const router = { decide: async () => ({ record: { used: true, purpose: 'review', choice: 'sonnet', confidence: 0.8, model: 'typesafe/jev-1.14' }, probabilities: null }) } as unknown as ModelRouter;
     const routing = new Routing(router);
     const candidates = [{ id: 'sonnet', provider: 'claude' as const, model: 'claude-sonnet-5-5', reasoningEffort: 'medium', description: 'cheap' },
       { id: 'opus', provider: 'claude' as const, model: 'claude-opus-5-5', reasoningEffort: 'high', description: 'strong' }];
