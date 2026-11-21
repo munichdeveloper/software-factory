@@ -144,6 +144,29 @@ merge:
 
 The concept and its reasoning are in [risk-based-merge.md](risk-based-merge.md).
 
+## Check run on the pull request
+
+The broker shows the merge pass as the check run **Software Factory / Merge** on the head of each pull request it
+handles (issue #208), next to the repository's own checks under "Checks". It says where the pull request stands and
+why, in the Factory's own words:
+
+| Merge step | Check run |
+| --- | --- |
+| required checks pending, AI review running, merging | in progress |
+| approval needed (with risk class, threshold and `/harness approve <id>`), review asks for changes, handed over | completed, *action required* |
+| required check failed, conflict, gate, stopped, branch updated, error | completed, *neutral* |
+| merged | completed, *success* |
+
+A new head gets its own check run; the one on the old head stays. The check run is display only: the merge pass
+ignores it when it evaluates required checks and gates, so it can never block a merge, and a failure to write it never
+fails the pass. It is written only when its status, conclusion or text changes, and after a broker restart the existing
+check run of a head is updated instead of a second one being created.
+
+It needs the GitHub App permission **Checks: Read & write** (accepted in each installation). The broker requests it with
+a separate token limited to `checks: write`; without it, the check run pauses for six hours, logs
+`factory-check-run-disabled` once and everything else runs unchanged. `merge.checkRun: false` turns it off for a
+repository; leaving it out keeps it on.
+
 ## Technical gates remain mandatory
 
 A positive AI decision is necessary but insufficient. Immediately before merging,

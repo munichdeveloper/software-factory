@@ -406,6 +406,25 @@ it('marks a Factory pull request and its task when the risk needs a person to ap
   expect(x.f.labels).not.toContain('sf:needs-human'); expect(task.labels).not.toContain('sf:needs-human');
   expect(needsHuman.mock.calls.slice(2)).toEqual([[52, false], [7, false]]);
 });
+it('clears sf:needs-human on the pull request and its task when a person merged it without /harness approve', async () => {
+  const x = temporal(); x.f.draft = false; x.cfg.merge.risk.enabled = true;
+  const assessor = { assess: vi.fn(async () => ({ class: 'high' as const, reason: 'Schreibt in ein externes System.', factors: [] })) };
+  const task = x.snapshot.issues.find(i => i.number === 7)!;
+  const needsHuman = vi.fn(async (n: number, on: boolean) => {
+    if (n === 52) x.f.labels = on ? [...x.f.labels, 'sf:needs-human'] : x.f.labels.filter(l => l !== 'sf:needs-human');
+    if (n === 7) task.labels = on ? [...task.labels, 'sf:needs-human'] : task.labels.filter(l => l !== 'sf:needs-human');
+  });
+  Object.assign(x.api, { needsHuman });
+  const run = () => new MergeManager(x.api, x.cfg, x.reviewer, 'test', undefined, { ownedOnly: true, assessor }).run(x.snapshot);
+  await run();
+  expect(x.f.labels).toContain('sf:needs-human'); expect(task.labels).toContain('sf:needs-human');
+
+  x.f.state = 'closed'; x.f.mergeSha = 'd'.repeat(40); x.f.mergeActorType = 'User';
+  await run(); await run();
+  expect(x.api.merge).not.toHaveBeenCalled();
+  expect(x.f.labels).not.toContain('sf:needs-human'); expect(task.labels).not.toContain('sf:needs-human');
+  expect(needsHuman.mock.calls).toEqual([[52, true], [7, true], [52, false], [7, false]]);
+});
 it('leaves sf:needs-human alone when nothing waits for a person', async () => {
   const x = temporal(); x.f.draft = false;
   const needsHuman = vi.fn(async () => {}); Object.assign(x.api, { needsHuman });

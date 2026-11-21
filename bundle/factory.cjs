@@ -65415,6 +65415,10 @@ var configSchema = external_exports.strictObject({
       maxParts: external_exports.number().int().min(1).max(8).optional()
     }).prefault({}),
     postMergeWorkflows: external_exports.array(external_exports.string().regex(/^[a-zA-Z0-9_-]+\.ya?ml$/)).max(10).default([]),
+    // The merge pass as the check run "Software Factory / Merge" on each pull request's head (issue #208); needs the App
+    // permission Checks: write and switches itself off without it. Optional without a default (on): configurations that
+    // leave it out keep their hash.
+    checkRun: external_exports.boolean().optional(),
     // Risk-based auto-merge: a risk class per head decides whether merge_pr 'allow' merges on its own or needs approval.
     risk: external_exports.strictObject({
       enabled: external_exports.boolean().default(false),
@@ -72584,6 +72588,34 @@ function combineReviews(reviews, total) {
   return { decision, reason, findings };
 }
 
+// src/merge/check-run.ts
+var checkRunName = "Software Factory / Merge";
+var views = {
+  checks: { status: "in_progress", title: "Wartet auf Pflichtpr\xFCfungen", summary: "Die Factory pr\xFCft den PR, sobald die Pflichtpr\xFCfungen f\xFCr diesen Stand gr\xFCn sind." },
+  "checks-failed": { status: "completed", conclusion: "neutral", title: "Pflichtpr\xFCfung fehlgeschlagen", summary: "Eine Pflichtpr\xFCfung ist f\xFCr diesen Stand fehlgeschlagen." },
+  conflict: { status: "completed", conclusion: "neutral", title: "Merge-Konflikt", summary: "Der Branch hat Konflikte mit der Basis." },
+  "branch-update": { status: "completed", conclusion: "neutral", title: "Branch wird aktualisiert", summary: "Die Factory aktualisiert den Branch; der neue Stand wird erneut gepr\xFCft." },
+  review: { status: "in_progress", title: "KI-Review l\xE4uft", summary: "Das unabh\xE4ngige KI-Review und die Risikobewertung laufen." },
+  "review-rejected": { status: "completed", conclusion: "action_required", title: "KI-Review verlangt \xC4nderungen", summary: "Das KI-Review hat diesen Stand nicht freigegeben." },
+  "approval-required": { status: "completed", conclusion: "action_required", title: "Freigabe n\xF6tig", summary: "Der PR ist gepr\xFCft und wartet auf eine menschliche Freigabe." },
+  gate: { status: "completed", conclusion: "neutral", title: "Merge blockiert", summary: "Eine Merge-Bedingung ist nicht erf\xFCllt." },
+  merging: { status: "in_progress", title: "Wird gemergt", summary: "Die Factory mergt diesen Stand." },
+  merged: { status: "completed", conclusion: "success", title: "Gemergt", summary: "Der PR ist gemergt." },
+  handover: { status: "completed", conclusion: "action_required", title: "An einen Menschen \xFCbergeben", summary: "Die Factory mergt diesen PR nicht selbst." },
+  stopped: { status: "completed", conclusion: "neutral", title: "Angehalten", summary: "Die Factory bearbeitet diesen PR nicht weiter." },
+  error: { status: "completed", conclusion: "neutral", title: "Fehler im Merge-Durchlauf", summary: "Der Merge-Durchlauf konnte einen Schritt nicht best\xE4tigen; der n\xE4chste Durchlauf versucht es erneut." }
+};
+function checkRunView(step, detail, risk) {
+  const { status, conclusion, title, summary: summary2 } = views[step];
+  const reviewed = step === "review" && risk;
+  return {
+    status,
+    ...conclusion ? { conclusion } : {},
+    title: reviewed ? `KI-Review fertig, Risiko ${risk}` : title,
+    summary: [(detail ?? "").slice(0, 2e3) || summary2, risk ? `Risiko: ${risk}` : ""].filter(Boolean).join("\n\n")
+  };
+}
+
 // src/merge/manager.ts
 var safe = (s) => s.replaceAll("@", "@\u200B").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 var factsKey = (f) => ({
@@ -72783,7 +72815,7 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
       await this.conflict(f, snapshot, ownership, adopted);
       return false;
     }
-    const updated = await this.api.facts(f.number);
+    const updated = await this.read(f.number);
     if (updated.head !== head) {
       await this.explain(updated, "Branch wurde erneut ver\xE4ndert; keine Freigabe f\xFCr den ungepr\xFCften Stand.");
       return true;
@@ -72811,6 +72843,23 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
       this.options.observe?.(n, step, detail, risk);
     } catch {
     }
+    const head = this.heads.get(n);
+    if (!head || this.config.merge.checkRun === false) return;
+    if (risk) this.risks.set(head, risk);
+    try {
+      this.options.checkRuns?.show(n, head, checkRunView(step, detail, risk ?? this.risks.get(head)));
+    } catch {
+    }
+  }
+  /** The head each pull request had when this pass last read it, and the risk class seen for a head (check runs). */
+  heads = /* @__PURE__ */ new Map();
+  risks = /* @__PURE__ */ new Map();
+  /** Reads a pull request without the Factory's own check run: it shows the merge pass and must never gate it (issue #208). */
+  async read(number4) {
+    const f = await this.api.facts(number4);
+    f.checks = f.checks.filter((c) => c.name !== checkRunName);
+    this.heads.set(number4, f.head);
+    return f;
   }
   owned(f, snapshot) {
     return this.ownership(f, snapshot)?.task;
@@ -72848,10 +72897,12 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
       let f;
       let phase = "GitHub-Zustand lesen";
       try {
-        f = await this.api.facts(number4);
+        f = await this.read(number4);
         if (!this.eligible(f, snapshot)) continue;
         if (f.state === "closed") {
           this.note(number4, f.mergeSha ? "merged" : "stopped", f.mergeSha ? null : "PR wurde ohne Merge geschlossen.");
+          phase = "\xDCbergabe-Label entfernen";
+          await this.needsHuman(f, false, this.owned(f, snapshot));
           if (f.mergeSha && f.mergeActorType === "Bot" && this.events(f).some((e) => e.data.type === "merge_intent" && e.data.head === f.head)) {
             await this.event(f, `merge-completed:${f.head}`, { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: f.mergeSha });
             await this.postMerge(f, f.mergeSha);
@@ -73085,7 +73136,7 @@ ${riskNote ? `${riskNote}
           this.note(number4, handOver ? "handover" : "review-rejected", `KI-Entscheidung: ${review.decision}.`);
           continue;
         }
-        const live2 = await this.api.facts(number4);
+        const live2 = await this.read(number4);
         if (hash2(factsKey(live2)) !== hash2(factsKey(f)) || !this.eligible(live2, snapshot) || live2.state !== "open" || live2.draft || !live2.sameRepository || live2.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
           this.note(number4, "review", "Stand hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung folgt.");
           await this.explain(live2, "PR, Head, Basis oder Freigabe hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung erforderlich.");
@@ -73122,7 +73173,7 @@ ${riskNote ? `${riskNote}
             if (match?.[2] === approvalId && await this.api.canApprove(c.author)) approved = match[1] === "approve";
           }
           if (!approved) {
-            this.note(number4, "approval-required", riskGate ? `Risiko ${riskRecord.class} \xFCber der Schwelle ${risk.autoMergeUpTo}: menschliche Freigabe n\xF6tig.` : "Menschliche Freigabe n\xF6tig.");
+            this.note(number4, "approval-required", `${riskGate ? `Risiko ${riskRecord.class} \xFCber der Schwelle ${risk.autoMergeUpTo}: menschliche Freigabe n\xF6tig.` : "Menschliche Freigabe n\xF6tig."} Freigeben mit diesem Kommentar am PR: /harness approve ${approvalId}`);
             if (riskGate) await this.event(live2, `merge-approval-required:${approvalId}`, {
               type: "merge_approval_required",
               prNumber: number4,
