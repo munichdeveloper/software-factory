@@ -155,15 +155,28 @@ export const routerAlertWindowMs = 6 * 3600000;
 /** What a candidate names beyond its id, when the caller's candidates carry it (coding: agent, model, effort). */
 export interface ChosenDetails { agent?: unknown; model?: unknown; reasoningEffort?: unknown }
 
+/**
+ * Jev's full scores for a Slack message, highest first (Johannes, 2026-11-21: "immer die vollständigen Scores, nicht
+ * nur der Gewinner"). Undefined when Jev gave no probability per option.
+ */
+export function scoreLine(probabilities: Record<string, number> | null | undefined): string | undefined {
+  const entries = Object.entries(probabilities ?? {}).filter(([, p]) => Number.isFinite(p)).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return undefined;
+  const shown = entries.slice(0, maxScoreEntries).map(([id, p]) => `\`${id}\` ${String(Math.round(p * 1000) / 10).replace('.', ',')} %`);
+  return `Alle Bewertungen: ${shown.join(', ')}${entries.length > maxScoreEntries ? `, und ${entries.length - maxScoreEntries} weitere` : ''}`;
+}
+const maxScoreEntries = 20;
+
 export class RouterAlerts {
   private last = new Map<string, { at: number; suppressed: number }>();
   constructor(private sink: RouterAlertSink, private channel: string, private now: () => number = Date.now, private windowMs = routerAlertWindowMs) {}
-  async observe(repository: string, record: RouteRecord, chosen?: RouterOption & ChosenDetails): Promise<void> {
+  async observe(repository: string, record: RouteRecord, chosen?: RouterOption & ChosenDetails, probabilities?: Record<string, number> | null): Promise<void> {
+    const scores = scoreLine(probabilities);
     if (record.used) {
       // Every decision Jev made gets its own message, unthrottled (Johannes, 2026-11-19: "welche Entscheidung Jev
       // erfolgreich getroffen hat"): one per coding execution, merge review or risk assessment.
       const details = chosen ? [chosen.agent, chosen.model, chosen.reasoningEffort].filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
-      await this.sink.post(this.channel, `SF Model Router: Jev hat für ${purposeNames[record.purpose]} in ${repository} \`${record.choice}\`${details.length ? ` (${details.join(', ')})` : ''} gewählt, mit ${Math.round(record.confidence * 100)} % Wahrscheinlichkeit.`);
+      await this.sink.post(this.channel, `SF Model Router: Jev hat für ${purposeNames[record.purpose]} in ${repository} \`${record.choice}\`${details.length ? ` (${details.join(', ')})` : ''} gewählt, mit ${Math.round(record.confidence * 100)} % Wahrscheinlichkeit.${scores ? `\n${scores}` : ''}`);
       return;
     }
     const key = `${repository}|${record.purpose}|${record.reason}`, prior = this.last.get(key), now = this.now();
@@ -173,6 +186,7 @@ export class RouterAlerts {
       ? ` (gewählt hätte er ${record.choice} mit ${Math.round(record.confidence * 100)} %)` : record.code ? ` (${record.code})` : '';
     await this.sink.post(this.channel, [`SF Model Router: ${purposeNames[record.purpose]} in ${repository} lief ohne Router, direkt mit den konfigurierten Modellen.`,
       `Grund: ${skipTexts[record.reason]}${record.reason === 'no-key' ? '' : `${detail}.`}`,
+      ...(scores ? [scores] : []),
       ...(prior?.suppressed ? [`Seit der letzten Meldung ${prior.suppressed}-mal ohne eigene Nachricht.`] : []),
       `(Höchstens eine Meldung je Repository, Zweck und Grund alle ${Math.round(this.windowMs / 3600000)} Stunden.)`].join('\n'));
   }
@@ -182,18 +196,19 @@ export class RouterAlerts {
 export class Routing {
   constructor(private router: ModelRouter, private alerts?: RouterAlerts) {}
   async route(repository: string, purpose: RouterPurpose, state: string, options: RouterOption[], settings: RouterSettings): Promise<RouteRecord> {
-    return this.observed(repository, await this.router.route(purpose, state, options, settings), options);
+    const decision = await this.router.decide(purpose, questions[purpose], state, options, settings);
+    return this.observed(repository, decision.record, options, decision.probabilities);
   }
   /** A choice question of the caller's own (the Jev planner), logged and reported like a routing decision. */
   async decide(repository: string, purpose: RouterPurpose, question: string, state: string, options: RouterOption[], settings: RouterSettings): Promise<Decision> {
     const decision = await this.router.decide(purpose, question, state, options, settings);
-    await this.observed(repository, decision.record, options);
+    await this.observed(repository, decision.record, options, decision.probabilities);
     return decision;
   }
-  private async observed(repository: string, record: RouteRecord, options: RouterOption[]): Promise<RouteRecord> {
+  private async observed(repository: string, record: RouteRecord, options: RouterOption[], probabilities?: Record<string, number> | null): Promise<RouteRecord> {
     logRoute(repository, record);
     const chosen = record.used ? options.find(o => o.id === record.choice) as (RouterOption & ChosenDetails) | undefined : undefined;
-    try { await this.alerts?.observe(repository, record, chosen); } catch { /* an alert never fails the work */ }
+    try { await this.alerts?.observe(repository, record, chosen, probabilities); } catch { /* an alert never fails the work */ }
     return record;
   }
 }

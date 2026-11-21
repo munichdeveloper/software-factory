@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { decisionsUrl, describeOption, endpointModel, ModelRouter, routerEndpoint, typesafeUrl, RouterAlerts, routedCall, routeNoteDe, routeOutcome, Routing, type RouteRecord } from '../src/llm/router.js';
+import { decisionsUrl, describeOption, endpointModel, ModelRouter, routerEndpoint, typesafeUrl, RouterAlerts, routedCall, routeNoteDe, routeOutcome, Routing, scoreLine, type RouteRecord } from '../src/llm/router.js';
 import { loadConfig } from '../src/config/index.js';
 
 const settings = { model: 'typesafe/jev-1.14', minConfidence: 0.5, timeoutSeconds: 5 };
@@ -102,6 +102,18 @@ describe('RouterAlerts', () => {
     expect(posts).toEqual([
       'SF Model Router: Jev hat für Coding in owner/repo `sonnet-medium` (claude, claude-sonnet-5-5, medium) gewählt, mit 72 % Wahrscheinlichkeit.',
       'SF Model Router: Jev hat für Risikobewertung in owner/repo `opus-high` gewählt, mit 81 % Wahrscheinlichkeit.']);
+  });
+  it('lists all of Jev\'s scores, highest first, for decisions and for fallbacks', async () => {
+    const posts: string[] = [];
+    const routing = new Routing(new ModelRouter('key', answering({ answers: { route: { choice: 'strong', probabilities: { cheap: 0.276, strong: 0.724 } } } })),
+      new RouterAlerts({ post: async (_channel, text) => { posts.push(text); } }, 'C123'));
+    await routing.route('owner/repo', 'review', 'pr', options, settings);
+    await routing.route('owner/repo', 'coding', 'task', options, { ...settings, minConfidence: 0.9 });
+    expect(posts[0]).toBe('SF Model Router: Jev hat für Merge-Review in owner/repo `strong` gewählt, mit 72 % Wahrscheinlichkeit.\nAlle Bewertungen: `strong` 72,4 %, `cheap` 27,6 %');
+    expect(posts[1]).toContain('lief ohne Router');
+    expect(posts[1]).toContain('Alle Bewertungen: `strong` 72,4 %, `cheap` 27,6 %');
+    expect(scoreLine(null)).toBeUndefined();
+    expect(scoreLine(Object.fromEntries(Array.from({ length: 22 }, (_, i) => [`o${i}`, 0.01 * (22 - i)])))).toMatch(/, und 2 weitere$/);
   });
   it('passes the chosen candidate from Routing to the alerts', async () => {
     const posts: string[] = [];
