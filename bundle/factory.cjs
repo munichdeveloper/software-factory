@@ -72344,9 +72344,9 @@ var GitHubMergePort = class {
     const read = async (path4, ref, optional2 = false) => {
       try {
         const { data } = await this.api.repos.getContent({ ...this.target, path: path4, ref });
-        if (!("content" in data) || data.encoding !== "base64" || data.size > maxBytes) throw new Error("File cannot be reviewed completely");
+        if (!("content" in data) || data.encoding !== "base64" || data.size > maxBytes) throw Object.assign(new Error("File cannot be reviewed completely"), { path: path4 });
         const bytes = Buffer.from(data.content, "base64");
-        if (bytes.includes(0)) throw new Error("Binary file cannot be reviewed");
+        if (bytes.includes(0)) throw Object.assign(new Error("Binary file cannot be reviewed"), { path: path4 });
         return bytes.toString("utf8");
       } catch (error62) {
         if (optional2 && error62 instanceof Error && "status" in error62 && error62.status === 404) return "";
@@ -72356,7 +72356,7 @@ var GitHubMergePort = class {
     const instructions = await read("AGENTS.md", facts.base, true);
     const changes = [];
     for (const file2 of files) {
-      if (!file2.patch) throw new Error("Diff is incomplete or contains binary changes");
+      if (!file2.patch) throw Object.assign(new Error("Diff is incomplete or contains binary changes"), { path: file2.filename });
       const content = file2.status === "removed" ? await read(file2.filename, facts.base) : await read(file2.filename, facts.head);
       changes.push({ path: file2.filename, status: file2.status, patch: file2.patch, content });
       if (Buffer.byteLength(JSON.stringify({ facts: { ...facts, comments: [] }, instructions, changes })) > maxBytes) throw new Error("Review context exceeds limit; no truncated approval");
@@ -72680,6 +72680,15 @@ var conflictReview = (f) => ({
   reason: `Merge-Konflikt: Der Branch ${f.headBranch} l\xE4sst sich nicht konfliktfrei mit ${f.baseBranch} (Basis ${f.base.slice(0, 7)}) zusammenf\xFChren. Setze die bisherigen \xC4nderungen dieses Versuchs auf der aktuellen Basis fort. Wo sie kollidieren, enth\xE4lt der Arbeitsbereich Konfliktmarker (<<<<<<<, =======, >>>>>>>). L\xF6se jeden Konflikt so auf, dass die neueren \xC4nderungen der Basis erhalten bleiben und die Aufgabe weiterhin vollst\xE4ndig erf\xFCllt ist. Baue nichts neu, was schon vorhanden ist, und hinterlasse keine Konfliktmarker.`
 });
 var behind = (f, config2) => config2.merge.protection === "factory" ? !!f.behindBy : f.mergeState === "BEHIND";
+var passingStates = /* @__PURE__ */ new Set(["success", "neutral", "skipped"]);
+var permanentContextErrors = /* @__PURE__ */ new Set([
+  "Change set exceeds review file limit",
+  "Diff is incomplete or contains binary changes",
+  "File cannot be reviewed completely",
+  "Binary file cannot be reviewed",
+  contextLimitError,
+  partsLimitError
+]);
 var MergeManager = class {
   constructor(api, config2, reviewer, correlationId, tasks, options = {}) {
     this.api = api;
@@ -72886,7 +72895,9 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
   /** Reads a pull request without the Factory's own check run: it shows the merge pass and must never gate it (issue #208). */
   async read(number4) {
     const f = await this.api.facts(number4);
+    const own2 = f.checks.some((c) => c.name === checkRunName);
     f.checks = f.checks.filter((c) => c.name !== checkRunName);
+    if (own2 && f.mergeState === "UNSTABLE" && f.checks.every((c) => passingStates.has(c.state))) f.mergeState = "CLEAN";
     this.heads.set(number4, f.head);
     return f;
   }
@@ -73272,12 +73283,24 @@ ${riskNote ? `${riskNote}
           [partsLimitError]: `Die Pr\xFCfung br\xE4uchte mehr als ${this.config.merge.review.maxParts ?? defaultMaxParts} Teile (merge.review.maxParts). Bitte den PR in kleinere PRs aufteilen (workers.coding.smallPullRequests).`,
           "Diff is incomplete or contains binary changes": "Der Diff ist unvollst\xE4ndig oder enth\xE4lt nicht pr\xFCfbare Bin\xE4r\xE4nderungen.",
           "File cannot be reviewed completely": "Mindestens eine Datei kann nicht vollst\xE4ndig gepr\xFCft werden.",
+          "Binary file cannot be reviewed": "Eine Bin\xE4rdatei kann die KI nicht pr\xFCfen.",
           "Merge review incomplete or refused": "Die KI-Pr\xFCfung wurde nicht vollst\xE4ndig abgeschlossen oder abgelehnt.",
           "A real OpenAI merge reviewer is required": "F\xFCr den KI-Review ist kein Modellschl\xFCssel konfiguriert (beim Temporal-Broker: OPENAI_API_KEY in seiner Umgebung) oder die Konfiguration verlangt keinen echten Reviewer.",
           "fetch failed": "Der Review-Anbieter ist nicht erreichbar.",
           "Merge review provider unavailable": "Der Review-Anbieter hat die Anfrage abgelehnt oder ist nicht verf\xFCgbar."
         };
-        const detail = error62 instanceof Error ? reasons[error62.message] ?? "" : "";
+        const message = error62 instanceof Error ? error62.message : "";
+        const path4 = error62 instanceof Error && "path" in error62 && typeof error62.path === "string" ? error62.path : null;
+        const detail = `${reasons[message] ?? ""}${path4 ? ` Betroffene Datei: \`${path4}\`.` : ""}`;
+        if (f && permanentContextErrors.has(message)) {
+          const why = `${phase} ist f\xFCr diesen Stand nicht m\xF6glich. ${detail}`.trim();
+          this.note(number4, "stopped", `${why} Ein neuer Commit startet die Pr\xFCfung neu.`);
+          await this.explain(f, `${why} Die Factory pr\xFCft diesen Head nicht erneut und gibt keinen ungepr\xFCften Stand frei. Ein neuer Commit auf dem Branch (etwa ohne die Datei, oder nachdem die Basis sie enth\xE4lt) startet die Pr\xFCfung neu; sonst entscheidet ein Mensch \xFCber den PR.`).catch(() => {
+          });
+          await this.needsHuman(f, true).catch(() => {
+          });
+          continue;
+        }
         if (f) await this.explain(f, `${phase} konnte nicht best\xE4tigt werden (${status}). ${detail} Kein ungepr\xFCfter Stand wird freigegeben; vorhandene Intents bleiben zur Wiederaufnahme erhalten.`).catch(() => {
         });
         break;
