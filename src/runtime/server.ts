@@ -14,6 +14,7 @@ import type { SanityMonitor } from './sanity.js';
 import type { RuntimeEvents } from './events.js';
 import type { QueueBoard } from './queue.js';
 import { loadAnalytics, type AnalyticsIssueSync } from './analytics.js';
+import { loadMetrics } from './metrics.js';
 
 export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController;
   /** A planner, or a choice made from the repository configuration that is current at each reconciliation. */
@@ -91,7 +92,7 @@ export async function reconcileBinding(binding: RuntimeBinding, options: Pick<Se
   await options.monitor?.observed(binding.repository, config, manager.lastSnapshot, report);
   await options.events?.observed(binding.repository, config, manager.lastSnapshot, manager.lastPreflightRefusals);
   options.queue?.observed(binding.repository, config, manager.settledSnapshot, report, manager.lastRejections, binding.merge?.progress());
-  await options.analytics?.observed(binding.repository.repository, manager.settledSnapshot);
+  await options.analytics?.observed(binding.repository.repository, manager.settledSnapshot, binding.merge?.progress());
   return report;
 }
 
@@ -124,6 +125,14 @@ export function runtimeServer(options: ServerOptions) {
         const query = new URL(request.url ?? '/', 'http://localhost').searchParams;
         if (query.get('repository') && !/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(query.get('repository')!)) { send(response, 400, { code: 'INVALID_REPOSITORY' }); return; }
         send(response, 200, await loadAnalytics(options.store, query)); return;
+      }
+      if (path === '/v1/metrics') {
+        // Read-only, like the analytics: lead time from intake to merge and flow metrics (software-factory-monitor's metrics page).
+        if (!(monitorToken && secureEqual(token, monitorToken)) && !secureEqual(token, options.managerToken)) { send(response, 401, { code: 'UNAUTHORIZED' }); return; }
+        if (request.method !== 'GET') throw new Error('METHOD');
+        const query = new URL(request.url ?? '/', 'http://localhost').searchParams;
+        if (query.get('repository') && !/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(query.get('repository')!)) { send(response, 400, { code: 'INVALID_REPOSITORY' }); return; }
+        send(response, 200, await loadMetrics(options.store, query)); return;
       }
       const worker = path.startsWith('/v1/worker/');
       if (!secureEqual(token, worker ? options.workerToken : options.managerToken)) { send(response, 401, { code: 'UNAUTHORIZED' }); return; }

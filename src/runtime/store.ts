@@ -72,6 +72,8 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
         repository text NOT NULL, issue_number integer NOT NULL, title text NOT NULL, state text NOT NULL, pr_number integer,
         merged_at timestamptz, merged_by text, updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(repository,issue_number));
       ALTER TABLE factory_analytics_calls ADD COLUMN IF NOT EXISTS price_source text;
+      ALTER TABLE factory_analytics_issues ADD COLUMN IF NOT EXISTS qualified_at timestamptz;
+      ALTER TABLE factory_analytics_issues ADD COLUMN IF NOT EXISTS handover_at timestamptz;
       ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS price_source text;
       ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS agent_estimate_usd double precision;
       CREATE TABLE IF NOT EXISTS factory_runtime_events (
@@ -107,16 +109,22 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
   }
   /** Title, state and merge of the issues the analytics name; written only when they changed. */
   async upsertAnalyticsIssues(repository: string, issues: AnalyticsIssue[]): Promise<void> {
-    for (const i of issues) await this.pool.query(`INSERT INTO factory_analytics_issues(repository,issue_number,title,state,pr_number,merged_at,merged_by) VALUES($1,$2,$3,$4,$5,$6,$7)
+    // Intake and handover keep the earliest instant ever seen: the timeline of a settled issue is no longer read, and the
+    // broker only learns of a handover while it runs (LEAST ignores NULL).
+    for (const i of issues) await this.pool.query(`INSERT INTO factory_analytics_issues(repository,issue_number,title,state,pr_number,merged_at,merged_by,qualified_at,handover_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
       ON CONFLICT (repository,issue_number) DO UPDATE SET title=EXCLUDED.title, state=EXCLUDED.state, pr_number=EXCLUDED.pr_number,
-        merged_at=EXCLUDED.merged_at, merged_by=EXCLUDED.merged_by, updated_at=now()`,
-      [repository, i.issueNumber, i.title, i.state, i.prNumber, i.mergedAt, i.mergedBy]);
+        merged_at=EXCLUDED.merged_at, merged_by=EXCLUDED.merged_by, qualified_at=LEAST(factory_analytics_issues.qualified_at, EXCLUDED.qualified_at),
+        handover_at=LEAST(factory_analytics_issues.handover_at, EXCLUDED.handover_at), updated_at=now()`,
+      [repository, i.issueNumber, i.title, i.state, i.prNumber, i.mergedAt, i.mergedBy, i.qualifiedAt ?? null, i.handoverAt ?? null]);
   }
   async analyticsIssues(): Promise<(AnalyticsIssue & { repository: string })[]> {
-    const { rows } = await this.pool.query<{ repository: string; issue_number: number; title: string; state: string; pr_number: number | null; merged_at: Date | null; merged_by: string | null }>(
-      'SELECT repository,issue_number,title,state,pr_number,merged_at,merged_by FROM factory_analytics_issues');
+    const { rows } = await this.pool.query<{ repository: string; issue_number: number; title: string; state: string; pr_number: number | null; merged_at: Date | null; merged_by: string | null;
+      qualified_at: Date | null; handover_at: Date | null }>(
+      'SELECT repository,issue_number,title,state,pr_number,merged_at,merged_by,qualified_at,handover_at FROM factory_analytics_issues');
     return rows.map(r => ({ repository: r.repository, issueNumber: r.issue_number, title: r.title, state: r.state === 'closed' ? 'closed' : 'open',
-      prNumber: r.pr_number, mergedAt: r.merged_at?.toISOString() ?? null, mergedBy: r.merged_by === 'human' ? 'human' : r.merged_by === 'factory' ? 'factory' : null }));
+      prNumber: r.pr_number, mergedAt: r.merged_at?.toISOString() ?? null, mergedBy: r.merged_by === 'human' ? 'human' : r.merged_by === 'factory' ? 'factory' : null,
+      qualifiedAt: r.qualified_at?.toISOString() ?? null, handoverAt: r.handover_at?.toISOString() ?? null }));
   }
   /**
    * Every priced model call since `since`: the coding runs (factory_runtime_usage, with the stored routing decision and
@@ -126,7 +134,7 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
   async analyticsCalls(since: Date): Promise<AnalyticsCall[]> {
     const { rows } = await this.pool.query<{ repository: string; step: string; issue_number: number | null; pr_number: number | null; execution_id: string | null;
       selection: string; router_choice: string | null; router_probability: number | null; agent: string; model: string; effort: string | null;
-      tokens: unknown; cost_usd: number | null; price_source: string | null; outcome: string | null; recorded_at: Date }>(`
+      tokens: unknown; cost_usd: number | null; price_source: string | null; outcome: string | null; recorded_at: Date; duration_ms: string | null }>(`
       SELECT u.repository, 'coding' AS step, u.issue_number, NULL::integer AS pr_number, u.execution_id,
         CASE WHEN jsonb_exists(r.snapshot->'admission'->'input'->'contextReferences', $2) THEN 'escalation'
           WHEN jsonb_typeof(e.receipt->'agent') = 'object' THEN 'router' ELSE 'configured' END AS selection,
@@ -134,19 +142,21 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
         CASE WHEN u.billing='subscription' THEN 'claude-subscription' ELSE u.record->>'worker' END AS agent,
         u.record->>'model' AS model, u.record->>'effort' AS effort, u.record->'tokens' AS tokens,
         -- A run on the Claude subscription is not billed: its estimate stays in the usage report, not in the cost.
-        CASE WHEN u.billing='subscription' THEN 0 ELSE u.cost_usd END AS cost_usd, u.price_source, u.record->>'outcome' AS outcome, u.recorded_at
+        CASE WHEN u.billing='subscription' THEN 0 ELSE u.cost_usd END AS cost_usd, u.price_source, u.record->>'outcome' AS outcome, u.recorded_at,
+        u.record->>'durationMs' AS duration_ms
       FROM factory_runtime_usage u
         LEFT JOIN factory_runtime_effects e ON e.repository_id=u.repository_id AND e.execution_id=u.execution_id AND e.effect='coding-route' AND e.phase='confirmed'
         LEFT JOIN factory_runtime_runs r ON r.repository_id=u.repository_id AND r.execution_id=u.execution_id
       WHERE u.recorded_at >= $1
       UNION ALL
       SELECT repository, step, issue_number, pr_number, NULL, selection, router_choice, router_probability, provider, model, effort, tokens,
-        cost_usd, price_source, outcome, recorded_at FROM factory_analytics_calls WHERE recorded_at >= $1
+        cost_usd, price_source, outcome, recorded_at, NULL FROM factory_analytics_calls WHERE recorded_at >= $1
       ORDER BY recorded_at LIMIT 50000`, [since, escalationMarker]);
     return rows.map(r => ({ repository: r.repository, step: r.step as AnalyticsCall['step'], issueNumber: r.issue_number, prNumber: r.pr_number, executionId: r.execution_id,
       selection: r.selection as AnalyticsCall['selection'], routerChoice: r.router_choice, routerProbability: r.router_probability,
       agent: r.agent, model: r.model, effort: r.effort, tokens: tokensOf(r.tokens), costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
-      priceSource: r.price_source, outcome: r.outcome, at: r.recorded_at.toISOString() }));
+      priceSource: r.price_source, outcome: r.outcome, at: r.recorded_at.toISOString(),
+      durationMs: r.duration_ms !== null && Number.isFinite(Number(r.duration_ms)) ? Number(r.duration_ms) : null }));
   }
   /** Token usage of coding runs (UsageAlerts): stored once per execution. */
   async recordUsage(entry: UsageEntry): Promise<boolean> {
