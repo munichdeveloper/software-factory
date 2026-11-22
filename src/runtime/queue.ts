@@ -71,6 +71,19 @@ export interface QueueRepository {
   failure: { reason: string; at: string } | null;
   slots: { active: number; max: number } | null;
   entries: QueueEntry[];
+  /**
+   * Pull requests the merge pass worked on recently that belong to no entry: chiefly pull requests a person or another
+   * agent opened and handed over with the adopt label (merge.adoptLabel, sf:automerge). Newest progress first.
+   */
+  pullRequests: QueuePullRequest[];
+}
+/** A pull request without a managed task in the view, with the step the merge pass last left it at. */
+export interface QueuePullRequest {
+  number: number; url: string;
+  /** From the reconciliation's own pull request list, where it holds the pull request. */
+  title: string | null;
+  state: 'open' | 'closed' | null; mergedAt: string | null;
+  merge: MergeProgress;
 }
 /**
  * When the schedule reconciles next (software-factory#197). A pass reconciles the repositories one after another and the
@@ -154,6 +167,19 @@ export function queueEntries(snapshot: Snapshot, config: Config, report: RunRepo
       || a.since.localeCompare(b.since) || a.issueNumber - b.issueNumber);
 }
 
+/** Merge progress of pull requests no entry shows (adopted pull requests), newest first, at most 50. */
+export function otherPullRequests(entries: QueueEntry[], snapshot: Snapshot, repository: string,
+  merges: ReadonlyMap<number, MergeProgress> = new Map()): QueuePullRequest[] {
+  const shown = new Set(entries.flatMap(e => [...e.pullRequests.map(pullNumber), ...(e.merge ? [e.merge.pullRequest] : [])]));
+  // The Factory's own branches (sf/issue-<n>/…) belong to their task, also an earlier attempt's pull request.
+  const factory = new Set(snapshot.prs.filter(p => /^sf\/issue-\d+\//.test(p.headRefName ?? '')).map(p => p.number));
+  return [...merges.values()].filter(m => !shown.has(m.pullRequest) && !factory.has(m.pullRequest)).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 50).map(merge => {
+    const pr = snapshot.prs.find(p => p.number === merge.pullRequest);
+    return { number: merge.pullRequest, url: `https://github.com/${repository}/pull/${merge.pullRequest}`, title: pr?.title?.slice(0, 300) ?? null,
+      state: pr?.state ?? null, mergedAt: pr?.mergedAt ?? null, merge };
+  });
+}
+
 /** Keeps the last queue view of every repository in memory. */
 export class QueueBoard {
   private repositories = new Map<number, QueueRepository>();
@@ -161,7 +187,7 @@ export class QueueBoard {
   constructor(private now: () => Date = () => new Date(), private reconcileIntervalSeconds: number | null = null) {}
   private current(target: Target): QueueRepository {
     return this.repositories.get(target.repositoryId) ?? { repositoryId: target.repositoryId, repository: target.repository, observedAt: null,
-      outcome: null, failure: null, slots: null, entries: [] };
+      outcome: null, failure: null, slots: null, entries: [], pullRequests: [] };
   }
   /** After a reconciliation that completed. Never throws: the queue view must not fail a reconciliation. */
   observed(target: Target, config: Config, snapshot: Snapshot | undefined, report: RunReport, rejections?: ReadonlyMap<number, string>,
@@ -171,7 +197,8 @@ export class QueueBoard {
       const entries = snapshot ? queueEntries(snapshot, config, report, target.repository, rejections, now, merges) : [];
       const active = snapshot ? reconstruct(snapshot, config, now).reduce((n, t) => n + t.executions.filter(e => e.active).length, 0) : 0;
       this.repositories.set(target.repositoryId, { repositoryId: target.repositoryId, repository: target.repository, observedAt: now.toISOString(),
-        outcome: report.outcome, failure: null, slots: snapshot ? { active, max: config.execution.maxParallelWorkers } : null, entries });
+        outcome: report.outcome, failure: null, slots: snapshot ? { active, max: config.execution.maxParallelWorkers } : null, entries,
+        pullRequests: snapshot ? otherPullRequests(entries, snapshot, target.repository, merges) : [] });
     } catch { this.failed(target, 'QUEUE_VIEW_FAILED'); }
   }
   /** After a reconciliation that failed: the last view stays, marked with the fixed reason. */
