@@ -1,6 +1,6 @@
 ---
 name: software-factory
-description: Work with Johannes' Software Factory (SF): write issues the Factory picks up, check and judge the state of runs and the job queue, and step in when runs hang, fail or wait. Use for any SF ticket, queue, run, merge or rollout question in the Factory or target repos.
+description: "Work with Johannes' Software Factory (SF): write issues the Factory picks up, check and judge the state of runs and the job queue, and step in when runs hang, fail or wait. Use for any SF ticket, queue, run, merge or rollout question in the Factory or target repos."
 ---
 
 # Software Factory: tickets, state, intervention
