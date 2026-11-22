@@ -115,6 +115,18 @@ describe('RouterAlerts', () => {
     expect(scoreLine(null)).toBeUndefined();
     expect(scoreLine(Object.fromEntries(Array.from({ length: 22 }, (_, i) => [`o${i}`, 0.01 * (22 - i)])))).toMatch(/, und 2 weitere$/);
   });
+  it('names the pull request or issue with its link (Johannes, 2026-11-22)', async () => {
+    const posts: string[] = [];
+    const alerts = new RouterAlerts({ post: async (_channel, text) => { posts.push(text); } }, 'C123');
+    const decided: RouteRecord = { used: true, purpose: 'review', choice: 'strong', confidence: 0.72, model: 'typesafe/jev-1.14' };
+    await alerts.observe('owner/repo', decided, undefined, null, { kind: 'pull', number: 42 });
+    await alerts.observe('owner/repo', { ...decided, purpose: 'coding' }, undefined, null, { kind: 'issue', number: 7 });
+    await alerts.observe('owner/repo', skipped, undefined, null, { kind: 'issue', number: 8 });
+    expect(posts[0]).toBe('SF Model Router: Jev hat für Merge-Review in owner/repo PR #42 `strong` gewählt, mit 72 % Wahrscheinlichkeit.\nhttps://github.com/owner/repo/pull/42');
+    expect(posts[1]).toContain('Coding in owner/repo Issue #7 `strong` gewählt');
+    expect(posts[1]).toContain('\nhttps://github.com/owner/repo/issues/7');
+    expect(posts[2]).toContain('Coding in owner/repo Issue #8 lief ohne Router, direkt mit den konfigurierten Modellen.\nhttps://github.com/owner/repo/issues/8\n');
+  });
   it('passes the chosen candidate from Routing to the alerts', async () => {
     const posts: string[] = [];
     const routing = new Routing(new ModelRouter('key', answering({ answers: { route: { choice: 'strong', confidence: 0.9 } } })),

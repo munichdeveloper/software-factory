@@ -73167,7 +73167,7 @@ Gepr\xFCfter Head: \`${f.head}\`.`
         let reviewNote = "", riskNote = "";
         const configuredAssessor = this.options.assessor;
         const assessor = configuredAssessor && { assess: async (i) => {
-          const assessed = await configuredAssessor.assess(i);
+          const assessed = await configuredAssessor.assess({ ...i, pullRequest: number4 });
           riskNote = routeNoteDe(routeOutcome(assessed));
           return assessed;
         } };
