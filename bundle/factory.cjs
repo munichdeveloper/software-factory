@@ -73017,7 +73017,7 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
   /** Reads a pull request without the Factory's own check run: it shows the merge pass and must never gate it (issue #208). */
   async read(number4) {
     const f = await this.api.facts(number4);
-    const own2 = f.checks.some((c) => c.name === checkRunName);
+    const own2 = f.checks.some((c) => c.name === checkRunName) || this.config.merge.checkRun !== false && !!this.options.checkRuns?.has?.(f.head);
     f.checks = f.checks.filter((c) => c.name !== checkRunName);
     if (own2 && f.mergeState === "UNSTABLE" && f.checks.every((c) => passingStates.has(c.state))) f.mergeState = "CLEAN";
     this.heads.set(number4, f.head);

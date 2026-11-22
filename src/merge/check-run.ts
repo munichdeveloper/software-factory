@@ -8,7 +8,11 @@ import type { MergeStep } from '../runtime/merge.js';
  */
 export const checkRunName = 'Software Factory / Merge';
 export interface CheckRunView { status: 'in_progress' | 'completed'; conclusion?: 'success' | 'neutral' | 'action_required'; title: string; summary: string }
-export interface MergeCheckRuns { show(pullRequest: number, head: string, view: CheckRunView): void }
+export interface MergeCheckRuns {
+  show(pullRequest: number, head: string, view: CheckRunView): void;
+  /** Whether the Factory has set its own check run on this head, whatever the token reading the checks can see. */
+  has?(head: string): boolean;
+}
 
 const views: Record<MergeStep, { status: CheckRunView['status']; conclusion?: CheckRunView['conclusion']; title: string; summary: string }> = {
   checks: { status: 'in_progress', title: 'Wartet auf Pflichtprüfungen', summary: 'Die Factory prüft den PR, sobald die Pflichtprüfungen für diesen Stand grün sind.' },
@@ -53,6 +57,7 @@ export class GitHubCheckRuns implements MergeCheckRuns {
     const [owner, repo] = repository.split('/') as [string, string];
     this.target = { owner, repo };
   }
+  has(head: string) { return this.written.has(head); }
   get disabled() { return this.now() < this.pausedUntil; }
   show(pullRequest: number, head: string, view: CheckRunView) {
     if (this.disabled) return;
