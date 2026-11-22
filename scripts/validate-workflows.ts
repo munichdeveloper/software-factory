@@ -1,9 +1,9 @@
 import { readFile, readdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { parseDocument } from 'yaml';
-const managerTemplates = ['templates/factory-manager.yml', 'templates/factory-manager-coding.yml'];
+const managerTemplates = ['templates/factory-manager.yml'];
 const RUNNER = "${{ vars.SF_RUNNER || 'ubuntu-latest' }}";
-const runnerSwitched = [...managerTemplates, 'templates/factory-deploy.yml', '.github/workflows/coding-worker.yml',
+const runnerSwitched = [...managerTemplates, 'templates/factory-deploy.yml',
   '.github/workflows/temporal-coding-executor.yml', '.github/workflows/temporal-artifact-validator.yml'];
 for (const path of [...(await readdir('.github/workflows')).map(f => `.github/workflows/${f}`), ...managerTemplates, 'templates/factory-deploy.yml']) {
   const doc = parseDocument(await readFile(path, 'utf8'), { uniqueKeys: true });
@@ -36,7 +36,7 @@ for (const path of [...(await readdir('.github/workflows')).map(f => `.github/wo
   }
   // GitHub drops a job output it takes for a secret, so a coding request quoting `Authorization: Bearer <key>` reached the
   // next job empty (#182). The request travels as the artifact coding-request-<executionId>, never as a job output.
-  if (['.github/workflows/coding-worker.yml', '.github/workflows/temporal-coding-executor.yml'].includes(path)) {
+  if (path === '.github/workflows/temporal-coding-executor.yml') {
     for (const [name, job] of Object.entries(workflow.jobs) as [string, { outputs?: Record<string, string> }][]) {
       assert(!Object.keys(job.outputs ?? {}).includes('request'), `${path}: job ${name} must not pass the coding request as a job output`);
     }

@@ -40,7 +40,10 @@ export function installationContract(templates: Record<string, string>, factoryV
   harness: InstallationContract['harness'], overrides: Partial<InstallOptions> = {}): InstallationContract {
   const variants: InstallationContract['variants'] = {};
   for (const coding of [false, true]) for (const manager of [false, true]) for (const deploy of [false, true]) {
-    const name = `${manager ? (coding ? 'coding' : 'manager') : (coding ? 'coding-config' : 'config')}${deploy ? '-deploy' : ''}`;
+    // Coding through the GitHub Actions manager (variants coding, coding-deploy) is gone since 0.27.0: coding runs only
+    // in the Temporal runtime (variant temporal).
+    if (coding && manager) continue;
+    const name = `${manager ? 'manager' : (coding ? 'coding-config' : 'config')}${deploy ? '-deploy' : ''}`;
     const options: InstallOptions = { deployTrigger: 'checks', deployAfter: ['Test'], deployEnvironment: 'production',
       deployPath: '/opt/app', ...overrides, ref: 'f'.repeat(40), harnessRef: harness.ref, deploy };
     variants[name] = { coding, manager, deploy, files: Object.fromEntries(installFiles(coding, manager, deploy).map(([source, path]) => {
@@ -63,9 +66,10 @@ export function planInstallation(contract: InstallationContract, variant: string
 
 /** Template → destination pairs for an installation. */
 export function installFiles(coding: boolean, manager: boolean, deploy: boolean): [string, string][] {
+  if (coding && manager) throw new Error('Coding runs only in the Temporal runtime; install it with --no-manager or through the SF Manager');
   return [
     [coding ? 'software-factory-coding.yml' : 'software-factory.yml', '.github/software-factory.yml'],
-    ...(manager ? [[coding ? 'factory-manager-coding.yml' : 'factory-manager.yml', '.github/workflows/factory-manager.yml'] as [string, string]] : []),
+    ...(manager ? [['factory-manager.yml', '.github/workflows/factory-manager.yml'] as [string, string]] : []),
     ...(deploy ? [['factory-deploy.yml', '.github/workflows/factory-deploy.yml'] as [string, string]] : [])
   ];
 }
