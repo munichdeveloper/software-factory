@@ -430,7 +430,7 @@ describe('deploy.ignorePaths', () => {
   });
   it('accepts only relative globs', () => {
     const parse = (ignorePaths: unknown) => configSchema.safeParse({ version: 1, factory: { scope: 'x' }, deploy: { ignorePaths } });
-    expect(configSchema.parse({ version: 1, factory: { scope: 'x' } }).deploy.ignorePaths).toEqual([]);
+    expect(configSchema.parse({ version: 1, factory: { scope: 'x' } }).deploy).not.toHaveProperty('ignorePaths');
     expect(parse(['docs/**', '**/*.md']).success).toBe(true);
     expect(parse(['/etc/**']).success).toBe(false);
     expect(parse(['../x']).success).toBe(false);

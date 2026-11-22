@@ -923,7 +923,6 @@
           "type": "boolean"
         },
         "ignorePaths": {
-          "default": [],
           "maxItems": 30,
           "type": "array",
           "items": {

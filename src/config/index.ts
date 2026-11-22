@@ -286,8 +286,9 @@ export const configSchema = z.strictObject({
     githubDeployment: z.boolean().default(false),
     // Paths whose changes need no deployment (software-factory#235), e.g. docs/** or .claude/**. When every file changed
     // since the release active on the host matches one of them, the deployment and its verify script are skipped.
-    // A workflow_dispatch always deploys. Empty: every planned deployment runs.
-    ignorePaths: z.array(globPattern).max(30).default([]),
+    // A workflow_dispatch always deploys. Absent or empty: every planned deployment runs. No default: the config hash is in
+    // every run snapshot, and a new default would turn runs in flight during the broker deploy STALE_SNAPSHOT.
+    ignorePaths: z.array(globPattern).max(30).optional(),
     // Application secrets from the deploy environment's GitHub secrets: variable name -> secret name. The SF Manager
     // writes them into the wrapper's deploy-env (NAME=${{ secrets.SECRET }}); the values never enter this file.
     // The deployment's own credentials (DEPLOY_*) and GitHub's reserved names cannot be passed on.

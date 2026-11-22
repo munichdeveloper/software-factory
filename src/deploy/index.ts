@@ -122,7 +122,7 @@ export function archive(sourceDir: string) {
  */
 export async function irrelevantChange(config: Config, sha: string, event: string, transport: Transport, port: DeployPort,
   log: (line: string) => void = () => {}): Promise<{ skip: false } | { skip: true; current: string }> {
-  const patterns = config.deploy.ignorePaths.map(globToRegExp);
+  const patterns = (config.deploy.ignorePaths ?? []).map(globToRegExp);
   if (!patterns.length || event === 'workflow_dispatch') return { skip: false };
   try {
     const result = await transport.run(currentReleaseScript, [config.deploy.path], undefined, 60000);
