@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { mkdtemp, writeFile, readFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, basename, resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -95,4 +95,25 @@ it('does not pass a Maven project whose tests fail or that has no POM, and keeps
   expect(() => bindValidation(forged, f.artifact, plan, 24)).toThrow('INCONSISTENT_VALIDATION_REPORT');
   expect(() => validationPlanSchema.parse({ profile: 'npm', javaVersion: '21' })).toThrow();
   expect(() => validationPlanSchema.parse({ profile: 'maven', javaVersion: '11' })).toThrow();
+});
+const generatedPlan = () => validationPlanSchema.parse({ generated: [{ command: 'npm run bundle', paths: ['bundle'] }] });
+it('fails a plan whose generated files differ after regeneration, restores them and names command and paths', async () => {
+  const f = await fixture(); await materializeCodingArtifact(f.root, f.artifact, f.request); const notes: string[] = [];
+  const report = await runCodingValidation({ target: f.root, artifact: f.artifact, plan: generatedPlan(), workflowRunId: 12, hosted: false, note: async (_n, text) => { notes.push(text); },
+    command: async (name, args) => { if (name === 'generated') { expect(args).toEqual(['npm', 'run', 'bundle']); await mkdir(join(f.root, 'bundle'), { recursive: true }); await writeFile(join(f.root, 'bundle/factory.cjs'), 'new'); } return 0; } });
+  expect(report.status).toBe('failed'); expect(report.reason).toBe('CHECK_FAILED'); expect(report.checks.find(c => c.name === 'generated')?.status).toBe('failed');
+  expect(notes.join()).toContain('generated files out of date: run `npm run bundle`'); expect(notes.join()).toContain('bundle/factory.cjs');
+  await expect(readFile(join(f.root, 'bundle/factory.cjs'), 'utf8')).rejects.toThrow();
+});
+it('passes the generated check when the command leaves its paths unchanged', async () => {
+  const f = await fixture(); await materializeCodingArtifact(f.root, f.artifact, f.request); const plan = generatedPlan(); const calls: string[] = [];
+  const report = await runCodingValidation({ target: f.root, artifact: f.artifact, plan, workflowRunId: 12, hosted: false, command: async name => { calls.push(name); return 0; } });
+  expect(report.status).toBe('passed'); expect(calls).toEqual(['install', 'test', 'build', 'generated']);
+  expect(bindValidation(report, f.artifact, plan, 12)).toEqual(report);
+});
+it('keeps plans without generated unchanged and rejects invalid generated entries', () => {
+  expect(JSON.stringify(validationPlanSchema.parse({}))).not.toContain('generated');
+  for (const entry of [{ command: 'npm run bundle; rm -rf /', paths: ['bundle'] }, { command: 'npm run $(x)', paths: ['bundle'] }, { command: 'npm run bundle', paths: ['/etc'] },
+    { command: 'npm run bundle', paths: ['../x'] }, { command: 'npm run bundle', paths: ['a/../b'] }, { command: 'npm run bundle', paths: [] }]) expect(() => validationPlanSchema.parse({ generated: [entry] })).toThrow();
+  expect(() => validationPlanSchema.parse({ generated: Array(4).fill({ command: 'npm run bundle', paths: ['bundle'] }) })).toThrow();
 });
