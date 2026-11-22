@@ -113,6 +113,56 @@ start now). Optional priority: `harness:priority-high|normal|low` (planner order
   write access removes `harness:managed` (and ready) until a maintainer re-applies it.
 - Follow repo rules (e.g. letterflow: `BOS:` line, invented test data only, no real leads/addresses in a public repo).
 
+### Model recommendation (informative only)
+
+For every issue you create, also give your own estimate of which coding model should implement it. It has no effect
+on the Factory yet: it is recorded so we can later evaluate whether Jev (the model router) follows it, what it picked
+instead, and how the run turned out.
+
+- Post it as a **separate issue comment** right after creating the issue, never in the issue body. The body is the
+  task text that Jev reads when it picks the model; a recommendation there would bias the very choice we want to
+  compare against. A comment by a writer that contains no `/harness …` command and no Factory marker is ignored by
+  the Factory.
+- Pick one candidate id from the repo's router matrix (`router.coding.candidates` in `.github/software-factory.yml`),
+  so it compares 1:1 with the `**Model:**` line of the Factory status comment (`chosen by the model router (Jev):
+  \`<id>\``). As of 2026-11-22 the matrix in the router repos is:
+
+  | id | when |
+  |---|---|
+  | `haiku-low` | Trivial edits: typos, texts, config values, one-line fix with an obvious place |
+  | `haiku-medium` | Small, fully specified change in 1–2 files following an existing pattern |
+  | `haiku-high` | Small change in one area needing some care (simple test, small UI tweak) |
+  | `sonnet-low` | Routine contained change, clear criteria, little reasoning |
+  | `sonnet-medium` | Clearly specified contained change in one area: bug fix, small feature, texts, tests |
+  | `sonnet-high` | Medium feature across a few files, or a bug whose cause must still be found |
+  | `opus-low` | Broad but well-understood change where judgement matters more than deep reasoning |
+  | `opus-medium` | Changes across several modules or non-trivial feature with design decisions |
+  | `opus-high` | New architecture, migrations, security, concurrency, hard cross-module debugging |
+  | `codex-medium` | Mechanical change across many files with a clear rule (renames, API updates) |
+  | `codex-high` | Mostly mechanical but wide refactorings/renames across many files |
+
+  Repos without a router block (e.g. letterflow as of 2026-11-22) still get a recommendation with the same ids.
+- Recommend the cheapest candidate you expect to succeed on the **first** attempt. Judge from the issue text and the
+  code you looked at, not from the repo's configured default.
+- Use exactly this format (the first line is the parse marker; keep keys and order, one value per line):
+
+```markdown
+<!-- sf-model-recommendation v1 -->
+**Modell-Empfehlung (informativ, ohne Wirkung auf die Factory)**
+
+- candidate: sonnet-medium
+- model: claude-sonnet-5-5
+- reasoningEffort: medium
+- confidence: high | medium | low
+- size: xs | s | m | l
+- reason: <one sentence: what makes this task easy or hard>
+- by: claude, <YYYY-MM-DD>
+```
+
+- If the issue text is revised later in a way that changes the difficulty, post a new comment with the same format;
+  the latest one before the first run counts.
+- Tell Johannes the recommendation in one line together with the issue link.
+
 ### After creating
 
 Check within a reconcile cycle (webhook nudges usually seconds; safety poll 900 s) that the Factory posted its status
