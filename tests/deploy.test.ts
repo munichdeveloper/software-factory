@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { configSchema, loadConfig, type Config } from '../src/config/index.js';
-import { executeDeploy, missingDeploySecrets, parseDeployEnvironment, planDeploy, readEvent, renderDeployEnvironment, deploySummary, type DeployEvent } from '../src/deploy/index.js';
+import { executeDeploy, irrelevantChange, missingDeploySecrets, parseDeployEnvironment, planDeploy, readEvent, renderDeployEnvironment, deploySummary, type DeployEvent } from '../src/deploy/index.js';
 import type { CheckRun, DeployPort, DeploymentState } from '../src/deploy/github.js';
 import { bashCommand, remoteValue, shellQuote } from '../src/deploy/remote.js';
 import { runProcess, SshTransport, type Transport } from '../src/deploy/transport.js';
@@ -24,6 +24,9 @@ class FakePort implements DeployPort {
   async workflowRuns() { return this.runs; }
   async createDeployment(sha: string, environment: string) { this.created.push({ sha, environment }); return 7; }
   async setDeploymentStatus(id: number, state: DeploymentState, description: string) { this.statuses.push({ id, state, description }); }
+  changed: string[] | null = [];
+  compared: [string, string][] = [];
+  async changedFiles(base: string, head: string) { this.compared.push([base, head]); return this.changed; }
 }
 const run = (name: string, conclusion: string | null, status = 'completed', createdAt = '2026-11-07T10:00:00Z'): CheckRun =>
   ({ name, event: 'push', status, conclusion, createdAt });
@@ -377,5 +380,59 @@ describe('deploy.secrets', () => {
     const environment = parseDeployEnvironment('A=1\nB=\n');
     expect(missingDeploySecrets({ A: 'SA', B: 'SB', C: 'SC' }, environment)).toEqual(['C']);
     expect(missingDeploySecrets({}, environment)).toEqual([]);
+  });
+});
+
+describe('deploy.ignorePaths', () => {
+  const ACTIVE = 'c'.repeat(40);
+  let root: string;
+  beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sf-ignore-test-')); });
+  afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+  const activate = async (sha: string) => {
+    await mkdir(join(root, 'releases', sha), { recursive: true });
+    execFileSync('ln', ['-sfn', join(root, 'releases', sha), join(root, 'current')]);
+  };
+  const cfg = (ignorePaths = ['.claude/**', 'docs/**', 'README.md', '**/*.md']) => config({ path: root, ignorePaths });
+  const check = (port: FakePort, options: { event?: string; ignore?: string[]; sha?: string } = {}) =>
+    irrelevantChange(cfg(options.ignore), options.sha ?? HEAD, options.event ?? 'workflow_run', new LocalTransport({ PATH: process.env.PATH }), port);
+
+  it('skips when every file changed since the active release is ignored', async () => {
+    await activate(ACTIVE);
+    const port = new FakePort();
+    port.changed = ['.claude/skills/software-factory/SKILL.md', 'docs/deploy.md', 'operations/runner/README.md'];
+    expect(await check(port)).toEqual({ skip: true, current: ACTIVE });
+    expect(port.compared).toEqual([[ACTIVE, HEAD]]);
+  });
+  it('deploys when a relevant file changed since the active release, even if the last commit was documentation only', async () => {
+    await activate(ACTIVE);
+    const port = new FakePort();
+    port.changed = ['src/deploy/index.ts', 'docs/deploy.md'];
+    expect(await check(port)).toEqual({ skip: false });
+  });
+  it('deploys whenever the answer is uncertain', async () => {
+    const port = new FakePort();
+    port.changed = ['docs/a.md'];
+    expect(await check(port)).toEqual({ skip: false }); // no active release
+    await activate('not-a-commit');
+    expect(await check(port)).toEqual({ skip: false });
+    await activate(ACTIVE);
+    expect(await check(port, { sha: ACTIVE })).toEqual({ skip: false }); // re-run of the active commit
+    expect(await check(port, { event: 'workflow_dispatch' })).toEqual({ skip: false });
+    expect(await check(port, { ignore: [] })).toEqual({ skip: false });
+    port.changed = null;
+    expect(await check(port)).toEqual({ skip: false }); // not strictly ahead or incomplete
+    port.changed = [];
+    expect(await check(port)).toEqual({ skip: false });
+    port.changedFiles = async () => { throw new Error('rate limited'); };
+    const lines: string[] = [];
+    expect(await irrelevantChange(cfg(), HEAD, 'push', new LocalTransport({ PATH: process.env.PATH }), port, line => lines.push(line))).toEqual({ skip: false });
+    expect(lines.join('\n')).toContain('rate limited');
+  });
+  it('accepts only relative globs', () => {
+    const parse = (ignorePaths: unknown) => configSchema.safeParse({ version: 1, factory: { scope: 'x' }, deploy: { ignorePaths } });
+    expect(configSchema.parse({ version: 1, factory: { scope: 'x' } }).deploy.ignorePaths).toEqual([]);
+    expect(parse(['docs/**', '**/*.md']).success).toBe(true);
+    expect(parse(['/etc/**']).success).toBe(false);
+    expect(parse(['../x']).success).toBe(false);
   });
 });

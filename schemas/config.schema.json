@@ -922,6 +922,17 @@
           "default": false,
           "type": "boolean"
         },
+        "ignorePaths": {
+          "default": [],
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._\\-*?/]+$"
+          }
+        },
         "secrets": {
           "default": {},
           "type": "object",

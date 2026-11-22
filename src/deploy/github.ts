@@ -7,6 +7,8 @@ export interface DeployPort {
   workflowRuns(sha: string): Promise<CheckRun[]>;
   createDeployment(sha: string, environment: string, description: string): Promise<number>;
   setDeploymentStatus(id: number, state: DeploymentState, description: string, logUrl?: string): Promise<void>;
+  /** Files changed from `base` to `head`, or null when `head` is not strictly ahead of `base` or the list is incomplete. */
+  changedFiles(base: string, head: string): Promise<string[] | null>;
 }
 
 export class GitHubDeployPort implements DeployPort {
@@ -33,6 +35,17 @@ export class GitHubDeployPort implements DeployPort {
       auto_merge: false, required_contexts: [], production_environment: environment === 'production' });
     if (!('id' in data)) throw new Error('Deployment record was not created');
     return data.id;
+  }
+  async changedFiles(base: string, head: string) {
+    const files: string[] = [];
+    for (let page = 1; page <= 30; page++) {
+      const { data } = await this.api.repos.compareCommitsWithBasehead({ ...this.target, basehead: `${base}...${head}`, per_page: 100, page });
+      if (data.status !== 'ahead') return null;
+      const batch = data.files ?? [];
+      for (const file of batch) files.push(file.filename, ...(file.previous_filename ? [file.previous_filename] : []));
+      if (batch.length < 100) return files;
+    }
+    return null;
   }
   async setDeploymentStatus(id: number, state: DeploymentState, description: string, logUrl?: string) {
     await this.api.repos.createDeploymentStatus({ ...this.target, deployment_id: id, state,
