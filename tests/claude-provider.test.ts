@@ -15,7 +15,7 @@ const failing = (code: string): Planner => ({ plan: vi.fn(async () => { throw Ob
 describe('Claude structured calls', () => {
   it('maps the configuration onto Claude and reads models from the broker environment', () => {
     expect(claudeEffort(null)).toBeUndefined(); expect(claudeEffort('minimal')).toBe('low'); expect(claudeEffort('xhigh')).toBe('xhigh');
-    expect(claudeModels({})).toEqual({ planner: 'claude-opus-5-5', review: 'claude-opus-5-5', risk: 'claude-opus-5-5' });
+    expect(claudeModels({})).toEqual({ planner: 'claude-opus-5-5', review: 'claude-opus-5-5', risk: 'claude-haiku-5-5', riskSplit: 'claude-opus-5-5' });
     expect(claudeModels({ FACTORY_CLAUDE_PLANNER_MODEL: 'claude-haiku-5-5' }).planner).toBe('claude-haiku-5-5');
   });
   it('returns the parsed output and turns refusals, cut-off and invalid answers into fixed codes', async () => {

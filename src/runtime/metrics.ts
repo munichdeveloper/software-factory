@@ -1,4 +1,5 @@
 import { analyticsLookbackDays, weekOf, type AnalyticsCall, type AnalyticsIssue, type AnalyticsStore } from './analytics.js';
+import { routerEvaluation, type RouterEvaluation } from './router-eval.js';
 
 /**
  * Lead-time and flow metrics for software-factory-monitor's metrics page (Johannes, 2026-11-21). The lead time of an
@@ -60,6 +61,8 @@ export interface MetricsView {
   weekly: { week: string; merged: number; mergedByFactory: number; leadMedianMs: number | null }[];
   repositoryRows: MetricsRepository[];
   items: MetricsItem[];
+  /** Jev's model choice against the outcome (router evaluation); set by loadMetrics. */
+  router?: RouterEvaluation;
 }
 
 const key = (repository: string, issue: number) => `${repository.toLowerCase()}#${issue}`;
@@ -157,5 +160,8 @@ export async function loadMetrics(store: AnalyticsStore, query: URLSearchParams,
   if (repository && !/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(repository)) throw new Error('INVALID_REPOSITORY');
   const from = new Date(now.getTime() - days * 86400000);
   const calls = await store.analyticsCalls(new Date(from.getTime() - analyticsLookbackDays * 86400000));
-  return metricsView(calls, await store.analyticsIssues(), { from, to: new Date(now.getTime() + 1), repository: repository || null, now });
+  const issues = await store.analyticsIssues(), to = new Date(now.getTime() + 1);
+  const verdicts = store.analyticsVerdicts ? await store.analyticsVerdicts(from) : [];
+  return { ...metricsView(calls, issues, { from, to, repository: repository || null, now }),
+    router: routerEvaluation(calls, issues, verdicts, { from, to, repository: repository || null }) };
 }

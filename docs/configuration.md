@@ -267,26 +267,14 @@ next message counts the cases in between. Issue and pull request text reaches Je
 at worst it picks another of the configured candidates. `router` is optional without a default: a configuration without
 it keeps its hash.
 
-### Merge risk assessed by Jev (`router.risk`, since 0.24.0)
+### Merge risk: Haiku, not Jev (`router.risk` ignored since 2026-11-22)
 
-```yaml
-router:
-  risk:
-    certainty: 0.8              # optional, default 0.8
-```
-
-For the merge risk Jev is not asked which model should assess, but for the risk class itself (Johannes, 2026-11-21):
-one choice question with the options `low`, `medium`, `high` and `critical`, the classes and rules of the model assessor
-(content over size; authentication, permissions and money at least `high`; when unsure the higher class). Jev reads the
-size, `merge.risk.guidance` and the touched areas as trusted constraints, then the file list and as much of every patch
-as fits the router's state limit (8000 characters), shared evenly between the files; the patches are untrusted data.
-From Jev's probabilities the Factory takes the lowest class Jev is at least `certainty` sure the risk does not exceed,
-so a split answer leans to the higher class (low 55 %, medium 30 %, high 15 % gives `medium` at 0.8). The deterministic
-rules stay on top: built-in critical paths, configured areas and the size limits of `merge.risk`. Without a usable
-answer (no key, Jev unreachable or invalid, no probabilities and a choice below `certainty`) the configured assessor
-(`merge.risk.assessor`, Claude first, OpenAI second) assesses as before. The risk comment says who assessed
-(`Bewertung: Jev (…) hat die Risikoklasse direkt bestimmt.` or `Bewertung: ohne Jev (…)`). `router.risk.candidates` from
-older configurations are still accepted but choose nothing; `router.risk` without `candidates` is enough.
+From 0.24.0 to 0.25.0 Jev assessed the merge risk class himself when `router.risk` was set. Since the broker of 2026-11-22 (Johannes,
+2026-11-22: Jev out as the sole risk classifier, a fixed Haiku instead) the configured assessor chain classifies every
+pull request: Claude first with `FACTORY_CLAUDE_RISK_MODEL` (default `claude-haiku-5-5`, effort from
+`merge.risk.assessor.reasoningEffort`), OpenAI (`merge.risk.assessor`) second. Neither Jev nor the router takes part.
+`router.risk` (with `certainty` or old `candidates`) is still accepted so configurations keep their hash, but it changes
+nothing and can be removed.
 
 ## Jev planner
 

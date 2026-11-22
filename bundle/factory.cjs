@@ -64965,6 +64965,15 @@ function recordLlmCall(provider, model2, effort2, tokens, outcome = "success") {
   } catch {
   }
 }
+function recordLlmVerdict(step, decision, rejected) {
+  try {
+    const context2 = storage.getStore();
+    if (!sink?.recordLlmVerdict || !context2?.repository) return;
+    const record2 = { repository: context2.repository, step, prNumber: context2.prNumber ?? null, issueNumber: context2.issueNumber ?? null, decision, rejected };
+    void sink.recordLlmVerdict(record2).catch(() => console.warn(JSON.stringify({ event: "factory-analytics", code: "VERDICT_NOT_RECORDED", step })));
+  } catch {
+  }
+}
 function openaiTokens(body) {
   const usage = body?.usage;
   if (!usage || typeof usage.input_tokens !== "number" || typeof usage.output_tokens !== "number") return null;
@@ -73185,7 +73194,9 @@ Gepr\xFCfter Head: \`${f.head}\`.`
             reviews.push(parsed);
             if (rejects(parsed)) break;
           }
-          return parts.length > 1 ? mergeReviewSchema.parse(combineReviews(reviews, parts.length)) : reviews[0];
+          const result = parts.length > 1 ? mergeReviewSchema.parse(combineReviews(reviews, parts.length)) : reviews[0];
+          recordLlmVerdict("review", result.decision, rejects(result));
+          return result;
         })();
         const assessing = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === "merge_risk" ? Promise.resolve(cachedRisk.data.risk) : load().then(
           (input2) => plan().then((parts) => parts.map((p) => p.changes), () => [input2.changes]).then((parts) => classifyRisk(input2.changes, risk, assessor, parts)),
