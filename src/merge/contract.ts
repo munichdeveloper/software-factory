@@ -19,9 +19,10 @@ export interface MergeFacts {
 }
 /**
  * One changed file. `contentScope` 'excerpt': the file alone exceeds a review part, so `content` holds the lines around
- * every hunk (see merge/parts.ts) instead of the whole file; every changed line is still included.
+ * every hunk (see merge/parts.ts) instead of the whole file; every changed line is still included. 'lockfile': a generated
+ * npm lockfile; `patch` lists the packages it adds, changes and removes (merge/lockfile.ts) and `content` is null.
  */
-export interface ReviewChange { path: string; status: string; patch: string; content: string | null; contentScope?: 'excerpt' }
+export interface ReviewChange { path: string; status: string; patch: string; content: string | null; contentScope?: 'excerpt' | 'lockfile' }
 export interface ReviewInput { facts: MergeFacts; trustedScope: string; trustedInstructions: string;
   sourceTask?: { number: number; title: string; body: string };
   changes: ReviewChange[];

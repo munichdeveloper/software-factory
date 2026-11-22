@@ -29,7 +29,12 @@ Why a task is blocked decides how to resume it:
   block clears and the next attempt starts (with a ready grant where `autonomy.startGrant` requires one). Say in the
   revision what changed, for example that a dependency is now available.
 
-The coding sandbox has no network. Coding runs install the root `package-lock.json` before it goes offline, and with a
+The coding sandbox has no network. Coding runs install the root `package-lock.json` before it goes offline. A worker
+that needs a new npm dependency adds it to `package.json` only; the harness then resolves `package-lock.json` after the
+agent (on copies, `--package-lock-only --ignore-scripts`, public registry, no npm configuration of the checkout), and a
+rework resolves it the same way before `npm ci` (letterflow#34). If installing the locked dependencies still fails, the
+run ends with `WORKSPACE_DEPENDENCIES_FAILED` and costs an attempt, unlike a runner failure. The merge review sees npm
+lockfiles as their list of added, changed and removed packages, not as a raw diff. With a
 validation plan the project's build and tests run in the separate hosted validation job; a worker that reports
 `blocked` only because it could not run those checks counts as successful when that validation passes (controla#63).
 

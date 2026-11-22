@@ -14,7 +14,7 @@ import type { CodingArtifact } from '../workers/coding.js';
 import type { ReadyApproval } from './contract.js';
 import { bindValidation, type ValidationPlan, type ValidationReport } from './validation-contract.js';
 import { retryOf, reworkOf } from './coding-context.js';
-import { infrastructureFailureCode, infrastructureFailureSummary } from '../state/reconstruct.js';
+import { dependenciesFailureCode, dependenciesFailureSummary, infrastructureFailureCode, infrastructureFailureSummary } from '../state/reconstruct.js';
 import { blockedOnProtectedPath } from '../state/protected-paths.js';
 
 export interface RuntimeRepository {
@@ -360,8 +360,8 @@ export class RuntimeController implements WorkerRuntimePort {
     const outcome = await this.repo.coding.executor.poll(snapshot, binding, config);
     if (!outcome) return null;
     if ('failed' in outcome) return workerResultSchema.parse({ contractVersion: '1.0', executionId: id, issueNumber: snapshot.admission.input.issueNumber,
-      status: 'failed', summary: outcome.beforeAgent ? infrastructureFailureSummary : 'Isolated coding executor failed',
-      error: outcome.beforeAgent ? infrastructureFailureCode : 'Inspect the scoped executor run', artifacts: [], proposedActions: [] });
+      status: 'failed', summary: outcome.dependencies ? dependenciesFailureSummary : outcome.beforeAgent ? infrastructureFailureSummary : 'Isolated coding executor failed',
+      error: outcome.dependencies ? dependenciesFailureCode : outcome.beforeAgent ? infrastructureFailureCode : 'Inspect the scoped executor run', artifacts: [], proposedActions: [] });
     const result = this.codingResult(snapshot, outcome.artifact, outcome.validation);
     await this.store.saveArtifact(this.repo.repositoryId, id, outcome.artifact);
     if (outcome.validation) await this.store.saveValidation(this.repo.repositoryId, id, outcome.validation);

@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { parse } from 'yaml';
 import { needsHumanLabel, type MergeFacts, type MergePort, type ReviewInput } from './contract.js';
+import { isLockfile, lockfileSummary } from './lockfile.js';
 
 const forbidden = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && error.status === 403;
 
@@ -99,6 +100,17 @@ export class GitHubMergePort implements MergePort {
     const instructions = await read('AGENTS.md', facts.base, true);
     const changes: ReviewInput['changes'] = [];
     for (const file of files) {
+      // A generated lockfile is reviewed as its package list, not as a raw diff GitHub may not even return.
+      if (isLockfile(file.filename) && (file.status === 'added' || file.status === 'modified' || file.status === 'removed')) {
+        const before = file.status === 'added' ? '' : await read(file.filename, facts.base);
+        const after = file.status === 'removed' ? '' : await read(file.filename, facts.head);
+        const summary = lockfileSummary(file.filename, before, after, file.changes);
+        if (summary !== null) {
+          changes.push({ path: file.filename, status: file.status, patch: summary, content: null, contentScope: 'lockfile' });
+          if (Buffer.byteLength(JSON.stringify({ facts: { ...facts, comments: [] }, instructions, changes })) > maxBytes) throw new Error('Review context exceeds limit; no truncated approval');
+          continue;
+        }
+      }
       if (!file.patch) throw Object.assign(new Error('Diff is incomplete or contains binary changes'), { path: file.filename });
       const content = file.status === 'removed' ? await read(file.filename, facts.base) : await read(file.filename, facts.head);
       changes.push({ path: file.filename, status: file.status, patch: file.patch, content });
