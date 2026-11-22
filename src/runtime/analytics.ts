@@ -34,6 +34,8 @@ export interface AnalyticsIssue {
   /** When the merge pass first handed the issue's pull request to a person (risk above the threshold, approval required). */
   handoverAt?: string | null;
 }
+/** A recorded merge review decision (factory_analytics_verdicts), for the router evaluation. */
+export interface AnalyticsVerdict { repository: string; step: string; prNumber: number | null; issueNumber: number | null; decision: string; rejected: boolean; at: string }
 export const tokensOf = (value: unknown): AnalyticsTokens | null => {
   if (!value || typeof value !== 'object') return null;
   const t = value as Record<string, unknown>, n = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : 0;
@@ -191,6 +193,8 @@ export function analyticsView(calls: AnalyticsCall[], issues: (AnalyticsIssue & 
 export interface AnalyticsStore {
   analyticsCalls(since: Date): Promise<AnalyticsCall[]>;
   analyticsIssues(): Promise<(AnalyticsIssue & { repository: string })[]>;
+  /** Merge review decisions since `since`; optional (stores before the router evaluation have none). */
+  analyticsVerdicts?(since: Date): Promise<AnalyticsVerdict[]>;
 }
 /** How far back calls are read for the per-issue totals of a period: a feature's earlier attempts belong to it. */
 export const analyticsLookbackDays = 120;

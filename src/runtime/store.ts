@@ -7,8 +7,8 @@ import { codingArtifactSchema, type CodingArtifact } from '../workers/coding.js'
 import { hash } from '../state/identity.js';
 import { validationReportSchema, type ValidationReport } from './validation-contract.js';
 import type { Finding, FindingKind, SanityStore } from './sanity.js';
-import type { LlmCallRecord } from '../llm/analytics.js';
-import { tokensOf, type AnalyticsCall, type AnalyticsIssue } from './analytics.js';
+import type { LlmCallRecord, LlmVerdictRecord } from '../llm/analytics.js';
+import { tokensOf, type AnalyticsCall, type AnalyticsIssue, type AnalyticsVerdict } from './analytics.js';
 import { escalationMarker } from './coding-context.js';
 import type { RuntimeEvent, RuntimeEventStore, RuntimeEventType, StoredRuntimeEvent } from './events.js';
 
@@ -74,6 +74,10 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
       ALTER TABLE factory_analytics_calls ADD COLUMN IF NOT EXISTS price_source text;
       ALTER TABLE factory_analytics_issues ADD COLUMN IF NOT EXISTS qualified_at timestamptz;
       ALTER TABLE factory_analytics_issues ADD COLUMN IF NOT EXISTS handover_at timestamptz;
+      CREATE TABLE IF NOT EXISTS factory_analytics_verdicts (
+        id bigserial PRIMARY KEY, repository text NOT NULL, step text NOT NULL, pr_number integer, issue_number integer,
+        decision text NOT NULL, rejected boolean NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now());
+      CREATE INDEX IF NOT EXISTS factory_analytics_verdicts_time ON factory_analytics_verdicts(recorded_at);
       ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS price_source text;
       ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS agent_estimate_usd double precision;
       CREATE TABLE IF NOT EXISTS factory_runtime_events (
@@ -106,6 +110,16 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
     await this.pool.query(`INSERT INTO factory_analytics_calls(repository,step,pr_number,issue_number,selection,router_choice,router_probability,provider,model,effort,tokens,cost_usd,outcome,price_source)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [r.repository, r.step, r.prNumber, r.issueNumber, r.selection, r.routerChoice, r.routerProbability,
       r.provider, r.model, r.effort, r.tokens === null ? null : JSON.stringify(r.tokens), r.costUsd, r.outcome, r.priceSource]);
+  }
+  /** The decision of a fresh merge review (router evaluation). */
+  async recordLlmVerdict(r: LlmVerdictRecord): Promise<void> {
+    await this.pool.query('INSERT INTO factory_analytics_verdicts(repository,step,pr_number,issue_number,decision,rejected) VALUES($1,$2,$3,$4,$5,$6)',
+      [r.repository, r.step, r.prNumber, r.issueNumber, r.decision, r.rejected]);
+  }
+  async analyticsVerdicts(since: Date): Promise<AnalyticsVerdict[]> {
+    const { rows } = await this.pool.query<{ repository: string; step: string; pr_number: number | null; issue_number: number | null; decision: string; rejected: boolean; recorded_at: Date }>(
+      'SELECT repository,step,pr_number,issue_number,decision,rejected,recorded_at FROM factory_analytics_verdicts WHERE recorded_at >= $1 ORDER BY recorded_at LIMIT 50000', [since]);
+    return rows.map(r => ({ repository: r.repository, step: r.step, prNumber: r.pr_number, issueNumber: r.issue_number, decision: r.decision, rejected: r.rejected, at: r.recorded_at.toISOString() }));
   }
   /** Title, state and merge of the issues the analytics name; written only when they changed. */
   async upsertAnalyticsIssues(repository: string, issues: AnalyticsIssue[]): Promise<void> {

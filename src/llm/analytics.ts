@@ -23,7 +23,9 @@ export interface LlmCallRecord {
   provider: 'claude' | 'openai'; model: string; effort: string | null; tokens: LlmTokens | null;
   costUsd: number | null; priceSource: PriceSource | null; outcome: 'success' | 'failed';
 }
-export interface LlmCallSink { recordLlmCall(record: LlmCallRecord): Promise<void> }
+/** The verdict of a merge review (router evaluation: how often a review rejects what a routed coding model wrote). */
+export interface LlmVerdictRecord { repository: string; step: LlmStep; prNumber: number | null; issueNumber: number | null; decision: string; rejected: boolean }
+export interface LlmCallSink { recordLlmCall(record: LlmCallRecord): Promise<void>; recordLlmVerdict?(record: LlmVerdictRecord): Promise<void> }
 
 const storage = new AsyncLocalStorage<LlmCallContext>();
 let sink: LlmCallSink | undefined;
@@ -179,6 +181,15 @@ export function recordLlmCall(provider: LlmCallRecord['provider'], model: string
       provider, model, effort: effort ?? null, tokens, ...priceCall(model, tokens), outcome };
     void sink.recordLlmCall(record).catch(() => console.warn(JSON.stringify({ event: 'factory-analytics', code: 'RECORD_FAILED', step: record.step })));
   } catch { /* analytics never fails a call */ }
+}
+/** Called once per fresh merge review with its decision, inside the pull request's context. Never throws. */
+export function recordLlmVerdict(step: LlmStep, decision: string, rejected: boolean) {
+  try {
+    const context = storage.getStore();
+    if (!sink?.recordLlmVerdict || !context?.repository) return;
+    const record: LlmVerdictRecord = { repository: context.repository, step, prNumber: context.prNumber ?? null, issueNumber: context.issueNumber ?? null, decision, rejected };
+    void sink.recordLlmVerdict(record).catch(() => console.warn(JSON.stringify({ event: 'factory-analytics', code: 'VERDICT_NOT_RECORDED', step })));
+  } catch { /* analytics never fails a review */ }
 }
 /** Tokens of an OpenAI Responses API answer (usage.input_tokens includes the cached ones). */
 export function openaiTokens(body: unknown): LlmTokens | null {

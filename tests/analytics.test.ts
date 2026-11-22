@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Server } from 'node:http';
-import { configurePrices, currentPrice, LivePriceList, modelKey, modelPrices, openaiTokens, parsePriceList, priceCall, priceOf, recordLlmCall, setLivePrices, setLlmCallSink, setLlmSubject, withLlmContext, type LlmCallRecord } from '../src/llm/analytics.js';
+import { configurePrices, currentPrice, LivePriceList, modelKey, modelPrices, openaiTokens, parsePriceList, priceCall, priceOf, recordLlmCall, recordLlmVerdict, setLivePrices, setLlmCallSink, setLlmSubject, withLlmContext, type LlmCallRecord, type LlmVerdictRecord } from '../src/llm/analytics.js';
 import { routedCall, Routing, type ModelRouter } from '../src/llm/router.js';
 import { analyticsIssues, AnalyticsIssueSync, analyticsView, loadAnalytics, qualifiedAt, weekOf, type AnalyticsCall, type AnalyticsIssue } from '../src/runtime/analytics.js';
 import { runtimeServer, type RuntimeBinding } from '../src/runtime/server.js';
@@ -75,6 +75,16 @@ describe('model prices', () => {
 });
 
 describe('recording broker calls', () => {
+  it('records a review decision under the pull request it belongs to', async () => {
+    const verdicts: LlmVerdictRecord[] = [];
+    recordLlmVerdict('review', 'merge', false);
+    setLlmCallSink({ recordLlmCall: async () => undefined, recordLlmVerdict: async r => { verdicts.push(r); } });
+    await withLlmContext({}, async () => {
+      setLlmSubject({ repository: 'owner/repo', prNumber: 12, issueNumber: 7 });
+      recordLlmVerdict('review', 'request_changes', true);
+    });
+    expect(verdicts).toEqual([{ repository: 'owner/repo', step: 'review', prNumber: 12, issueNumber: 7, decision: 'request_changes', rejected: true }]);
+  });
   it('records nothing outside a step context or without a sink', async () => {
     recordLlmCall('claude', 'claude-opus-5-5', 'high', tokens);
     sink(); recordLlmCall('claude', 'claude-opus-5-5', 'high', tokens);

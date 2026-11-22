@@ -9,7 +9,7 @@ import { mergeReviewSchema, needsHumanLabel, type MergeFacts, type MergePort, ty
 import { aboveThreshold, builtinCriticalPaths, classifyRisk, describeRisk, type RiskAssessor, type RiskRecord } from './risk.js';
 import { routeNoteDe, routeOutcome } from '../llm/router.js';
 import { combineReviews, contextLimitError, defaultMaxParts, partsLimitError, reviewParts } from './parts.js';
-import { setLlmSubject, withLlmContext } from '../llm/analytics.js';
+import { recordLlmVerdict, setLlmSubject, withLlmContext } from '../llm/analytics.js';
 import { reconstruct } from '../state/reconstruct.js';
 import type { MergeObserver } from '../runtime/merge.js';
 import { checkRunName, checkRunView, type MergeCheckRuns } from './check-run.js';
@@ -398,7 +398,10 @@ export class MergeManager {
             // A part that does not approve decides for the whole pull request; the remaining parts are not reviewed.
             if (rejects(parsed)) break;
           }
-          return parts.length > 1 ? mergeReviewSchema.parse(combineReviews(reviews, parts.length)) : reviews[0]!;
+          const result = parts.length > 1 ? mergeReviewSchema.parse(combineReviews(reviews, parts.length)) : reviews[0]!;
+          // Router evaluation: the verdict on what the (routed) coding model wrote, once per fresh review.
+          recordLlmVerdict('review', result.decision, rejects(result));
+          return result;
         })();
         const assessing: Promise<RiskRecord | null> = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === 'merge_risk' ? Promise.resolve(cachedRisk.data.risk)
           // Without a review plan (more than maxParts parts) the whole change set is assessed at once, as before parts existed.
