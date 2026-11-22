@@ -16,6 +16,7 @@ import { ClaudePlanner, FallbackPlanner, StaticPlanner, OpenAIPlanner } from '..
 import { JevPlanner } from '../llm/jev-planner.js';
 import { CachedRiskSplitter, ClaudeRiskSplitter, FallbackRiskSplitter, OpenAIRiskSplitter, RiskSplitPlanner } from '../llm/risk-split.js';
 import { claudeModels, claudeStructured } from '../llm/claude.js';
+import { Reconciler } from './reconcile.js';
 import { ModelRouter, RouterAlerts, Routing, routerEndpoint } from '../llm/router.js';
 import { routedPlanner, routedReviewer, type RoutedModels } from '../llm/routed-models.js';
 import { assertRetainedReleases } from './retention.js';
@@ -225,7 +226,10 @@ export async function main(args = process.argv.slice(2)) {
         async (_snapshot, selection) => { try { await creditAlerts?.observe(item.repository, selection); } catch { /* an alert never fails a run */ } },
         routing,
         async entry => { try { await usageAlerts.observe(entry); } catch { /* an alert never fails a run */ } },
-        { allowed: async name => { try { return await subscriptionCap.allowed(name); } catch { return false; } } }),
+        { allowed: async name => { try { return await subscriptionCap.allowed(name); } catch { return false; } } },
+        // Survey of related work before a first attempt (SF #255): GitHub facts, condensed by Claude Haiku with the
+        // broker's key; without the key only the overlap facts. FACTORY_RECONCILE=off turns it off.
+        process.env.FACTORY_RECONCILE === 'off' ? undefined : new Reconciler(api, claude)),
         publish: async (snapshot, binding, artifact, createdAt, validation) => { const config = await repository.config();
           // The agent that ran: the executor's stored choice for a priority list, otherwise the configured agent.
           const chosen = await storedSelection(effects(snapshot, binding), snapshot.admission.input.executionId, () => controller.authorize(snapshot, binding));

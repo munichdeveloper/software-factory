@@ -141,7 +141,7 @@ describe('analytics view', () => {
       costPerMergedFeature: { mean: 4.75, median: 4.75 } });
     const seven = view.features.find(f => f.issueNumber === 7)!;
     expect(seven).toMatchObject({ state: 'merged', prNumber: 20, title: 'Feature', costUsd: 7.5, costInRange: 4.5, codingRuns: 2, failedCodingRuns: 1,
-      unknownCostCalls: 1, steps: { coding: 7, review: 0.5, risk: 0, planner: 0 }, url: 'https://github.com/owner/repo/issues/7' });
+      unknownCostCalls: 1, steps: { coding: 7, review: 0.5, risk: 0, planner: 0, reconcile: 0 }, url: 'https://github.com/owner/repo/issues/7' });
     expect(seven.calls[0]).toMatchObject({ lost: true, outcome: 'error_max_turns' });
     expect(view.features.find(f => f.issueNumber === 9)).toMatchObject({ state: 'closed', costUsd: 1.5 });
     expect(view.steps).toEqual([{ step: 'coding', costUsd: 7.5, calls: 3 }, { step: 'review', costUsd: 0.5, calls: 1 }, { step: 'risk', costUsd: 0, calls: 1 }, { step: 'planner', costUsd: 0.1, calls: 1 }]);

@@ -14,6 +14,7 @@ import { defaultValidationPlan, type ValidationReport } from '../src/runtime/val
 import { reportFor } from './validation-fixtures.js';
 import { ModelRouter, Routing } from '../src/llm/router.js';
 import type { UsageEntry } from '../src/runtime/usage.js';
+import type { Reconciler } from '../src/runtime/reconcile.js';
 
 const snapshot = snapshotSchema.parse({ version: 1, repositoryId: 42, repository: 'owner/target',
   release: { factorySha: 'a'.repeat(40), harnessSha: 'b'.repeat(40), workflowHash: 'c'.repeat(64), deploymentName: 'sf-coding', buildId: 'v1', taskQueue: 'sf-coding', schemaVersion: 1 },
@@ -36,7 +37,7 @@ class Effects implements EffectPort {
     const receipt = evidence ?? await r.apply(); claim.receipt = receipt; return r.validate(receipt);
   }
 }
-function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>, onSelection?: (s: RunSnapshot, selection: AgentSelection) => Promise<void>, routing?: Routing, onUsage?: (entry: UsageEntry) => Promise<void>, subscription?: { allowed(repository: string): Promise<boolean> }) {
+function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, previousValidation?: (id: string) => Promise<ValidationReport | null>, onSelection?: (s: RunSnapshot, selection: AgentSelection) => Promise<void>, routing?: Routing, onUsage?: (entry: UsageEntry) => Promise<void>, subscription?: { allowed(repository: string): Promise<boolean> }, reconciler?: Reconciler) {
   const requests: { task: { description: string; contextReferences: string[] } }[] = [], calls: string[] = [];
   const cfg = config(); cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false, smallPullRequests: true };
   let ref = false, dispatches = 0, lost = false, before = false, complete = false, wrongHead = false, duplicate = false, badWrapper = false;
@@ -69,7 +70,7 @@ function fixture(requestSnapshot = snapshot, extra?: (path: string) => unknown, 
     const response = status === 204 ? new Response(null, { status }) : Response.json(data, { status }); Object.defineProperty(response, 'url', { value: String(input) }); return response;
   };
   const api = new Octokit({ auth: 'test-only', request: { fetch: fetcher }, log: { debug() {}, info() {}, warn() {}, error() {} } });
-  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation, onSelection, routing, onUsage, subscription);
+  const executor = new ActionsCodingExecutor(api, () => effects, authorize, async () => ['factory[bot]'], previousValidation, onSelection, routing, onUsage, subscription, reconciler);
   return { effects, cfg, requests, calls, poll: () => executor.poll(requestSnapshot, hash(requestSnapshot), cfg), workflowPaths, authorize, dispatches: () => dispatches, finish: () => { complete = true; },
     lose: () => { lost = true; }, before: () => { before = true; }, wrong: () => { wrongHead = true; }, duplicate: () => { duplicate = true; },
     badWrapper: () => { badWrapper = true; }, unrelated: () => { source = { ...source, baseSha: '9'.repeat(40) }; },missingValidation:()=>{missingValidation=true;},forgeValidation:()=>{forgedValidation=true;},blocked:()=>{source.result.status='blocked';} };
@@ -347,4 +348,20 @@ describe('spend cap and token usage', () => {
     await h.poll(); h.finish(); expect(await h.poll()).toEqual({ artifact: artifact() });
     expect(foreign).toEqual([]);
   });
+});
+
+it('adds the survey of related work to a first attempt once and never to a rework (SF #255)', async () => {
+  const survey = vi.fn(async () => ({ entries: ['sf-context reconcile 1/1: PR #46 changes the same file.', 'sf-context reconcile-overlap #46: x'], openPulls: 1, overlaps: 1, linkedIssues: 0, related: 1, model: 'used' as const }));
+  const reconciler = { survey } as unknown as Reconciler;
+  const f = fixture(snapshot, undefined, undefined, undefined, undefined, undefined, undefined, reconciler);
+  await f.poll(); await f.poll();
+  expect(f.requests[0]!.task.contextReferences).toEqual(['sf-context reconcile 1/1: PR #46 changes the same file.', 'sf-context reconcile-overlap #46: x']);
+  expect(survey).toHaveBeenCalledTimes(1);
+  expect(survey).toHaveBeenCalledWith('owner/target', { owner: 'owner', repo: 'target' }, snapshot.admission.input);
+  const previous = '6'.repeat(32);
+  const rework = snapshotSchema.parse({ ...snapshot, admission: { ...snapshot.admission, input: { ...snapshot.admission.input, contextReferences: [`urn:sf-rework:${previous}`] } } });
+  const r = fixture(rework, path => path === `/git/ref/heads/sf/issue-2/${previous}` ? null : undefined, undefined, undefined, undefined, undefined, undefined, reconciler);
+  await r.poll();
+  expect(r.requests[0]!.task.contextReferences.some(e => e.startsWith('sf-context reconcile'))).toBe(false);
+  expect(survey).toHaveBeenCalledTimes(1);
 });
