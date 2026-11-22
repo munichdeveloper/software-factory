@@ -99,7 +99,7 @@ the broker; all are bounded to 1,000 characters each and at most eight entries, 
 ref entries above. The call is recorded in the cost analytics as step `reconcile` (about 3k input tokens, well below
 one cent). A detected overlap is a hint only: the run starts as before (Johannes, 2026-11-22: hint first, then measure).
 Without the key only the overlap facts are passed; a failed GitHub lookup or model call leaves the run without a
-survey. Each survey logs one `factory-reconcile` line (repository, issue, open pull requests, overlaps, linked issues,
+survey. Each survey logs one `factory-survey` line (repository, issue, open pull requests, overlaps, linked issues,
 whether the model was used, an error code). `FACTORY_RECONCILE=off` in the broker's environment turns the survey off.
 The result is stored with the execution (`coding-reconcile`), so later polls rebuild the identical request; executions
 dispatched before this release get none.

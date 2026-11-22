@@ -66,7 +66,7 @@ describe('survey before a coding run (SF #255)', () => {
     expect(outcome.model).toBe('used');
     expect(outcome.entries[0]).toMatch(/^sf-context reconcile 1\/1: Survey of this repository .* PR #46 changes the same page; coordinate\. Second line$/);
     expect(outcome.entries[1]).toMatch(/^sf-context reconcile-overlap #46:/);
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"event":"factory-reconcile"'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"event":"factory-survey"'));
   });
   it('keeps only the overlap facts when Haiku fails and nothing when GitHub fails', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});

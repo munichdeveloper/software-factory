@@ -145,7 +145,7 @@ export class Reconciler {
   /** One line per survey for measuring how often it finds related work (no text, numbers and codes only). */
   private log(repository: string, input: SurveyInput, outcome: SurveyOutcome) {
     const { entries, ...rest } = outcome;
-    console.log(JSON.stringify({ event: 'factory-reconcile', repository, issue: input.issueNumber, entries: entries.length, ...rest }));
+    console.log(JSON.stringify({ event: 'factory-survey', repository, issue: input.issueNumber, entries: entries.length, ...rest }));
     return outcome;
   }
 }
