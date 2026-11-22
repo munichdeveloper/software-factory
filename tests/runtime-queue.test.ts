@@ -85,6 +85,19 @@ describe('queue view', () => {
     expect(done).toMatchObject({ stage: 'closed', mergedAt: w.now.toISOString(), merge: { pullRequest: next, step: 'merged' } });
     expect(done.runs.map(r => [r.kind, r.outcome, r.validation])).toEqual([['first', 'success', 'passed'], ['review', 'success', 'passed']]);
     w.advance(25 * 60); expect((await observed())).toBeUndefined();
+    // The Factory's own pull requests, also the superseded first one, belong to the task and are not listed separately
+    expect(repository(board, w).pullRequests).toEqual([]);
+  });
+
+  it('lists adopted pull requests (sf:automerge, no managed task) with their merge step', async () => {
+    const w = new World({ merging: true }), board = new QueueBoard(() => w.now);
+    w.github.state.prs.push({ number: 43, state: 'open', merged: false, closingIssues: [31], referencedIssues: [31], title: 'Ersatz-PR', headRefName: 'claude/fix' });
+    const progress = new Map<number, MergeProgress>([[43, { pullRequest: 43, step: 'review', detail: null, risk: 'high', at: w.now.toISOString() }]]);
+    const manager = new Manager(w.github, w.cfg, new StaticPlanner(), { correlationId: 'temporal:42', now: () => w.now, workerRuntime: w.controller });
+    const report = await manager.run();
+    board.observed(w.repo, w.cfg, manager.settledSnapshot, report, manager.lastRejections, progress);
+    expect(repository(board, w).pullRequests).toEqual([{ number: 43, url: `https://github.com/${w.repo.repository}/pull/43`, title: 'Ersatz-PR',
+      state: 'open', mergedAt: null, merge: progress.get(43) }]);
   });
 
   it('keeps the last view when a reconciliation fails and lists repositories never reconciled', async () => {
@@ -117,7 +130,7 @@ describe('GET /v1/queue', () => {
     const ok = await call('/v1/queue', monitorToken);
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ generatedAt: '2026-11-18T12:00:00.000Z', reconcileIntervalSeconds: 180, passStartedAt: null, nextPassAt: null,
-      repositories: [{ repositoryId: 42, repository: 'owner/target', observedAt: null, outcome: null, failure: null, slots: null, entries: [] }] });
+      repositories: [{ repositoryId: 42, repository: 'owner/target', observedAt: null, outcome: null, failure: null, slots: null, entries: [], pullRequests: [] }] });
     expect((await call('/v1/queue', managerToken)).status).toBe(200);
     expect((await call('/v1/queue', workerToken)).status).toBe(401);
     expect((await call('/v1/queue', 'x'.repeat(32))).status).toBe(401);
