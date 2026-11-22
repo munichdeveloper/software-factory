@@ -1,17 +1,26 @@
 version: 1
 factory:
   enabled: true
-  scope: "Deploy the Factory runtime stack from the default branch; no planning manager is installed here."
+  scope: "Deploy the Factory runtime stack from the default branch; no planning
+    manager is installed here."
 manager:
   workflow: factory-manager.yml
   maxActions: 10
   timeoutMinutes: 15
   maxContextTasks: 20
   maxContextChars: 20000
-  trustedActors: ["github-actions[bot]"]
+  trustedActors:
+    - github-actions[bot]
+    - munichdeveloper-sf-manager-local[bot]
 autonomy:
-  profile: supervised
-  overrides: {}
+  profile: autonomous
+  overrides:
+    {
+      merge_pr: deny,
+      close_issue: deny,
+      create_followup: deny,
+      expand_scope: deny
+    }
 execution:
   dryRun: false
   maxParallelWorkers: 1
@@ -19,8 +28,9 @@ execution:
   maxNewIssues: 3
   workerTimeoutMinutes: 30
   dispatchGraceMinutes: 10
+  engine: temporal
 llm:
-  provider: mock
+  provider: static
   model: gpt-4.1-mini
   reasoningEffort: null
   maxOutputTokens: 4000
@@ -28,9 +38,18 @@ llm:
   maxCalls: 1
 workers:
   test:
+    enabled: false
+  coding:
     enabled: true
-    operation: sha256
-  coding: false
+    agents:
+      - agent: claude
+        model: claude-sonnet-5-5
+        reasoningEffort: medium
+    retryAgents:
+      - agent: claude
+        model: claude-opus-5-5
+        reasoningEffort: high
+    validationWorkflow: null
   review: false
 reporting:
   persistDecisions: true
@@ -58,7 +77,7 @@ merge:
   adoptLabel: sf:automerge
   method: squash
   updateBranch: true
-  requiredChecks: [test-backend, test-frontend, test-docker]
+  requiredChecks: [ test-backend, test-frontend, test-docker ]
   validationWorkflow: test.yml
   maxReviewsPerRun: 2
   maxActionsPerRun: 1
@@ -75,10 +94,10 @@ merge:
 # Secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS and, unless set below, DEPLOY_HOST/DEPLOY_USER.
 # Requires the .github/workflows/factory-deploy.yml wrapper (install with --deploy).
 deploy:
-  enabled: true
+  enabled: false
   provider: docker-ssh
   trigger: checks # checks: after the listed CI workflows succeeded; push: right after the push
-  workflows: ["CI"]
+  workflows: [ "CI" ]
   environment: production
   host: null
   port: null
