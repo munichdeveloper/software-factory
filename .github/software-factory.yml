@@ -94,7 +94,7 @@ merge:
 # Secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS and, unless set below, DEPLOY_HOST/DEPLOY_USER.
 # Requires the .github/workflows/factory-deploy.yml wrapper (install with --deploy).
 deploy:
-  enabled: false
+  enabled: true
   provider: docker-ssh
   trigger: checks # checks: after the listed CI workflows succeeded; push: right after the push
   workflows: [ "CI" ]
