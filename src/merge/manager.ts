@@ -381,7 +381,7 @@ export class MergeManager {
         let reviewNote = '', riskNote = '';
         const configuredAssessor = this.options.assessor;
         const assessor: RiskAssessor | undefined = configuredAssessor && { assess: async i => {
-          const assessed = await configuredAssessor.assess(i); riskNote = routeNoteDe(routeOutcome(assessed)); return assessed; } };
+          const assessed = await configuredAssessor.assess({ ...i, pullRequest: number }); riskNote = routeNoteDe(routeOutcome(assessed)); return assessed; } };
         // Review and risk assessment are independent and run in parallel; the assessment never rejects (failures are critical).
         const reviewing: Promise<MergeReview> = cached?.data.type === 'merge_review' ? Promise.resolve(cached.data.review) : (async () => {
           report.reviewed++;

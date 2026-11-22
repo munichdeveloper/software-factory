@@ -307,7 +307,8 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
         if (!this.routing || !router || !candidates || escalated(input)) return { route: null, agent: null };
         try { await this.api.git.getRef({ ...target, ref: `heads/sf-temporal-executor/${input.executionId}` }); return { route: null, agent: null }; }
         catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
-        const route = await this.routing.route(snapshot.repository, 'coding', codingRouterState(input), candidates, router);
+        const route = await this.routing.route(snapshot.repository, 'coding', codingRouterState(input), candidates, router,
+          { kind: 'issue', number: input.issueNumber });
         const chosen = route.used ? candidates.find(c => c.id === route.choice) : undefined;
         return { route, agent: chosen ? { agent: chosen.agent, model: chosen.model, reasoningEffort: chosen.reasoningEffort } : null };
       } });

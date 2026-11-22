@@ -127,7 +127,7 @@ export class JevPlanner implements Planner {
     const cached = this.readiness.get(key);
     if (cached) return cached;
     const decision = await this.routing!.decide(this.repository, 'planner', risk ? riskReadinessQuestion : readinessQuestion, taskText(task, 4000),
-      risk ? [...readinessOptions, mixedRiskOption] : readinessOptions, settings);
+      risk ? [...readinessOptions, mixedRiskOption] : readinessOptions, settings, { kind: 'issue', number: task.issue.number });
     // Failures are asked again next time; a clear or a too uncertain answer holds for this text.
     if (decision.record.used || decision.record.reason === 'low-confidence') this.remember(this.readiness, key, decision);
     return decision;

@@ -100,6 +100,8 @@ export interface RiskInput {
   touchedAreas: { name: string; class: RiskClass }[];
   metrics: { files: number; lines: number; directories: string[]; testsChanged: boolean };
   guidance: string | null;
+  /** The pull request assessed, only to name it in the router's Slack message; never part of the assessed input. */
+  pullRequest?: number;
 }
 export interface RiskAssessor { assess(input: RiskInput): Promise<RiskAssessment> }
 

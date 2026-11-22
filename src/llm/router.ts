@@ -137,6 +137,14 @@ export function logRoute(repository: string, record: RouteRecord) {
 }
 
 export interface RouterAlertSink { post(channel: string, text: string): Promise<void> }
+/** The pull request or issue a routing decision was made for, named with its link in the Slack message. */
+export interface RouteSubject { kind: 'pull' | 'issue'; number: number }
+/** `owner/repo PR #12` or `owner/repo Issue #12`, and the link on its own line (Johannes, 2026-11-22: "um welchen PR es sich handelt"). */
+export function subjectText(repository: string, subject?: RouteSubject): { name: string; link: string | null } {
+  if (!subject) return { name: repository, link: null };
+  return { name: `${repository} ${subject.kind === 'pull' ? 'PR' : 'Issue'} #${subject.number}`,
+    link: `https://github.com/${repository}/${subject.kind === 'pull' ? 'pull' : 'issues'}/${subject.number}` };
+}
 const purposeNames: Record<RouterPurpose, string> = { coding: 'Coding', review: 'Merge-Review', risk: 'Risikobewertung', planner: 'Planung' };
 const skipTexts: Record<RouterSkip, string> = {
   'no-key': 'Der Broker hat keinen Schlüssel für Jev (TYPESAFE_API_KEY oder OPENROUTER_API_KEY).',
@@ -170,13 +178,14 @@ const maxScoreEntries = 20;
 export class RouterAlerts {
   private last = new Map<string, { at: number; suppressed: number }>();
   constructor(private sink: RouterAlertSink, private channel: string, private now: () => number = Date.now, private windowMs = routerAlertWindowMs) {}
-  async observe(repository: string, record: RouteRecord, chosen?: RouterOption & ChosenDetails, probabilities?: Record<string, number> | null): Promise<void> {
-    const scores = scoreLine(probabilities);
+  async observe(repository: string, record: RouteRecord, chosen?: RouterOption & ChosenDetails, probabilities?: Record<string, number> | null,
+    subject?: RouteSubject): Promise<void> {
+    const scores = scoreLine(probabilities), { name, link } = subjectText(repository, subject);
     if (record.used) {
       // Every decision Jev made gets its own message, unthrottled (Johannes, 2026-11-19: "welche Entscheidung Jev
       // erfolgreich getroffen hat"): one per coding execution, merge review or risk assessment.
       const details = chosen ? [chosen.agent, chosen.model, chosen.reasoningEffort].filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
-      await this.sink.post(this.channel, `SF Model Router: Jev hat für ${purposeNames[record.purpose]} in ${repository} \`${record.choice}\`${details.length ? ` (${details.join(', ')})` : ''} gewählt, mit ${Math.round(record.confidence * 100)} % Wahrscheinlichkeit.${scores ? `\n${scores}` : ''}`);
+      await this.sink.post(this.channel, `SF Model Router: Jev hat für ${purposeNames[record.purpose]} in ${name} \`${record.choice}\`${details.length ? ` (${details.join(', ')})` : ''} gewählt, mit ${Math.round(record.confidence * 100)} % Wahrscheinlichkeit.${link ? `\n${link}` : ''}${scores ? `\n${scores}` : ''}`);
       return;
     }
     const key = `${repository}|${record.purpose}|${record.reason}`, prior = this.last.get(key), now = this.now();
@@ -184,7 +193,8 @@ export class RouterAlerts {
     this.last.set(key, { at: now, suppressed: 0 });
     const detail = record.reason === 'low-confidence' && record.choice !== null && record.confidence !== null
       ? ` (gewählt hätte er ${record.choice} mit ${Math.round(record.confidence * 100)} %)` : record.code ? ` (${record.code})` : '';
-    await this.sink.post(this.channel, [`SF Model Router: ${purposeNames[record.purpose]} in ${repository} lief ohne Router, direkt mit den konfigurierten Modellen.`,
+    await this.sink.post(this.channel, [`SF Model Router: ${purposeNames[record.purpose]} in ${name} lief ohne Router, direkt mit den konfigurierten Modellen.`,
+      ...(link ? [link] : []),
       `Grund: ${skipTexts[record.reason]}${record.reason === 'no-key' ? '' : `${detail}.`}`,
       ...(scores ? [scores] : []),
       ...(prior?.suppressed ? [`Seit der letzten Meldung ${prior.suppressed}-mal ohne eigene Nachricht.`] : []),
@@ -195,20 +205,22 @@ export class RouterAlerts {
 /** The router as the broker uses it: decide, log, and report every case in which the configured models ran instead. */
 export class Routing {
   constructor(private router: ModelRouter, private alerts?: RouterAlerts) {}
-  async route(repository: string, purpose: RouterPurpose, state: string, options: RouterOption[], settings: RouterSettings): Promise<RouteRecord> {
+  async route(repository: string, purpose: RouterPurpose, state: string, options: RouterOption[], settings: RouterSettings, subject?: RouteSubject): Promise<RouteRecord> {
     const decision = await this.router.decide(purpose, questions[purpose], state, options, settings);
-    return this.observed(repository, decision.record, options, decision.probabilities);
+    return this.observed(repository, decision.record, options, decision.probabilities, subject);
   }
   /** A choice question of the caller's own (the Jev planner), logged and reported like a routing decision. */
-  async decide(repository: string, purpose: RouterPurpose, question: string, state: string, options: RouterOption[], settings: RouterSettings): Promise<Decision> {
+  async decide(repository: string, purpose: RouterPurpose, question: string, state: string, options: RouterOption[], settings: RouterSettings,
+    subject?: RouteSubject): Promise<Decision> {
     const decision = await this.router.decide(purpose, question, state, options, settings);
-    await this.observed(repository, decision.record, options, decision.probabilities);
+    await this.observed(repository, decision.record, options, decision.probabilities, subject);
     return decision;
   }
-  private async observed(repository: string, record: RouteRecord, options: RouterOption[], probabilities?: Record<string, number> | null): Promise<RouteRecord> {
+  private async observed(repository: string, record: RouteRecord, options: RouterOption[], probabilities?: Record<string, number> | null,
+    subject?: RouteSubject): Promise<RouteRecord> {
     logRoute(repository, record);
     const chosen = record.used ? options.find(o => o.id === record.choice) as (RouterOption & ChosenDetails) | undefined : undefined;
-    try { await this.alerts?.observe(repository, record, chosen, probabilities); } catch { /* an alert never fails the work */ }
+    try { await this.alerts?.observe(repository, record, chosen, probabilities, subject); } catch { /* an alert never fails the work */ }
     return record;
   }
 }
@@ -254,6 +266,8 @@ export function routeNoteEn(record: RouteRecord, agent: { agent: string; model: 
  */
 export async function routedCall<C extends RouterOption & { model: string; reasoningEffort?: string | null }, T>(options: {
   routing: Routing | undefined; repository: string; purpose: Exclude<RouterPurpose, 'coding'>; state: () => string;
+  /** The pull request or issue the call works on, named in the Slack message. */
+  subject?: RouteSubject;
   router: (RouterSettings & { enabled: boolean }) | undefined; candidates: C[] | undefined;
   /** The routed candidate's call, or null when it cannot run here (e.g. a Claude candidate without the broker's key). */
   run: (candidate: C) => (() => Promise<T>) | null;
@@ -266,7 +280,7 @@ async function routedCallIn<C extends RouterOption & { model: string; reasoningE
   const { routing, router, candidates } = options;
   countLlmCall(options.repository, options.purpose);
   if (!routing || !router?.enabled || !candidates?.length) return options.configured();
-  const record = await routing.route(options.repository, options.purpose, options.state(), candidates, router);
+  const record = await routing.route(options.repository, options.purpose, options.state(), candidates, router, options.subject);
   const candidate = record.used ? candidates.find(c => c.id === record.choice) : undefined;
   const named = candidate ? { id: candidate.id, model: candidate.model, reasoningEffort: candidate.reasoningEffort ?? null } : null;
   const noted = (value: T, ran: RouteOutcome['ran']): T => { if (value && typeof value === 'object') outcomes.set(value, { record, candidate: named, ran }); return value; };
