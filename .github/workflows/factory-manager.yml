@@ -23,9 +23,9 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@3001d67eb38a2fc5d5070d959da10cb33c398967
+    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@d155f4224f078a29ccfaa1d57809cceed8a793a2
     with:
-      factory-ref: 3001d67eb38a2fc5d5070d959da10cb33c398967
+      factory-ref: d155f4224f078a29ccfaa1d57809cceed8a793a2
       harness-ref: a2ae8596123640a1469b6b66376f9705125589e0
       request: ${{ inputs.request }}
       validation: ${{ inputs.validation }}
