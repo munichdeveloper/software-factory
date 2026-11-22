@@ -157,6 +157,33 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '22'
+      # A rework continues the previous attempt, whose offline worker may have changed package.json without being able
+      # to resolve package-lock.json; npm ci would then refuse the workspace (letterflow#34). Resolve the lockfile on
+      # copies of the two files: scripts off, the public registry, no npm configuration of the checkout. The worker sees
+      # the resolved lockfile as part of the previous attempt. Failing to resolve leaves it as it was.
+      - name: Resolve package-lock.json for a changed package.json
+        if: ${{ hashFiles('target/package-lock.json') != '' }}
+        working-directory: target
+        timeout-minutes: 5
+        env:
+          SF_BASE_SHA: ${{ needs.validate.outputs.base-sha }}
+        run: |
+          set -uo pipefail
+          [[ -f package.json && ! -L package.json && -f package-lock.json && ! -L package-lock.json ]] || exit 0
+          if git diff --quiet --no-ext-diff --no-textconv "$SF_BASE_SHA" -- package.json; then exit 0; fi
+          if ! jq -e 'type == "object" and (has("workspaces") | not)' package.json >/dev/null 2>&1; then
+            echo "package.json changed but is no plain npm manifest; package-lock.json left as is"; exit 0
+          fi
+          work="$(mktemp -d)"; mkdir "$work/project" "$work/home"; : > "$work/user.npmrc"; : > "$work/global.npmrc"
+          cp -- package.json package-lock.json "$work/project/"
+          if (cd "$work/project" && HOME="$work/home" timeout 240 npm install --package-lock-only --ignore-scripts --no-audit --no-fund \
+              --userconfig="$work/user.npmrc" --globalconfig="$work/global.npmrc" --registry=https://registry.npmjs.org/); then
+            cp -- "$work/project/package-lock.json" package-lock.json
+            echo "Resolved package-lock.json for the changed package.json"
+          else
+            echo "::warning::package.json changed, but package-lock.json could not be resolved"
+          fi
+          rm -rf -- "$work"
       - name: Prepare locked npm dependencies before network-isolated coding
         if: ${{ hashFiles('target/package-lock.json') != '' }}
         working-directory: target

@@ -34,7 +34,7 @@ const bundle = await bundleWorkflowCode({ workflowsPath: resolve('dist/runtime/w
 const bundlePath = resolve(directory, 'workflow-bundle.js'); await writeFile(bundlePath, bundle.code);
 const { createHash } = await import('node:crypto');
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
-const release: RuntimeRelease = { factorySha, harnessSha: '59c113ffac9add7e5da4c10bb887d27d1cf39d55', workflowHash: digest(bundle.code),
+const release: RuntimeRelease = { factorySha, harnessSha: 'a2ae8596123640a1469b6b66376f9705125589e0', workflowHash: digest(bundle.code),
   deploymentName: 'sf-factory-acceptance', buildId: factorySha, taskQueue: 'sf-factory-acceptance', schemaVersion: 1 };
 const harnessEntrypoint = resolve('.runtime/harness/dist/cli.js');
 const packageFile = resolve(directory, 'worker-package.json');

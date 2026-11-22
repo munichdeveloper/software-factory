@@ -61,8 +61,11 @@ export function decodeCodingArchive(bytes: Uint8Array): CodingArtifact {
 }
 export interface CodingExecutionPort {
   /** `config` is the configuration of an authorization the caller has just completed; new effects authorize again. */
-  /** `beforeAgent`: the run failed before any coding agent started (runner or setup), so no attempt was spent. */
-  poll(snapshot: RunSnapshot, binding: string, config: Config): Promise<{ artifact: CodingArtifact; validation?: ValidationReport } | { failed: true; beforeAgent?: boolean } | null>;
+  /**
+   * `beforeAgent`: the run failed before any coding agent started (runner or setup), so no attempt was spent.
+   * `dependencies`: it failed installing the workspace's locked npm dependencies (see failedDependencies).
+   */
+  poll(snapshot: RunSnapshot, binding: string, config: Config): Promise<{ artifact: CodingArtifact; validation?: ValidationReport } | { failed: true; beforeAgent?: boolean; dependencies?: boolean } | null>;
   cancel(snapshot: RunSnapshot, binding: string): Promise<void>;
 }
 /** Actions supplies disposable compute only. Temporal/broker retain dispatch, gate and publication authority. */
@@ -72,11 +75,23 @@ export const legacyValidationGuidance = '\n\nFactory execution context: a separa
  * The coding sandbox has no network, so installing dependencies or running the project's build and tests there only
  * fails and costs time. Those checks run in the independent validation job, whose result decides (controla#63).
  */
-export const validationGuidance = '\n\nFactory execution context: your environment has no network access. After coding, a separate hosted validation job installs the dependencies and runs the project\'s build, tests, browser and configured Docker checks on your change; its result decides whether the change is accepted. Do not install dependencies or try to run the project\'s build, test, lint or browser commands here; acceptance criteria that name such checks are covered by that job. Offline checks such as reading code or `git diff --check` are fine. Report `success` when the implementation is complete, and say which checks you left to the validation job. Report `blocked` only when the implementation itself is incomplete or cannot be done as specified. Never claim a check you did not perform. You may not change `.github/` (CI workflows), agent instruction files or CODEOWNERS; if the task needs such a change, report `blocked` with error `PROTECTED_PATH_REQUIRED` and name the change a maintainer must make.';
+export const validationGuidance = '\n\nFactory execution context: your environment has no network access. After coding, a separate hosted validation job installs the dependencies and runs the project\'s build, tests, browser and configured Docker checks on your change; its result decides whether the change is accepted. Do not install dependencies or try to run the project\'s build, test, lint or browser commands here; if the task needs a new or different npm dependency, add it to package.json and leave package-lock.json alone, the Factory resolves the lockfile after your run; acceptance criteria that name such checks are covered by that job. Offline checks such as reading code or `git diff --check` are fine. Report `success` when the implementation is complete, and say which checks you left to the validation job. Report `blocked` only when the implementation itself is incomplete or cannot be done as specified. Never claim a check you did not perform. You may not change `.github/` (CI workflows), agent instruction files or CODEOWNERS; if the task needs such a change, report `blocked` with error `PROTECTED_PATH_REQUIRED` and name the change a maintainer must make.';
 
 type Job = { name: string; conclusion: string | null; runner_id?: number | null; steps?: { name: string; conclusion: string | null }[] };
 /** The step of the code job that runs the coding harness; steps before it only prepare the runner and workspace. */
 const harnessStep = 'Run ./.runtime/harness';
+/** The step of the code job that installs the locked npm dependencies before the network is closed. */
+export const dependenciesStep = 'Prepare locked npm dependencies before network-isolated coding';
+/**
+ * Whether a failed executor run failed only because the locked npm dependencies of the workspace could not be
+ * installed (typically a package.json that no longer matches package-lock.json). That is the work's fault, not the
+ * runner's: it is reported as WORKSPACE_DEPENDENCIES_FAILED and costs an attempt (letterflow#34).
+ */
+export function failedDependencies(jobs: Job[]): boolean {
+  const failed = jobs.filter(j => j.conclusion === 'failure');
+  const code = failed.length === 1 ? failed.find(j => j.name === 'code' || j.name.endsWith(' / code')) : undefined;
+  return !!code?.steps?.length && code.steps.find(s => s.conclusion === 'failure')?.name === dependenciesStep;
+}
 /**
  * Whether a failed executor run ended before any coding agent started. Only positive evidence counts: a job GitHub
  * never gave a runner or a step, a code-job step before the harness, or a harness step whose log shows a setup step
@@ -138,9 +153,10 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     return bytes;
   }
   /** A failure to inspect the run is no evidence: the run then counts as an attempt. */
-  private async beforeAgent(target: { owner: string; repo: string }, runId: number): Promise<boolean> {
+  private async beforeAgent(target: { owner: string; repo: string }, runId: number): Promise<boolean | 'dependencies'> {
     try {
       const jobs = (await this.api.actions.listJobsForWorkflowRun({ ...target, run_id: runId, filter: 'latest', per_page: 100 })).data.jobs as Job[];
+      if (failedDependencies(jobs)) return 'dependencies';
       return await failedBeforeAgent(jobs, async () => {
         const code = jobs.find(j => j.conclusion === 'failure');
         if (!code || !('id' in code)) return null;
@@ -357,7 +373,8 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     if (run.conclusion !== 'success') {
       // No agent could run because every provider reported used-up credit: nothing started, so no attempt is spent.
       const noAgent = !!selection && !selection.selected;
-      return { failed: true as const, ...(noAgent || await this.beforeAgent(target, run.id) ? { beforeAgent: true } : {}) };
+      const cause = noAgent || await this.beforeAgent(target, run.id);
+      return { failed: true as const, ...(cause === 'dependencies' ? { dependencies: true } : cause ? { beforeAgent: true } : {}) };
     }
     const matches = artifacts.filter(a => a.name === `coding-result-${input.executionId}`);
     if (matches.length !== 1 || matches[0]!.expired || matches[0]!.size_in_bytes > 8000000) throw new Error('INVALID_EXECUTOR_ARTIFACT');

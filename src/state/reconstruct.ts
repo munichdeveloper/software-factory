@@ -15,6 +15,9 @@ export const admissionRejectedSummary = 'Runtime admission rejected before start
 /** Error code and summary of a coding run that failed before any agent started (runner or workspace setup). */
 export const infrastructureFailureCode = 'EXECUTOR_INFRASTRUCTURE_FAILURE';
 export const infrastructureFailureSummary = 'The coding run failed before the agent started';
+/** The workspace's locked npm dependencies could not be installed before the agent; costs an attempt (letterflow#34). */
+export const dependenciesFailureCode = 'WORKSPACE_DEPENDENCIES_FAILED';
+export const dependenciesFailureSummary = 'Installing the locked npm dependencies of the workspace failed before the agent started (package.json and package-lock.json do not match, or a package cannot be resolved)';
 /**
  * Such failures cost no attempt, up to this many per task version: a setup step that fails every time (a broken
  * lockfile, say) must still reach the retry limit instead of retrying without end.

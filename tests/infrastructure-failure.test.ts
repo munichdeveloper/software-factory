@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { failedBeforeAgent } from '../src/runtime/coding-executor.js';
+import { dependenciesStep, failedBeforeAgent, failedDependencies } from '../src/runtime/coding-executor.js';
 import { statusComment } from '../src/manager/status.js';
-import { freeInfrastructureFailures, infrastructureFailureCode, infrastructureFailureSummary, reconstruct } from '../src/state/reconstruct.js';
+import { dependenciesFailureCode, freeInfrastructureFailures, infrastructureFailureCode, infrastructureFailureSummary, reconstruct } from '../src/state/reconstruct.js';
 import { World } from './scenario-world.js';
 
 const step = (name: string, conclusion: string | null) => ({ name, conclusion });
@@ -48,6 +48,22 @@ async function failures(count: number, error: string) {
   const observations = await w.controller.observations([...w.store.rows.keys()]);
   return { w, task: reconstruct({ ...structuredClone(w.github.state), runtimeExecutions: observations, readyIsGrant: true }, w.cfg, w.now)[0]!, cfg: w.cfg };
 }
+
+describe('a coding run whose locked npm dependencies could not be installed', () => {
+  it('is recognized from the failed dependency step of the code job', () => {
+    expect(failedDependencies([ok('code / validate'), code(step('Set up job', 'success'), step(dependenciesStep, 'failure'), harness('skipped'))])).toBe(true);
+    expect(failedDependencies([ok('code / validate'), code(step('Set up job', 'success'), step('Prepare locked npm dependencies', 'failure'))])).toBe(false);
+    expect(failedDependencies([ok('code / validate'), code(step('Set up job', 'success'), harness('failure'))])).toBe(false);
+    expect(failedDependencies([{ ...ok('code / validate'), conclusion: 'failure' }, code(step(dependenciesStep, 'failure'))])).toBe(false);
+    expect(failedDependencies([ok('code / validate'), ok('code / code')])).toBe(false);
+  });
+  it('spends an attempt, unlike a runner failure', async () => {
+    const { task } = await failures(2, dependenciesFailureCode);
+    const ended = task.executions.filter(e => e.result);
+    expect(ended.some(e => e.infrastructure)).toBe(false);
+    expect(task.attemptsUsed).toBe(3);
+  });
+});
 
 describe('the retry budget', () => {
   it('spends no attempt on runs that failed before the agent started, up to the free allowance', async () => {
