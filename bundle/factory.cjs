@@ -65536,6 +65536,10 @@ var configSchema = external_exports.strictObject({
     keepReleases: bounded(1, 20, 5),
     timeoutMinutes: bounded(5, 60, 30),
     githubDeployment: external_exports.boolean().default(false),
+    // Paths whose changes need no deployment (software-factory#235), e.g. docs/** or .claude/**. When every file changed
+    // since the release active on the host matches one of them, the deployment and its verify script are skipped.
+    // A workflow_dispatch always deploys. Empty: every planned deployment runs.
+    ignorePaths: external_exports.array(globPattern).max(30).default([]),
     // Application secrets from the deploy environment's GitHub secrets: variable name -> secret name. The SF Manager
     // writes them into the wrapper's deploy-env (NAME=${{ secrets.SECRET }}); the values never enter this file.
     // The deployment's own credentials (DEPLOY_*) and GitHub's reserved names cannot be passed on.
@@ -73471,6 +73475,17 @@ var GitHubDeployPort = class {
     if (!("id" in data)) throw new Error("Deployment record was not created");
     return data.id;
   }
+  async changedFiles(base, head) {
+    const files = [];
+    for (let page = 1; page <= 30; page++) {
+      const { data } = await this.api.repos.compareCommitsWithBasehead({ ...this.target, basehead: `${base}...${head}`, per_page: 100, page });
+      if (data.status !== "ahead") return null;
+      const batch = data.files ?? [];
+      for (const file2 of batch) files.push(file2.filename, ...file2.previous_filename ? [file2.previous_filename] : []);
+      if (batch.length < 100) return files;
+    }
+    return null;
+  }
   async setDeploymentStatus(id, state, description, logUrl) {
     await this.api.repos.createDeploymentStatus({
       ...this.target,
@@ -73600,6 +73615,10 @@ exit 2
 function remoteValue(output2, key) {
   return [...output2.matchAll(new RegExp(`^${key}=(.*)$`, "gm"))].at(-1)?.[1]?.trim();
 }
+var currentReleaseScript = `set -euo pipefail
+root=$1
+if [ -L "$root/current" ]; then echo "SF_DEPLOY_CURRENT=$(basename "$(readlink "$root/current")")"; else echo "SF_DEPLOY_CURRENT=none"; fi
+`;
 
 // src/deploy/transport.ts
 var import_node_child_process2 = require("node:child_process");
@@ -73778,6 +73797,25 @@ function archive(sourceDir) {
     });
   });
   return { stream: stream2, done };
+}
+async function irrelevantChange(config2, sha4, event, transport, port, log = () => {
+}) {
+  const patterns = config2.deploy.ignorePaths.map(globToRegExp);
+  if (!patterns.length || event === "workflow_dispatch") return { skip: false };
+  try {
+    const result = await transport.run(currentReleaseScript, [config2.deploy.path], void 0, 6e4);
+    const current = result.code === 0 ? remoteValue(result.stdout, "SF_DEPLOY_CURRENT") ?? "" : "";
+    if (!SHA.test(current) || current === sha4) return { skip: false };
+    const files = await port.changedFiles(current, sha4);
+    if (!files?.length) return { skip: false };
+    const relevant = files.filter((file2) => !patterns.some((pattern) => pattern.test(file2)));
+    if (relevant.length) return { skip: false };
+    log(`Only ignored paths changed since the active release ${current.slice(0, 12)}: ${files.slice(0, 20).join(", ")}${files.length > 20 ? ", \u2026" : ""}`);
+    return { skip: true, current };
+  } catch (error62) {
+    log(`Changes since the active release could not be determined, deploying: ${error62 instanceof Error ? error62.message : "unknown error"}`);
+    return { skip: false };
+  }
 }
 async function executeDeploy(context2) {
   const { config: config2, sha: sha4, sourceDir, transport, port, logUrl } = context2;
@@ -74436,7 +74474,8 @@ credential=${credential2}
   try {
     if (command === "deploy-plan" || command === "deploy") {
       const port = new GitHubDeployPort(repository, process.env.GITHUB_TOKEN ?? "");
-      const decision = await planDeploy(config2, await readEvent(), port);
+      const event = await readEvent();
+      const decision = await planDeploy(config2, event, port);
       const mutationFree = config2.execution.dryRun || config2.autonomy.profile === "advisory";
       const target = decision.deploy ? resolveTarget(config2) : null;
       const writeSummary = async (text) => {
@@ -74465,11 +74504,19 @@ sha=${decision.deploy ? decision.sha : ""}
       const missing = missingDeploySecrets(config2.deploy.secrets, environment);
       if (missing.length) console.log(`::warning title=Software Factory deploy::deploy.secrets not passed by the wrapper (roll the configuration out through the SF Manager): ${missing.join(", ")}`);
       const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}` : void 0;
+      const transport = new SshTransport(target);
+      const unchanged = await irrelevantChange(config2, decision.sha, event.name, transport, port, (line) => console.log(line));
+      if (unchanged.skip) {
+        await transport.close();
+        await writeSummary(deploySummary(null, { deploy: false, reason: `no-relevant-changes since ${unchanged.current.slice(0, 12)}`, sha: decision.sha }, config2.deploy.environment));
+        console.log(JSON.stringify({ correlationId, outcome: "skipped", reason: "no-relevant-changes", sha: decision.sha, current: unchanged.current }));
+        return;
+      }
       const report2 = await executeDeploy({
         config: config2,
         sha: decision.sha,
         sourceDir: values.source ?? ".",
-        transport: new SshTransport(target),
+        transport,
         port,
         logUrl: runUrl,
         environment,

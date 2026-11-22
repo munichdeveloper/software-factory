@@ -66,6 +66,7 @@ Generated JSON schemas share the executable Zod source.
 | `deploy.healthcheck.url`/`timeoutSeconds` | `null`/`180` | Optional HTTP check on the host; wait timeout 10–900 |
 | `deploy.rollback`/`keepReleases`/`timeoutMinutes` | `true`/`5`/`30` | Restart previous release on failure; releases kept 1–20; per-step timeout 5–60 |
 | `deploy.githubDeployment` | `false` | Additional GitHub deployment record with outcome |
+| `deploy.ignorePaths` | `[]` | Globs whose changes need no deployment (0.27.0): if every file changed since the release active on the host matches, the deployment and `verify` are skipped; `workflow_dispatch` always deploys, see [deploy](deploy.md#skipping-irrelevant-changes-deployignorepaths-0270) |
 | `deploy.secrets` | `{}` | Application secrets from GitHub: `NAME: SECRET_NAME`; the SF Manager renders them into the wrapper's `deploy-env` (0.12.0, see [deploy](deploy.md#declared-in-the-configuration-deploysecrets-0120)) |
 | `router` | absent | Model router (0.16.0): a decision model picks model and effort per call among the candidates of each purpose, see [Model router](#model-router) |
 | `reporting.persistDecisions` | `true` | Deduplicated decision comments; execution intents/results and automatic block provenance always durable |

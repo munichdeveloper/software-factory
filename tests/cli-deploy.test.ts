@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const github = vi.hoisted(() => ({ readConfig: vi.fn() }));
-const port = vi.hoisted(() => ({ defaultBranch: vi.fn(), workflowRuns: vi.fn(), createDeployment: vi.fn(), setDeploymentStatus: vi.fn() }));
-const deploy = vi.hoisted(() => ({ executeDeploy: vi.fn() }));
+const port = vi.hoisted(() => ({ defaultBranch: vi.fn(), workflowRuns: vi.fn(), createDeployment: vi.fn(), setDeploymentStatus: vi.fn(), changedFiles: vi.fn() }));
+const deploy = vi.hoisted(() => ({ executeDeploy: vi.fn(), irrelevantChange: vi.fn() }));
 vi.mock('../src/github/client.js', () => ({ GitHubClient: class { readConfig = github.readConfig; } }));
 vi.mock('../src/deploy/github.js', () => ({ GitHubDeployPort: class {
-  defaultBranch = port.defaultBranch; workflowRuns = port.workflowRuns; createDeployment = port.createDeployment; setDeploymentStatus = port.setDeploymentStatus;
+  defaultBranch = port.defaultBranch; workflowRuns = port.workflowRuns; createDeployment = port.createDeployment; setDeploymentStatus = port.setDeploymentStatus; changedFiles = port.changedFiles;
 } }));
-vi.mock('../src/deploy/index.js', async original => ({ ...(await original<typeof import('../src/deploy/index.js')>()), executeDeploy: deploy.executeDeploy }));
+vi.mock('../src/deploy/index.js', async original => ({ ...(await original<typeof import('../src/deploy/index.js')>()), executeDeploy: deploy.executeDeploy, irrelevantChange: deploy.irrelevantChange }));
 import { main } from '../src/cli.js';
 
 const head = 'a'.repeat(40);
@@ -27,6 +27,7 @@ beforeEach(async () => {
   github.readConfig.mockResolvedValue('version: 1\nfactory:\n  scope: test\ndeploy:\n  enabled: true\n  trigger: push\n');
   port.defaultBranch.mockResolvedValue({ name: 'main', sha: head });
   deploy.executeDeploy.mockReset();
+  deploy.irrelevantChange.mockReset().mockResolvedValue({ skip: false });
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
@@ -62,4 +63,12 @@ it('respects the global kill switch', async () => {
   github.readConfig.mockResolvedValue('version: 1\nfactory:\n  enabled: false\n  scope: test\ndeploy:\n  enabled: true\n  trigger: push\n');
   await main(['deploy-plan']);
   expect(await readFile(join(dir, 'output'), 'utf8')).toBe('');
+});
+it('skips the deployment when only ignored paths changed since the active release', async () => {
+  deploy.irrelevantChange.mockResolvedValue({ skip: true, current: 'c'.repeat(40) });
+  await main(['deploy', '--sha', head, '--source', dir]);
+  expect(deploy.irrelevantChange).toHaveBeenCalledWith(expect.anything(), head, 'push', expect.anything(), expect.anything(), expect.any(Function));
+  expect(deploy.executeDeploy).not.toHaveBeenCalled();
+  expect(await readFile(join(dir, 'summary'), 'utf8')).toContain('no-relevant-changes since cccccccccccc');
+  expect(process.exitCode ?? 0).toBe(0);
 });

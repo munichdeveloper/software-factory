@@ -141,3 +141,9 @@ exit 2
 export function remoteValue(output: string, key: string): string | undefined {
   return [...output.matchAll(new RegExp(`^${key}=(.*)$`, 'gm'))].at(-1)?.[1]?.trim();
 }
+
+/** Prints the commit of the release the "current" link points to (SF_DEPLOY_CURRENT, "none" without one). Arguments: root. */
+export const currentReleaseScript = `set -euo pipefail
+root=$1
+if [ -L "$root/current" ]; then echo "SF_DEPLOY_CURRENT=$(basename "$(readlink "$root/current")")"; else echo "SF_DEPLOY_CURRENT=none"; fi
+`;

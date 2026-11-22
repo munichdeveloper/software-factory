@@ -5,7 +5,30 @@ on:
     branches: [main, 'feat/**']
 permissions: {}
 jobs:
+  # Which areas this change touches (software-factory#234). Untouched areas skip their jobs via `if:`; a skipped job
+  # counts as passed for required checks and the merge manager, a workflow that never ran would leave them pending.
+  # If this job fails, its outputs are empty and every job below runs.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      code: ${{ steps.areas.outputs.code }}
+      runner: ${{ steps.areas.outputs.runner }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: areas
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.before }}
+        run: node scripts/changed-areas.mjs
   runner-pool:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.runner != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -22,6 +45,8 @@ jobs:
             google-chrome --version; iptables --version; ip6tables --version; docker compose version; docker buildx version
             jq --version; ssh -V; fc-match sans; test -r /etc/sf-runner-pool; bash -n /usr/local/bin/sf-runner'
   temporal-package:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -62,6 +87,8 @@ jobs:
           cmp "$RUNNER_TEMP/previous-worker.json" "$RUNNER_TEMP/previous-broker.json"
           node -e 'const a=require("node:assert/strict"),p=require(process.argv[1]);a.equal(p.release.factorySha,process.argv[2]);a.equal(p.release.buildId,process.argv[2])' "$RUNNER_TEMP/previous-worker.json" "$previous"
   temporal-runtime:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -85,6 +112,8 @@ jobs:
           path: .runtime/runtime-acceptance/result.json
           if-no-files-found: ignore
   checks:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

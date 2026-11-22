@@ -11,6 +11,11 @@ function fixture() {
     if (path === '/repos/owner/target') value = { default_branch: 'main' };
     else if (path.endsWith('/git/ref/heads/main')) value = { object: { sha: head } };
     else if (path.endsWith('/actions/runs')) value = { total_count: 1, workflow_runs: [{ name: 'Application checks', event: 'push', status: 'completed', conclusion: 'success', created_at: '2026-11-07T00:00:00Z' }] };
+    else if (path.includes('/compare/')) {
+      const page = Number(url.searchParams.get('page') ?? '1');
+      value = path.includes('/compare/behind...') ? { status: 'diverged', files: [] }
+        : { status: 'ahead', files: page === 1 ? Array.from({ length: 100 }, (_, i) => ({ filename: `docs/${i}.md` })) : [{ filename: 'src/new.ts', previous_filename: 'src/old.ts' }] };
+    }
     else if (path.endsWith('/deployments') && method === 'POST') value = { id: 42 };
     else if (path.endsWith('/deployments/42/statuses')) value = { id: 1 };
     else return new Response('{"message":"Not Found"}', { status: 404, headers: { 'content-type': 'application/json' } });
@@ -41,4 +46,13 @@ it('records deployments without merging or requiring extra contexts', async () =
 it('validates repository and token', () => {
   expect(() => new GitHubDeployPort('invalid', 'token')).toThrow('Repository must be owner/name');
   expect(() => new GitHubDeployPort('owner/target', '')).toThrow('GITHUB_TOKEN is required');
+});
+
+it('lists the files changed since a commit, including renamed sources, only when strictly ahead', async () => {
+  const { port, calls } = fixture();
+  const files = await port.changedFiles('c'.repeat(40), head);
+  expect(files).toHaveLength(102);
+  expect(files?.slice(-2)).toEqual(['src/new.ts', 'src/old.ts']);
+  expect(calls.at(-1)?.query.get('page')).toBe('2');
+  expect(await port.changedFiles('behind', head)).toBeNull();
 });

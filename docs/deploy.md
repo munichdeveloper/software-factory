@@ -111,12 +111,35 @@ deploy:
   keepReleases: 5
   timeoutMinutes: 30       # per upload and per activation
   githubDeployment: false  # extra deployment record; the wrapper's environment already records one
+  ignorePaths: []          # e.g. [docs/**, .claude/**, "**/*.md"], see "Skipping irrelevant changes" below
   secrets:                 # application secrets from GitHub, see "Secrets from GitHub" below
     FACTORY_MONITOR_TOKEN: MONITOR_FACTORY_TOKEN   # variable on the host: GitHub secret name
 ```
 
 `factory.enabled: false`, `execution.dryRun` and the `advisory` profile stop
 deployments like every other mutation.
+
+### Skipping irrelevant changes (`deploy.ignorePaths`, 0.27.0)
+
+Globs (`*` and `?` within a segment, `**` across segments, relative paths only).
+Before uploading, the deploy step reads the release the host's `current` link
+points to and asks GitHub for the files changed from that commit to the planned
+one. If every file matches one of `ignorePaths`, the deployment and its
+`verify` script (e.g. the runtime canary) are skipped with the reason
+`no-relevant-changes`; the job succeeds.
+
+The comparison is with the **active release**, not with the previous commit: a
+code commit superseded by a documentation commit before its own deployment ran
+is still undeployed, so the documentation commit deploys both. Anything
+uncertain deploys: empty `ignorePaths`, `workflow_dispatch`, no or an unknown
+active release, the active commit itself (a re-run), a history that is not
+strictly ahead, or a failed comparison.
+
+CI can skip its own heavy jobs for the same paths with a change-detection job
+and job-level `if:` (see the Factory's `ci.yml`, software-factory#234). Do not
+use workflow-level `paths`/`paths-ignore` for required checks: a workflow that
+never runs leaves them pending and blocks the merge, a skipped job counts as
+passed.
 
 ## Security
 
