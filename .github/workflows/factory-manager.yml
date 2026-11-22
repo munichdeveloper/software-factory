@@ -1,0 +1,35 @@
+name: Factory Temporal executor
+run-name: SF Temporal ${{ fromJSON(inputs.request).executionId }} ${{ inputs.binding }}
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        type: string
+        required: true
+      binding:
+        type: string
+        required: true
+      validation:
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sf-temporal-${{ fromJSON(inputs.request).executionId }}
+  cancel-in-progress: false
+jobs:
+  code:
+    permissions:
+      contents: read
+      actions: read
+    uses: munichdeveloper/software-factory/.github/workflows/temporal-coding-executor.yml@3001d67eb38a2fc5d5070d959da10cb33c398967
+    with:
+      factory-ref: 3001d67eb38a2fc5d5070d959da10cb33c398967
+      harness-ref: a2ae8596123640a1469b6b66376f9705125589e0
+      request: ${{ inputs.request }}
+      validation: ${{ inputs.validation }}
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
