@@ -65272,7 +65272,17 @@ var routerSchema = external_exports.strictObject({
   /** First attempts of coding runs (Temporal engine); escalated attempts keep retryAgents. */
   coding: routerCandidates(codingCandidateSchema).optional(),
   review: routerCandidates(llmCandidateSchema).optional(),
-  risk: routerCandidates(llmCandidateSchema).optional(),
+  /**
+   * Merge risk: Jev assesses the risk class himself (Johannes, 2026-11-21), it no longer picks a model that assesses.
+   * `candidates` stay accepted so older configurations keep their hash, but pick nothing. `certainty`: the class is
+   * the lowest one Jev is at least this sure the risk does not exceed (default 0.8, defaultRiskCertainty).
+   */
+  risk: external_exports.strictObject({
+    candidates: external_exports.array(llmCandidateSchema).min(2).max(maxRouterCandidates).optional(),
+    certainty: external_exports.number().min(0.5).max(1).optional()
+  }).superRefine((value, context2) => {
+    if (value.candidates && new Set(value.candidates.map((c) => c.id)).size !== value.candidates.length) context2.addIssue({ code: "custom", path: ["candidates"], message: "candidate ids must be unique" });
+  }).optional(),
   planner: routerCandidates(llmCandidateSchema).optional()
 });
 var configSchema = external_exports.strictObject({
@@ -69743,6 +69753,8 @@ var skipEn = {
 function routeNoteDe(outcome) {
   if (!outcome) return "";
   const { record: record2, candidate } = outcome;
+  if (outcome.ran === "jev") return `Bewertung: Jev (${record2.model}) hat die Risikoklasse direkt bestimmt.`;
+  if (outcome.direct) return `Bewertung: ohne Jev (${record2.used ? "Jev hat keine verwertbare Klasse genannt" : skipDe[record2.reason]}${!record2.used && record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}); bewertet haben die konfigurierten Modelle.`;
   if (outcome.ran === "candidate" && record2.used && candidate)
     return `Modellwahl: Der Model Router (Jev) w\xE4hlte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ""}) mit ${pct(record2.confidence)} Wahrscheinlichkeit.`;
   if (record2.used) return `Modellwahl: Der Model Router w\xE4hlte \`${record2.choice}\`, der Kandidat konnte nicht laufen; gepr\xFCft haben die konfigurierten Modelle.`;

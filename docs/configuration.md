@@ -221,7 +221,7 @@ router:
         model: claude-opus-5-5
         reasoningEffort: high
         description: Changes across several modules, new architecture, migrations, security or hard debugging.
-  review:                       # merge review; likewise risk (assessment) and planner (llm.provider openai)
+  review:                       # merge review; likewise planner (llm.provider openai)
     candidates:
       - id: sonnet-medium
         provider: claude
@@ -266,6 +266,27 @@ case in which the configured models ran instead too, at most once per repository
 next message counts the cases in between. Issue and pull request text reaches Jev as untrusted data it only classifies:
 at worst it picks another of the configured candidates. `router` is optional without a default: a configuration without
 it keeps its hash.
+
+### Merge risk assessed by Jev (`router.risk`, since 0.24.0)
+
+```yaml
+router:
+  risk:
+    certainty: 0.8              # optional, default 0.8
+```
+
+For the merge risk Jev is not asked which model should assess, but for the risk class itself (Johannes, 2026-11-21):
+one choice question with the options `low`, `medium`, `high` and `critical`, the classes and rules of the model assessor
+(content over size; authentication, permissions and money at least `high`; when unsure the higher class). Jev reads the
+size, `merge.risk.guidance` and the touched areas as trusted constraints, then the file list and as much of every patch
+as fits the router's state limit (8000 characters), shared evenly between the files; the patches are untrusted data.
+From Jev's probabilities the Factory takes the lowest class Jev is at least `certainty` sure the risk does not exceed,
+so a split answer leans to the higher class (low 55 %, medium 30 %, high 15 % gives `medium` at 0.8). The deterministic
+rules stay on top: built-in critical paths, configured areas and the size limits of `merge.risk`. Without a usable
+answer (no key, Jev unreachable or invalid, no probabilities and a choice below `certainty`) the configured assessor
+(`merge.risk.assessor`, Claude first, OpenAI second) assesses as before. The risk comment says who assessed
+(`Bewertung: Jev (…) hat die Risikoklasse direkt bestimmt.` or `Bewertung: ohne Jev (…)`). `router.risk.candidates` from
+older configurations are still accepted but choose nothing; `router.risk` without `candidates` is enough.
 
 ## Jev planner
 

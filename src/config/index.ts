@@ -84,7 +84,15 @@ export const routerSchema = z.strictObject({
   /** First attempts of coding runs (Temporal engine); escalated attempts keep retryAgents. */
   coding: routerCandidates(codingCandidateSchema).optional(),
   review: routerCandidates(llmCandidateSchema).optional(),
-  risk: routerCandidates(llmCandidateSchema).optional(),
+  /**
+   * Merge risk: Jev assesses the risk class himself (Johannes, 2026-11-21), it no longer picks a model that assesses.
+   * `candidates` stay accepted so older configurations keep their hash, but pick nothing. `certainty`: the class is
+   * the lowest one Jev is at least this sure the risk does not exceed (default 0.8, defaultRiskCertainty).
+   */
+  risk: z.strictObject({ candidates: z.array(llmCandidateSchema).min(2).max(maxRouterCandidates).optional(),
+    certainty: z.number().min(0.5).max(1).optional() }).superRefine((value, context) => {
+    if (value.candidates && new Set(value.candidates.map(c => c.id)).size !== value.candidates.length) context.addIssue({ code: 'custom', path: ['candidates'], message: 'candidate ids must be unique' });
+  }).optional(),
   planner: routerCandidates(llmCandidateSchema).optional()
 });
 export type RouterConfig = z.infer<typeof routerSchema>;
