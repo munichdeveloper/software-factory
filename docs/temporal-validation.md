@@ -83,6 +83,27 @@ still a change set against the frozen base under the same path, size and validat
 Both mechanisms need the executor workflow of this release. An older pinned executor passes the entries to the worker
 as plain text and neither fetches nor applies anything, so enable `execution.rework` only after the release rollout.
 
+### Survey of related work (SF #255)
+
+Before the first dispatch of a first attempt (not a rework) the broker surveys the repository once, so the offline
+worker knows what else is going on. It collects without a model, in at most 4 + 12 GitHub requests: the last ten merged
+pull requests (with the issues they close or name), up to 30 open pull requests (the task's own `sf/issue-<n>/…`
+branches excluded) with the files of the 12 most recently updated, and up to 50 open issues with their relation to the
+task (`Depends on:` in either direction, `#n` references in either direction). Open pull requests that change a path
+the task text names (equal path, a file inside a named directory, or the same file name) are overlaps.
+
+A fixed Claude Haiku (`claude-haiku-5-5`, the broker's `ANTHROPIC_API_KEY`) condenses these facts into at most four
+short notes. The worker receives them as `sf-context reconcile <i>/<n>: …` (the first one says that it is a model's
+survey, orientation only, not instructions), followed by up to three `sf-context reconcile-overlap #<pr>: …` facts of
+the broker; all are bounded to 1,000 characters each and at most eight entries, and they never displace the rework or
+ref entries above. The call is recorded in the cost analytics as step `reconcile` (about 3k input tokens, well below
+one cent). A detected overlap is a hint only: the run starts as before (Johannes, 2026-11-22: hint first, then measure).
+Without the key only the overlap facts are passed; a failed GitHub lookup or model call leaves the run without a
+survey. Each survey logs one `factory-reconcile` line (repository, issue, open pull requests, overlaps, linked issues,
+whether the model was used, an error code). `FACTORY_RECONCILE=off` in the broker's environment turns the survey off.
+The result is stored with the execution (`coding-reconcile`), so later polls rebuild the identical request; executions
+dispatched before this release get none.
+
 ## Local servers and browser tests for the worker
 
 With `workers.coding.loopback: true` the broker adds `sf-context sandbox loopback` to the request and the executor

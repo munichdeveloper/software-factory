@@ -11,6 +11,7 @@ import type { EffectPort } from './effects.js';
 import { hash } from '../state/identity.js';
 import { bindValidation, validationReportSchema, type ValidationReport } from './validation-contract.js';
 import { defaultCodingBudgetUsd, usageEntry, type UsageEntry } from './usage.js';
+import type { Reconciler } from './reconcile.js';
 import { failedChecksEntry, escalated, loopbackEntry, maxContextRefs, namedRefs, outputEntries, refEntry, reworkEntry, reworkOf, unavailableEntry } from './coding-context.js';
 
 export const codingWorkflow = 'factory-temporal-executor.yml';
@@ -143,7 +144,9 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     /** Called with the token usage of each completed run (UsageAlerts); must not throw. */
     private onUsage?: (entry: UsageEntry) => Promise<void>,
     /** Whether the Claude subscription may still take runs today (broker-wide daily cap); without it always. */
-    private subscription?: SubscriptionGate) {}
+    private subscription?: SubscriptionGate,
+    /** The survey before a first attempt (SF #255): related open and merged work as context; without it none. */
+    private reconciler?: Reconciler) {}
   private async download(target: { owner: string; repo: string }, artifactId: number, limit: number, error: string) {
     const response = await this.api.actions.downloadArtifact({ ...target, artifact_id: artifactId, archive_format: 'zip', request: { parseSuccessResponseBody: false } });
     const reader = (response.data as ReadableStream<Uint8Array>).getReader(); const chunks: Uint8Array[] = []; let size = 0;
@@ -297,6 +300,17 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
         catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
         return { entries: await this.context(snapshot, target, snapshot.baseRef ?? metadata.default_branch, coding.loopback) };
       } });
+    // The survey of related work (SF #255), once per execution and stored like the context above. Only a first attempt
+    // gets one: a rework continues its branch with the review's or the checks' findings. It never fails the run.
+    const survey = this.reconciler ? await effects.perform({ key: 'coding-reconcile', payload: { baseSha: snapshot.baseSha }, authorize, contentAddressed: true,
+      validate: z.strictObject({ entries: z.string().max(1000).array().max(8) }).parse, reconcile: async () => null,
+      apply: async () => {
+        if (reworkOf(input)) return { entries: [] };
+        try { await this.api.git.getRef({ ...target, ref: `heads/sf-temporal-executor/${input.executionId}` }); return { entries: [] }; }
+        catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
+        return { entries: (await this.reconciler!.survey(snapshot.repository, target, input)).entries.slice(0, 8) };
+      } }) : { entries: [] };
+    const room = Math.max(0, 30 - input.contextReferences.length - extra.entries.length);
     // The model router (router.coding) picks the agent of a non-escalated attempt among its candidates, once per
     // execution; the decision and the chosen agent are stored, so later polls rebuild the identical request even when the
     // configuration changed meanwhile. No decision, a refused one or an execution dispatched before routing: null.
@@ -338,7 +352,7 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
       } })).usd;
     const request = codingExecutionSchema.parse({ contractVersion: '3.0', executionId: input.executionId, worker: first!.agent,
       task: { id: `github:${snapshot.repository}#${input.issueNumber}`, version: input.taskVersion, description,
-        acceptanceCriteria: input.acceptanceCriteria, contextReferences: [...input.contextReferences, ...extra.entries] }, baseSha: snapshot.baseSha,
+        acceptanceCriteria: input.acceptanceCriteria, contextReferences: [...input.contextReferences, ...extra.entries, ...survey.entries.slice(0, room)] }, baseSha: snapshot.baseSha,
       allowedActions: ['edit_workspace', 'run_commands'], model: first!.model, effort: first!.reasoningEffort,
       limits: { timeoutMinutes: input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5000000, ...(budget === null ? {} : { maxCostUsd: budget }) },
       ...(others.length ? { fallbacks: others.map(a => ({ worker: a.agent, model: a.model, effort: a.reasoningEffort, ...(a.credential ? { credential: a.credential } : {}) })) } : {}) });

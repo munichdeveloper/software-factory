@@ -3,7 +3,7 @@ import { hash } from '../state/identity.js';
 
 /**
  * Cost analytics for software-factory-monitor (Johannes, 2026-11-19): what each issue cost until its pull request was
- * merged, cost per merged feature, cost per step (coding, review, risk, planner) and which models did the work, chosen
+ * merged, cost per merged feature, cost per step (coding, review, risk, planner, reconcile) and which models did the work, chosen
  * by the model router (Jev) or configured. Every attempt of an issue counts towards it, also discarded ones ("komplette
  * Kosten"); only inference cost is counted (Jev's routing requests and Actions minutes are not).
  *
@@ -11,7 +11,7 @@ import { hash } from '../state/identity.js';
  * snapshots each reconciliation already fetched (no extra GitHub request). The view is served at GET /v1/analytics to
  * the monitor token, like the job queue; it carries issue titles and is never sent to Slack or logs.
  */
-export type AnalyticsStep = 'coding' | 'review' | 'risk' | 'planner';
+export type AnalyticsStep = 'coding' | 'review' | 'risk' | 'planner' | 'reconcile';
 export interface AnalyticsTokens { input: number; output: number; cacheRead: number; cacheWrite: number }
 export interface AnalyticsCall {
   repository: string; step: AnalyticsStep; issueNumber: number | null; prNumber: number | null; executionId: string | null;
@@ -107,7 +107,7 @@ export interface AnalyticsView {
   models: AnalyticsModelRow[];
   features: AnalyticsFeature[];
 }
-const steps: AnalyticsStep[] = ['coding', 'review', 'risk', 'planner'];
+const steps: AnalyticsStep[] = ['coding', 'review', 'risk', 'planner', 'reconcile'];
 const round = (value: number) => Math.round(value * 10000) / 10000;
 /** Monday (UTC) of the week of an instant, as YYYY-MM-DD. */
 export function weekOf(at: string): string {
@@ -157,7 +157,7 @@ export function analyticsView(calls: AnalyticsCall[], issues: (AnalyticsIssue & 
     const f = features.get(k) ?? { repository: info?.repository ?? c.repository, issueNumber: c.issueNumber, title: info?.title ?? null,
       url: `https://github.com/${info?.repository ?? c.repository}/issues/${c.issueNumber}`,
       state: info?.mergedAt ? 'merged' : info?.state === 'closed' ? 'closed' : 'open', prNumber: info?.prNumber ?? null, mergedAt: info?.mergedAt ?? null,
-      mergedBy: info?.mergedBy ?? null, costUsd: 0, costInRange: 0, unknownCostCalls: 0, steps: { coding: 0, review: 0, risk: 0, planner: 0 },
+      mergedBy: info?.mergedBy ?? null, costUsd: 0, costInRange: 0, unknownCostCalls: 0, steps: { coding: 0, review: 0, risk: 0, planner: 0, reconcile: 0 },
       codingRuns: 0, failedCodingRuns: 0, lastActivity: c.at, calls: [] } satisfies AnalyticsFeature;
     f.costUsd += c.costUsd ?? 0; if (inRange(c.at)) f.costInRange += c.costUsd ?? 0;
     if (c.costUsd === null) f.unknownCostCalls++;

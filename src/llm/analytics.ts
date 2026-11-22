@@ -10,7 +10,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * The caller sets the context (setLlmSubject for the pull request, withLlmStep for the step); the provider call reports
  * its tokens through recordLlmCall. Without a context or a sink nothing is recorded, and recording never fails a call.
  */
-export type LlmStep = 'review' | 'risk' | 'planner';
+export type LlmStep = 'review' | 'risk' | 'planner' | 'reconcile';
 export type ModelSelection = 'router' | 'configured' | 'escalation';
 export interface LlmCallContext {
   repository?: string; prNumber?: number | null; issueNumber?: number | null; step?: LlmStep;
