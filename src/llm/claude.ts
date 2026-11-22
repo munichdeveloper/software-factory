@@ -8,13 +8,11 @@ import { recordLlmCall } from './analytics.js';
  * Claude first and fall back to OpenAI, in the order the coding agents use. The repository configuration still names
  * OpenAI models; the Claude models come from the broker's environment, so no configuration hash changes.
  */
-export interface ClaudeModels { planner: string; review: string; risk: string; riskSplit: string }
+export interface ClaudeModels { planner: string; review: string; risk: string }
 export const claudeModels = (env: Record<string, string | undefined>): ClaudeModels => ({
   planner: env.FACTORY_CLAUDE_PLANNER_MODEL || 'claude-opus-5-5',
   review: env.FACTORY_CLAUDE_REVIEW_MODEL || 'claude-opus-5-5',
-  // The risk class comes from Haiku (Johannes, 2026-11-22), the risk split keeps the stronger model.
-  risk: env.FACTORY_CLAUDE_RISK_MODEL || 'claude-haiku-5-5',
-  riskSplit: env.FACTORY_CLAUDE_RISK_SPLIT_MODEL || 'claude-opus-5-5'
+  risk: env.FACTORY_CLAUDE_RISK_MODEL || 'claude-opus-5-5'
 });
 export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 /** OpenAI effort names onto Claude's; no effort configured means the model's own default. */

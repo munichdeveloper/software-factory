@@ -248,7 +248,7 @@ export async function main(args = process.argv.slice(2)) {
       const routed: RoutedModels = { routing, repository: item.repository, claude, openaiKey: process.env.OPENAI_API_KEY ?? '' };
       // Risk isolation (SF #210): the split texts come from the risk assessment's models, Claude first.
       const plainSplitter = new OpenAIRiskSplitter(process.env.OPENAI_API_KEY ?? '');
-      const splitter = new CachedRiskSplitter(claude ? new FallbackRiskSplitter(new ClaudeRiskSplitter(claude, models.riskSplit), plainSplitter) : plainSplitter);
+      const splitter = new CachedRiskSplitter(claude ? new FallbackRiskSplitter(new ClaudeRiskSplitter(claude, models.risk), plainSplitter) : plainSplitter);
       const openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? ''), deterministic = new RiskSplitPlanner(new StaticPlanner(), splitter),
         jev = new RiskSplitPlanner(new JevPlanner(routing, item.repository, new StaticPlanner(), splitter), splitter);
       const planner = routedPlanner(routed, claude ? new FallbackPlanner(new ClaudePlanner(claude, models.planner), openai) : openai);
