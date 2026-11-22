@@ -9,10 +9,15 @@ import { recordLlmCall } from './analytics.js';
  * OpenAI models; the Claude models come from the broker's environment, so no configuration hash changes.
  */
 export interface ClaudeModels { planner: string; review: string; risk: string }
+/**
+ * The merge risk assessor, fixed (Johannes, 2026-11-22: "nimm ein Haiku mal fest rein dafür"): neither the router nor
+ * the broker's environment chooses it. It classifies behind the hard rules of merge/risk.ts, which it cannot lower.
+ */
+export const claudeRiskModel = 'claude-haiku-5-5';
 export const claudeModels = (env: Record<string, string | undefined>): ClaudeModels => ({
   planner: env.FACTORY_CLAUDE_PLANNER_MODEL || 'claude-opus-5-5',
   review: env.FACTORY_CLAUDE_REVIEW_MODEL || 'claude-opus-5-5',
-  risk: env.FACTORY_CLAUDE_RISK_MODEL || 'claude-opus-5-5'
+  risk: claudeRiskModel
 });
 export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 /** OpenAI effort names onto Claude's; no effort configured means the model's own default. */

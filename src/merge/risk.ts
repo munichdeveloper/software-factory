@@ -29,6 +29,8 @@ export const riskRecordSchema = z.strictObject({
   lines: z.number().int().nonnegative(),
   // Optional: records written before #209 have no file count.
   files: z.number().int().nonnegative().optional(),
+  // Optional: records written before 0.26.0 have no hard rule hits.
+  ruleHits: z.array(z.strictObject({ rule: z.enum(['migration', 'auth', 'interface']), path: z.string().max(500) })).max(20).optional(),
   reason: z.string().max(2000),
   factors: riskAssessmentSchema.shape.factors
 });
@@ -65,9 +67,36 @@ const matches = (patterns: readonly string[], path: string) => patterns.some(p =
 /** Added plus removed lines of a unified diff (GitHub's per-file patch has no file headers). */
 export const changedLines = (patch: string) => patch.split('\n').filter(l => (l.startsWith('+') || l.startsWith('-')) && !l.startsWith('+++') && !l.startsWith('---')).length;
 
+/**
+ * Hard rules ahead of the model (Johannes, 2026-11-22): database migrations, authentication and permissions, and new
+ * interfaces to the outside make a change at least high, whatever the model or a configured area says. The model may
+ * only classify above them, never below. Tests and documentation never trigger them.
+ */
+export type RuleHit = { rule: 'migration' | 'auth' | 'interface'; path: string };
+export const ruleFloorClass: RiskClass = 'high';
+const isTestOrDoc = (path: string) => /(^|\/)(tests?|__tests__|spec|e2e|docs?)\//i.test(path) || /\.(test|spec)\.[a-z]+$/i.test(path) || /\.(md|mdx|txt|rst)$/i.test(path);
+const migrationPath = /(^|\/)(migrations?|db\/migrate|alembic\/versions)\/|(^|\/)schema\.prisma$|\.migration\.[a-z]+$/i;
+const authPath = /(^|[/._-])(auth|authn|authz|oauth2?|oidc|saml|sso|login|logout|signin|signup|session|sessions|permission|permissions|rbac|acl|policies|jwt|passwords?|credentials?)([/._-]|$)/i;
+const interfacePath = /(^|\/)(api|routes|controllers|endpoints|webhooks?|graphql|rpc)\/|\.(controller|routes?|resolver|handler)\.[a-z]+$|(^|\/)route\.[jt]sx?$/i;
+const openApiPath = /(^|\/)(openapi|swagger)\.(ya?ml|json)$/i;
+export function ruleHits(changes: Pick<ReviewInput['changes'][number], 'path' | 'status'>[]): RuleHit[] {
+  const hits: RuleHit[] = [];
+  for (const { path, status } of changes) {
+    if (isTestOrDoc(path)) continue;
+    if (migrationPath.test(path)) hits.push({ rule: 'migration', path });
+    else if (authPath.test(path)) hits.push({ rule: 'auth', path });
+    // A new file in an interface location, or any change to an API contract, opens or changes an interface to the outside.
+    else if ((status === 'added' && interfacePath.test(path)) || openApiPath.test(path)) hits.push({ rule: 'interface', path });
+  }
+  return hits.slice(0, 20);
+}
+const ruleNames: Record<RuleHit['rule'], string> = { migration: 'Datenbank-Migration', auth: 'Authentifizierung/Berechtigungen', interface: 'neue Schnittstelle nach außen' };
+
 export interface RiskRules {
   builtinPaths: string[]; matchedAreas: string[]; covered: boolean;
-  /** Minimum class from touched areas and the size rule. */
+  /** Hard rule hits (migrations, auth, new interfaces); any hit puts the floor at ruleFloorClass. */
+  ruleHits: RuleHit[];
+  /** Minimum class from touched areas, the hard rules and the size rule. */
   floor: RiskClass; areaClass: RiskClass | null; lines: number; files: number;
 }
 /** Default of `merge.risk.maxMediumRiskFiles`: more changed files make a change at least high (#209). */
@@ -78,8 +107,8 @@ export const defaultMaxMediumRiskFiles = 100;
  */
 export const highRiskFactors: readonly (typeof riskFactors[number])[] = ['auth', 'permissions', 'payments'];
 const contentFloor = (factors: RiskAssessment['factors']): RiskClass => factors.some(f => highRiskFactors.includes(f.factor)) ? 'high' : 'low';
-/** The deterministic part of the classification: built-in paths, configured areas and the size rule. */
-export function riskRules(changes: Pick<ReviewInput['changes'][number], 'path' | 'patch'>[], risk: Config['merge']['risk']): RiskRules {
+/** The deterministic part of the classification: built-in paths, configured areas, the hard rules and the size rule. */
+export function riskRules(changes: (Pick<ReviewInput['changes'][number], 'path' | 'patch'> & { status?: string })[], risk: Config['merge']['risk']): RiskRules {
   const builtinPaths = changes.map(c => c.path).filter(p => matches(builtinCriticalPaths, p));
   const matchedAreas = new Set<string>(), classes: RiskClass[] = [];
   let covered = changes.length > 0;
@@ -91,7 +120,9 @@ export function riskRules(changes: Pick<ReviewInput['changes'][number], 'path' |
   const lines = changes.reduce((sum, c) => sum + changedLines(c.patch), 0), files = changes.length;
   const size = sizeClass(lines, files, risk);
   const areaClass = classes.length ? highest(classes) : null;
-  return { builtinPaths, matchedAreas: [...matchedAreas], covered, areaClass, floor: highest([...classes, size]), lines, files };
+  const hits = ruleHits(changes.map(c => ({ path: c.path, status: c.status ?? 'modified' })));
+  return { builtinPaths, matchedAreas: [...matchedAreas], covered, ruleHits: hits, areaClass,
+    floor: highest([...classes, size, hits.length ? ruleFloorClass : 'low']), lines, files };
 }
 
 export interface RiskInput {
@@ -116,7 +147,8 @@ export interface RiskAssessor { assess(input: RiskInput): Promise<RiskAssessment
 export async function classifyRisk(changes: ReviewInput['changes'], risk: Config['merge']['risk'], assessor: RiskAssessor | undefined,
   parts: ReviewInput['changes'][] = [changes]): Promise<RiskRecord> {
   const rules = riskRules(changes, risk);
-  const base = { matchedAreas: rules.matchedAreas, builtinPaths: rules.builtinPaths, lines: rules.lines, files: rules.files };
+  const base = { matchedAreas: rules.matchedAreas, builtinPaths: rules.builtinPaths, lines: rules.lines, files: rules.files,
+    ...(rules.ruleHits.length ? { ruleHits: rules.ruleHits } : {}) };
   if (rules.builtinPaths.length) return { ...base, class: 'critical', source: 'builtin', aiClass: null, factors: [],
     reason: `Ändert Dateien, die die Factory selbst steuern: ${rules.builtinPaths.slice(0, 5).join(', ')}.` };
   if (rules.covered && rules.areaClass) {
@@ -230,12 +262,16 @@ export function describeRisk(record: RiskRecord, risk: Config['merge']['risk']):
   }[record.source];
   const limits = `Grenzen: bis ${risk.maxLowRiskLines} Zeilen low, bis ${risk.maxMediumRiskLines} Zeilen und ${risk.maxMediumRiskFiles ?? defaultMaxMediumRiskFiles} Dateien medium, darüber high`;
   const content = record.source === 'ai' ? contentFloor(record.factors) : 'low';
-  const before = record.source === 'ai' ? highest([record.aiClass ?? 'low', content]) : highest(risk.areas.filter(a => record.matchedAreas.includes(a.name)).map(a => a.class));
+  const ruleFloor: RiskClass = record.ruleHits?.length ? ruleFloorClass : 'low';
+  const before = record.source === 'ai' ? highest([record.aiClass ?? 'low', content, ruleFloor]) : highest([...risk.areas.filter(a => record.matchedAreas.includes(a.name)).map(a => a.class), ruleFloor]);
   const raised = record.source !== 'builtin' && record.source !== 'error' && size === record.class && riskRank(size) > riskRank(before);
   const contentLine = record.source === 'ai' && content === record.class && riskRank(content) > riskRank(record.aiClass ?? 'low')
     ? `\n- Inhalt: Der PR berührt Authentifizierung, Berechtigungen oder Geld (${[...new Set(record.factors.filter(f => highRiskFactors.includes(f.factor)).map(f => f.factor))].join(', ')}); das ist unabhängig von der Größe mindestens \`high\`.` : '';
+  const hits = record.source === 'builtin' || record.source === 'error' ? [] : record.ruleHits ?? [];
+  const ruleLine = hits.length ? `\n- Feste Regel: ${[...new Set(hits.map(h => ruleNames[h.rule]))].join(', ')} (${hits.slice(0, 5).map(h => h.path).join(', ')}); ` +
+    `das ist unabhängig von KI-Bewertung und Bereichen mindestens \`${ruleFloorClass}\`.` : '';
   const sizeLine = `Umfang: ${record.lines} geänderte Zeilen${record.files === undefined ? '' : ` in ${files} ${files === 1 ? 'Datei' : 'Dateien'}`}. Allein nach Größe wäre das \`${size}\` (${limits}); ` +
     (raised ? `die Größe hat die Klasse auf \`${size}\` angehoben.` : 'die Größe hat die Klasse nicht bestimmt.');
-  return `**Risikoklasse: ${record.class}.** ${verdict}\n\n- ${cause}${contentLine}\n- ${sizeLine}\n\n${record.reason}` +
+  return `**Risikoklasse: ${record.class}.** ${verdict}\n\n- ${cause}${ruleLine}${contentLine}\n- ${sizeLine}\n\n${record.reason}` +
     (record.factors.length ? `\n\n${record.factors.map(f => `- ${f.factor}: ${f.path} – ${f.explanation}`).join('\n')}` : '');
 }

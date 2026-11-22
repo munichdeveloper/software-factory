@@ -104,6 +104,27 @@ describe('classification', () => {
     const critical = { assess: vi.fn(async () => ({ class: 'critical' as const, reason: 'x', factors: [{ factor: 'auth' as const, path: 'a', explanation: 'x' }] })) };
     expect((await classifyRisk([change('src/a.ts', 1)], risk(), critical)).class).toBe('critical');
   });
+  it('applies the hard rules (migrations, auth, new interfaces) as a floor the model and areas cannot undercut', async () => {
+    const low = { assess: vi.fn(async () => ({ class: 'low' as const, reason: 'Klein.', factors: [] })) };
+    const added = (path: string) => ({ ...change(path, 1), status: 'added' });
+    for (const [files, rule] of [
+      [[change('supabase/migrations/20261122_add.sql', 1)], 'migration'], [[change('prisma/schema.prisma', 1)], 'migration'],
+      [[change('src/auth/session.ts', 1)], 'auth'], [[change('src/lib/permissions.ts', 1)], 'auth'], [[change('app/login/page.tsx', 1)], 'auth'],
+      [[added('src/app/api/leads/route.ts')], 'interface'], [[added('src/routes/export.ts')], 'interface'], [[change('openapi.yaml', 1)], 'interface']
+    ] as const) {
+      const record = await classifyRisk([...files], risk(), low);
+      expect(record).toMatchObject({ class: 'high', aiClass: 'low', source: 'ai', ruleHits: [{ rule, path: files[0]!.path }] });
+      expect(describeRisk(record, risk())).toContain('Feste Regel:');
+    }
+    // A model class above the floor stays; areas cannot lower below the rules.
+    const critical = { assess: vi.fn(async () => ({ class: 'critical' as const, reason: 'x', factors: [] })) };
+    expect((await classifyRisk([change('src/auth/session.ts', 1)], risk(), critical)).class).toBe('critical');
+    const r = risk(); r.areas.push({ name: 'App', paths: ['src/**'], class: 'low' });
+    expect(await classifyRisk([change('src/auth/session.ts', 1)], r, low)).toMatchObject({ class: 'high', source: 'areas' });
+    // No hit: tests, docs, a changed (not added) route, look-alike names.
+    for (const path of ['tests/auth/session.test.ts', 'docs/auth.md', 'src/author.ts', 'src/useSessionStorage.ts', 'src/routes/export.ts', 'src/app/api/x/route.test.ts'])
+      expect((await classifyRisk([change(path, 1)], risk(), low)).class).toBe('low');
+  });
   it.each(['throws', 'invalid output', 'missing'])('fails closed to critical when the assessor %s', async mode => {
     const assessor = mode === 'missing' ? undefined : { assess: vi.fn(async () => {
       if (mode === 'throws') throw new Error('provider down'); return { class: 'lowest', reason: '', factors: [] } as unknown as RiskAssessment; }) };

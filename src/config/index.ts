@@ -85,9 +85,9 @@ export const routerSchema = z.strictObject({
   coding: routerCandidates(codingCandidateSchema).optional(),
   review: routerCandidates(llmCandidateSchema).optional(),
   /**
-   * Merge risk: Jev assesses the risk class himself (Johannes, 2026-11-21), it no longer picks a model that assesses.
-   * `candidates` stay accepted so older configurations keep their hash, but pick nothing. `certainty`: the class is
-   * the lowest one Jev is at least this sure the risk does not exceed (default 0.8, defaultRiskCertainty).
+   * Merge risk: no longer routed. Since 0.26.0 a fixed Claude Haiku assesses the class behind hard rules (Johannes,
+   * 2026-11-22); Jev neither assesses nor chooses. `candidates` and `certainty` stay accepted so older configurations
+   * keep their hash, but have no effect.
    */
   risk: z.strictObject({ candidates: z.array(llmCandidateSchema).min(2).max(maxRouterCandidates).optional(),
     certainty: z.number().min(0.5).max(1).optional() }).superRefine((value, context) => {

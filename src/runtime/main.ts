@@ -17,7 +17,7 @@ import { JevPlanner } from '../llm/jev-planner.js';
 import { CachedRiskSplitter, ClaudeRiskSplitter, FallbackRiskSplitter, OpenAIRiskSplitter, RiskSplitPlanner } from '../llm/risk-split.js';
 import { claudeModels, claudeStructured } from '../llm/claude.js';
 import { ModelRouter, RouterAlerts, Routing, routerEndpoint } from '../llm/router.js';
-import { routedAssessor, routedPlanner, routedReviewer, type RoutedModels } from '../llm/routed-models.js';
+import { routedPlanner, routedReviewer, type RoutedModels } from '../llm/routed-models.js';
 import { assertRetainedReleases } from './retention.js';
 import { hash } from '../state/identity.js';
 import { releaseSchema, baseRefSchema, executorWorkflowSchema } from './contract.js';
@@ -243,19 +243,19 @@ export async function main(args = process.argv.slice(2)) {
       await repository.config(); // An unreadable or invalid configuration fails the start, not the first reconciliation.
       // Chosen per reconciliation: a configuration change in the repository applies without restarting the broker.
       // Claude first, OpenAI second (as for the coding agents), when the broker has an Anthropic key.
-      // A purpose the repository routes (router: review, risk, planner) asks the router first; its configured chain
-      // below stays the fallback.
+      // A purpose the repository routes (router: review, planner) asks the router first; its configured chain below stays
+      // the fallback. The merge risk is never routed: the fixed Claude Haiku (claudeRiskModel) first, OpenAI second.
       const routed: RoutedModels = { routing, repository: item.repository, claude, openaiKey: process.env.OPENAI_API_KEY ?? '' };
-      // Risk isolation (SF #210): the split texts come from the risk assessment's models, Claude first.
+      // Risk isolation (SF #210): the split texts come from the planner's Claude model (they write tasks), Claude first.
       const plainSplitter = new OpenAIRiskSplitter(process.env.OPENAI_API_KEY ?? '');
-      const splitter = new CachedRiskSplitter(claude ? new FallbackRiskSplitter(new ClaudeRiskSplitter(claude, models.risk), plainSplitter) : plainSplitter);
+      const splitter = new CachedRiskSplitter(claude ? new FallbackRiskSplitter(new ClaudeRiskSplitter(claude, models.planner), plainSplitter) : plainSplitter);
       const openai = new OpenAIPlanner(process.env.OPENAI_API_KEY ?? ''), deterministic = new RiskSplitPlanner(new StaticPlanner(), splitter),
         jev = new RiskSplitPlanner(new JevPlanner(routing, item.repository, new StaticPlanner(), splitter), splitter);
       const planner = routedPlanner(routed, claude ? new FallbackPlanner(new ClaudePlanner(claude, models.planner), openai) : openai);
       const reviewer = (config: Config) => { const plain = new OpenAIMergeReviewer(process.env.OPENAI_API_KEY ?? '', config);
         return routedReviewer(routed, config, claude ? new FallbackMergeReviewer(new ClaudeMergeReviewer(claude, models.review, config), plain) : plain); };
       const assessor = (config: Config) => { const plain = new OpenAIRiskAssessor(process.env.OPENAI_API_KEY ?? '', config);
-        return routedAssessor(routed, config, claude ? new FallbackRiskAssessor(new ClaudeRiskAssessor(claude, models.risk, config), plain) : plain); };
+        return claude ? new FallbackRiskAssessor(new ClaudeRiskAssessor(claude, models.risk, config), plain) : plain; };
       // The merge pass as a check run on each pull request (issue #208), with its own token limited to checks:write so
       // that an installation without that permission only loses the check run, never the broker's other tokens.
       const checkRuns = item.githubInstallationId ? new GitHubCheckRuns(item.repository, scopedRuntimeGitHub({ appId: process.env.GITHUB_APP_ID ?? '',
