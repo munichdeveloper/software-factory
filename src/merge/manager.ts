@@ -217,7 +217,9 @@ export class MergeManager {
   /** Reads a pull request without the Factory's own check run: it shows the merge pass and must never gate it (issue #208). */
   private async read(number: number) {
     const f = await this.api.facts(number);
-    const own = f.checks.some(c => c.name === checkRunName);
+    // A token without checks:read reads the Actions jobs only and never lists the check run of the app: the Factory knows
+    // from its own writes that it set one for this head (issue #248).
+    const own = f.checks.some(c => c.name === checkRunName) || (this.config.merge.checkRun !== false && !!this.options.checkRuns?.has?.(f.head));
     f.checks = f.checks.filter(c => c.name !== checkRunName);
     // GitHub counts that check run into mergeStateStatus: while it is in progress the pull request reads UNSTABLE. Every
     // review then saw the state change under it and the gate never saw CLEAN (geschaeftsideen-web#57). UNSTABLE with every

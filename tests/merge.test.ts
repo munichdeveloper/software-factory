@@ -26,7 +26,7 @@ function fixture(decision: MergeReview['decision'] = 'merge') {
     update: vi.fn(async () => { f.head = 'c'.repeat(40); f.mergeState = 'CLEAN'; f.checks = []; return f.head; }),
     merge: vi.fn(async () => { f.state = 'closed'; f.mergeSha = 'd'.repeat(40); f.mergeActorType = 'Bot'; return f.mergeSha; }),
     dispatch: vi.fn(async () => {}), workflowAvailable: vi.fn(async () => true), canApprove: vi.fn(async login => login === 'maintainer') };
-  const run = () => new MergeManager(api, cfg, reviewer, 'test').run(structuredClone(snapshot));
+  const run = (options: ConstructorParameters<typeof MergeManager>[5] = {}) => new MergeManager(api, cfg, reviewer, 'test', undefined, options).run(structuredClone(snapshot));
   return { cfg, f, api, reviewer, review, snapshot, run };
 }
 it.each(['merge', 'defer'] as const)('explains native workflow approval and never auto-approves or merges despite green dispatch CI and verdict %s', async decision => {
@@ -192,6 +192,16 @@ it('merges when GitHub reads UNSTABLE only because of the Factory\'s own check r
   await y.run(); expect(y.api.merge).not.toHaveBeenCalled();
   // Without the own check run UNSTABLE stays what GitHub says.
   const z = fixture(); z.f.mergeState = 'UNSTABLE'; await z.run(); expect(z.api.merge).not.toHaveBeenCalled();
+});
+it('reads UNSTABLE as CLEAN when the Factory set its own check run that a token without checks:read cannot list (#248)', async () => {
+  const checkRuns = { show: vi.fn(), has: vi.fn(() => true) };
+  const x = fixture(); x.f.mergeState = 'UNSTABLE';
+  await x.run({ checkRuns }); expect(x.api.merge).toHaveBeenCalled();
+  expect(x.reviewer.review.mock.calls[0]![0].facts.mergeState).toBe('CLEAN');
+  // A red Actions job keeps UNSTABLE.
+  const y = fixture(); y.f.mergeState = 'UNSTABLE'; y.f.checks.push({ name: 'lint', state: 'failure' });
+  await y.run({ checkRuns }); expect(y.api.merge).not.toHaveBeenCalled();
+  expect(y.reviewer.review.mock.calls.every(c => c[0].facts.mergeState === 'UNSTABLE')).toBe(true);
 });
 it('publishes Slack merge notification for an adopted PR only with a matching trusted intent and native bot merge', async () => {
   const x = fixture(); await x.run();
