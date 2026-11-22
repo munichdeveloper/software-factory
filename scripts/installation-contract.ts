@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { installationContract } from '../src/install.js';
 import { temporalInstallationVariant } from '../src/runtime/installation.js';
-const names = ['software-factory.yml', 'software-factory-coding.yml', 'factory-manager.yml', 'factory-manager-coding.yml', 'factory-deploy.yml'];
+const names = ['software-factory.yml', 'software-factory-coding.yml', 'factory-manager.yml', 'factory-deploy.yml'];
 const templates = Object.fromEntries(await Promise.all(names.map(async name => [name, await readFile(`templates/${name}`, 'utf8')])));
 const runtime = JSON.parse(await readFile('runtime.json', 'utf8'));
 const pkg = JSON.parse(await readFile('package.json', 'utf8'));

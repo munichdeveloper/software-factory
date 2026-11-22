@@ -13,8 +13,8 @@ Every job that runs in an installed repository takes its runner from the reposit
 runs-on: ${{ vars.SF_RUNNER || 'ubuntu-latest' }}
 ```
 
-This applies to the wrapper templates (`factory-manager.yml`, `factory-manager-coding.yml`, `factory-deploy.yml`) and
-to the reusable workflows that installed repositories call (`coding-worker.yml`, `temporal-coding-executor.yml`,
+This applies to the wrapper templates (`factory-manager.yml`, `factory-deploy.yml`) and
+to the reusable workflows that installed repositories call (`temporal-coding-executor.yml`,
 `temporal-artifact-validator.yml`). In a reusable workflow `vars` are those of the calling repository. Without the
 variable, or with it empty, nothing changes. `scripts/validate-workflows.ts` keeps every job of these files on this
 expression.

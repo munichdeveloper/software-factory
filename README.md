@@ -69,41 +69,13 @@ host key, runs `docker compose up --build --wait`, verifies health, switches the
 release and rolls back on failure. Disabled by default; install the wrapper with
 `--deploy` (optionally `--no-manager` for deployment only).
 
-## Real Codex coding worker (v0.2.0)
+## Coding worker
 
-Install with `npx tsx scripts/install.ts --directory TARGET --ref FULL_FACTORY_COMMIT_SHA --coding`.
-Existing files are preserved: compare with `templates/factory-manager-coding.yml`
-when upgrading. Set the target Actions secret `OPENAI_API_KEY` and enable Actions
-to create pull requests in repository Settings → Actions → General.
-
-```yaml
-workers:
-  test:
-    enabled: false
-  coding:
-    enabled: true
-    agent: codex
-    model: gpt-6.1-sol
-    reasoningEffort: high
-  review: false
-```
-
-`llm.*` configures SF planning independently. `workers.coding.*` selects the actual
-Codex agent and its model/effort. Coding takes precedence when both worker types
-are enabled. The default installation remains supervised with the test worker.
-The coding wrapper is required; the old single-job wrapper supports only test runs.
-Optionally set `workers.coding.validationWorkflow: test.yml` to explicitly dispatch
-product CI on the generated branch. That workflow must accept `workflow_dispatch`:
-GitHub suppresses normal push/PR workflow triggers for writes made by `GITHUB_TOKEN`.
-
-The reusable SF coding workflow has three jobs: reauthorize and freeze the base;
-execute the pinned Harness with contents-read only; reauthorize again and publish
-in a fresh job through GitHub's Git Data API. The worker receives neither a GitHub
-write credential nor the raw OpenAI key. SF rejects unrelated, oversized, invalid,
-symlink and control-plane changes, reuses a stable execution branch/PR, and journals
-the terminal result. A moved default branch fails publication so a retry can use
-a fresh base. Missing/failed coding output is durably recorded. Runtime success
-with no changes is blocked rather than treated as implementation completion.
+Since 0.27.0 coding runs only in the Temporal runtime: install it through the SF Manager ("Mit Temporal
+ausrollen"), see [docs/temporal-runtime.md](docs/temporal-runtime.md). The GitHub Actions coding wrapper
+(`templates/factory-manager-coding.yml`, reusable `coding-worker.yml`, installation variants `coding` and
+`coding-deploy`) was removed; installations pinned to an older release keep working, their wrappers reference the
+reusable workflow at their own commit. `scripts/install.ts --coding` now needs `--no-manager` (configuration only).
 
 Maximum policy autonomy is `profile: autonomous` with `expand_scope: allow`
 (all other supported actions already allow by default). Resource budgets still

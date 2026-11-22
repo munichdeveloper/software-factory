@@ -45,12 +45,13 @@ describe('installation templates', () => {
   it('selects the files to install', () => {
     expect(installFiles(false, true, false)).toEqual([['software-factory.yml', '.github/software-factory.yml'], ['factory-manager.yml', '.github/workflows/factory-manager.yml']]);
     expect(installFiles(true, false, true)).toEqual([['software-factory-coding.yml', '.github/software-factory.yml'], ['factory-deploy.yml', '.github/workflows/factory-deploy.yml']]);
+    expect(() => installFiles(true, true, false)).toThrow(/Temporal/);
   });
 });
 
 it('publishes the exact CLI renderer as data, preserving existing files', async () => {
   const { installationContract, planInstallation } = await import('../src/install.js');
-  const names = ['software-factory.yml', 'software-factory-coding.yml', 'factory-manager.yml', 'factory-manager-coding.yml', 'factory-deploy.yml'];
+  const names = ['software-factory.yml', 'software-factory-coding.yml', 'factory-manager.yml', 'factory-deploy.yml'];
   const templates = Object.fromEntries(await Promise.all(names.map(async n => [n, await template(n)])));
   const contract = installationContract(templates, 'test', { repository: 'munichdeveloper/dev-agent-harness', ref: options.harnessRef, contractVersion: '2.0' }, options);
   for (const [variant, selected] of Object.entries(contract.variants)) {
@@ -67,9 +68,9 @@ it('publishes the exact CLI renderer as data, preserving existing files', async 
 
 it.each([
   ['manager', []],
-  ['coding', ['--coding']],
+  ['coding-config', ['--coding', '--no-manager']],
   ['config-deploy', ['--no-manager', '--deploy']],
-  ['coding-deploy', ['--coding', '--deploy']]
+  ['coding-config-deploy', ['--coding', '--no-manager', '--deploy']]
 ] as const)('CLI %s matches the published contract and preserves existing files', async (variant, flags) => {
   const directory = await mkdtemp(join(tmpdir(), 'sf-cli-contract-'));
   try {
