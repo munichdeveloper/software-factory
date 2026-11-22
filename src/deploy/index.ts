@@ -3,8 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { PassThrough, Readable } from 'node:stream';
 import type { Config } from '../config/index.js';
 import type { DeployPort, DeploymentState } from './github.js';
-import { globToRegExp } from '../merge/risk.js';
-import { activateScript, currentReleaseScript, environmentScript, remoteValue, uploadScript } from './remote.js';
+import { activateScript, environmentScript, remoteValue, uploadScript } from './remote.js';
 import { runProcess, type Transport } from './transport.js';
 
 export type DeployEvent = { name: string; ref: string; payload: Record<string, unknown> };
@@ -111,33 +110,6 @@ export function archive(sourceDir: string) {
   child.stdout.pipe(stream);
   const done = new Promise<number>(resolve => { child.on('close', code => resolve(code ?? 1)); child.on('error', () => { stream.destroy(); resolve(1); }); });
   return { stream, done };
-}
-
-/**
- * deploy.ignorePaths (software-factory#235): skips a planned deployment when every file changed since the release that is
- * active on the host matches an ignored path. It compares with the active release, not the previous commit: a commit
- * superseded before its own deployment ran is still undeployed and must not be skipped by a later documentation commit.
- * Anything uncertain deploys: no ignored paths, a manual dispatch, no or an unknown active release, the same commit
- * (a re-run, e.g. after a failed verification), a history that is not strictly ahead, or an incomplete file list.
- */
-export async function irrelevantChange(config: Config, sha: string, event: string, transport: Transport, port: DeployPort,
-  log: (line: string) => void = () => {}): Promise<{ skip: false } | { skip: true; current: string }> {
-  const patterns = config.deploy.ignorePaths.map(globToRegExp);
-  if (!patterns.length || event === 'workflow_dispatch') return { skip: false };
-  try {
-    const result = await transport.run(currentReleaseScript, [config.deploy.path], undefined, 60000);
-    const current = result.code === 0 ? remoteValue(result.stdout, 'SF_DEPLOY_CURRENT') ?? '' : '';
-    if (!SHA.test(current) || current === sha) return { skip: false };
-    const files = await port.changedFiles(current, sha);
-    if (!files?.length) return { skip: false };
-    const relevant = files.filter(file => !patterns.some(pattern => pattern.test(file)));
-    if (relevant.length) return { skip: false };
-    log(`Only ignored paths changed since the active release ${current.slice(0, 12)}: ${files.slice(0, 20).join(', ')}${files.length > 20 ? ', …' : ''}`);
-    return { skip: true, current };
-  } catch (error) {
-    log(`Changes since the active release could not be determined, deploying: ${error instanceof Error ? error.message : 'unknown error'}`);
-    return { skip: false };
-  }
 }
 
 export type DeployContext = { config: Config; sha: string; sourceDir: string; transport: Transport; port: DeployPort; logUrl?: string; log?: (line: string) => void;

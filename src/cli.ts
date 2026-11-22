@@ -17,7 +17,7 @@ import { OpenAIMergeReviewer } from './merge/reviewer.js';
 import { OpenAIRiskAssessor } from './merge/risk.js';
 import { MergeManager } from './merge/manager.js';
 import { GitHubDeployPort } from './deploy/github.js';
-import { deploySummary, executeDeploy, irrelevantChange, missingDeploySecrets, parseDeployEnvironment, planDeploy, readEvent } from './deploy/index.js';
+import { deploySummary, executeDeploy, missingDeploySecrets, parseDeployEnvironment, planDeploy, readEvent } from './deploy/index.js';
 import { resolveTarget } from './deploy/target.js';
 import { SshTransport } from './deploy/transport.js';
 import { RuntimeHttpClient } from './runtime/client.js';
@@ -99,8 +99,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   try {
     if (command === 'deploy-plan' || command === 'deploy') {
       const port = new GitHubDeployPort(repository, process.env.GITHUB_TOKEN ?? '');
-      const event = await readEvent();
-      const decision = await planDeploy(config, event, port);
+      const decision = await planDeploy(config, await readEvent(), port);
       const mutationFree = config.execution.dryRun || config.autonomy.profile === 'advisory';
       const target = decision.deploy ? resolveTarget(config) : null;
       const writeSummary = async (text: string) => { if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, text); };
@@ -124,14 +123,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       if (missing.length) console.log(`::warning title=Software Factory deploy::deploy.secrets not passed by the wrapper (roll the configuration out through the SF Manager): ${missing.join(', ')}`);
       const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID
         ? `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined;
-      const transport = new SshTransport(target);
-      const unchanged = await irrelevantChange(config, decision.sha, event.name, transport, port, line => console.log(line));
-      if (unchanged.skip) {
-        await transport.close();
-        await writeSummary(deploySummary(null, { deploy: false, reason: `no-relevant-changes since ${unchanged.current.slice(0, 12)}`, sha: decision.sha }, config.deploy.environment));
-        console.log(JSON.stringify({ correlationId, outcome: 'skipped', reason: 'no-relevant-changes', sha: decision.sha, current: unchanged.current })); return;
-      }
-      const report = await executeDeploy({ config, sha: decision.sha, sourceDir: values.source ?? '.', transport,
+      const report = await executeDeploy({ config, sha: decision.sha, sourceDir: values.source ?? '.', transport: new SshTransport(target),
         port, logUrl: runUrl, environment, log: line => console.log(line) });
       await writeSummary(deploySummary(report, decision, config.deploy.environment));
       console.log(JSON.stringify({ correlationId, ...report }));
