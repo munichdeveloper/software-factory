@@ -363,8 +363,9 @@ export class MergeManager {
           continue;
         }
         const risk = this.config.merge.risk;
-        // One assessment per head, base and risk configuration; the built-in list is part of the protocol.
-        const riskKey = risk.enabled ? hash({ protocol: 'sf-merge-risk-v2', repository: this.api.repository.toLowerCase(), head: f.head, base: f.base,
+        // One assessment per head, base and risk configuration; the built-in list is part of the protocol. v3 (0.26.0):
+        // fixed Haiku assessor and hard rules, so heads assessed by Jev are assessed again.
+        const riskKey = risk.enabled ? hash({ protocol: 'sf-merge-risk-v3', repository: this.api.repository.toLowerCase(), head: f.head, base: f.base,
           risk, builtin: builtinCriticalPaths }) : null;
         const cachedRisk = riskKey ? this.events(f).find(e => e.data.type === 'merge_risk' && e.data.riskKey === riskKey) : undefined;
         let context: Promise<ReviewInput> | undefined;

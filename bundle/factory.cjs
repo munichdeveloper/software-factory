@@ -65009,6 +65009,8 @@ var riskRecordSchema = external_exports.strictObject({
   lines: external_exports.number().int().nonnegative(),
   // Optional: records written before #209 have no file count.
   files: external_exports.number().int().nonnegative().optional(),
+  // Optional: records written before 0.26.0 have no hard rule hits.
+  ruleHits: external_exports.array(external_exports.strictObject({ rule: external_exports.enum(["migration", "auth", "interface"]), path: external_exports.string().max(500) })).max(20).optional(),
   reason: external_exports.string().max(2e3),
   factors: riskAssessmentSchema.shape.factors
 });
@@ -65043,6 +65045,23 @@ function globToRegExp(glob2) {
 }
 var matches = (patterns, path4) => patterns.some((p) => globToRegExp(p).test(path4));
 var changedLines = (patch) => patch.split("\n").filter((l) => (l.startsWith("+") || l.startsWith("-")) && !l.startsWith("+++") && !l.startsWith("---")).length;
+var ruleFloorClass = "high";
+var isTestOrDoc = (path4) => /(^|\/)(tests?|__tests__|spec|e2e|docs?)\//i.test(path4) || /\.(test|spec)\.[a-z]+$/i.test(path4) || /\.(md|mdx|txt|rst)$/i.test(path4);
+var migrationPath = /(^|\/)(migrations?|db\/migrate|alembic\/versions)\/|(^|\/)schema\.prisma$|\.migration\.[a-z]+$/i;
+var authPath = /(^|[/._-])(auth|authn|authz|oauth2?|oidc|saml|sso|login|logout|signin|signup|session|sessions|permission|permissions|rbac|acl|policies|jwt|passwords?|credentials?)([/._-]|$)/i;
+var interfacePath = /(^|\/)(api|routes|controllers|endpoints|webhooks?|graphql|rpc)\/|\.(controller|routes?|resolver|handler)\.[a-z]+$|(^|\/)route\.[jt]sx?$/i;
+var openApiPath = /(^|\/)(openapi|swagger)\.(ya?ml|json)$/i;
+function ruleHits(changes) {
+  const hits = [];
+  for (const { path: path4, status } of changes) {
+    if (isTestOrDoc(path4)) continue;
+    if (migrationPath.test(path4)) hits.push({ rule: "migration", path: path4 });
+    else if (authPath.test(path4)) hits.push({ rule: "auth", path: path4 });
+    else if (status === "added" && interfacePath.test(path4) || openApiPath.test(path4)) hits.push({ rule: "interface", path: path4 });
+  }
+  return hits.slice(0, 20);
+}
+var ruleNames = { migration: "Datenbank-Migration", auth: "Authentifizierung/Berechtigungen", interface: "neue Schnittstelle nach au\xDFen" };
 var defaultMaxMediumRiskFiles = 100;
 var highRiskFactors = ["auth", "permissions", "payments"];
 var contentFloor = (factors) => factors.some((f) => highRiskFactors.includes(f.factor)) ? "high" : "low";
@@ -65061,11 +65080,27 @@ function riskRules(changes, risk) {
   const lines = changes.reduce((sum, c) => sum + changedLines(c.patch), 0), files = changes.length;
   const size = sizeClass(lines, files, risk);
   const areaClass = classes.length ? highest(classes) : null;
-  return { builtinPaths, matchedAreas: [...matchedAreas], covered, areaClass, floor: highest([...classes, size]), lines, files };
+  const hits = ruleHits(changes.map((c) => ({ path: c.path, status: c.status ?? "modified" })));
+  return {
+    builtinPaths,
+    matchedAreas: [...matchedAreas],
+    covered,
+    ruleHits: hits,
+    areaClass,
+    floor: highest([...classes, size, hits.length ? ruleFloorClass : "low"]),
+    lines,
+    files
+  };
 }
 async function classifyRisk(changes, risk, assessor, parts = [changes]) {
   const rules = riskRules(changes, risk);
-  const base = { matchedAreas: rules.matchedAreas, builtinPaths: rules.builtinPaths, lines: rules.lines, files: rules.files };
+  const base = {
+    matchedAreas: rules.matchedAreas,
+    builtinPaths: rules.builtinPaths,
+    lines: rules.lines,
+    files: rules.files,
+    ...rules.ruleHits.length ? { ruleHits: rules.ruleHits } : {}
+  };
   if (rules.builtinPaths.length) return {
     ...base,
     class: "critical",
@@ -65173,14 +65208,18 @@ function describeRisk(record2, risk) {
   }[record2.source];
   const limits = `Grenzen: bis ${risk.maxLowRiskLines} Zeilen low, bis ${risk.maxMediumRiskLines} Zeilen und ${risk.maxMediumRiskFiles ?? defaultMaxMediumRiskFiles} Dateien medium, dar\xFCber high`;
   const content = record2.source === "ai" ? contentFloor(record2.factors) : "low";
-  const before = record2.source === "ai" ? highest([record2.aiClass ?? "low", content]) : highest(risk.areas.filter((a) => record2.matchedAreas.includes(a.name)).map((a) => a.class));
+  const ruleFloor = record2.ruleHits?.length ? ruleFloorClass : "low";
+  const before = record2.source === "ai" ? highest([record2.aiClass ?? "low", content, ruleFloor]) : highest([...risk.areas.filter((a) => record2.matchedAreas.includes(a.name)).map((a) => a.class), ruleFloor]);
   const raised = record2.source !== "builtin" && record2.source !== "error" && size === record2.class && riskRank(size) > riskRank(before);
   const contentLine = record2.source === "ai" && content === record2.class && riskRank(content) > riskRank(record2.aiClass ?? "low") ? `
 - Inhalt: Der PR ber\xFChrt Authentifizierung, Berechtigungen oder Geld (${[...new Set(record2.factors.filter((f) => highRiskFactors.includes(f.factor)).map((f) => f.factor))].join(", ")}); das ist unabh\xE4ngig von der Gr\xF6\xDFe mindestens \`high\`.` : "";
+  const hits = record2.source === "builtin" || record2.source === "error" ? [] : record2.ruleHits ?? [];
+  const ruleLine = hits.length ? `
+- Feste Regel: ${[...new Set(hits.map((h) => ruleNames[h.rule]))].join(", ")} (${hits.slice(0, 5).map((h) => h.path).join(", ")}); das ist unabh\xE4ngig von KI-Bewertung und Bereichen mindestens \`${ruleFloorClass}\`.` : "";
   const sizeLine = `Umfang: ${record2.lines} ge\xE4nderte Zeilen${record2.files === void 0 ? "" : ` in ${files} ${files === 1 ? "Datei" : "Dateien"}`}. Allein nach Gr\xF6\xDFe w\xE4re das \`${size}\` (${limits}); ` + (raised ? `die Gr\xF6\xDFe hat die Klasse auf \`${size}\` angehoben.` : "die Gr\xF6\xDFe hat die Klasse nicht bestimmt.");
   return `**Risikoklasse: ${record2.class}.** ${verdict}
 
-- ${cause}${contentLine}
+- ${cause}${ruleLine}${contentLine}
 - ${sizeLine}
 
 ${record2.reason}` + (record2.factors.length ? `
@@ -65273,9 +65312,9 @@ var routerSchema = external_exports.strictObject({
   coding: routerCandidates(codingCandidateSchema).optional(),
   review: routerCandidates(llmCandidateSchema).optional(),
   /**
-   * Merge risk: Jev assesses the risk class himself (Johannes, 2026-11-21), it no longer picks a model that assesses.
-   * `candidates` stay accepted so older configurations keep their hash, but pick nothing. `certainty`: the class is
-   * the lowest one Jev is at least this sure the risk does not exceed (default 0.8, defaultRiskCertainty).
+   * Merge risk: no longer routed. Since 0.26.0 a fixed Claude Haiku assesses the class behind hard rules (Johannes,
+   * 2026-11-22); Jev neither assesses nor chooses. `candidates` and `certainty` stay accepted so older configurations
+   * keep their hash, but have no effect.
    */
   risk: external_exports.strictObject({
     candidates: external_exports.array(llmCandidateSchema).min(2).max(maxRouterCandidates).optional(),
@@ -69753,8 +69792,6 @@ var skipEn = {
 function routeNoteDe(outcome) {
   if (!outcome) return "";
   const { record: record2, candidate } = outcome;
-  if (outcome.ran === "jev") return `Bewertung: Jev (${record2.model}) hat die Risikoklasse direkt bestimmt.`;
-  if (outcome.direct) return `Bewertung: ohne Jev (${record2.used ? "Jev hat keine verwertbare Klasse genannt" : skipDe[record2.reason]}${!record2.used && record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}); bewertet haben die konfigurierten Modelle.`;
   if (outcome.ran === "candidate" && record2.used && candidate)
     return `Modellwahl: Der Model Router (Jev) w\xE4hlte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ""}) mit ${pct(record2.confidence)} Wahrscheinlichkeit.`;
   if (record2.used) return `Modellwahl: Der Model Router w\xE4hlte \`${record2.choice}\`, der Kandidat konnte nicht laufen; gepr\xFCft haben die konfigurierten Modelle.`;
@@ -73146,7 +73183,7 @@ Gepr\xFCfter Head: \`${f.head}\`.`
         }
         const risk = this.config.merge.risk;
         const riskKey = risk.enabled ? hash2({
-          protocol: "sf-merge-risk-v2",
+          protocol: "sf-merge-risk-v3",
           repository: this.api.repository.toLowerCase(),
           head: f.head,
           base: f.base,

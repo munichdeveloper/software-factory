@@ -221,7 +221,7 @@ router:
         model: claude-opus-5-5
         reasoningEffort: high
         description: Changes across several modules, new architecture, migrations, security or hard debugging.
-  review:                       # merge review; likewise planner (llm.provider openai)
+  review:                       # merge review; likewise planner (llm.provider openai); the merge risk is never routed
     candidates:
       - id: sonnet-medium
         provider: claude
@@ -267,26 +267,25 @@ next message counts the cases in between. Issue and pull request text reaches Je
 at worst it picks another of the configured candidates. `router` is optional without a default: a configuration without
 it keeps its hash.
 
-### Merge risk assessed by Jev (`router.risk`, since 0.24.0)
+### Merge risk: fixed Haiku behind hard rules (since 0.26.0)
 
-```yaml
-router:
-  risk:
-    certainty: 0.8              # optional, default 0.8
-```
+The merge risk is not routed (Johannes, 2026-11-22). Jev picks models for coding, review and planning, but neither
+assesses the risk nor chooses who does: a mistake there means an automatic merge. The class comes from hard rules first
+and a fixed model second:
 
-For the merge risk Jev is not asked which model should assess, but for the risk class itself (Johannes, 2026-11-21):
-one choice question with the options `low`, `medium`, `high` and `critical`, the classes and rules of the model assessor
-(content over size; authentication, permissions and money at least `high`; when unsure the higher class). Jev reads the
-size, `merge.risk.guidance` and the touched areas as trusted constraints, then the file list and as much of every patch
-as fits the router's state limit (8000 characters), shared evenly between the files; the patches are untrusted data.
-From Jev's probabilities the Factory takes the lowest class Jev is at least `certainty` sure the risk does not exceed,
-so a split answer leans to the higher class (low 55 %, medium 30 %, high 15 % gives `medium` at 0.8). The deterministic
-rules stay on top: built-in critical paths, configured areas and the size limits of `merge.risk`. Without a usable
-answer (no key, Jev unreachable or invalid, no probabilities and a choice below `certainty`) the configured assessor
-(`merge.risk.assessor`, Claude first, OpenAI second) assesses as before. The risk comment says who assessed
-(`Bewertung: Jev (…) hat die Risikoklasse direkt bestimmt.` or `Bewertung: ohne Jev (…)`). `router.risk.candidates` from
-older configurations are still accepted but choose nothing; `router.risk` without `candidates` is enough.
+1. Built-in critical paths (workflows, Factory configuration, AGENTS.md, CODEOWNERS) are `critical` without a model call.
+2. Hard rules make a change at least `high`, whatever the model or a configured area says: database migrations
+   (`migrations/`, `db/migrate/`, `schema.prisma`), authentication and permissions (path segments such as `auth`,
+   `login`, `session`, `permissions`, `rbac`, `jwt`), and new interfaces to the outside (a new file under `api/`,
+   `routes/`, `controllers/`, `webhooks/`, a new `route.ts`, any change to `openapi`/`swagger` files). Tests and
+   documentation never trigger them. The risk comment names the rule and the paths (`Feste Regel: …`).
+3. Areas and the size limits of `merge.risk` set their floors as before.
+4. Claude Haiku (`claude-haiku-5-5`, fixed in the broker, not configurable) classifies with the instructions of the
+   model assessor and the effort of `merge.risk.assessor.reasoningEffort`; it can only raise the class above the floors.
+   Without a valid answer OpenAI (`merge.risk.assessor`) assesses; without any answer the change is `critical`.
+
+`router.risk` (`candidates`, `certainty`) from older configurations is still accepted, so the configuration hash stays,
+but has no effect.
 
 ## Jev planner
 

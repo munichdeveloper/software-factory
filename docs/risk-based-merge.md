@@ -87,10 +87,12 @@ Factory selbst ändert, darf sich nicht selbst freigeben. Diese Liste ist im Cod
 Diese Regel ist bewusst einfach: Senken nur bei voller Abdeckung, sonst wirken Bereiche nur nach oben. Damit kann ein
 PR nicht riskanten Code „im Windschatten“ einer Doku-Änderung als `low` durchbringen.
 
-**Schritt 3: KI-Bewertung.** Mit `router.risk` (seit 0.24.0) bestimmt Jev die Klasse selbst: eine Auswahlfrage
-`low | medium | high | critical` mit Dateiliste und Patches; es gilt die niedrigste Klasse, bei der Jev zu mindestens
-`router.risk.certainty` (Standard 0,8) sicher ist, dass das Risiko nicht höher liegt. Faktoren liefert Jev nicht. Ohne
-verwertbare Antwort von Jev, und ohne `router.risk`, bewertet ein eigener Modellaufruf (`RiskAssessor`, analog zu `OpenAIMergeReviewer`) liefert ein
+**Feste Regeln (seit 0.26.0).** Datenbank-Migrationen, Authentifizierung/Berechtigungen und neue Schnittstellen nach
+außen (erkannt am Pfad; Tests und Doku ausgenommen) setzen die Klasse hart auf mindestens `high`. Weder Bereiche noch
+die KI-Bewertung können darunter gehen.
+
+**Schritt 3: KI-Bewertung.** Seit 0.26.0 bewertet fest Claude Haiku (`claude-haiku-5-5`), weder Jev noch der Model
+Router (Johannes, 2026-11-22); ohne gültige Antwort OpenAI. Ein eigener Modellaufruf (`RiskAssessor`, analog zu `OpenAIMergeReviewer`) liefert ein
 strukturiertes Ergebnis:
 
 ```json
