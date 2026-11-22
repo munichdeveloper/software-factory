@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "profile": "npm",
+  "timeoutMinutes": 20,
+  "composeProjectPrefix": "sf-validation",
+  "environment": {}
+}
