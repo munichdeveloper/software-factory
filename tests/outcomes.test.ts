@@ -28,8 +28,10 @@ describe('outcome classes', () => {
     // Also after an approval: replacement outranks approved.
     expect(deriveOutcome(facts({ openedByFactory: false, approvals: [at(5)] })).outcome).toBe('replacement');
   });
-  it('is a human merge for a person\'s merge without any recorded handover', () => {
-    expect(deriveOutcome(facts({ mergedByFactory: false, handoverAt: null }))).toEqual({ outcome: 'human-merge', waits: [] });
+  it('is approved, not a human merge, when a person merges a Factory pull request nobody else touched', () => {
+    // Automerge off or a risk above the threshold: the configuration plans the person's merge.
+    expect(deriveOutcome(facts({ mergedByFactory: false, handoverAt: null }))).toEqual({ outcome: 'approved', waits: [] });
+    expect(deriveOutcome(facts({ mergedByFactory: false, handoverAt: at(4) })).outcome).toBe('approved');
   });
   it('is a human merge when sf:needs-human was ever on the pull request, or a person committed to a Factory branch', () => {
     const labeled = [{ at: at(1), labeled: true }, { at: at(2), labeled: false }];
@@ -83,7 +85,7 @@ describe('metrics outcomes', () => {
       issue({ issueNumber: 6, outcome: null })
     ];
     const view = metricsView([], issues, { from, to, now: to });
-    expect(view.flow.outcomes).toEqual({ counts: { automatic: 1, approved: 1, replacement: 1, 'human-merge': 1, abandoned: 1 }, closed: 5, unclassified: 1, automationRate: 0.2 });
+    expect(view.flow.outcomes).toEqual({ counts: { automatic: 1, approved: 1, replacement: 1, 'human-merge': 1, abandoned: 1 }, closed: 5, unclassified: 1, automationRate: 0.4 });
     // Legacy fields: the person's merge without a handover stays out.
     expect(view.flow.merged).toBe(4);
     expect(view.items.map(i => i.issueNumber).sort()).toEqual([1, 2, 4, 6]);

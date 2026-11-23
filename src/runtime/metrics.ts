@@ -74,7 +74,7 @@ export interface MetricsView {
     /**
      * Outcome of every closed managed issue of the period (merged in it, or abandoned in it): `counts` per class,
      * `closed` their sum, `unclassified` merged issues whose outcome is not derived yet. `automationRate` is
-     * automatic / closed, unlike the legacy `automationRate` above (a share of merges only).
+     * (automatic + approved) / closed: an approval or a person's merge the configuration plans is no intervention. Unlike the legacy `automationRate` above (a share of merges only).
      */
     outcomes: { counts: Record<Outcome, number>; closed: number; unclassified: number; automationRate: number | null };
   };
@@ -173,7 +173,7 @@ export function metricsView(calls: AnalyticsCall[], issues: (AnalyticsIssue & { 
       pickup: distribution(items.map(i => i.pickupMs)),
       codingRun: distribution(codingInPeriod.map(c => c.durationMs ?? null)),
       codingShare: ratio(timed.reduce((s, i) => s + i.codingMs, 0), timed.reduce((s, i) => s + i.leadMs!, 0)),
-      outcomes: { counts, closed, unclassified: merged.length - classified.length, automationRate: ratio(counts.automatic, closed) },
+      outcomes: { counts, closed, unclassified: merged.length - classified.length, automationRate: ratio(counts.automatic + counts.approved, closed) },
       reviewsPerMerge: items.length ? Math.round(items.reduce((s, i) => s + i.reviews, 0) / items.length * 100) / 100 : null
     },
     weekly: [...weekly.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([week, list]) => ({ week, merged: list.length,

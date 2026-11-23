@@ -66,10 +66,12 @@ export function deriveOutcome(f: OutcomeFacts): DerivedOutcome {
 
   if (!f.merged) return { outcome: f.hadRun ? 'abandoned' : null, waits };
   const needsHuman = f.prNeedsHumanNow || f.prNeedsHuman.some(e => e.labeled);
-  // A person's commit on a Factory pull request is a human intervention too; on a replacement PR commits are expected.
-  if (!f.mergedByFactory || needsHuman || (f.openedByFactory === true && f.humanCommit)) return { outcome: 'human-merge', waits };
+  // Only a real intervention is a human merge: sf:needs-human, or a person's own commit on a Factory pull request (on a
+  // replacement PR commits are expected). A person merging is no intervention by itself: the Factory configuration plans
+  // it (automerge off, risk above the threshold, protected paths), so it is an approval and does not lower the rate.
+  if (needsHuman || (f.openedByFactory === true && f.humanCommit)) return { outcome: 'human-merge', waits };
   if (f.openedByFactory === false) return { outcome: 'replacement', waits };
-  const approved = f.gate.some(e => e.labeled) || approvals.some(at => ms(at) <= ms(f.end));
+  const approved = !f.mergedByFactory || f.gate.some(e => e.labeled) || approvals.some(at => ms(at) <= ms(f.end));
   return { outcome: approved ? 'approved' : 'automatic', waits };
 }
 
