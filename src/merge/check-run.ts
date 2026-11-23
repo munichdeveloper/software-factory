@@ -27,6 +27,7 @@ const views: Record<MergeStep, { status: CheckRunView['status']; conclusion?: Ch
   merged: { status: 'completed', conclusion: 'success', title: 'Gemergt', summary: 'Der PR ist gemergt.' },
   handover: { status: 'completed', conclusion: 'action_required', title: 'An einen Menschen übergeben', summary: 'Die Factory mergt diesen PR nicht selbst.' },
   stopped: { status: 'completed', conclusion: 'neutral', title: 'Angehalten', summary: 'Die Factory bearbeitet diesen PR nicht weiter.' },
+  waiting: { status: 'completed', conclusion: 'neutral', title: 'Wartet auf Vorgänger', summary: 'Der PR wartet auf einen Vorgänger (Depends on:); Review und Merge folgen danach.' },
   error: { status: 'completed', conclusion: 'neutral', title: 'Fehler im Merge-Durchlauf', summary: 'Der Merge-Durchlauf konnte einen Schritt nicht bestätigen; der nächste Durchlauf versucht es erneut.' }
 };
 /** The view of a merge step: the Factory's own texts only (detail is the broker's reason, never model or PR text). */
