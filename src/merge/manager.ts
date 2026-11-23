@@ -48,6 +48,22 @@ const conflictReview = (f: MergeFacts): MergeReview => ({ decision: 'request_cha
     'Setze die bisherigen Änderungen dieses Versuchs auf der aktuellen Basis fort. Wo sie kollidieren, enthält der Arbeitsbereich Konfliktmarker ' +
     '(<<<<<<<, =======, >>>>>>>). Löse jeden Konflikt so auf, dass die neueren Änderungen der Basis erhalten bleiben und die Aufgabe weiterhin ' +
     'vollständig erfüllt ist. Baue nichts neu, was schon vorhanden ist, und hinterlasse keine Konfliktmarker.' });
+/** The Factory waits at most this long for checks that stay pending on one head; then a person takes over. */
+export const pendingChecksLimitMs = 6 * 3600000;
+const clip = (s: string, n: number) => s.length > n ? `${s.slice(0, n - 1)}…` : s;
+const scannerCheck = /gitguardian|gitleaks|trufflehog|secret/i;
+/** What a rework of a red check or of open review threads tells the coding worker (German, like every review text). */
+const checksReview = (red: MergeFacts['checks']): MergeReview => {
+  const scanner = red.filter(c => scannerCheck.test(c.name));
+  const reason = `${red.length === 1 ? 'Die Prüfung' : 'Die Prüfungen'} ${red.map(c => c.name).join(', ')} ${red.length === 1 ? 'ist' : 'sind'} auf dem Head fehlgeschlagen. Behebe die Ursache im Code und pushe einen neuen Commit.` +
+    (scanner.length ? ' Ein Secret-Scanner hat einen Fund gemeldet (' + scanner.map(c => c.name).join(', ') + '): Ersetze den markierten Wert durch einen offensichtlichen Platzhalter (z. B. `example-api-key`, `dummy-token`, `REPLACE_ME`). Erfinde keine echt aussehenden Zugangsdaten. Schließe, markiere oder ignoriere den Fund nicht selbst und ändere keine Scanner-Konfiguration.' : '');
+  return { decision: 'request_changes', reason: clip(reason, 3000),
+    findings: red.slice(0, 15).map(c => ({ path: clip(`Prüfung: ${c.name}`, 500), severity: 'blocking' as const,
+      explanation: clip(`Status ${c.state}.${c.summary ? ` ${c.summary}` : ''}${scannerCheck.test(c.name) ? ' Wert durch einen offensichtlichen Platzhalter ersetzen; den Fund nicht selbst schließen.' : ''}`, 2000) })) };
+};
+const threadsReview = (threads: string[]): MergeReview => ({ decision: 'request_changes',
+  reason: clip(`Es gibt ${threads.length} ungelöste Review-Diskussion(en) am PR. Arbeite jeden Kommentar im Code ein und pushe einen neuen Commit; die Factory löst Diskussionen nicht selbst auf.`, 3000),
+  findings: threads.slice(0, 15).map((t, i) => ({ path: `Review-Diskussion ${i + 1}`, severity: 'blocking' as const, explanation: clip(t, 2000) })) });
 const behind = (f: MergeFacts, config: Config) => config.merge.protection === 'factory' ? !!f.behindBy : f.mergeState === 'BEHIND';
 export interface MergeOptions {
   /** Only pull requests the Factory published for its own tasks; no adoption by label (an issue-scoped broker). */
@@ -172,6 +188,40 @@ export class MergeManager {
     await this.event(f, `merge-handover:${conflictKey}`, { type: 'merge_handover', prNumber: f.number, head: f.head, base: f.base, reviewKey: conflictKey, decision: 'conflict' });
     if (this.api.needsHuman && !f.labels.includes(needsHumanLabel)) await this.api.needsHuman(f.number, true);
     await this.explain(f, `Der Branch hat Merge-Konflikte mit der Basis. ${why} Bitte die Konflikte selbst auflösen; danach folgen Pflichtprüfungen, Validierung und ein neues KI-Review.`);
+  }
+  /**
+   * Checks or review threads the Factory resolves itself (issue #251): a Factory pull request goes back to the coding worker as
+   * a rework (journaled on the task once per cause and head), the new head is reviewed again. Where no rework can start
+   * (rework off, attempts used up, not the last attempt, not a Factory pull request) a person gets it, with the cause named.
+   */
+  private async reworkOrHandOver(f: MergeFacts, snapshot: Snapshot, ownership: Ownership | undefined, adopted: boolean,
+    spec: { cause: 'checks' | 'threads'; key: string; review: MergeReview; step: 'checks-failed' | 'review-rejected'; what: string}) {
+    const executionId = f.headBranch.match(/^sf\/issue-\d+\/([a-f0-9]{32})$/)?.[1];
+    const task = ownership && !adopted && executionId ? reconstruct(snapshot, this.config).find(t => t.issue.number === ownership.task.number) : undefined;
+    const limit = !!task && task.attemptsUsed > this.config.execution.maxRetries;
+    const blocker = (!ownership || adopted ? 'Der PR wurde nicht von der Factory für eine Aufgabe erstellt.'
+      : !this.config.execution.rework ? 'Automatische Nacharbeit ist in diesem Repository aus (`execution.rework`).'
+      : limit ? `Die Versuche der Aufgabe sind aufgebraucht (\`execution.maxRetries\`: ${this.config.execution.maxRetries}).`
+      : !task || task.latest?.input.executionId !== executionId ? 'Der PR gehört nicht zum letzten Versuch der Aufgabe.' : null);
+    if (!blocker && task && executionId) {
+      const key = `merge-changes-requested:${spec.key}`;
+      if (!(snapshot.comments.get(task.issue.number) ?? []).some(c => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) {
+        const journal = encodeEvent({ version: 1, key, at: new Date().toISOString(), correlationId: this.correlationId,
+          data: { type: 'merge_changes_requested', prNumber: f.number, head: f.head, executionId, reviewKey: spec.key, review: spec.review, cause: spec.cause } });
+        const summary = `\n\n### Software Factory – Nacharbeit nötig\n\n${safe(`${spec.what} bei #${f.number}. Die Factory startet selbst einen weiteren Versuch, der die Änderungen des PR fortsetzt (bis zur Grenze von \`execution.maxRetries\`); danach wird der neue Stand erneut geprüft.`)}`;
+        await this.api.comment(task.issue.number, journal + summary);
+      }
+      this.note(f.number, spec.step, `${spec.what}; Nacharbeit wird gestartet.`);
+      await this.needsHuman(f, false);
+      await this.explain(f, `${spec.what}. Die Factory arbeitet selbst nach; der neue Head durchläuft danach Prüfungen und ein neues KI-Review.`);
+      return;
+    }
+    if (ownership && !adopted) {
+      await this.event(f, `merge-handover:${spec.key}`, { type: 'merge_handover', prNumber: f.number, head: f.head, base: f.base, reviewKey: spec.key, decision: 'request_changes' });
+      await this.needsHuman(f, true);
+      this.note(f.number, 'handover', `${spec.what}; ${blocker}`);
+    } else this.note(f.number, spec.step, `${spec.what}; ${blocker}`);
+    await this.explain(f, `${spec.what}. ${blocker} Bitte selbst beheben; ein neuer Commit startet die Prüfung neu.`);
   }
   /** Merges the base into the branch (once per head and base), then dispatches the validation of the new head. */
   private async updateBranch(f: MergeFacts, snapshot: Snapshot, ownership: Ownership | undefined, adopted: boolean, done: string): Promise<boolean> {
@@ -315,14 +365,52 @@ export class MergeManager {
               this.note(number, 'checks', `Pflichtprüfung ${failed.map(c => c.name).join(', ')} wird einmal wiederholt.`);
               await this.explain(f, 'Eine Pflichtprüfung ist fehlgeschlagen und wird einmal wiederholt, falls die Ursache die Ausführungsumgebung war (z. B. Netzwerk bei der Installation).'); continue;
             }
+          }
+          const actionRequired = f.checks.some(c => c.state === 'action_required');
+          const canRework = f.sameRepository && !blockedLabel(f);
+          // A red check goes back to rework with what it reports (issue #251); the Factory never dismisses a scanner finding.
+          const red = f.checks.filter(c => failedCheck(c.state));
+          if (red.length && canRework) {
+            phase = 'Nacharbeit wegen fehlgeschlagener Prüfung';
+            const key = hash({ protocol: 'sf-merge-checks-rework-v1', repository: this.api.repository.toLowerCase(), head: f.head, checks: red.map(c => `${c.name}:${c.state}`).sort() });
+            const names = red.map(c => c.name).join(', ');
+            await this.reworkOrHandOver(f, snapshot, ownership, adopted, { cause: 'checks', key, review: checksReview(red), step: 'checks-failed',
+              what: `Prüfung ${names} ist fehlgeschlagen` });
+            continue;
+          }
+          if (failed.length) {
             this.note(number, 'checks-failed', `Pflichtprüfung ${failed.map(c => c.name).join(', ')} ist fehlgeschlagen.`);
             await this.explain(f, `Pflichtprüfung ${failed.map(c => c.name).join(', ')} ist fehlgeschlagen; kein Review und kein Merge für diesen Stand.`); continue;
           }
-          // A review of a state whose required checks are still running would only defer, and be repeated for each check.
-          const pending = required.filter(name => !f!.checks.some(c => c.name === name) || f!.checks.some(c => c.name === name && !['success', 'neutral', 'skipped'].includes(c.state)));
-          if (pending.length && !f.checks.some(c => c.state === 'action_required')) {
-            this.note(number, 'checks', `Pflichtprüfung ${pending.join(', ')} fehlt oder läuft noch.`);
-            await this.explain(f, `Pflichtprüfung ${pending.join(', ')} fehlt oder läuft noch; Review und Merge folgen danach.`); continue;
+          // Unresolved review comments are worked in by a rework; the Factory resolves no thread itself.
+          if (f.unresolvedThreads.length && canRework) {
+            phase = 'Nacharbeit wegen offener Review-Diskussionen';
+            const key = hash({ protocol: 'sf-merge-threads-rework-v1', repository: this.api.repository.toLowerCase(), head: f.head, threads: f.unresolvedThreads });
+            await this.reworkOrHandOver(f, snapshot, ownership, adopted, { cause: 'threads', key, review: threadsReview(f.unresolvedThreads), step: 'review-rejected',
+              what: `${f.unresolvedThreads.length} Review-Diskussion(en) sind ungelöst` });
+            continue;
+          }
+          // A review of a state whose checks are still running would only defer, and be repeated for each check. A workflow
+          // waiting in action_required is the exception: it never ends by itself, the review explains the gate and defers.
+          const running = f.checks.filter(c => !passingStates.has(c.state) && !failedCheck(c.state) && c.state !== 'action_required').map(c => c.name);
+          const pending = [...new Set([...running, ...required.filter(name => !f!.checks.some(c => c.name === name))])];
+          if (pending.length && !actionRequired) {
+            const waitKey = `merge-checks-wait:${hash({ head: f.head })}`;
+            const since = this.events(f).find(e => e.key === waitKey)?.at;
+            const waited = since ? Date.now() - Date.parse(since) : 0;
+            if (waited > pendingChecksLimitMs) {
+              phase = 'Übergabe wegen wartender Prüfungen';
+              const why = `Die Prüfung ${pending.join(', ')} läuft seit mehr als ${Math.round(pendingChecksLimitMs / 3600000)} Stunden oder fehlt weiterhin.`;
+              if (owner && !adopted) {
+                await this.event(f, `merge-handover:${waitKey}`, { type: 'merge_handover', prNumber: number, head: f.head, base: f.base, reviewKey: hash({ waitKey }), decision: 'defer' });
+                await this.needsHuman(f, true);
+                this.note(number, 'handover', why);
+              } else this.note(number, 'checks', why);
+              await this.explain(f, `${why} Die Factory wartet nicht länger; bitte die Prüfung prüfen oder neu starten.`); continue;
+            }
+            if (!since) await this.event(f, waitKey, { type: 'merge_status', head: f.head, base: f.base, reason: `Wartet auf Prüfung ${pending.join(', ')}.` });
+            this.note(number, 'checks', `Prüfung ${pending.join(', ')} fehlt oder läuft noch.`);
+            await this.explain(f, `Prüfung ${pending.join(', ')} fehlt oder läuft noch; Review und Merge folgen danach.`); continue;
           }
         }
         if (f.state !== 'open' || f.draft || !f.sameRepository || f.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) {
