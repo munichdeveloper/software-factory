@@ -74554,7 +74554,7 @@ async function probeClaude(key, model2, client) {
     if (error62 instanceof Anthropic.EnforcedSpendLimitReachedError) return "exhausted";
     if (error62 instanceof Anthropic.RateLimitError) return /enforced_spend_limit_reached/.test(JSON.stringify(error62.error ?? null)) ? "exhausted" : "available";
     if (error62 instanceof Anthropic.AuthenticationError || error62 instanceof Anthropic.PermissionDeniedError) return "rejected";
-    if (error62 instanceof Anthropic.BadRequestError) return /credit balance/i.test(error62.message) ? "exhausted" : "available";
+    if (error62 instanceof Anthropic.BadRequestError) return /credit balance|reached your specified API usage limits/i.test(error62.message) ? "exhausted" : "available";
     if (error62 instanceof Anthropic.APIConnectionError) return "available";
     if (error62 instanceof Anthropic.APIError && error62.status === 402) return "exhausted";
     return "available";

@@ -27,6 +27,7 @@ import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { startReconcileSchedule, type ReconcileSchedule } from './schedule.js';
 import { QueueBoard } from './queue.js';
 import { AnalyticsIssueSync } from './analytics.js';
+import { GitHubOutcomeReader } from './outcomes.js';
 import { configurePrices, setLlmCallSink } from '../llm/analytics.js';
 import { SanityMonitor } from './sanity.js';
 import { RuntimeEvents } from './events.js';
@@ -274,7 +275,8 @@ export async function main(args = process.argv.slice(2)) {
         { ownedOnly: !!item.issueNumbers, assessor: assessor(config), ...(observe ? { observe } : {}), ...(checkRuns ? { checkRuns, approvals } : {}) });
       const merge = new RuntimeMerge(item.repositoryId, (config, snapshot, observe) => mergeManager(config, observe).run(snapshot));
       if (checkRuns) merge.checkApproval = (config, click) => mergeManager(config).checkApproval(click);
-      return { repository, controller, planner: config => config.llm.provider === 'static' ? deterministic : config.llm.provider === 'jev' ? jev : planner, merge };
+      return { repository, controller, planner: config => config.llm.provider === 'static' ? deterministic : config.llm.provider === 'jev' ? jev : planner, merge,
+        outcomes: new GitHubOutcomeReader(api, owner, repo) };
     };
     const bindings: RuntimeBinding[] = [];
     for (const item of registry.repositories) bindings.push(await bind(item));

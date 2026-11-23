@@ -1,5 +1,6 @@
 import type { Snapshot } from '../types.js';
 import { hash } from '../state/identity.js';
+import type { Outcome, OutcomeReader, OutcomeResult, PendingOutcome, WaitPhase } from './outcomes.js';
 
 /**
  * Cost analytics for software-factory-monitor (Johannes, 2026-11-19): what each issue cost until its pull request was
@@ -33,6 +34,12 @@ export interface AnalyticsIssue {
   qualifiedAt?: string | null;
   /** When the merge pass first handed the issue's pull request to a person (risk above the threshold, approval required). */
   handoverAt?: string | null;
+  /** Outcome class of a closed issue (software-factory#239), derived once from GitHub; null until derived and for closed issues without a Factory run. */
+  outcome?: Outcome | null;
+  /** When the issue was closed, as the derivation read it. */
+  closedAt?: string | null;
+  /** Phases in which the issue waited for a person, stored with the outcome. */
+  waits?: WaitPhase[];
 }
 /** A recorded merge review decision (factory_analytics_verdicts), for the router evaluation. */
 export interface AnalyticsVerdict { repository: string; step: string; prNumber: number | null; issueNumber: number | null; decision: string; rejected: boolean; at: string }
@@ -64,24 +71,54 @@ export function analyticsIssues(snapshot: Snapshot, mergeBot: (login: string) =>
   });
 }
 export interface ObservedMerge { pullRequest: number; step: string; at: string }
-export interface AnalyticsIssueStore { upsertAnalyticsIssues(repository: string, issues: AnalyticsIssue[]): Promise<void> }
+export interface AnalyticsIssueStore {
+  upsertAnalyticsIssues(repository: string, issues: AnalyticsIssue[]): Promise<void>;
+  /** Closed issues without a derived outcome (also the backfill of issues stored before the outcome existed), newest first. */
+  pendingAnalyticsOutcomes?(repository: string, limit: number, exclude: number[]): Promise<PendingOutcome[]>;
+  /** Stores the outcome and the wait phases of an issue; marks it as derived. */
+  saveAnalyticsOutcome?(repository: string, issueNumber: number, result: OutcomeResult): Promise<void>;
+}
+/** Issues whose outcome is derived per reconciliation: bounds the GitHub requests (about 6 each) of a pass and spreads the backfill. */
+export const outcomeBatch = 5;
 /** Writes the issues of each reconciliation that changed since the last one this broker wrote. Never throws. */
 export class AnalyticsIssueSync {
   private seen = new Map<string, string>();
   /** The first instant this broker saw each pull request handed to a person (merge progress `at` moves on every pass). */
   private handovers = new Map<string, Map<number, string>>();
   constructor(private store: AnalyticsIssueStore) {}
-  async observed(repository: string, snapshot: Snapshot | undefined, merges?: ReadonlyMap<number, ObservedMerge>): Promise<void> {
+  /** Issues whose derivation failed in this process; tried again after a restart, not on every pass. */
+  private failed = new Map<string, Set<number>>();
+  async observed(repository: string, snapshot: Snapshot | undefined, merges?: ReadonlyMap<number, ObservedMerge>, outcomes?: OutcomeReader): Promise<void> {
     if (!snapshot) return;
     try {
       const handovers = this.handovers.get(repository) ?? new Map<number, string>();
       this.handovers.set(repository, handovers);
       for (const m of merges?.values() ?? []) if (handoverSteps.has(m.step) && !handovers.has(m.pullRequest)) handovers.set(m.pullRequest, m.at);
       const changed = analyticsIssues(snapshot, undefined, handovers).filter(i => this.seen.get(`${repository}#${i.issueNumber}`) !== hash(i));
-      if (!changed.length) return;
-      await this.store.upsertAnalyticsIssues(repository, changed);
-      for (const i of changed) this.seen.set(`${repository}#${i.issueNumber}`, hash(i));
-    } catch { console.warn(JSON.stringify({ event: 'factory-analytics', code: 'ISSUES_NOT_WRITTEN', repository })); }
+      if (changed.length) {
+        await this.store.upsertAnalyticsIssues(repository, changed);
+        for (const i of changed) this.seen.set(`${repository}#${i.issueNumber}`, hash(i));
+      }
+    } catch { console.warn(JSON.stringify({ event: 'factory-analytics', code: 'ISSUES_NOT_WRITTEN', repository })); return; }
+    await this.deriveOutcomes(repository, outcomes);
+  }
+  /** Reads GitHub once for each closed issue without an outcome, at most `outcomeBatch` per pass. Never throws. */
+  private async deriveOutcomes(repository: string, reader: OutcomeReader | undefined): Promise<void> {
+    if (!reader || !this.store.pendingAnalyticsOutcomes || !this.store.saveAnalyticsOutcome) return;
+    const failed = this.failed.get(repository) ?? new Set<number>();
+    this.failed.set(repository, failed);
+    try {
+      const pending = await this.store.pendingAnalyticsOutcomes(repository, outcomeBatch, [...failed]);
+      let requests = 0, derived = 0;
+      for (const issue of pending) {
+        try {
+          const result = await reader.read(issue);
+          await this.store.saveAnalyticsOutcome(repository, issue.issueNumber, result);
+          requests += result.requests; derived++;
+        } catch { failed.add(issue.issueNumber); console.warn(JSON.stringify({ event: 'factory-analytics', code: 'OUTCOME_NOT_DERIVED', repository, issue: issue.issueNumber })); }
+      }
+      if (derived) console.log(JSON.stringify({ event: 'factory-analytics', code: 'OUTCOMES_DERIVED', repository, issues: derived, githubRequests: requests }));
+    } catch { console.warn(JSON.stringify({ event: 'factory-analytics', code: 'OUTCOMES_NOT_READ', repository })); }
   }
 }
 
