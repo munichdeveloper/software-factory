@@ -65145,6 +65145,8 @@ var riskRecordSchema = external_exports.strictObject({
   files: external_exports.number().int().nonnegative().optional(),
   // Optional: records written before 0.26.0 have no hard rule hits.
   ruleHits: external_exports.array(external_exports.strictObject({ rule: external_exports.enum(["migration", "auth", "interface"]), path: external_exports.string().max(500) })).max(20).optional(),
+  // Optional: only set for a mixed pull request that is critical because of built-in critical files (#244).
+  split: external_exports.strictObject({ paths: external_exports.array(external_exports.string().max(500)).max(20), restFiles: external_exports.number().int().positive(), restClass: riskClassSchema }).optional(),
   reason: external_exports.string().max(2e3),
   factors: riskAssessmentSchema.shape.factors
 });
@@ -65229,7 +65231,7 @@ function riskRules(changes, risk, merge3 = defaultWorkflowMerge) {
     files: files2
   };
 }
-async function classifyRisk(changes, risk, assessor, parts = [changes], merge3) {
+async function classifyRisk(changes, risk, assessor, parts = [changes], merge3, withSplit = true) {
   const rules = riskRules(changes, risk, merge3);
   const base = {
     matchedAreas: rules.matchedAreas,
@@ -65238,14 +65240,23 @@ async function classifyRisk(changes, risk, assessor, parts = [changes], merge3) 
     files: rules.files,
     ...rules.ruleHits.length ? { ruleHits: rules.ruleHits } : {}
   };
-  if (rules.builtinPaths.length) return {
-    ...base,
-    class: "critical",
-    source: "builtin",
-    aiClass: null,
-    factors: [],
-    reason: `\xC4ndert Dateien, die die Factory selbst steuern: ${rules.builtinPaths.slice(0, 5).join(", ")}.${rules.workflowReasons.length ? ` Workflow-Regel: ${rules.workflowReasons.slice(0, 5).join("; ")}.` : ""}`.slice(0, 2e3)
-  };
+  if (rules.builtinPaths.length) {
+    const critical = new Set(rules.builtinPaths), rest = changes.filter((c) => !critical.has(c.path));
+    const split = withSplit && rest.length ? {
+      paths: rules.builtinPaths.slice(0, 20),
+      restFiles: rest.length,
+      restClass: (await classifyRisk(rest, risk, assessor, parts.map((p) => p.filter((c) => !critical.has(c.path))).filter((p) => p.length), merge3, false)).class
+    } : void 0;
+    return {
+      ...base,
+      ...split ? { split } : {},
+      class: "critical",
+      source: "builtin",
+      aiClass: null,
+      factors: [],
+      reason: `\xC4ndert Dateien, die die Factory selbst steuern: ${rules.builtinPaths.slice(0, 5).join(", ")}.${rules.workflowReasons.length ? ` Workflow-Regel: ${rules.workflowReasons.slice(0, 5).join("; ")}.` : ""}`.slice(0, 2e3)
+    };
+  }
   if (rules.covered && rules.areaClass) {
     const cls = highest([rules.areaClass, rules.floor]);
     return {
@@ -65359,6 +65370,9 @@ function describeRisk(record2, risk) {
   const ruleLine = hits.length ? `
 - Feste Regel: ${[...new Set(hits.map((h) => ruleNames[h.rule]))].join(", ")} (${hits.slice(0, 5).map((h) => h.path).join(", ")}); das ist unabh\xE4ngig von KI-Bewertung und Bereichen mindestens \`${ruleFloorClass}\`.` : "";
   const sizeLine = `Umfang: ${record2.lines} ge\xE4nderte Zeilen${record2.files === void 0 ? "" : ` in ${files2} ${files2 === 1 ? "Datei" : "Dateien"}`}. Allein nach Gr\xF6\xDFe w\xE4re das \`${size}\` (${limits}); ` + (raised ? `die Gr\xF6\xDFe hat die Klasse auf \`${size}\` angehoben.` : "die Gr\xF6\xDFe hat die Klasse nicht bestimmt.");
+  const split = record2.source === "builtin" && record2.split ? `
+
+**Abspalten:** Der PR ist nur wegen dieser Dateien \`critical\`; sie geh\xF6ren in einen eigenen PR: ${record2.split.paths.map((p) => `\`${p}\``).join(", ")}. Der Rest-PR (${record2.split.restFiles} ${record2.split.restFiles === 1 ? "Datei" : "Dateien"}) soll \`Depends on: #<neuer PR>\` tragen. Ohne diese Dateien h\xE4tte der Rest nach denselben Regeln die Klasse \`${record2.split.restClass}\`.` : "";
   return `**Risikoklasse: ${record2.class}.** ${verdict}
 
 - ${cause}${ruleLine}${contentLine}
@@ -65366,7 +65380,7 @@ function describeRisk(record2, risk) {
 
 ${record2.reason}` + (record2.factors.length ? `
 
-${record2.factors.map((f) => `- ${f.factor}: ${f.path} \u2013 ${f.explanation}`).join("\n")}` : "");
+${record2.factors.map((f) => `- ${f.factor}: ${f.path} \u2013 ${f.explanation}`).join("\n")}` : "") + split;
 }
 
 // src/config/index.ts

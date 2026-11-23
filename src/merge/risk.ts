@@ -32,6 +32,8 @@ export const riskRecordSchema = z.strictObject({
   files: z.number().int().nonnegative().optional(),
   // Optional: records written before 0.26.0 have no hard rule hits.
   ruleHits: z.array(z.strictObject({ rule: z.enum(['migration', 'auth', 'interface']), path: z.string().max(500) })).max(20).optional(),
+  // Optional: only set for a mixed pull request that is critical because of built-in critical files (#244).
+  split: z.strictObject({ paths: z.array(z.string().max(500)).max(20), restFiles: z.number().int().positive(), restClass: riskClassSchema }).optional(),
   reason: z.string().max(2000),
   factors: riskAssessmentSchema.shape.factors
 });
@@ -158,12 +160,18 @@ export interface RiskAssessor { assess(input: RiskInput): Promise<RiskAssessment
  * its own with the metrics of the whole change set, and the highest class holds (issue #189).
  */
 export async function classifyRisk(changes: ReviewInput['changes'], risk: Config['merge']['risk'], assessor: RiskAssessor | undefined,
-  parts: ReviewInput['changes'][] = [changes], merge?: WorkflowMerge): Promise<RiskRecord> {
+  parts: ReviewInput['changes'][] = [changes], merge?: WorkflowMerge, withSplit = true): Promise<RiskRecord> {
   const rules = riskRules(changes, risk, merge);
   const base = { matchedAreas: rules.matchedAreas, builtinPaths: rules.builtinPaths, lines: rules.lines, files: rules.files,
     ...(rules.ruleHits.length ? { ruleHits: rules.ruleHits } : {}) };
-  if (rules.builtinPaths.length) return { ...base, class: 'critical', source: 'builtin', aiClass: null, factors: [],
+  if (rules.builtinPaths.length) {
+    // Mixed pull request: what class would the rest have under the same rules without the critical files (#244)?
+    const critical = new Set(rules.builtinPaths), rest = changes.filter(c => !critical.has(c.path));
+    const split = withSplit && rest.length ? { paths: rules.builtinPaths.slice(0, 20), restFiles: rest.length,
+      restClass: (await classifyRisk(rest, risk, assessor, parts.map(p => p.filter(c => !critical.has(c.path))).filter(p => p.length), merge, false)).class } : undefined;
+    return { ...base, ...(split ? { split } : {}), class: 'critical', source: 'builtin', aiClass: null, factors: [],
     reason: `Ändert Dateien, die die Factory selbst steuern: ${rules.builtinPaths.slice(0, 5).join(', ')}.${rules.workflowReasons.length ? ` Workflow-Regel: ${rules.workflowReasons.slice(0, 5).join('; ')}.` : ''}`.slice(0, 2000) };
+  }
   if (rules.covered && rules.areaClass) {
     const cls = highest([rules.areaClass, rules.floor]);
     return { ...base, class: cls, source: 'areas', aiClass: null, factors: [],
@@ -291,6 +299,8 @@ export function describeRisk(record: RiskRecord, risk: Config['merge']['risk']):
     `das ist unabhängig von KI-Bewertung und Bereichen mindestens \`${ruleFloorClass}\`.` : '';
   const sizeLine = `Umfang: ${record.lines} geänderte Zeilen${record.files === undefined ? '' : ` in ${files} ${files === 1 ? 'Datei' : 'Dateien'}`}. Allein nach Größe wäre das \`${size}\` (${limits}); ` +
     (raised ? `die Größe hat die Klasse auf \`${size}\` angehoben.` : 'die Größe hat die Klasse nicht bestimmt.');
+  const split = record.source === 'builtin' && record.split ? `\n\n**Abspalten:** Der PR ist nur wegen dieser Dateien \`critical\`; sie gehören in einen eigenen PR: ${record.split.paths.map(p => `\`${p}\``).join(', ')}. ` +
+    `Der Rest-PR (${record.split.restFiles} ${record.split.restFiles === 1 ? 'Datei' : 'Dateien'}) soll \`Depends on: #<neuer PR>\` tragen. Ohne diese Dateien hätte der Rest nach denselben Regeln die Klasse \`${record.split.restClass}\`.` : '';
   return `**Risikoklasse: ${record.class}.** ${verdict}\n\n- ${cause}${ruleLine}${contentLine}\n- ${sizeLine}\n\n${record.reason}` +
-    (record.factors.length ? `\n\n${record.factors.map(f => `- ${f.factor}: ${f.path} – ${f.explanation}`).join('\n')}` : '');
+    (record.factors.length ? `\n\n${record.factors.map(f => `- ${f.factor}: ${f.path} – ${f.explanation}`).join('\n')}` : '') + split;
 }
