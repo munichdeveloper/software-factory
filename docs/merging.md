@@ -145,6 +145,27 @@ person approves with `/harness approve <id>` (the id also binds the assessment)
 or, with `aboveThreshold: block`, merges by hand. `critical` is never merged
 automatically. With `merge_pr: approval` the class is only shown.
 
+### Overruling a deferral
+
+When the AI review for the current head ends with `defer` and has no `blocking`
+finding (for example a false alarm of a secret scanner), the merge manager
+computes an approval id like the one of the risk gate, bound to repository, pull
+request, head, base, review key, review and risk. The status comment, the check
+"Software Factory / Merge" and the queue details show the line
+`/harness approve <id>` and say that it overrules the deferral. A comment with
+the current id from a person who may approve (same identity check as the risk
+gate) lets the normal flow continue: required checks, merge gate, merge. If the
+risk is also above `autoMergeUpTo`, the same approval covers the risk gate (one
+id, one comment). The override is journaled (`merge_defer_overridden`), noted on
+the pull request as "Zurückstellung überstimmt von @login", and `sf:needs-human`
+is removed.
+
+A person can never overrule `request_changes` or a review with a `blocking`
+finding: there is no id, and a matching comment is ignored and reported as "nicht
+überstimmbar". The same holds where the Factory does not merge at all
+(`aboveThreshold: block`). A new commit, a new base or a new review changes the
+id, so an old id has no effect.
+
 ```yaml
 merge:
   enabled: true
