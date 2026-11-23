@@ -74289,6 +74289,16 @@ async function materializeCodingArtifact(target, source, request2) {
   }
   return artifact;
 }
+function hostedWritable(target) {
+  return async (work) => {
+    (0, import_node_child_process5.execFileSync)("sudo", ["-n", "chown", "-R", `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`, target]);
+    try {
+      await work();
+    } finally {
+      (0, import_node_child_process5.execFileSync)("sudo", ["-n", "chown", "-R", "sf-validator:sf-validator", target]);
+    }
+  };
+}
 async function fingerprint(root, paths) {
   const entries = [];
   for (const path4 of [...new Set(paths)].sort()) {
@@ -74416,8 +74426,10 @@ async function runCodingValidation(options) {
           return !a || !b || !a.data.equals(b.data) || a.mode !== b.mode;
         }).sort();
         if (changed.length) {
-          await restore(root, was, now);
           messages.push(`generated files out of date: run \`${entry.command}\` (${changed.slice(0, 20).join(", ")}${changed.length > 20 ? ", ..." : ""})`);
+          await (options.writable ?? ((work) => work()))(() => restore(root, was, now)).catch(() => {
+            messages.push("generated files could not be restored");
+          });
         }
         if (exitCode !== 0) messages.push(`generated command \`${entry.command}\` failed with exit code ${exitCode}`);
         if (exitCode !== 0 || changed.length) ok = false;
@@ -74560,7 +74572,8 @@ credential=${credential2}
       sourceRunId: Number(process.env.SF_SOURCE_RUN_ID),
       hosted: true,
       command: hostedValidationCommand((0, import_node_path5.resolve)(values.source), (0, import_node_path5.resolve)((0, import_node_path5.dirname)(output2), "logs")),
-      note: (name, text) => (0, import_promises5.appendFile)((0, import_node_path5.resolve)((0, import_node_path5.dirname)(output2), "logs", `${name}.log`), text)
+      note: (name, text) => (0, import_promises5.appendFile)((0, import_node_path5.resolve)((0, import_node_path5.dirname)(output2), "logs", `${name}.log`), text),
+      writable: hostedWritable((0, import_node_path5.resolve)(values.source))
     });
     await (0, import_promises5.writeFile)(output2, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ validation: report.status, executionId: report.executionId, originalModelStatus: artifact.result.status }));
