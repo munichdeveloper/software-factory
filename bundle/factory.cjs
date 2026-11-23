@@ -72044,6 +72044,25 @@ ${marker2}`;
       if (t.latest?.result) entries.push(...t.latest.result.proposedActions.map((action) => ({ action, source: "worker" })));
     }
     const budget = { actions: 0, newIssues: 0, activeWorkers: tasks.reduce((n, t) => n + t.executions.filter((e) => e.active).length, 0) };
+    if (this.options.planned) {
+      try {
+        const preview = { ...budget }, starts = [];
+        for (const entry of entries) {
+          const parsed = actionSchema.safeParse(entry.action);
+          if (!parsed.success || !["start_worker", "retry_worker"].includes(parsed.data.kind) || this.config.execution.dryRun) continue;
+          const action = parsed.data, task = tasks.find((t) => t.issue.number === action.issueNumber);
+          if (!task || starts.includes(action.issueNumber)) continue;
+          const decision = evaluate(action, { config: this.config, task, budget: preview, source: entry.source, readyIsGrant: !!snapshot2.readyIsGrant, approved: false });
+          if (decision.outcome === "allow") {
+            starts.push(action.issueNumber);
+            preview.actions++;
+            preview.activeWorkers++;
+          }
+        }
+        await this.options.planned(snapshot2, starts);
+      } catch {
+      }
+    }
     const seen = /* @__PURE__ */ new Set();
     for (const entry of entries) {
       const parsed = actionSchema.safeParse(entry.action);
@@ -74857,7 +74876,13 @@ Software Factory: the declared generated files could not be regenerated after th
     let current = start;
     for (const entry of entries) {
       const exitCode = await options.command("regenerate", entry.command.split(" "), regenerateCommandSeconds, environment).catch(() => -1);
-      if (exitCode !== 0) return block(`\`${entry.command}\` ${exitCode === 124 || exitCode === 137 ? `timed out after ${regenerateCommandSeconds} s` : `failed with exit code ${exitCode}`}`);
+      const timedOut = exitCode === 124 || exitCode === 137;
+      if (timedOut) return block(`\`${entry.command}\` timed out after ${regenerateCommandSeconds} s`);
+      if (exitCode !== 0) {
+        const reason = `\`${entry.command}\` failed with exit code ${exitCode}`;
+        log(`::warning::Generated files were not regenerated: ${reason}; validation decides`);
+        return { ...unchanged, failure: reason };
+      }
       const next = await files(root), outside = changed(current, next).filter((path4) => !inside(path4, entry.paths));
       if (outside.length) return block(`\`${entry.command}\` changed files outside its declared paths: ${list(outside)}`);
       current = next;

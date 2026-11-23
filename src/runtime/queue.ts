@@ -69,6 +69,8 @@ export interface QueueRepository {
   outcome: RunReport['outcome'] | null;
   /** The fixed code of the last reconciliation that failed, cleared by the next one that completes. */
   failure: { reason: string; at: string } | null;
+  /** Since when a reconciliation of the repository is running, else null; the view is then the one of the pass before or an interim view. */
+  reconcilingSince: string | null;
   slots: { active: number; max: number } | null;
   entries: QueueEntry[];
   /**
@@ -187,7 +189,7 @@ export class QueueBoard {
   constructor(private now: () => Date = () => new Date(), private reconcileIntervalSeconds: number | null = null) {}
   private current(target: Target): QueueRepository {
     return this.repositories.get(target.repositoryId) ?? { repositoryId: target.repositoryId, repository: target.repository, observedAt: null,
-      outcome: null, failure: null, slots: null, entries: [], pullRequests: [] };
+      outcome: null, failure: null, reconcilingSince: null, slots: null, entries: [], pullRequests: [] };
   }
   /** After a reconciliation that completed. Never throws: the queue view must not fail a reconciliation. */
   observed(target: Target, config: Config, snapshot: Snapshot | undefined, report: RunReport, rejections?: ReadonlyMap<number, string>,
@@ -197,13 +199,37 @@ export class QueueBoard {
       const entries = snapshot ? queueEntries(snapshot, config, report, target.repository, rejections, now, merges) : [];
       const active = snapshot ? reconstruct(snapshot, config, now).reduce((n, t) => n + t.executions.filter(e => e.active).length, 0) : 0;
       this.repositories.set(target.repositoryId, { repositoryId: target.repositoryId, repository: target.repository, observedAt: now.toISOString(),
-        outcome: report.outcome, failure: null, slots: snapshot ? { active, max: config.execution.maxParallelWorkers } : null, entries,
+        outcome: report.outcome, failure: null, reconcilingSince: null, slots: snapshot ? { active, max: config.execution.maxParallelWorkers } : null, entries,
         pullRequests: snapshot ? otherPullRequests(entries, snapshot, target.repository, merges) : [] });
+    } catch { this.failed(target, 'QUEUE_VIEW_FAILED'); }
+  }
+  /** A reconciliation of the repository starts. */
+  reconciling(target: Target) {
+    const current = this.current(target);
+    this.repositories.set(target.repositoryId, { ...current, reconcilingSince: current.reconcilingSince ?? this.now().toISOString() });
+  }
+  /** A reconciliation ended without a view (it threw). */
+  reconcileEnded(target: Target) { this.repositories.set(target.repositoryId, { ...this.current(target), reconcilingSince: null }); }
+  /**
+   * An interim view while a reconciliation still runs: the entries of its snapshot, the starts it decided on as
+   * `starting`. The view after the reconciliation replaces it. Never throws.
+   */
+  planned(target: Target, config: Config, snapshot: Snapshot, starts: readonly number[], merges?: ReadonlyMap<number, MergeProgress>) {
+    try {
+      const now = this.now(), current = this.current(target);
+      const report: RunReport = { correlationId: '', startedAt: now.toISOString(), durationMs: 0, outcome: 'success', tasks: 0, decisions: [], errors: [], blockers: [], nextSteps: [] };
+      const entries = queueEntries(snapshot, config, report, target.repository, undefined, now, merges).map(e => starts.includes(e.issueNumber) && !e.run
+        ? { ...e, stage: 'starting' as const, since: now.toISOString(), reason: null, retryAt: null, waitsForSlot: false } : e)
+        .sort((a, b) => stageOrder[a.stage] - stageOrder[b.stage] || (priorityOrder[a.priority ?? 'normal'] - priorityOrder[b.priority ?? 'normal'])
+          || a.since.localeCompare(b.since) || a.issueNumber - b.issueNumber);
+      const active = reconstruct(snapshot, config, now).reduce((n, t) => n + t.executions.filter(e => e.active).length, 0);
+      this.repositories.set(target.repositoryId, { ...current, reconcilingSince: current.reconcilingSince ?? now.toISOString(),
+        slots: { active, max: config.execution.maxParallelWorkers }, entries, pullRequests: otherPullRequests(entries, snapshot, target.repository, merges) });
     } catch { this.failed(target, 'QUEUE_VIEW_FAILED'); }
   }
   /** After a reconciliation that failed: the last view stays, marked with the fixed reason. */
   failed(target: Target, reason: string) {
-    this.repositories.set(target.repositoryId, { ...this.current(target), failure: { reason: fixedCode(reason) ?? 'OPERATION_FAILED', at: this.now().toISOString() } });
+    this.repositories.set(target.repositoryId, { ...this.current(target), reconcilingSince: null, failure: { reason: fixedCode(reason) ?? 'OPERATION_FAILED', at: this.now().toISOString() } });
   }
   /** Told by the schedule when a pass starts and when the next one is due. */
   schedule(plan: QueueSchedule) { this.plan = { ...plan }; }

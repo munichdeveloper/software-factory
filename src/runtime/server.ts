@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { Manager } from '../manager/index.js';
 import type { Planner } from '../llm/provider.js';
 import type { Config } from '../config/index.js';
+import type { Snapshot } from '../types.js';
 import { admissionSchema, executionKey, snapshotSchema } from './contract.js';
 import { workerResultSchema } from '../workers/contract.js';
 import { RuntimeController, type RuntimeRepository } from './controller.js';
@@ -80,10 +81,14 @@ export async function reconcileBinding(binding: RuntimeBinding, options: Pick<Se
   if (expired.length) console.log(JSON.stringify({ event: 'factory-retained-release-expired', repositoryId: binding.repository.repositoryId, executions: expired }));
   const planner = typeof binding.planner === 'function' ? binding.planner(config) : binding.planner;
   const manager = new Manager(binding.repository.github, config, planner, { correlationId: `temporal:${binding.repository.repositoryId}`, workerRuntime: binding.controller,
-    ...(options.notifications ? { notifications: options.notifications } : {}) });
+    ...(options.notifications ? { notifications: options.notifications } : {}),
+    ...(options.queue ? { planned: (snapshot: Snapshot, starts: number[]) => options.queue!.planned(binding.repository, config, snapshot, starts, binding.merge?.progress()) } : {}) });
   // A reconciliation still running answers the next request with BUSY instead of queueing it: callers retry on a
   // schedule and give up after their own timeout, so waiting requests would pile up and exhaust the database pool.
-  const report = await options.store.tryLocked(binding.repository.repositoryId, 'manager', () => manager.run());
+  const report = await options.store.tryLocked(binding.repository.repositoryId, 'manager', async () => {
+    options.queue?.reconciling(binding.repository);
+    try { return await manager.run(); } catch (error) { options.queue?.reconcileEnded(binding.repository); throw error; }
+  });
   if (manager.lastSnapshot) void binding.merge?.start(config, manager.lastSnapshot);
   // The merge pass runs after the response; what its last pass could not do is reported here.
   if (config.merge.enabled && binding.merge?.errors.length) report.errors.push(...binding.merge.errors);
