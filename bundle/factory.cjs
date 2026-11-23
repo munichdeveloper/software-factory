@@ -72044,6 +72044,25 @@ ${marker2}`;
       if (t.latest?.result) entries.push(...t.latest.result.proposedActions.map((action) => ({ action, source: "worker" })));
     }
     const budget = { actions: 0, newIssues: 0, activeWorkers: tasks.reduce((n, t) => n + t.executions.filter((e) => e.active).length, 0) };
+    if (this.options.planned) {
+      try {
+        const preview = { ...budget }, starts = [];
+        for (const entry of entries) {
+          const parsed = actionSchema.safeParse(entry.action);
+          if (!parsed.success || !["start_worker", "retry_worker"].includes(parsed.data.kind) || this.config.execution.dryRun) continue;
+          const action = parsed.data, task = tasks.find((t) => t.issue.number === action.issueNumber);
+          if (!task || starts.includes(action.issueNumber)) continue;
+          const decision = evaluate(action, { config: this.config, task, budget: preview, source: entry.source, readyIsGrant: !!snapshot2.readyIsGrant, approved: false });
+          if (decision.outcome === "allow") {
+            starts.push(action.issueNumber);
+            preview.actions++;
+            preview.activeWorkers++;
+          }
+        }
+        await this.options.planned(snapshot2, starts);
+      } catch {
+      }
+    }
     const seen = /* @__PURE__ */ new Set();
     for (const entry of entries) {
       const parsed = actionSchema.safeParse(entry.action);

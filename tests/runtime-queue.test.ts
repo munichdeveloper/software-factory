@@ -17,6 +17,34 @@ async function reconcile(w: World, board: QueueBoard) {
 const repository = (board: QueueBoard, w: World) => board.view([w.repo]).repositories[0]!;
 
 describe('queue view', () => {
+  it('shows an interim view with the decided starts before any run starts, then the final view replaces it', async () => {
+    const w = new World({ readyLabel: true, maxParallelWorkers: 1 }), board = new QueueBoard(() => w.now);
+    w.open(1); w.open(2); w.grant(1);
+    const interim: unknown[] = [];
+    const manager = new Manager(w.github, w.cfg, new StaticPlanner(), { correlationId: 'temporal:42', now: () => w.now, workerRuntime: w.controller,
+      planned: (snapshot, starts) => { board.reconciling(w.repo); board.planned(w.repo, w.cfg, snapshot, starts); interim.push({ ...repository(board, w), running: w.running().length }); } });
+    const report = await manager.run();
+    expect(interim).toHaveLength(1);
+    const early = interim[0] as ReturnType<typeof repository> & { running: number };
+    expect(early.running).toBe(0);
+    expect(early.reconcilingSince).toBe(w.now.toISOString());
+    expect(early.entries.map(e => [e.issueNumber, e.stage])).toEqual([[1, 'starting'], [2, 'awaiting-grant']]);
+    board.observed(w.repo, w.cfg, manager.settledSnapshot, report, manager.lastRejections);
+    expect(repository(board, w).reconcilingSince).toBeNull();
+    expect(repository(board, w).entries.map(e => [e.issueNumber, e.stage])).toEqual([[1, 'running'], [2, 'awaiting-grant']]);
+  });
+
+  it('never lets a failing interim view abort the reconciliation', async () => {
+    const w = new World({ readyLabel: true }), board = new QueueBoard(() => w.now);
+    w.open(1); w.grant(1);
+    const throwing = new Manager(w.github, w.cfg, new StaticPlanner(), { correlationId: 'temporal:42', now: () => w.now, workerRuntime: w.controller,
+      planned: () => { throw new Error('boom'); } });
+    await throwing.run();
+    expect(w.running()).toHaveLength(1);
+    board.planned(w.repo, w.cfg, undefined as never, [1]);
+    expect(repository(board, w).failure).toMatchObject({ reason: 'QUEUE_VIEW_FAILED' });
+  });
+
   it('lists running, slot-waiting and grant-waiting tasks in queue order with their slots', async () => {
     const w = new World({ readyLabel: true, maxParallelWorkers: 1 }), board = new QueueBoard(() => w.now, 360);
     w.open(1); w.open(2); w.open(3); w.issue(3).labels.push('harness:priority-high');
@@ -130,7 +158,7 @@ describe('GET /v1/queue', () => {
     const ok = await call('/v1/queue', monitorToken);
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ generatedAt: '2026-11-18T12:00:00.000Z', reconcileIntervalSeconds: 180, passStartedAt: null, nextPassAt: null,
-      repositories: [{ repositoryId: 42, repository: 'owner/target', observedAt: null, outcome: null, failure: null, slots: null, entries: [], pullRequests: [] }] });
+      repositories: [{ repositoryId: 42, repository: 'owner/target', observedAt: null, outcome: null, failure: null, reconcilingSince: null, slots: null, entries: [], pullRequests: [] }] });
     expect((await call('/v1/queue', managerToken)).status).toBe(200);
     expect((await call('/v1/queue', workerToken)).status).toBe(401);
     expect((await call('/v1/queue', 'x'.repeat(32))).status).toBe(401);
