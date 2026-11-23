@@ -44,7 +44,8 @@ The coding worker runs offline without installed dependencies, so it can never r
 
 After the agent and the Harness's lockfile step, and before the artifact is uploaded, the coding job checks out the base again, applies the artifact, installs the locked dependencies (`npm ci --ignore-scripts`) and runs each marked command in order, as the separate `sf-validator` account with an empty environment and network, at most 300 s per command. Changes inside the entry's `paths` are added to the artifact; the result's summary (and so the PR body) and the job summary name the commands and files. The independent validation still runs every entry as its `generated` check and restores the files; after regeneration the outputs match and the check passes.
 
-- A command that fails or times out, or that changes a file outside its declared `paths`, adopts nothing: the result ends `blocked` with error `GENERATED_FILES_FAILED: <reason>`.
+- A command that times out (exit code 124/137), or that changes a file outside its declared `paths`, adopts nothing: the result ends `blocked` with error `GENERATED_FILES_FAILED: <reason>`.
+- A command that exits with another code than 0 is treated like a failing install: the artifact stays unchanged and nothing is blocked (log warning `Generated files were not regenerated: <command> failed with exit code <n>; validation decides`). The validation's `generated` check fails (`CHECK_FAILED`), so `execution.rework` applies (SF #292).
 - A failing `npm ci` adopts nothing and blocks nothing: the validation's `install` check reports it, so `execution.rework` applies.
 - Only `success` results with changes are regenerated. Entries without the flag (a lint command, say) stay checks only.
 - `regenerate` applies to the npm profiles; paths naming `.github/`, agent instruction files or CODEOWNERS are refused by the plan schema.

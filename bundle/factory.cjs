@@ -74725,7 +74725,13 @@ Software Factory: the declared generated files could not be regenerated after th
     let current = start;
     for (const entry of entries) {
       const exitCode = await options.command("regenerate", entry.command.split(" "), regenerateCommandSeconds, environment).catch(() => -1);
-      if (exitCode !== 0) return block(`\`${entry.command}\` ${exitCode === 124 || exitCode === 137 ? `timed out after ${regenerateCommandSeconds} s` : `failed with exit code ${exitCode}`}`);
+      const timedOut = exitCode === 124 || exitCode === 137;
+      if (timedOut) return block(`\`${entry.command}\` timed out after ${regenerateCommandSeconds} s`);
+      if (exitCode !== 0) {
+        const reason = `\`${entry.command}\` failed with exit code ${exitCode}`;
+        log(`::warning::Generated files were not regenerated: ${reason}; validation decides`);
+        return { ...unchanged, failure: reason };
+      }
       const next = await files(root), outside = changed(current, next).filter((path4) => !inside(path4, entry.paths));
       if (outside.length) return block(`\`${entry.command}\` changed files outside its declared paths: ${list(outside)}`);
       current = next;

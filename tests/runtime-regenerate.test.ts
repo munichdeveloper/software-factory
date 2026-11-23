@@ -60,8 +60,17 @@ it('refuses changes outside the declared paths, adopts nothing and ends the resu
   expect(result.artifact.result.summary).toContain('Nothing was adopted');
 });
 
-it('ends the result blocked and adopts nothing when a regeneration command fails or times out', async () => {
-  for (const [exitCode, text] of [[2, 'failed with exit code 2'], [124, 'timed out after 300 s']] as const) {
+it('returns the artifact unchanged without blocking when a regeneration command fails', async () => {
+  const f = await fixture(), lines: string[] = [];
+  const result = await regenerateCodingArtifact({ target: f.root, artifact: f.artifact, plan: plan(), log: l => lines.push(l), command: async (name, args, seconds, env) => {
+    if (name === 'regenerate') { await bundling(f.root)(name, args, seconds, env); return 2; } return 0; } });
+  expect(result.artifact).toEqual(f.artifact); expect(result.artifact.result.status).toBe(f.artifact.result.status);
+  expect(result.failure).toBe('`npm run bundle` failed with exit code 2'); expect(result.regenerated).toEqual([]);
+  expect(lines).toContain('::warning::Generated files were not regenerated: `npm run bundle` failed with exit code 2; validation decides');
+});
+
+it('ends the result blocked and adopts nothing when a regeneration command times out', async () => {
+  for (const [exitCode, text] of [[124, 'timed out after 300 s'], [137, 'timed out after 300 s']] as const) {
     const f = await fixture();
     const result = await regenerateCodingArtifact({ target: f.root, artifact: f.artifact, plan: plan(), command: async (name, args, seconds, env) => {
       if (name === 'regenerate') { await bundling(f.root)(name, args, seconds, env); return exitCode; } return 0; } });
