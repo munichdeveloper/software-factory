@@ -229,6 +229,18 @@ it('uses real structured Responses review with no tools, keeps untrusted code in
   x.cfg.llm.provider = 'openai'; fetcher.mockResolvedValue(new Response(JSON.stringify({ status: 'incomplete' })));
   await expect(new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).rejects.toThrow('incomplete');
 });
+it('does not give the review the risk or hand-over labels, and tells it not to defer for them', async () => {
+  const x = fixture(); const input: ReviewInput = await x.api.context(x.f, 60, 250000);
+  input.facts = { ...input.facts, labels: ['sf:risk-critical', 'sf:risk-low', 'sf:needs-human', 'harness:managed'] };
+  let sent: { instructions: string; input: string } | undefined;
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    sent = JSON.parse(String(init!.body));
+    return new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(x.review) }] }] }));
+  });
+  await new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input);
+  expect(JSON.parse(sent!.input).untrustedFacts.labels).toEqual(['harness:managed']);
+  expect(sent!.instructions).toContain('risk gate');
+});
 it('decodes durable journals with a readable explanation after the JSON fence', () => {
   const event = { version: 1 as const, key: 'review', at: clock.toISOString(), correlationId: 'test',
     data: { type: 'merge_status' as const, head: 'a'.repeat(40), base: 'b'.repeat(40), reason: 'Needs work' } };
