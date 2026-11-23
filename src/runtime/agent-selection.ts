@@ -58,7 +58,9 @@ export async function probeClaude(key: string | undefined, model: string, client
     if (error instanceof Anthropic.EnforcedSpendLimitReachedError) return 'exhausted';
     if (error instanceof Anthropic.RateLimitError) return /enforced_spend_limit_reached/.test(JSON.stringify(error.error ?? null)) ? 'exhausted' : 'available';
     if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) return 'rejected';
-    if (error instanceof Anthropic.BadRequestError) return /credit balance/i.test(error.message) ? 'exhausted' : 'available';
+    // A used-up prepaid balance, or the workspace/organization usage limit set in the Console (2026-11-23: "You have
+    // reached your specified API usage limits. You will regain access on <date>"), both 400 invalid_request_error.
+    if (error instanceof Anthropic.BadRequestError) return /credit balance|reached your specified API usage limits/i.test(error.message) ? 'exhausted' : 'available';
     if (error instanceof Anthropic.APIConnectionError) return 'available';
     if (error instanceof Anthropic.APIError && error.status === 402) return 'exhausted';
     return 'available';
