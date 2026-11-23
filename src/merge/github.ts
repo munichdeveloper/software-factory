@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { parse } from 'yaml';
 import { needsHumanLabel, type MergeFacts, type MergePort, type Predecessor, type ReviewInput } from './contract.js';
+import { isWorkflowFile } from './workflow-risk.js';
 import { isLockfile, lockfileSummary } from './lockfile.js';
 
 const forbidden = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && error.status === 403;
@@ -119,7 +120,9 @@ export class GitHubMergePort implements MergePort {
       }
       if (!file.patch) throw Object.assign(new Error('Diff is incomplete or contains binary changes'), { path: file.filename });
       const content = file.status === 'removed' ? await read(file.filename, facts.base) : await read(file.filename, facts.head);
-      changes.push({ path: file.filename, status: file.status, patch: file.patch, content });
+      // A modified workflow file also carries its base version: the risk classification compares both (workflow-risk.ts).
+      const baseContent = file.status === 'modified' && isWorkflowFile(file.filename) ? await read(file.filename, facts.base) : undefined;
+      changes.push({ path: file.filename, status: file.status, patch: file.patch, content, ...(baseContent !== undefined ? { baseContent } : {}) });
       if (Buffer.byteLength(JSON.stringify({ facts: { ...facts, comments: [] }, instructions, changes })) > maxBytes) throw new Error('Review context exceeds limit; no truncated approval');
     }
     return { facts, trustedScope: this.scope, trustedInstructions: instructions, changes };
