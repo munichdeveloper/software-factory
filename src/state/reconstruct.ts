@@ -69,7 +69,7 @@ export interface Task {
   /** The next attempt is the rescue attempt: it runs on retryAgents and names rescueMarker. */
   rescueDue?: boolean;
   /** Why the merge side asked for that rework: review findings, or a conflict of the branch with the base. */
-  reworkCause?: 'review' | 'conflict';
+  reworkCause?: 'review' | 'conflict' | 'checks' | 'threads';
   automaticBlockCause?: BlockCause;
   /** Open follow-up issues the Factory created from this task (`Origin: #n`). */
   openFollowups: number[];

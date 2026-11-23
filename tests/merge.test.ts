@@ -462,3 +462,81 @@ it('leaves sf:needs-human alone when nothing waits for a person', async () => {
   const needsHuman = vi.fn(async () => {}); Object.assign(x.api, { needsHuman });
   expect((await x.owned()).merged).toBe(1); expect(needsHuman).not.toHaveBeenCalled();
 });
+
+// Issue #251: pending checks wait, red checks and open review threads go back to rework; action_required and thin evidence stay a defer.
+function reworking() {
+  const x = temporal(); x.f.draft = false; x.f.checks = x.cfg.merge.requiredChecks.map(name => ({ name, state: 'success' })); x.cfg.execution.rework = true;
+  const task = x.snapshot.issues.find(i => i.number === 7)!, exec = 'e'.repeat(32);
+  x.snapshot.comments.get(7)!.unshift({ id: 0, author: 'github-actions[bot]', createdAt: clock.toISOString(), body: encodeEvent({ version: 1, key: `intent:${exec}`,
+    at: clock.toISOString(), correlationId: 'c', data: { type: 'intent', actionId: 'a'.repeat(64), attempt: 0, input: { contractVersion: '1.0', repository: 'owner/target',
+      issueNumber: 7, taskVersion: taskVersion(task), description: task.body, acceptanceCriteria: ['Done'], contextReferences: [], executionId: exec,
+      allowedActions: ['publish_result'], limits: { timeoutMinutes: 30, maxOutputBytes: 16000 }, operation: 'sha256', worker: 'test' } } }) });
+  const tasks: { number: number; body: string }[] = [];
+  vi.mocked(x.api.comment).mockImplementation(async (number, body) => {
+    if (number === 7) tasks.push({ number, body }); else x.f.comments.push({ id: x.f.comments.length + 1, body, author: 'github-actions[bot]', createdAt: clock.toISOString() });
+  });
+  const needsHuman = vi.fn(async (_n: number, on: boolean) => { x.f.labels = on ? [...x.f.labels, 'sf:needs-human'] : x.f.labels.filter(l => l !== 'sf:needs-human'); });
+  Object.assign(x.api, { needsHuman });
+  const journaled = () => tasks.map(t => decodeEvent({ id: 1, author: 'github-actions[bot]', createdAt: clock.toISOString(), body: t.body }, x.cfg.manager.trustedActors)?.data);
+  const handovers = () => x.f.comments.map(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data).filter(d => d?.type === 'merge_handover');
+  return { ...x, tasks, needsHuman, journaled, handovers };
+}
+it('waits for a pending check without a review or handover, then reviews the head once when it is green', async () => {
+  const x = reworking(); x.f.checks.push({ name: 'lint', state: 'in_progress' });
+  await x.owned(); await x.owned();
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.handovers()).toEqual([]); expect(x.needsHuman).not.toHaveBeenCalled();
+  expect(x.f.comments.some(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data.type === 'merge_review')).toBe(false);
+  x.f.checks.find(c => c.name === 'lint')!.state = 'success';
+  expect((await x.owned()).merged).toBe(1); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
+});
+it('hands a Factory pull request over when a check stays pending past the limit', async () => {
+  const x = reworking(); x.f.checks.push({ name: 'lint', state: 'queued' });
+  await x.owned();
+  const wait = x.f.comments.find(c => decodeEvent(c, x.cfg.manager.trustedActors)?.key.startsWith('merge-checks-wait:'))!;
+  const event = decodeEvent(wait, x.cfg.manager.trustedActors)!;
+  x.f.comments = [{ ...wait, body: wait.body.replace(event.at, new Date(Date.now() - 7 * 3600000).toISOString()) }];
+  await x.owned();
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.handovers()).toEqual([expect.objectContaining({ decision: 'defer' })]);
+  expect(x.needsHuman).toHaveBeenCalledWith(52, true); expect(x.f.comments.at(-1)!.body).toContain('lint');
+});
+it('sends a red check back to rework with its name and summary, without a review', async () => {
+  const x = reworking(); x.f.checks.push({ name: 'lint', state: 'failure', summary: 'eslint: 3 errors' });
+  await x.owned();
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.handovers()).toEqual([]);
+  expect(x.journaled()).toEqual([expect.objectContaining({ type: 'merge_changes_requested', cause: 'checks', prNumber: 52 })]);
+  expect(x.tasks[0]!.body).toContain('lint');
+  const journal = x.journaled()[0] as { review: MergeReview };
+  expect(JSON.stringify(journal.review)).toContain('eslint: 3 errors');
+});
+it('asks for an obvious placeholder on a secret-scanner alert and never dismisses it', async () => {
+  const x = reworking(); x.f.checks.push({ name: 'GitGuardian Security Checks', state: 'failure', summary: '1 secret uncovered' });
+  await x.owned();
+  const journal = x.journaled()[0] as { review: MergeReview; cause: string };
+  expect(journal.cause).toBe('checks'); expect(journal.review.reason).toContain('Platzhalter'); expect(journal.review.reason).toContain('nicht selbst');
+  expect(Object.keys(x.api).join()).not.toMatch(/dismiss|resolve/i); expect(x.api.merge).not.toHaveBeenCalled();
+});
+it('hands a red check over, naming it, when no rework is possible', async () => {
+  const x = reworking(); x.cfg.execution.rework = false; x.f.checks.push({ name: 'lint', state: 'failure' });
+  await x.owned();
+  expect(x.tasks).toEqual([]); expect(x.handovers()).toEqual([expect.objectContaining({ decision: 'request_changes' })]);
+  expect(x.needsHuman).toHaveBeenCalledWith(52, true); expect(x.f.comments.at(-1)!.body).toContain('lint');
+});
+it('sends open review threads back to rework with their texts, then reviews the new head again', async () => {
+  const x = reworking(); x.f.unresolvedThreads = ['Bitte den Null-Fall behandeln'];
+  await x.owned();
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.handovers()).toEqual([]);
+  expect(x.journaled()).toEqual([expect.objectContaining({ type: 'merge_changes_requested', cause: 'threads' })]);
+  expect(JSON.stringify(x.journaled()[0])).toContain('Null-Fall');
+  // The rework pushed a new head and the thread is resolved: a normal review follows.
+  x.f.unresolvedThreads = []; x.f.head = 'f'.repeat(40); Object.assign(x.api, { pushedSince: vi.fn(async () => ['maintainer']) });
+  expect((await x.owned()).merged).toBe(1); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
+});
+it('still defers on a workflow waiting in action_required and on a deferring review', async () => {
+  const x = reworking(); x.f.checks.push({ name: 'Workflow-Freigabe erforderlich: CI', state: 'action_required' }); x.review.decision = 'defer';
+  await x.owned();
+  expect(x.reviewer.review).toHaveBeenCalledTimes(1); expect(x.api.merge).not.toHaveBeenCalled();
+  expect(x.f.comments.at(-1)!.body).toContain('Workflow-Freigabe'); expect(x.tasks).toEqual([]);
+  // A deferring review of a Factory pull request is still handed over.
+  const y = reworking(); y.review.decision = 'defer'; await y.owned();
+  expect(y.handovers()).toEqual([expect.objectContaining({ decision: 'defer' })]); expect(y.tasks).toEqual([]);
+});

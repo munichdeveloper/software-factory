@@ -37,7 +37,7 @@ export const eventSchema = z.strictObject({
     // conflicts with the base (cause conflict): the rework source.
     z.strictObject({ type: z.literal('merge_changes_requested'), prNumber: z.number().int().positive(), head: z.string().length(40),
       executionId: z.string().regex(/^[a-f0-9]{32}$/), reviewKey: z.string().length(64), review: mergeReviewSchema,
-      cause: z.enum(['review', 'conflict']).optional() }),
+      cause: z.enum(['review', 'conflict', 'checks', 'threads']).optional() }),
     // Written once per review that hands a Factory pull request over to a person; the Slack notice handover_required reads it.
     z.strictObject({ type: z.literal('merge_handover'), prNumber: z.number().int().positive(), head: z.string().length(40), base: z.string().length(40),
       reviewKey: z.string().length(64), decision: z.enum(['request_changes', 'defer', 'conflict']) }),

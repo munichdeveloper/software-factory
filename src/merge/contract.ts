@@ -11,7 +11,8 @@ export type MergeReview = z.infer<typeof mergeReviewSchema>;
 export interface MergeFacts {
   number: number; title: string; body: string; head: string; base: string; headBranch: string; baseBranch: string;
   state: string; draft: boolean; sameRepository: boolean; labels: string[]; mergeState: string; reviewDecision: string | null;
-  unresolvedThreads: string[]; checks: { name: string; state: string }[];
+  unresolvedThreads: string[]; /** `summary`: what the check reports about a failure (title and summary of a check run, the failed steps of an Actions job). */
+  checks: { name: string; state: string; summary?: string }[];
   mergeSha: string | null; mergeActorType: string | null;
   strictChecks: boolean; nativeRequiredChecks: string[]; comments: Comment[];
   /** Commits of the current base that the head does not contain; null when unknown. */
