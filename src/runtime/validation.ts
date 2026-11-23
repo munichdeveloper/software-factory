@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir, lstat, realpath, unlink, chmod } from 'node:fs/promises';
 import { resolve, dirname, relative, isAbsolute, join } from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
+import { createServer } from 'node:net';
 import { codingArtifactSchema, validateChanges, type CodingArtifact } from '../workers/coding.js';
 import { codingExecutionSchema } from './coding-contract.js';
 import { hash } from '../state/identity.js';
@@ -70,6 +71,31 @@ async function restore(root: string, before: Snapshot, after: Snapshot) {
     const full = await regularPath(root, path); await mkdir(dirname(full), { recursive: true }); await writeFile(full, file.data); await chmod(full, file.mode ? 0o755 : 0o644);
   }
 }
+// Postgres bound to loopback on a free port, empty, with a fixed test user that needs no password (trust auth on a
+// container only this host can reach). Removed with its volumes by `database-stop`.
+const databaseUser = 'test', databaseName = 'test';
+async function freeLoopbackPort(): Promise<number> {
+  return new Promise((done, fail) => {
+    const server = createServer(); server.once('error', fail);
+    server.listen(0, '127.0.0.1', () => { const address = server.address(); server.close(() => typeof address === 'object' && address ? done(address.port) : fail(new Error('NO_PORT'))); });
+  });
+}
+async function startDatabase(name: string, service: { version: number; env: string }, environment: Record<string, string>,
+  run: (args: string[], limit: number) => Promise<number>): Promise<number> {
+  let port: number;
+  try { port = await freeLoopbackPort(); } catch { return -1; }
+  const start = await run(['docker', 'run', '--detach', '--name', name, '--publish', `127.0.0.1:${port}:5432`, '--env', `POSTGRES_USER=${databaseUser}`, '--env', `POSTGRES_DB=${databaseName}`,
+    '--env', 'POSTGRES_HOST_AUTH_METHOD=trust', `postgres:${service.version}`], 300);
+  if (start !== 0) return start;
+  // Probing over TCP: the image's initialisation server listens on its socket only.
+  for (let attempt = 0; attempt < 60; attempt++) {
+    if (await run(['docker', 'exec', name, 'pg_isready', '--host', '127.0.0.1', '--username', databaseUser, '--dbname', databaseName], 10) === 0) {
+      environment[service.env] = `postgresql://${databaseUser}@127.0.0.1:${port}/${databaseName}`; return 0;
+    }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  return 1;
+}
 export async function runCodingValidation(options: { target: string; artifact: CodingArtifact; plan: ValidationPlan; workflowRunId: number; sourceRunId?: number;
   command: ValidationCommand; hosted: boolean; note?: (name: string, text: string) => Promise<void>; writable?: Writable }): Promise<ValidationReport> {
   const { artifact, command } = options, plan = validationPlanSchema.parse(options.plan), root = await realpath(resolve(options.target));
@@ -84,8 +110,9 @@ export async function runCodingValidation(options: { target: string; artifact: C
     report.checks.push({ name, status: exitCode === 0 ? 'passed' : 'failed', exitCode }); return exitCode === 0;
   };
   const environment = { ...plan.environment, CI: 'true', COMPOSE_PROJECT_NAME: `${plan.composeProjectPrefix}-${options.workflowRunId}` };
-  let paths: string[] = [], before = '', docker = false;
+  let paths: string[] = [], before = '', docker = false, database = '';
   try {
+    if (plan.services?.postgres && !options.hosted) return { ...report, status: 'unsupported', reason: 'UNSUPPORTED_PROJECT' };
     if (plan.profile === 'npm-docker' && !options.hosted) return { ...report, status: 'unsupported', reason: 'UNSUPPORTED_PROJECT' };
     if (plan.profile === 'maven') {
       if (!(await lstat(join(root, 'pom.xml'))).isFile()) return { ...report, status: 'unsupported', reason: 'UNSUPPORTED_PROJECT' };
@@ -108,7 +135,19 @@ export async function runCodingValidation(options: { target: string; artifact: C
       const listed = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 1000000 });
       paths = [...listed.split('\0').filter(Boolean), ...artifact.changes.map(c => c.path)]; before = await fingerprint(root, paths);
       report.status = 'failed'; report.reason = 'CHECK_FAILED';
-      const installed = await check('install', ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund']);
+      // The test database starts before install and test; a failed start is its own check and ends the run as a
+      // test-infrastructure failure, which is not the change's fault and never triggers rework.
+      let databaseReady = true;
+      if (plan.services?.postgres) {
+        database = `${plan.composeProjectPrefix}-${options.workflowRunId}-postgres`;
+        const exitCode = await startDatabase(database, plan.services.postgres, environment, (args, limit) => {
+          const remaining = Math.floor(budget - (Date.now() - started) / 1000);
+          return remaining > 0 ? command('database-start', args, Math.min(limit, remaining), environment).catch(() => -1) : Promise.resolve(-1);
+        });
+        databaseReady = exitCode === 0; report.checks.push({ name: 'database-start', status: databaseReady ? 'passed' : 'failed', exitCode });
+        if (!databaseReady) report.reason = 'TEST_INFRASTRUCTURE_FAILED';
+      }
+      const installed = databaseReady && await check('install', ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund']);
       if (installed) {
         await check('test', ['npm', 'test']);
         const built = await check('build', ['npm', 'run', 'build']);
@@ -148,6 +187,10 @@ export async function runCodingValidation(options: { target: string; artifact: C
     }
   } catch { report.status = 'unsupported'; report.reason = 'UNSUPPORTED_PROJECT'; }
   finally {
+    if (database) {
+      const exitCode = await command('database-stop', ['docker', 'rm', '--force', '--volumes', database], 60, environment).catch(() => -1);
+      report.checks.push({ name: 'database-stop', status: exitCode === 0 ? 'passed' : 'failed', exitCode });
+    }
     if (docker) {
       const exitCode = await command('docker-stop', ['docker', 'compose', '--file', 'compose.yaml', '--project-name', environment.COMPOSE_PROJECT_NAME, 'down', '--volumes', '--remove-orphans'], 60, environment).catch(() => -1);
       report.checks.push({ name: 'docker-stop', status: exitCode === 0 ? 'passed' : 'failed', exitCode });

@@ -131,3 +131,30 @@ it('keeps plans without generated unchanged and rejects invalid generated entrie
     { command: 'npm run bundle', paths: ['../x'] }, { command: 'npm run bundle', paths: ['a/../b'] }, { command: 'npm run bundle', paths: [] }]) expect(() => validationPlanSchema.parse({ generated: [entry] })).toThrow();
   expect(() => validationPlanSchema.parse({ generated: Array(4).fill({ command: 'npm run bundle', paths: ['bundle'] }) })).toThrow();
 });
+it('starts no database without services.postgres and rejects a reserved or repeated variable name', () => {
+  expect(defaultValidationPlan().services).toBeUndefined();
+  expect(() => validationPlanSchema.parse({ services: { postgres: { version: 16, env: 'DATABASE_URL' } } })).toThrow('Reserved');
+  expect(() => validationPlanSchema.parse({ services: { postgres: { version: 16, env: 'TEST_DATABASE_URL' } }, environment: { TEST_DATABASE_URL: 'x' } })).toThrow('must not repeat');
+  expect(() => validationPlanSchema.parse({ profile: 'maven', services: { postgres: { version: 16, env: 'TEST_DATABASE_URL' } } })).toThrow('npm profiles');
+});
+it('starts a loopback Postgres before install, hands its URL to the tests and always removes it', async () => {
+  const f = await fixture(), plan = validationPlanSchema.parse({ services: { postgres: { version: 16, env: 'TEST_DATABASE_URL' } } }); await materializeCodingArtifact(f.root, f.artifact, f.request);
+  const commands: string[] = [], urls: Record<string, string | undefined> = {}, runs: string[][] = [];
+  const report = await runCodingValidation({ target: f.root, artifact: f.artifact, plan, workflowRunId: 21, hosted: true,
+    command: async (name, args, _s, env) => { commands.push(name); urls[name] = env.TEST_DATABASE_URL; if (args[0] === 'docker' && ['run', 'rm'].includes(args[1]!)) runs.push(args); return 0; } });
+  expect(report.status).toBe('passed'); expect(commands).toEqual(['database-start', 'database-start', 'install', 'test', 'build', 'database-stop']);
+  expect(urls.test).toMatch(/^postgresql:\/\/test@127\.0\.0\.1:\d+\/test$/); expect(urls.install).toBe(urls.test);
+  expect(runs[0]).toContain('postgres:16'); expect(runs[0]!.join(' ')).toMatch(/--publish 127\.0\.0\.1:\d+:5432/);
+  expect(runs[1]).toEqual(['docker', 'rm', '--force', '--volumes', 'sf-validation-21-postgres']);
+  expect(bindValidation(report, f.artifact, plan, 21)).toEqual(report);
+});
+it('reports a database that does not start as its own check, runs nothing else and still cleans up', async () => {
+  const f = await fixture(), plan = validationPlanSchema.parse({ services: { postgres: { version: 16, env: 'TEST_DATABASE_URL' } } }); await materializeCodingArtifact(f.root, f.artifact, f.request);
+  const commands: string[] = [];
+  const report = await runCodingValidation({ target: f.root, artifact: f.artifact, plan, workflowRunId: 22, hosted: true,
+    command: async name => { commands.push(name); return name === 'database-start' ? 125 : 0; } });
+  expect(commands).toEqual(['database-start', 'database-stop']);
+  expect(report.status).toBe('failed'); expect(report.reason).toBe('TEST_INFRASTRUCTURE_FAILED');
+  expect(report.checks.map(c => `${c.name}:${c.status}`)).toEqual(['database-start:failed', 'database-stop:passed', 'source-integrity:passed']);
+  expect(report.checks.some(c => ['test', 'browser'].includes(c.name))).toBe(false);
+});

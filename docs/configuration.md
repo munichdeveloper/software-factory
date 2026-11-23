@@ -321,3 +321,15 @@ asked when something changed, not on every reconciliation. Each decision is logg
 ## Regenerating generated files (`regenerate`)
 
 A `generated` entry in the validation plan with `"regenerate": true` is rerun by the Factory after the run (see [temporal-validation.md](temporal-validation.md)). Timeouts (exit code 124/137), changes outside the entry's `paths` and results beyond the artifact limits block the result (`GENERATED_FILES_FAILED`). A command that fails with any other non-zero exit code adopts nothing but does not block: the artifact is returned unchanged with the warning `Generated files were not regenerated: <command> failed with exit code <n>; validation decides`, the hosted validation's `generated` check fails (`CHECK_FAILED`) and `execution.rework` applies.
+
+## Test database for the validation (`services.postgres`)
+
+Tests that need a database can request one in the validation plan (`.github/software-factory.validation.json`, npm profiles only):
+
+```json
+{ "version": 1, "services": { "postgres": { "version": 16, "env": "TEST_DATABASE_URL" } } }
+```
+
+Without `services` nothing changes. With it, the hosted validation starts an empty `postgres:<version>` container before `install` and `test`, published on `127.0.0.1` only, with a fixed test user and database (`test`, no password, nothing secret), and passes the connection URL to every project command in the variable named by `env`. `env` follows the rules of `environment` (upper case, no reserved keys such as `DATABASE_URL`) and may not repeat an `environment` key. The container and its volumes are removed after the validation (`database-stop` check). Other services than Postgres are not supported.
+
+A database that does not start (or is not ready within a minute) is reported as its own check `database-start`, the report reason is `TEST_INFRASTRUCTURE_FAILED`, and `install`, `test` and `browser` do not run. This is not a failure of the change: no rework starts (`execution.rework` only reacts to `CHECK_FAILED`), and the issue is blocked with a hint to fix the validation plan or the runner.

@@ -17340,15 +17340,15 @@ var init_worker = __esm({
          * `environmentId` / `environmentKey` were not provided to the constructor.
          */
         async run(signal) {
-          const { environmentId, environmentKey } = this;
-          if (environmentId === void 0 || environmentKey === void 0) {
+          const { environmentId, environmentKey: environmentKey2 } = this;
+          if (environmentId === void 0 || environmentKey2 === void 0) {
             throw new AnthropicError("EnvironmentWorker.run: environmentId and environmentKey are required to poll for work");
           }
           const externalSignal = signal ?? __classPrivateFieldGet(this, _EnvironmentWorker_signal, "f");
           const poller = new WorkPoller({
             client: this.client,
             environmentId,
-            environmentKey,
+            environmentKey: environmentKey2,
             ...this.workerId !== void 0 ? { workerId: this.workerId } : {},
             ...externalSignal ? { signal: externalSignal } : {},
             ...this.requestOptions !== void 0 ? { requestOptions: this.requestOptions } : {},
@@ -17360,7 +17360,7 @@ var init_worker = __esm({
           for await (const work of poller) {
             const workSpan = poller._workSpan;
             try {
-              await withEnvironmentWorkSpan(this.client, workSpan, poller.signal, () => __classPrivateFieldGet(this, _EnvironmentWorker_instances, "m", _EnvironmentWorker_handleItem).call(this, work, environmentKey, poller.signal, workSpan));
+              await withEnvironmentWorkSpan(this.client, workSpan, poller.signal, () => __classPrivateFieldGet(this, _EnvironmentWorker_instances, "m", _EnvironmentWorker_handleItem).call(this, work, environmentKey2, poller.signal, workSpan));
             } catch (e) {
               if (poller.signal?.aborted)
                 throw e;
@@ -17405,7 +17405,7 @@ var init_worker = __esm({
           const workId = opts?.workId ?? readEnv("ANTHROPIC_WORK_ID");
           const environmentId = opts?.environmentId ?? readEnv("ANTHROPIC_ENVIRONMENT_ID");
           const sessionId = opts?.sessionId ?? readEnv("ANTHROPIC_SESSION_ID");
-          const environmentKey = (opts?.environmentKey ?? this.environmentKey ?? readEnv("ANTHROPIC_ENVIRONMENT_KEY")) || void 0;
+          const environmentKey2 = (opts?.environmentKey ?? this.environmentKey ?? readEnv("ANTHROPIC_ENVIRONMENT_KEY")) || void 0;
           const workSecret = opts?.workSecret || readEnv("ANTHROPIC_WORK_SECRET") || null;
           if (!workId) {
             throw new AnthropicError("handleItem: workId is required \u2014 pass it or set ANTHROPIC_WORK_ID");
@@ -17416,7 +17416,7 @@ var init_worker = __esm({
           if (!sessionId) {
             throw new AnthropicError("handleItem: sessionId is required \u2014 pass it or set ANTHROPIC_SESSION_ID");
           }
-          if (!environmentKey && !workSecret) {
+          if (!environmentKey2 && !workSecret) {
             throw new AnthropicError("handleItem: environmentKey is required when there is no work secret \u2014 pass it, construct the worker with it, or set ANTHROPIC_ENVIRONMENT_KEY");
           }
           const work = {
@@ -17425,7 +17425,7 @@ var init_worker = __esm({
             secret: workSecret,
             data: { type: "session", id: sessionId }
           };
-          await __classPrivateFieldGet(this, _EnvironmentWorker_instances, "m", _EnvironmentWorker_handleItem).call(this, work, environmentKey, opts?.signal ?? __classPrivateFieldGet(this, _EnvironmentWorker_signal, "f"));
+          await __classPrivateFieldGet(this, _EnvironmentWorker_instances, "m", _EnvironmentWorker_handleItem).call(this, work, environmentKey2, opts?.signal ?? __classPrivateFieldGet(this, _EnvironmentWorker_signal, "f"));
         }
       }
       _EnvironmentWorker_signal = /* @__PURE__ */ new WeakMap(), _EnvironmentWorker_instances = /* @__PURE__ */ new WeakSet(), _EnvironmentWorker_handleItem = /**
@@ -17440,10 +17440,10 @@ var init_worker = __esm({
        * per-item calls; a missing/undecodable secret falls back to
        * `environmentKey` unchanged.
        */
-      async function _EnvironmentWorker_handleItem2(work, environmentKey, externalSignal, workSpan) {
+      async function _EnvironmentWorker_handleItem2(work, environmentKey2, externalSignal, workSpan) {
         const log = loggerFor(this.client);
         const sessionsToken = sessionsTokenFromSecret(work.secret);
-        const itemCredential = sessionsToken ?? environmentKey;
+        const itemCredential = sessionsToken ?? environmentKey2;
         if (itemCredential === void 0) {
           throw new AnthropicError("handleItem: the work item carried a secret payload but no sessions token could be extracted, and there is no environment key to fall back to; the poller must issue a secret whose payload carries `sessions_token`, or provide the environment key (pass it, construct the worker with it, or set ANTHROPIC_ENVIRONMENT_KEY)");
         }
@@ -70350,6 +70350,8 @@ var generatedEntry = external_exports.strictObject({
    */
   regenerate: external_exports.literal(true).optional()
 }).refine((e) => !e.regenerate || !e.paths.some(isProtectedArtifactPath), "Regenerated paths may not name protected files (.github, agent instructions, CODEOWNERS)");
+var environmentKey = external_exports.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine((k) => !reserved.test(k), "Reserved validation environment key");
+var postgresService = external_exports.strictObject({ version: external_exports.number().int().min(12).max(18), env: environmentKey });
 var validationPlanSchema = external_exports.strictObject({
   version: external_exports.literal(1).default(1),
   profile: external_exports.enum(["npm", "npm-docker", "maven"]).default("npm"),
@@ -70359,13 +70361,15 @@ var validationPlanSchema = external_exports.strictObject({
   composeProjectPrefix: external_exports.string().regex(/^[a-z][a-z0-9-]{0,30}-(?:ci|test|validation)$/).default("sf-validation"),
   /** Generated files the repository checks in: each command is rerun and must leave its paths as they are. No default. */
   generated: generatedEntry.array().max(3).optional(),
+  /** Test infrastructure the validation starts before install/test (npm profiles only). */
+  services: external_exports.strictObject({ postgres: postgresService.optional() }).optional(),
   environment: external_exports.record(
-    external_exports.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine((k) => !reserved.test(k), "Reserved validation environment key"),
+    environmentKey,
     external_exports.string().max(1e3).refine((v) => !v.includes("${{"), "Only literal test values are allowed")
   ).default({})
-}).refine((p) => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6e3, "Validation plan limit").refine((p) => p.profile === "maven" || p.javaVersion === void 0, "javaVersion applies to the maven profile only").refine((p) => p.profile !== "maven" || !p.generated?.some((e) => e.regenerate), "regenerate applies to the npm profiles only");
+}).refine((p) => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6e3, "Validation plan limit").refine((p) => !p.services?.postgres || p.profile !== "maven", "services.postgres applies to the npm profiles only").refine((p) => !p.services?.postgres || !(p.services.postgres.env in p.environment), "services.postgres.env must not repeat an environment key").refine((p) => p.profile === "maven" || p.javaVersion === void 0, "javaVersion applies to the maven profile only").refine((p) => p.profile !== "maven" || !p.generated?.some((e) => e.regenerate), "regenerate applies to the npm profiles only");
 var validationCheckSchema = external_exports.strictObject({
-  name: external_exports.enum(["install", "test", "build", "browser-install", "browser", "compose-config", "docker-start", "docker-smoke", "docker-stop", "generated", "source-integrity"]),
+  name: external_exports.enum(["install", "test", "build", "browser-install", "browser", "compose-config", "docker-start", "docker-smoke", "docker-stop", "database-start", "database-stop", "generated", "source-integrity"]),
   status: external_exports.enum(["passed", "failed", "skipped"]),
   exitCode: external_exports.number().int().min(-1).max(255).nullable()
 });
@@ -70381,8 +70385,8 @@ var validationReportSchema = external_exports.strictObject({
   sourceRunId: external_exports.number().int().positive().safe(),
   runAttempt: external_exports.literal(1),
   status: external_exports.enum(["passed", "failed", "unsupported", "invalid"]),
-  checks: validationCheckSchema.array().max(11),
-  reason: external_exports.enum(["CHECKS_COMPLETED", "CHECK_FAILED", "NO_PUBLISHABLE_CHANGES", "UNSUPPORTED_PROJECT", "VALIDATION_SETUP_FAILED", "SOURCE_CHANGED"]),
+  checks: validationCheckSchema.array().max(13),
+  reason: external_exports.enum(["CHECKS_COMPLETED", "CHECK_FAILED", "NO_PUBLISHABLE_CHANGES", "UNSUPPORTED_PROJECT", "VALIDATION_SETUP_FAILED", "SOURCE_CHANGED", "TEST_INFRASTRUCTURE_FAILED"]),
   modelSecretPresent: external_exports.literal(false),
   workspaceUnchanged: external_exports.boolean()
 });
@@ -71551,7 +71555,8 @@ var validationReasons = {
   UNSUPPORTED_PROJECT: "this project type is not supported by the validation",
   VALIDATION_SETUP_FAILED: "the validation environment could not be set up",
   SOURCE_CHANGED: "the checks modified the source files",
-  CHECKS_COMPLETED: "all checks completed"
+  CHECKS_COMPLETED: "all checks completed",
+  TEST_INFRASTRUCTURE_FAILED: "the test infrastructure the validation plan requests (services.postgres) did not start; no rework is started, fix the validation plan or runner and retry"
 };
 function blocked(task, repository, readyIsGrant, config2) {
   const result = task.latest.result, validation = task.latest.runtime?.validation;
@@ -74653,6 +74658,7 @@ function providerProbe(env) {
 var import_promises4 = require("node:fs/promises");
 var import_node_path4 = require("node:path");
 var import_node_child_process5 = require("node:child_process");
+var import_node_net = require("node:net");
 async function regularPath(root, path4) {
   const full = (0, import_node_path4.resolve)(root, path4), part = (0, import_node_path4.relative)(root, full);
   if (!part || part.startsWith("..") || (0, import_node_path4.isAbsolute)(part)) throw new Error("INVALID_VALIDATION_PATH");
@@ -74740,6 +74746,51 @@ async function restore(root, before, after) {
     await (0, import_promises4.chmod)(full, file2.mode ? 493 : 420);
   }
 }
+var databaseUser = "test";
+var databaseName = "test";
+async function freeLoopbackPort() {
+  return new Promise((done, fail) => {
+    const server = (0, import_node_net.createServer)();
+    server.once("error", fail);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close(() => typeof address === "object" && address ? done(address.port) : fail(new Error("NO_PORT")));
+    });
+  });
+}
+async function startDatabase(name, service, environment, run) {
+  let port;
+  try {
+    port = await freeLoopbackPort();
+  } catch {
+    return -1;
+  }
+  const start = await run([
+    "docker",
+    "run",
+    "--detach",
+    "--name",
+    name,
+    "--publish",
+    `127.0.0.1:${port}:5432`,
+    "--env",
+    `POSTGRES_USER=${databaseUser}`,
+    "--env",
+    `POSTGRES_DB=${databaseName}`,
+    "--env",
+    "POSTGRES_HOST_AUTH_METHOD=trust",
+    `postgres:${service.version}`
+  ], 300);
+  if (start !== 0) return start;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    if (await run(["docker", "exec", name, "pg_isready", "--host", "127.0.0.1", "--username", databaseUser, "--dbname", databaseName], 10) === 0) {
+      environment[service.env] = `postgresql://${databaseUser}@127.0.0.1:${port}/${databaseName}`;
+      return 0;
+    }
+    await new Promise((r) => setTimeout(r, 1e3));
+  }
+  return 1;
+}
 async function runCodingValidation(options) {
   const { artifact, command } = options, plan = validationPlanSchema.parse(options.plan), root = await (0, import_promises4.realpath)((0, import_node_path4.resolve)(options.target));
   const report = {
@@ -74768,8 +74819,9 @@ async function runCodingValidation(options) {
     return exitCode === 0;
   };
   const environment = { ...plan.environment, CI: "true", COMPOSE_PROJECT_NAME: `${plan.composeProjectPrefix}-${options.workflowRunId}` };
-  let paths = [], before = "", docker = false;
+  let paths = [], before = "", docker = false, database = "";
   try {
+    if (plan.services?.postgres && !options.hosted) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
     if (plan.profile === "npm-docker" && !options.hosted) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
     if (plan.profile === "maven") {
       if (!(await (0, import_promises4.lstat)((0, import_node_path4.join)(root, "pom.xml"))).isFile()) return { ...report, status: "unsupported", reason: "UNSUPPORTED_PROJECT" };
@@ -74793,7 +74845,18 @@ async function runCodingValidation(options) {
       before = await fingerprint(root, paths);
       report.status = "failed";
       report.reason = "CHECK_FAILED";
-      const installed = await check2("install", ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]);
+      let databaseReady = true;
+      if (plan.services?.postgres) {
+        database = `${plan.composeProjectPrefix}-${options.workflowRunId}-postgres`;
+        const exitCode = await startDatabase(database, plan.services.postgres, environment, (args, limit3) => {
+          const remaining = Math.floor(budget - (Date.now() - started) / 1e3);
+          return remaining > 0 ? command("database-start", args, Math.min(limit3, remaining), environment).catch(() => -1) : Promise.resolve(-1);
+        });
+        databaseReady = exitCode === 0;
+        report.checks.push({ name: "database-start", status: databaseReady ? "passed" : "failed", exitCode });
+        if (!databaseReady) report.reason = "TEST_INFRASTRUCTURE_FAILED";
+      }
+      const installed = databaseReady && await check2("install", ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]);
       if (installed) {
         await check2("test", ["npm", "test"]);
         const built = await check2("build", ["npm", "run", "build"]);
@@ -74842,6 +74905,10 @@ async function runCodingValidation(options) {
     report.status = "unsupported";
     report.reason = "UNSUPPORTED_PROJECT";
   } finally {
+    if (database) {
+      const exitCode = await command("database-stop", ["docker", "rm", "--force", "--volumes", database], 60, environment).catch(() => -1);
+      report.checks.push({ name: "database-stop", status: exitCode === 0 ? "passed" : "failed", exitCode });
+    }
     if (docker) {
       const exitCode = await command("docker-stop", ["docker", "compose", "--file", "compose.yaml", "--project-name", environment.COMPOSE_PROJECT_NAME, "down", "--volumes", "--remove-orphans"], 60, environment).catch(() => -1);
       report.checks.push({ name: "docker-stop", status: exitCode === 0 ? "passed" : "failed", exitCode });
