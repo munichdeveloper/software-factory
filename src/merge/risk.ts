@@ -244,6 +244,14 @@ export function sizeClass(lines: number, files: number, risk: Config['merge']['r
   return lines > risk.maxMediumRiskLines || files > (risk.maxMediumRiskFiles ?? defaultMaxMediumRiskFiles) ? 'high' : lines > risk.maxLowRiskLines ? 'medium' : 'low';
 }
 
+/** True when the change size alone raised the class (the class equals the size class and exceeds what content, rules and areas give). */
+export function sizeRaisedClass(record: RiskRecord, risk: Config['merge']['risk']): boolean {
+  const size = sizeClass(record.lines, record.files ?? 0, risk);
+  const content = record.source === 'ai' ? contentFloor(record.factors) : 'low';
+  const ruleFloor: RiskClass = record.ruleHits?.length ? ruleFloorClass : 'low';
+  const before = record.source === 'ai' ? highest([record.aiClass ?? 'low', content, ruleFloor]) : highest([...risk.areas.filter(a => record.matchedAreas.includes(a.name)).map(a => a.class), ruleFloor]);
+  return record.source !== 'builtin' && record.source !== 'error' && size === record.class && riskRank(size) > riskRank(before);
+}
 /**
  * The readable risk verdict. It names separately what decided the class, what the change size contributes and how the
  * class compares with the auto-merge limit, so the size can never be read as the reason for a class it did not raise.
@@ -262,9 +270,7 @@ export function describeRisk(record: RiskRecord, risk: Config['merge']['risk']):
   }[record.source];
   const limits = `Grenzen: bis ${risk.maxLowRiskLines} Zeilen low, bis ${risk.maxMediumRiskLines} Zeilen und ${risk.maxMediumRiskFiles ?? defaultMaxMediumRiskFiles} Dateien medium, darüber high`;
   const content = record.source === 'ai' ? contentFloor(record.factors) : 'low';
-  const ruleFloor: RiskClass = record.ruleHits?.length ? ruleFloorClass : 'low';
-  const before = record.source === 'ai' ? highest([record.aiClass ?? 'low', content, ruleFloor]) : highest([...risk.areas.filter(a => record.matchedAreas.includes(a.name)).map(a => a.class), ruleFloor]);
-  const raised = record.source !== 'builtin' && record.source !== 'error' && size === record.class && riskRank(size) > riskRank(before);
+  const raised = sizeRaisedClass(record, risk);
   const contentLine = record.source === 'ai' && content === record.class && riskRank(content) > riskRank(record.aiClass ?? 'low')
     ? `\n- Inhalt: Der PR berührt Authentifizierung, Berechtigungen oder Geld (${[...new Set(record.factors.filter(f => highRiskFactors.includes(f.factor)).map(f => f.factor))].join(', ')}); das ist unabhängig von der Größe mindestens \`high\`.` : '';
   const hits = record.source === 'builtin' || record.source === 'error' ? [] : record.ruleHits ?? [];

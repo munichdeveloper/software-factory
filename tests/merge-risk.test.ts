@@ -187,6 +187,9 @@ describe('risk gate in the merge pass', () => {
     await x.run(); expect(x.api.merge).not.toHaveBeenCalled();
     expect(x.f.comments.at(-1)!.body).toContain('Bitte selbst prüfen und mergen');
     expect(x.f.comments.some(c => c.body.includes('/harness approve'))).toBe(false);
+    const handovers = () => x.f.comments.map(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data).filter(d => d?.type === 'merge_risk_handover');
+    expect(handovers()).toMatchObject([{ type: 'merge_risk_handover', prNumber: 52, head: 'a'.repeat(40), base: 'b'.repeat(40), riskClass: 'high', autoMergeUpTo: 'medium' }]);
+    await x.run(); expect(handovers()).toHaveLength(1);
   });
   it('only observes in observe mode', async () => {
     const x = fixture(undefined, 'high'); x.cfg.merge.risk.mode = 'observe';

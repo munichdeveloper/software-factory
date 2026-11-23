@@ -3,9 +3,10 @@ import type { GitHubPort } from '../github/port.js';
 import type { Snapshot } from '../types.js';
 import { decodeEvent } from '../state/events.js';
 import { hash } from '../state/identity.js';
+import { sizeClass, sizeRaisedClass, type RiskRecord } from '../merge/risk.js';
 import { infrastructureFailureSummary } from '../state/reconstruct.js';
 
-export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged' | 'approval_required' | 'grant_required' | 'handover_required'; number: number; title: string; actor: string; url: string;
+export interface Notification { event: 'run_started' | 'issue_created' | 'pr_merged' | 'approval_required' | 'risk_handover_required' | 'grant_required' | 'handover_required'; number: number; title: string; actor: string; url: string;
   /** Shown in the message; run starts name their repository because one channel can collect several. */
   repository?: string;
   /** A task can start several runs (retries, rework); each start is its own delivery. */
@@ -16,12 +17,30 @@ export interface Notification { event: 'run_started' | 'issue_created' | 'pr_mer
   reviewKey?: string;
   /** A task waits for a grant before its first run, or again after the run named here; each wait is its own delivery. */
   after?: string;
-  /** Trusted, Factory-generated detail line (never PR or issue content). */
+  /**
+   * Factory-generated detail. Fixed text, plus for risk notices the risk record's reason and factors: those come from the
+   * model and the PR content, so they are untrusted. That is acceptable because they stay plain text (escaped, `parse: none`,
+   * no link names) and every field is length-capped; the PR title is treated the same way.
+   */
   detail?: string }
 const labels: Record<Notification['event'], string> = {
   run_started: 'SF: Factory-Lauf gestartet', issue_created: 'SF: Issue autonom angelegt', pr_merged: 'SF: PR durch Bot gemergt',
-  approval_required: 'SF: PR wartet auf Freigabe (Risiko über Schwelle)', grant_required: 'SF: Issue wartet auf Freigabe (harness:ready)',
+  approval_required: 'SF: PR wartet auf Freigabe (Risiko über Schwelle)',
+  risk_handover_required: 'SF: PR braucht einen Menschen (Risiko über Schwelle, bitte selbst mergen)', grant_required: 'SF: Issue wartet auf Freigabe (harness:ready)',
   handover_required: 'SF: PR braucht einen Menschen (KI-Review)' };
+const oneLine = (text: string, max: number) => {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+};
+/** The risk record's class, source, size, reason and up to 5 factors as capped plain text; untrusted, see Notification.detail. */
+export function riskDetail(record: RiskRecord, risk: Config['merge']['risk']): string {
+  const source = { ai: 'KI-Bewertung', builtin: 'eingebaute kritische Pfade', areas: 'konfigurierte Bereiche', error: 'Bewertung fehlgeschlagen' }[record.source];
+  const files = record.files === undefined ? '' : ` in ${record.files} ${record.files === 1 ? 'Datei' : 'Dateien'}`;
+  const size = sizeClass(record.lines, record.files ?? 0, risk);
+  const sizeText = `Umfang: ${record.lines} geänderte Zeilen${files}; ${sizeRaisedClass(record, risk) ? `die Größe hat die Klasse auf ${size} angehoben` : 'die Größe hat die Klasse nicht bestimmt'}.`;
+  return [`Risikoklasse: ${record.class} (Quelle: ${source})`, sizeText, ...(record.reason ? [`Begründung: ${oneLine(record.reason, 1000)}`] : []),
+    ...record.factors.slice(0, 5).map(f => `- ${oneLine(`${f.factor}: ${f.path} – ${f.explanation}`, 300)}`)].join('\n');
+}
 /**
  * A task the Manager's status comment of this reconciliation describes as waiting for nothing but a person's
  * `harness:ready` grant (ready-label repositories). `after` names the run a further attempt follows, if any.
@@ -107,7 +126,7 @@ export class SlackSink implements NotificationSink {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
         headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json; charset=utf-8' },
         body: JSON.stringify({ channel, text: text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
-          blocks: [{ type: 'section', text: { type: 'plain_text', text, emoji: false } }],
+          blocks: [{ type: 'section', text: { type: 'plain_text', text: text.length > 3000 ? `${text.slice(0, 2999)}…` : text, emoji: false } }],
           mrkdwn: false, parse: 'none', link_names: false, unfurl_links: false, unfurl_media: false })
       });
       if (response.status === 429) throw new NotificationRejected('Slack rate limited');
@@ -135,6 +154,11 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
   const events = (issue: number) => (snapshot.comments.get(issue) ?? []).flatMap(c => {
     const event = decodeEvent(c, config.manager.trustedActors); return event ? [event] : [];
   });
+  // The risk record of the same head and base, if the PR carries one (a failed assessment is not journaled).
+  const riskText = (comments: Awaited<ReturnType<GitHubPort['comments']>>, head: string, base: string) => {
+    const record = comments.flatMap(c => { const e = decodeEvent(c, config.manager.trustedActors); return e?.data.type === 'merge_risk' && e.data.head === head && e.data.base === base ? [e.data.risk] : []; }).at(-1);
+    return record ? `\n${riskDetail(record, config.merge.risk)}` : '';
+  };
   const afterStart = (date: string | undefined) => !settings.since || (!!date && Date.parse(date) >= Date.parse(settings.since));
   const deliver = async (journal: number, notification: Notification) => {
     const rule = settings.events[notification.event];
@@ -215,7 +239,24 @@ export async function deliverNotifications(github: GitHubPort, config: Config, s
       if (e?.data.type !== 'merge_approval_required' || e.data.prNumber !== pr.number || e.data.head !== pr.headSha || !afterStart(e.at)) continue;
       await deliver(pr.number, { event: 'approval_required', number: pr.number, title: pr.title ?? `PR #${pr.number}`, actor: 'Software Factory',
         url: `https://github.com/${github.repository}/pull/${pr.number}`, repository: github.repository, approvalId: e.data.approvalId,
-        detail: `Risiko ${e.data.riskClass} liegt über der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}` });
+        detail: `Risiko ${e.data.riskClass} liegt über der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}` +
+          riskText(comments, e.data.head, e.data.base) });
+    }
+  }
+  // A risk class above the threshold with `aboveThreshold: block` stops the PR; a person merges it themselves.
+  if (settings.events.risk_handover_required?.enabled) for (const pr of snapshot.prs) {
+    if (pr.state !== 'open' || !pr.headSha) continue;
+    let comments;
+    try { comments = await github.comments(pr.number); }
+    catch (error) { if (error instanceof Error && error.message === 'ISSUE_OUTSIDE_RUNTIME_SCOPE') continue; throw error; }
+    for (const c of comments) {
+      const e = decodeEvent(c, config.manager.trustedActors);
+      if (e?.data.type !== 'merge_risk_handover' || e.data.prNumber !== pr.number || e.data.head !== pr.headSha || !afterStart(e.at)) continue;
+      await deliver(pr.number, { event: 'risk_handover_required', number: pr.number, title: pr.title ?? `PR #${pr.number}`, actor: 'Software Factory',
+        url: `https://github.com/${github.repository}/pull/${pr.number}`, repository: github.repository,
+        approvalId: hash({ head: e.data.head, base: e.data.base, riskKey: e.data.riskKey }),
+        detail: `Risiko ${e.data.riskClass} liegt über der Schwelle ${e.data.autoMergeUpTo}; die Factory mergt diesen PR nicht, bitte selbst mergen.` +
+          riskText(comments, e.data.head, e.data.base) });
     }
   }
   // The review handed a Factory pull request over to a person (changes without execution.rework, or a deferral). Only the

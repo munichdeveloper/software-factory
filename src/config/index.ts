@@ -308,6 +308,8 @@ export const configSchema = z.strictObject({
       grant_required: notificationRule.optional(),
       // A Factory PR the review handed over to a person (merge_handover); optional for the same reason.
       handover_required: notificationRule.optional(),
+      // A PR a risk class above the threshold stops with aboveThreshold: block (merge_risk_handover); optional for the same reason.
+      risk_handover_required: notificationRule.optional(),
       // Runtime events (docs/failure-events.md, issue #188), posted by the broker; optional for the same reason.
       // start_refused posts only refusals that hold for the whole repository, once per repository, code and day.
       validation_failed: notificationRule.optional(),
