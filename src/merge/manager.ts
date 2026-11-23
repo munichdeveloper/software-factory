@@ -437,7 +437,10 @@ export class MergeManager {
         const rejected = cached ? undefined : this.events(f).find(e => e.data.type === 'merge_review' && e.data.verdictKey === verdictKey && rejects(e.data.review));
         if (rejected?.data.type === 'merge_review') {
           const earlier = rejected.data;
-          this.note(number, 'review-rejected', `KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}).`);
+          // The same step as the first pass for this decision: a deferral (or changes without rework) is handed to a person.
+          const wasBlocked = earlier.review.decision === 'request_changes' || earlier.review.findings.some(x => x.severity === 'blocking');
+          const wasHandedOver = !!owner && !adopted && ((wasBlocked && !this.config.execution.rework) || earlier.review.decision === 'defer');
+          this.note(number, wasHandedOver ? 'handover' : 'review-rejected', `KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}). Ein neues Review folgt erst nach einem neuen Commit, einer geänderten Aufgabe oder Konfiguration.`);
           await this.event(f, `merge-status:${hash({ head: f.head, verdictKey })}`, { type: 'merge_status', head: f.head, base: f.base,
             reason: `Das KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}, Basis ${earlier.base.slice(0, 7)}).` },
             `**Noch kein Merge.** Das KI-Review hat diesen Head bereits abgelehnt (**${earlier.review.decision}**). Eine neuere Basis allein ändert daran nichts; ein neues Review folgt erst nach einem neuen Commit, einer geänderten Aufgabe oder Konfiguration.\n\nGeprüfter Head: \`${f.head}\`.`);

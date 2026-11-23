@@ -396,6 +396,16 @@ it.each(['request_changes', 'defer'] as const)('does not review an unchanged hea
   expect(x.f.comments.filter(c => c.body.includes('bereits abgelehnt'))).toHaveLength(1);
   x.f.head = '2'.repeat(40); await x.run(); expect(x.reviewer.review).toHaveBeenCalledTimes(2);
 });
+it.each([
+  ['defer', true, 'handover'], ['request_changes', false, 'handover'], ['request_changes', true, 'review-rejected']
+] as const)('shows the same step on the repeat pass for a head rejected with %s (rework %s) as on the first pass', async (decision, rework, step) => {
+  const x = temporal(); x.f.draft = false; x.review.decision = decision; x.cfg.execution.rework = rework;
+  const steps: string[] = []; const details: (string | null | undefined)[] = [];
+  const run = () => new MergeManager(x.api, x.cfg, x.reviewer, 'test', undefined, { ownedOnly: true, observe: (_n, s, d) => { steps.push(s); details.push(d); } }).run(structuredClone(x.snapshot));
+  await run(); x.f.base = 'e'.repeat(40); await run();
+  expect(x.reviewer.review).toHaveBeenCalledTimes(1);
+  expect(steps.at(-1)).toBe(step); expect(details.at(-1)).toContain(`(${decision})`); expect(details.at(-1)).toContain('neuen Commit');
+});
 it('reviews an unchanged head again after a rejection when the configuration changes', async () => {
   const x = fixture('request_changes'); await x.run();
   x.f.base = 'e'.repeat(40); x.cfg.merge.review.maxFiles += 1; await x.run();
