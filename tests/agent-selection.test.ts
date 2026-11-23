@@ -67,6 +67,7 @@ describe('probeClaude', () => {
     expect(await probeClaude(undefined, 'claude-opus-5-5')).toBe('missing-key');
     expect(await probeClaude('k', 'claude-opus-5-5', fakeClaude())).toBe('available');
     expect(await probeClaude('k', 'claude-opus-5-5', fakeClaude(apiError(400, { type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' } })))).toBe('exhausted');
+    expect(await probeClaude('k', 'claude-opus-5-5', fakeClaude(apiError(400, { type: 'error', error: { type: 'invalid_request_error', message: 'You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.' } })))).toBe('exhausted');
     expect(await probeClaude('k', 'claude-opus-5-5', fakeClaude(apiError(402, { type: 'error', error: { type: 'billing_error', message: 'Billing' } })))).toBe('exhausted');
     expect(await probeClaude('k', 'claude-opus-5-5', fakeClaude(apiError(429, { type: 'error', error: { type: 'rate_limit_error', message: 'cap', details: { error_code: 'enforced_spend_limit_reached' } } })))).toBe('exhausted');
     expect(await probeClaude('k', 'claude-opus-5-5', fakeClaude(apiError(401, { type: 'error', error: { type: 'authentication_error', message: 'x' } })))).toBe('rejected');
