@@ -73292,7 +73292,9 @@ ${safe(`${spec.what} bei #${f.number}. Die Factory startet selbst einen weiteren
         const rejected = cached2 ? void 0 : this.events(f).find((e) => e.data.type === "merge_review" && e.data.verdictKey === verdictKey && rejects(e.data.review));
         if (rejected?.data.type === "merge_review") {
           const earlier = rejected.data;
-          this.note(number4, "review-rejected", `KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}).`);
+          const wasBlocked = earlier.review.decision === "request_changes" || earlier.review.findings.some((x) => x.severity === "blocking");
+          const wasHandedOver = !!owner && !adopted && (wasBlocked && !this.config.execution.rework || earlier.review.decision === "defer");
+          this.note(number4, wasHandedOver ? "handover" : "review-rejected", `KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}). Ein neues Review folgt erst nach einem neuen Commit, einer ge\xE4nderten Aufgabe oder Konfiguration.`);
           await this.event(
             f,
             `merge-status:${hash2({ head: f.head, verdictKey })}`,
