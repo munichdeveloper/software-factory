@@ -9,6 +9,7 @@ import { validationReportSchema, type ValidationReport } from './validation-cont
 import type { Finding, FindingKind, SanityStore } from './sanity.js';
 import type { LlmCallRecord, LlmVerdictRecord } from '../llm/analytics.js';
 import { tokensOf, type AnalyticsCall, type AnalyticsIssue, type AnalyticsVerdict } from './analytics.js';
+import { outcomeClasses, type Outcome, type OutcomeResult, type PendingOutcome, type WaitKind, type WaitPhase } from './outcomes.js';
 import { escalationMarker } from './coding-context.js';
 import type { RuntimeEvent, RuntimeEventStore, RuntimeEventType, StoredRuntimeEvent } from './events.js';
 
@@ -74,6 +75,12 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
       ALTER TABLE factory_analytics_calls ADD COLUMN IF NOT EXISTS price_source text;
       ALTER TABLE factory_analytics_issues ADD COLUMN IF NOT EXISTS qualified_at timestamptz;
       ALTER TABLE factory_analytics_issues ADD COLUMN IF NOT EXISTS handover_at timestamptz;
+      ALTER TABLE factory_analytics_issues ADD COLUMN IF NOT EXISTS outcome text;
+      ALTER TABLE factory_analytics_issues ADD COLUMN IF NOT EXISTS outcome_at timestamptz;
+      ALTER TABLE factory_analytics_issues ADD COLUMN IF NOT EXISTS closed_at timestamptz;
+      CREATE TABLE IF NOT EXISTS factory_analytics_waits (
+        repository text NOT NULL, issue_number integer NOT NULL, kind text NOT NULL, started_at timestamptz NOT NULL, ended_at timestamptz NOT NULL,
+        PRIMARY KEY(repository,issue_number,kind,started_at));
       CREATE TABLE IF NOT EXISTS factory_analytics_verdicts (
         id bigserial PRIMARY KEY, repository text NOT NULL, step text NOT NULL, pr_number integer, issue_number integer,
         decision text NOT NULL, rejected boolean NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now());
@@ -129,16 +136,48 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
       ON CONFLICT (repository,issue_number) DO UPDATE SET title=EXCLUDED.title, state=EXCLUDED.state, pr_number=EXCLUDED.pr_number,
         merged_at=EXCLUDED.merged_at, merged_by=EXCLUDED.merged_by, qualified_at=LEAST(factory_analytics_issues.qualified_at, EXCLUDED.qualified_at),
-        handover_at=LEAST(factory_analytics_issues.handover_at, EXCLUDED.handover_at), updated_at=now()`,
+        handover_at=LEAST(factory_analytics_issues.handover_at, EXCLUDED.handover_at), updated_at=now(),
+        outcome_at=CASE WHEN EXCLUDED.state='open' OR EXCLUDED.merged_at IS DISTINCT FROM factory_analytics_issues.merged_at THEN NULL ELSE factory_analytics_issues.outcome_at END`,
       [repository, i.issueNumber, i.title, i.state, i.prNumber, i.mergedAt, i.mergedBy, i.qualifiedAt ?? null, i.handoverAt ?? null]);
   }
   async analyticsIssues(): Promise<(AnalyticsIssue & { repository: string })[]> {
     const { rows } = await this.pool.query<{ repository: string; issue_number: number; title: string; state: string; pr_number: number | null; merged_at: Date | null; merged_by: string | null;
-      qualified_at: Date | null; handover_at: Date | null }>(
-      'SELECT repository,issue_number,title,state,pr_number,merged_at,merged_by,qualified_at,handover_at FROM factory_analytics_issues');
+      qualified_at: Date | null; handover_at: Date | null; outcome: string | null; closed_at: Date | null }>(
+      'SELECT repository,issue_number,title,state,pr_number,merged_at,merged_by,qualified_at,handover_at,CASE WHEN outcome_at IS NULL THEN NULL ELSE outcome END AS outcome,closed_at FROM factory_analytics_issues');
+    const waits = await this.pool.query<{ repository: string; issue_number: number; kind: string; started_at: Date; ended_at: Date }>(
+      'SELECT w.repository,w.issue_number,w.kind,w.started_at,w.ended_at FROM factory_analytics_waits w JOIN factory_analytics_issues i USING (repository,issue_number) WHERE i.outcome_at IS NOT NULL');
+    const waitsOf = new Map<string, WaitPhase[]>();
+    for (const w of waits.rows) { const k = `${w.repository}#${w.issue_number}`;
+      waitsOf.set(k, [...waitsOf.get(k) ?? [], { kind: w.kind as WaitKind, startedAt: w.started_at.toISOString(), endedAt: w.ended_at.toISOString() }]); }
     return rows.map(r => ({ repository: r.repository, issueNumber: r.issue_number, title: r.title, state: r.state === 'closed' ? 'closed' : 'open',
       prNumber: r.pr_number, mergedAt: r.merged_at?.toISOString() ?? null, mergedBy: r.merged_by === 'human' ? 'human' : r.merged_by === 'factory' ? 'factory' : null,
-      qualifiedAt: r.qualified_at?.toISOString() ?? null, handoverAt: r.handover_at?.toISOString() ?? null }));
+      qualifiedAt: r.qualified_at?.toISOString() ?? null, handoverAt: r.handover_at?.toISOString() ?? null,
+      outcome: (outcomeClasses as readonly string[]).includes(r.outcome ?? '') ? r.outcome as Outcome : null, closedAt: r.closed_at?.toISOString() ?? null,
+      waits: waitsOf.get(`${r.repository}#${r.issue_number}`) ?? [] }));
+  }
+  /** Closed issues whose outcome was never derived: new closes and, once, the issues stored before the outcome existed (backfill). */
+  async pendingAnalyticsOutcomes(repository: string, limit: number, exclude: number[]): Promise<PendingOutcome[]> {
+    const { rows } = await this.pool.query<{ issue_number: number; pr_number: number | null; merged_at: Date | null; merged_by: string | null; handover_at: Date | null; had_run: boolean }>(
+      `SELECT i.issue_number,i.pr_number,i.merged_at,i.merged_by,i.handover_at,
+        (EXISTS(SELECT 1 FROM factory_analytics_calls c WHERE c.repository=i.repository AND c.issue_number=i.issue_number) OR
+         EXISTS(SELECT 1 FROM factory_runtime_usage u WHERE u.repository=i.repository AND u.issue_number=i.issue_number)) AS had_run
+       FROM factory_analytics_issues i WHERE i.repository=$1 AND i.state='closed' AND i.outcome_at IS NULL AND NOT (i.issue_number = ANY($3::int[]))
+       ORDER BY COALESCE(i.merged_at, i.updated_at) DESC LIMIT $2`, [repository, limit, exclude]);
+    return rows.map(r => ({ issueNumber: r.issue_number, prNumber: r.pr_number, mergedAt: r.merged_at?.toISOString() ?? null,
+      mergedBy: r.merged_by === 'human' ? 'human' : r.merged_by === 'factory' ? 'factory' : null, handoverAt: r.handover_at?.toISOString() ?? null, hadRun: r.had_run }));
+  }
+  /** Outcome and wait phases of an issue in one transaction; the issue counts as derived afterwards. */
+  async saveAnalyticsOutcome(repository: string, issueNumber: number, result: OutcomeResult): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM factory_analytics_waits WHERE repository=$1 AND issue_number=$2', [repository, issueNumber]);
+      for (const w of result.waits) await client.query(
+        'INSERT INTO factory_analytics_waits(repository,issue_number,kind,started_at,ended_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING', [repository, issueNumber, w.kind, w.startedAt, w.endedAt]);
+      await client.query('UPDATE factory_analytics_issues SET outcome=$3, closed_at=$4, outcome_at=now() WHERE repository=$1 AND issue_number=$2', [repository, issueNumber, result.outcome, result.closedAt]);
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
+    finally { client.release(); }
   }
   /**
    * Every priced model call since `since`: the coding runs (factory_runtime_usage, with the stored routing decision and

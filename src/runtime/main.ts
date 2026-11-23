@@ -27,6 +27,7 @@ import { RuntimeController, type RuntimeRepository } from './controller.js';
 import { startReconcileSchedule, type ReconcileSchedule } from './schedule.js';
 import { QueueBoard } from './queue.js';
 import { AnalyticsIssueSync } from './analytics.js';
+import { GitHubOutcomeReader } from './outcomes.js';
 import { configurePrices, setLlmCallSink } from '../llm/analytics.js';
 import { SanityMonitor } from './sanity.js';
 import { RuntimeEvents } from './events.js';
@@ -270,7 +271,8 @@ export async function main(args = process.argv.slice(2)) {
         new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
         config, reviewer(config), `temporal-merge:${item.repositoryId}`, github,
         { ownedOnly: !!item.issueNumbers, assessor: assessor(config), observe, checkRuns }).run(snapshot));
-      return { repository, controller, planner: config => config.llm.provider === 'static' ? deterministic : config.llm.provider === 'jev' ? jev : planner, merge };
+      return { repository, controller, planner: config => config.llm.provider === 'static' ? deterministic : config.llm.provider === 'jev' ? jev : planner, merge,
+        outcomes: new GitHubOutcomeReader(api, owner, repo) };
     };
     const bindings: RuntimeBinding[] = [];
     for (const item of registry.repositories) bindings.push(await bind(item));
