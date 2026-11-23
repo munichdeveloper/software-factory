@@ -25,6 +25,8 @@ export class RuntimeMerge {
   private last = -Infinity;
   /** Errors of the last completed pass (pull request numbers and status codes only), reported with the next reconciliation. */
   errors: string[] = [];
+  /** Applies a click on the approval button of the check run (issue #246); set where the broker has check runs. */
+  checkApproval?: (config: Config, click: { pullRequest: number; head: string; identifier: string; login: string; deliveryId: string }) => Promise<{ applied: boolean }>;
   private progressByPr = new Map<number, MergeProgress>();
   constructor(private repositoryId: number, private pass: (config: Config, snapshot: Snapshot, observe: MergeObserver) => Promise<MergePassReport>,
     private intervalMs = 180000, private now: () => number = Date.now) {}

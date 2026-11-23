@@ -36,6 +36,10 @@ export const eventSchema = z.strictObject({
     // Written once when a person with approval rights overrules a `defer` of the merge review with `/harness approve <id>`.
     z.strictObject({ type: z.literal('merge_defer_overridden'), prNumber: z.number().int().positive(), head: z.string().length(40), base: z.string().length(40),
       approvalId: z.string().regex(/^[a-f0-9]{64}$/), approver: z.string().max(100) }),
+    // Written when a person approves with the button of the GitHub check (software-factory#246); counts like `/harness approve <id>`
+    // from that person, and records the delivery so the same click is never applied twice.
+    z.strictObject({ type: z.literal('merge_check_approval'), prNumber: z.number().int().positive(), head: z.string().length(40),
+      approvalId: z.string().regex(/^[a-f0-9]{64}$/), approver: z.string().max(100), deliveryId: z.string().max(100) }),
     // Written once per head and base when a risk class above the threshold with `aboveThreshold: block` stops a pull request
     // (a person merges it themselves); the Slack notice risk_handover_required reads it.
     z.strictObject({ type: z.literal('merge_risk_handover'), prNumber: z.number().int().positive(), head: z.string().length(40), base: z.string().length(40),

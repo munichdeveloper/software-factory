@@ -228,6 +228,25 @@ why, in the Factory's own words:
 | required check failed, conflict, gate, stopped, branch updated, error | completed, *neutral* |
 | merged | completed, *success* |
 
+### Approval button
+
+Where a person can approve, the check run carries a requested action (button): **Freigeben** while the check waits
+for approval (`approval-required`), and **Überstimmen** (description "Zurückstellung überstimmen"; GitHub limits
+the label to 20 characters) when the AI review deferred (`defer`) without a `blocking` finding. The button's
+`identifier` is `a:` plus the first 18 characters of the same approval id as `/harness approve <id>`, so it is bound to
+head, base, review and risk. There is no button for `request_changes`, for a `blocking` finding, or for risk
+`critical` (a person merges those themselves).
+
+GitHub sends the click as a `check_run` `requested_action` webhook to the SF Manager (sf-manager#77), which
+forwards it with the manager token to `POST /v1/repositories/<id>/check-approval` with `repository`, `pullRequest`,
+`head`, `identifier`, `login` (the `sender.login` of the click) and `deliveryId`. The broker applies it only when
+`canApprove(login)` holds (the identity check of `/harness approve`), the head is still the one the button was shown
+for and the identifier matches the current approval id; a button left over from an older head answers
+`409` and does nothing. The approval is journaled on the pull request (`merge_check_approval`) with the audit comment
+"Freigegeben von @login über den GitHub-Check", and counts like an approval comment from that person (a later
+`/harness revoke <id>` still withdraws it). A repeated delivery id is ignored. The merge continues with the next
+merge pass, which a click triggers.
+
 A new head gets its own check run; the one on the old head stays. The check run is display only: the merge pass
 ignores it when it evaluates required checks and gates, so it can never block a merge, and a failure to write it never
 fails the pass. It is written only when its status, conclusion or text changes, and after a broker restart the existing

@@ -52,7 +52,8 @@ import { RuntimeMerge } from './merge.js';
 import { SlackSink } from '../notifications/slack.js';
 import { GitHubMergePort } from '../merge/github.js';
 import { MergeManager } from '../merge/manager.js';
-import { GitHubCheckRuns } from '../merge/check-run.js';
+import { CheckApprovals, GitHubCheckRuns } from '../merge/check-run.js';
+import type { MergeObserver } from './merge.js';
 import { BrokerLife, WorkerWatch } from './broker-health.js';
 import { assertCanaryConfig, bindCanaryRepository, canaryLabel, canaryRepository, runCanary } from './canary.js';
 import { ClaudeMergeReviewer, FallbackMergeReviewer, OpenAIMergeReviewer } from '../merge/reviewer.js';
@@ -267,10 +268,13 @@ export async function main(args = process.argv.slice(2)) {
         privateKey: process.env.GITHUB_APP_PRIVATE_KEY ?? '', installationId: item.githubInstallationId, repositoryId: item.repositoryId,
         permissions: { checks: 'write' } })) : undefined;
       // Only pull requests the Factory published for its tasks in an issue-scoped registry entry; closed ones while a merge's follow-up may be open.
-      const merge = new RuntimeMerge(item.repositoryId, (config, snapshot, observe) => new MergeManager(
+      const approvals = new CheckApprovals();
+      const mergeManager = (config: Config, observe?: MergeObserver) => new MergeManager(
         new GitHubMergePort(item.repository, api, config.factory.scope, config.merge.adoptLabel, fetch, 48 * 3600000),
         config, reviewer(config), `temporal-merge:${item.repositoryId}`, github,
-        { ownedOnly: !!item.issueNumbers, assessor: assessor(config), observe, checkRuns }).run(snapshot));
+        { ownedOnly: !!item.issueNumbers, assessor: assessor(config), ...(observe ? { observe } : {}), ...(checkRuns ? { checkRuns, approvals } : {}) });
+      const merge = new RuntimeMerge(item.repositoryId, (config, snapshot, observe) => mergeManager(config, observe).run(snapshot));
+      if (checkRuns) merge.checkApproval = (config, click) => mergeManager(config).checkApproval(click);
       return { repository, controller, planner: config => config.llm.provider === 'static' ? deterministic : config.llm.provider === 'jev' ? jev : planner, merge,
         outcomes: new GitHubOutcomeReader(api, owner, repo) };
     };
