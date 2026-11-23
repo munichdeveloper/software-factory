@@ -24,6 +24,16 @@ The broker reads `.github/software-factory.validation.json` at the target base a
 
 Supported profiles require a committed npm lockfile and `test`/`build` scripts. Checks run `npm ci --ignore-scripts`, `npm test`, `npm run build`, and `npm run test:e2e` when available. Playwright Chromium is prepared when the project includes its CLI. The `npm-docker` profile additionally requires `compose.yaml` and `tests/docker-smoke.mjs`; it checks Compose, starts a uniquely named disposable project, runs the smoke test and always attempts volume/container cleanup with a separate cleanup budget. The `maven` profile requires a `pom.xml` at the repository root and runs `mvn validate`, `mvn -DskipTests package` and `mvn verify` in batch mode, using an executable `mvnw` when the repository has one and the runner's Maven otherwise. Modules such as a frontend built through a Maven plugin are part of these checks. `javaVersion` (`17`, `21` or `25`, maven only) makes the validator install that Temurin JDK; without it the runner's default JDK is used. The validation account gets Docker access on its disposable hosted VM for Testcontainers. On a slot of the Factory's runner pool there is no Docker socket; the account is handed the runner's `DOCKER_HOST` when it names the slot's daemon on loopback (`tcp://127.0.0.1:<port>`), and nothing else from the runner's environment. Browser tests find Google Chrome on both kinds of runner. Missing project support is `unsupported`, never a passing check. The prefix must end in `-ci`, `-test` or `-validation`.
 
+### Generated files
+
+Repositories that check in generated files (for example a bundle built from `src/`) can add an optional `generated` list to the plan; there is no default, so plans without it and their hashes are unchanged. At most three entries:
+
+```json
+{ "generated": [{ "command": "npm run bundle", "paths": ["bundle"] }] }
+```
+
+`command` is a fixed string split on spaces, without shell metacharacters; `paths` are relative, without `..`. After the other checks (and only if they passed) the validator runs each command with the same account and limits as the other project commands, then compares the listed paths with the applied change. A difference, or a failing command, makes the `generated` check `failed` (`CHECK_FAILED`, so `execution.rework` applies) and `generated.log` says e.g. "generated files out of date: run `npm run bundle`" with the paths. The check only verifies: the regenerated files are restored, never adopted, and source integrity is unchanged.
+
 ## Boundaries and evidence
 
 Project commands run as a separate `sf-validator` account with an empty inherited environment, a fixed executable path, `CI=true`, a unique Compose project name and the allowlisted literal test values. Environment control keys, model keys, broker keys and GitHub/AWS credential names are rejected. Checkout credentials are not persisted. The validator reusable workflow declares no secrets; its parent forwards the model key only to the coding job. The Docker profile grants Docker access only on its disposable hosted VM: this is a trusted-repository test boundary, not a hostile-code sandbox or permission to use production credentials. Tests can access the network and supply-chain services. Read-only workflow tokens remain platform credentials, not model or broker credentials.

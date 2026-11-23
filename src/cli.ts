@@ -68,7 +68,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     execFileSync('sudo', ['-n', 'chown', '-R', 'sf-validator:sf-validator', resolve(values.source)]);
     const output = resolve(values.output); await mkdir(dirname(output), { recursive: true });
     const report = await runCodingValidation({ target: resolve(values.source), artifact, plan, workflowRunId: Number(process.env.GITHUB_RUN_ID),
-      sourceRunId: Number(process.env.SF_SOURCE_RUN_ID), hosted: true, command: hostedValidationCommand(resolve(values.source), resolve(dirname(output), 'logs')) });
+      sourceRunId: Number(process.env.SF_SOURCE_RUN_ID), hosted: true, command: hostedValidationCommand(resolve(values.source), resolve(dirname(output), 'logs')),
+      note: (name, text) => appendFile(resolve(dirname(output), 'logs', `${name}.log`), text) });
     await writeFile(output, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ validation: report.status, executionId: report.executionId, originalModelStatus: artifact.result.status })); return;
   }

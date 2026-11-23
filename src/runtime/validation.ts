@@ -41,8 +41,28 @@ async function fingerprint(root: string, paths: string[]) {
   }
   return hash(entries);
 }
+type Snapshot = Map<string, { data: Buffer; mode: number }>;
+async function snapshot(root: string, paths: string[]): Promise<Snapshot> {
+  const listed = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', ...paths], { cwd: root, encoding: 'utf8', maxBuffer: 10000000 });
+  const files: Snapshot = new Map();
+  for (const path of listed.split('\0').filter(Boolean)) {
+    const full = await regularPath(root, path);
+    try { const stat = await lstat(full); if (stat.isFile()) files.set(path, { data: await readFile(full), mode: stat.mode & 0o111 }); }
+    catch (e) { if (!(e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT')) throw e; }
+  }
+  return files;
+}
+// The generating step only checks: a difference is reported and the files are put back, never adopted.
+async function restore(root: string, before: Snapshot, after: Snapshot) {
+  for (const path of after.keys()) if (!before.has(path)) await unlink(await regularPath(root, path));
+  for (const [path, file] of before) {
+    const now = after.get(path);
+    if (now && now.data.equals(file.data) && now.mode === file.mode) continue;
+    const full = await regularPath(root, path); await mkdir(dirname(full), { recursive: true }); await writeFile(full, file.data); await chmod(full, file.mode ? 0o755 : 0o644);
+  }
+}
 export async function runCodingValidation(options: { target: string; artifact: CodingArtifact; plan: ValidationPlan; workflowRunId: number; sourceRunId?: number;
-  command: ValidationCommand; hosted: boolean }): Promise<ValidationReport> {
+  command: ValidationCommand; hosted: boolean; note?: (name: string, text: string) => Promise<void> }): Promise<ValidationReport> {
   const { artifact, command } = options, plan = validationPlanSchema.parse(options.plan), root = await realpath(resolve(options.target));
   const report: ValidationReport = { version: 1, executionId: artifact.result.executionId, taskId: artifact.result.taskId, taskVersion: artifact.result.taskVersion,
     baseSha: artifact.baseSha, artifactHash: hash(artifact), planHash: hash(plan), workflowRunId: options.workflowRunId, sourceRunId: options.sourceRunId ?? options.workflowRunId, runAttempt: 1,
@@ -98,6 +118,20 @@ export async function runCodingValidation(options: { target: string; artifact: C
           }
         }
       }
+    }
+    if (plan.generated?.length && report.status === 'failed' && report.checks.length && report.checks.every(c => c.status !== 'failed')) {
+      const messages: string[] = []; let ok = true;
+      for (const entry of plan.generated) {
+        const was = await snapshot(root, entry.paths), remaining = Math.floor(budget - (Date.now() - started) / 1000);
+        const exitCode = remaining > 0 ? await command('generated', entry.command.split(' '), Math.min(600, remaining), environment).catch(() => -1) : -1;
+        const now = await snapshot(root, entry.paths), changed = [...new Set([...was.keys(), ...now.keys()])].filter(path => {
+          const a = was.get(path), b = now.get(path); return !a || !b || !a.data.equals(b.data) || a.mode !== b.mode; }).sort();
+        if (changed.length) { await restore(root, was, now); messages.push(`generated files out of date: run \`${entry.command}\` (${changed.slice(0, 20).join(', ')}${changed.length > 20 ? ', ...' : ''})`); }
+        if (exitCode !== 0) messages.push(`generated command \`${entry.command}\` failed with exit code ${exitCode}`);
+        if (exitCode !== 0 || changed.length) ok = false;
+      }
+      report.checks.push({ name: 'generated', status: ok ? 'passed' : 'failed', exitCode: ok ? 0 : 1 });
+      if (!ok) await options.note?.('generated', messages.join('\n') + '\n').catch(() => undefined);
     }
   } catch { report.status = 'unsupported'; report.reason = 'UNSUPPORTED_PROJECT'; }
   finally {
