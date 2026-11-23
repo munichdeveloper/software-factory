@@ -23,7 +23,9 @@ export interface MergeFacts {
  * every hunk (see merge/parts.ts) instead of the whole file; every changed line is still included. 'lockfile': a generated
  * npm lockfile; `patch` lists the packages it adds, changes and removes (merge/lockfile.ts) and `content` is null.
  */
-export interface ReviewChange { path: string; status: string; patch: string; content: string | null; contentScope?: 'excerpt' | 'lockfile' }
+export interface ReviewChange { path: string; status: string; patch: string; content: string | null;
+  /** Base version of a modified workflow file, for the content rules of the risk classification (merge/workflow-risk.ts). */
+  baseContent?: string | null; contentScope?: 'excerpt' | 'lockfile' }
 export interface ReviewInput { facts: MergeFacts; trustedScope: string; trustedInstructions: string;
   sourceTask?: { number: number; title: string; body: string };
   changes: ReviewChange[];

@@ -242,6 +242,20 @@ Replacement PR recipe (Factory output nearly right but stuck):
 3. Close the replaced Factory PR. The broker reviews, risk-rates and merges it; PRs touching `.github/workflows/*` are
    critical and need Johannes' merge.
 
+Critical files in their own PR (Claude threads, #247; case letterflow #43/#46): one critical file makes the whole PR
+`critical`, so a person must merge everything. Put changes to files the Factory rates `critical` into a separate, small PR
+on `main`:
+- always critical: Factory wrappers (workflows that `uses:` `munichdeveloper/software-factory`, e.g. `factory-manager.yml`,
+  `factory-deploy.yml`), `.github/software-factory.yml`, `.github/software-factory.validation.json`, `.github/actions/**`,
+  `CODEOWNERS`, `AGENTS.md`, added or deleted workflow files;
+- workflow edits that change `on:`, `permissions:`, add `secrets.*`, add or change `uses:` (other than a SHA pin bump of
+  the same action), or in jobs that deliver required checks remove/rename a job, add or change `if:`/`continue-on-error`,
+  or change/remove a `run` command (content rules from #242; until #242 is deployed every workflow change is critical).
+Other workflow edits (extra steps, `env`, `with` values, caches) count as normal code with floor `medium` and need no own PR.
+The rest goes into a second PR based on `main` (or on the critical PR's branch if it needs it) with the line
+`Depends on: #<critical PR>` in its body and label `sf:automerge`; the merge manager reviews and merges it only after the
+critical PR is merged (#243). Example: letterflow #46 (workflow part, Johannes merges) and #43 (`Depends on: #46`).
+
 Rollout recipe (only at empty queue, all repos):
 1. Release merged in software-factory → sf-manager `temporalReleases` entry merged and deployed.
 2. Host pin PR in software-factory (`WORKER_FACTORY_SHA` new, old value → `PREVIOUS_WORKER_FACTORY_SHA`), wait for the

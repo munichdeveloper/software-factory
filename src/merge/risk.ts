@@ -3,6 +3,7 @@ import type { Config } from '../config/index.js';
 import type { ReviewInput } from './contract.js';
 import { claudeEffort, logFallback, type ClaudeCall } from '../llm/claude.js';
 import { openaiTokens, recordLlmCall } from '../llm/analytics.js';
+import { workflowVerdict, type WorkflowVerdict } from './workflow-risk.js';
 
 /** Risk classes, ordered from least to most risky. */
 export const riskClasses = ['low', 'medium', 'high', 'critical'] as const;
@@ -37,10 +38,12 @@ export const riskRecordSchema = z.strictObject({
 export type RiskRecord = z.infer<typeof riskRecordSchema>;
 
 /**
- * Paths that are always critical. They control the Factory itself (workflows, its configuration, review instructions,
- * code ownership and installed wrappers); a pull request that changes them must never approve itself.
+ * Paths that are always critical. They control the Factory itself (its configuration, review instructions, code
+ * ownership and installed actions); a pull request that changes them must never approve itself. The workflow folder is
+ * not on the list: workflow files are judged by content (merge/workflow-risk.ts), Factory wrappers and new or deleted
+ * workflow files are always critical there.
  */
-export const builtinCriticalPaths = ['.github/workflows/**', '.github/software-factory.yml', '.github/software-factory.validation.json',
+export const builtinCriticalPaths = ['.github/software-factory.yml', '.github/software-factory.validation.json',
   'AGENTS.md', 'CODEOWNERS', '.github/CODEOWNERS', 'docs/CODEOWNERS', '.github/actions/**'] as const;
 
 /** A relative glob: `*` and `?` stay within one path segment, `**` spans any number of segments. */
@@ -92,8 +95,16 @@ export function ruleHits(changes: Pick<ReviewInput['changes'][number], 'path' | 
 }
 const ruleNames: Record<RuleHit['rule'], string> = { migration: 'Datenbank-Migration', auth: 'Authentifizierung/Berechtigungen', interface: 'neue Schnittstelle nach außen' };
 
+/** The merge settings the workflow content rules need (which jobs deliver the required checks). */
+export type WorkflowMerge = { requiredChecks: readonly string[]; validationWorkflow: string | null };
+const defaultWorkflowMerge: WorkflowMerge = { requiredChecks: ['test-backend', 'test-frontend', 'test-docker'], validationWorkflow: 'test.yml' };
+
 export interface RiskRules {
-  builtinPaths: string[]; matchedAreas: string[]; covered: boolean;
+  builtinPaths: string[];
+  /** Why each critical workflow file is critical (content rule or always-critical file). */
+  workflowReasons: string[];
+  /** Workflow files that only change neutral content; they count as ordinary code with the floor `medium`. */
+  workflowNeutral: string[]; matchedAreas: string[]; covered: boolean;
   /** Hard rule hits (migrations, auth, new interfaces); any hit puts the floor at ruleFloorClass. */
   ruleHits: RuleHit[];
   /** Minimum class from touched areas, the hard rules and the size rule. */
@@ -108,8 +119,10 @@ export const defaultMaxMediumRiskFiles = 100;
 export const highRiskFactors: readonly (typeof riskFactors[number])[] = ['auth', 'permissions', 'payments'];
 const contentFloor = (factors: RiskAssessment['factors']): RiskClass => factors.some(f => highRiskFactors.includes(f.factor)) ? 'high' : 'low';
 /** The deterministic part of the classification: built-in paths, configured areas, the hard rules and the size rule. */
-export function riskRules(changes: (Pick<ReviewInput['changes'][number], 'path' | 'patch'> & { status?: string })[], risk: Config['merge']['risk']): RiskRules {
-  const builtinPaths = changes.map(c => c.path).filter(p => matches(builtinCriticalPaths, p));
+export function riskRules(changes: (Pick<ReviewInput['changes'][number], 'path' | 'patch'> & { status?: string; content?: string | null; baseContent?: string | null })[],
+  risk: Config['merge']['risk'], merge: WorkflowMerge = defaultWorkflowMerge): RiskRules {
+  const workflows: WorkflowVerdict = workflowVerdict(changes, merge);
+  const builtinPaths = [...new Set([...changes.map(c => c.path).filter(p => matches(builtinCriticalPaths, p)), ...workflows.critical.map(c => c.path)])];
   const matchedAreas = new Set<string>(), classes: RiskClass[] = [];
   let covered = changes.length > 0;
   for (const change of changes) {
@@ -121,8 +134,8 @@ export function riskRules(changes: (Pick<ReviewInput['changes'][number], 'path' 
   const size = sizeClass(lines, files, risk);
   const areaClass = classes.length ? highest(classes) : null;
   const hits = ruleHits(changes.map(c => ({ path: c.path, status: c.status ?? 'modified' })));
-  return { builtinPaths, matchedAreas: [...matchedAreas], covered, ruleHits: hits, areaClass,
-    floor: highest([...classes, size, hits.length ? ruleFloorClass : 'low']), lines, files };
+  return { builtinPaths, workflowReasons: workflows.critical.map(c => c.reason), workflowNeutral: workflows.neutral, matchedAreas: [...matchedAreas], covered, ruleHits: hits, areaClass,
+    floor: highest([...classes, size, hits.length ? ruleFloorClass : 'low', workflows.neutral.length ? 'medium' : 'low']), lines, files };
 }
 
 export interface RiskInput {
@@ -145,12 +158,12 @@ export interface RiskAssessor { assess(input: RiskInput): Promise<RiskAssessment
  * its own with the metrics of the whole change set, and the highest class holds (issue #189).
  */
 export async function classifyRisk(changes: ReviewInput['changes'], risk: Config['merge']['risk'], assessor: RiskAssessor | undefined,
-  parts: ReviewInput['changes'][] = [changes]): Promise<RiskRecord> {
-  const rules = riskRules(changes, risk);
+  parts: ReviewInput['changes'][] = [changes], merge?: WorkflowMerge): Promise<RiskRecord> {
+  const rules = riskRules(changes, risk, merge);
   const base = { matchedAreas: rules.matchedAreas, builtinPaths: rules.builtinPaths, lines: rules.lines, files: rules.files,
     ...(rules.ruleHits.length ? { ruleHits: rules.ruleHits } : {}) };
   if (rules.builtinPaths.length) return { ...base, class: 'critical', source: 'builtin', aiClass: null, factors: [],
-    reason: `Ändert Dateien, die die Factory selbst steuern: ${rules.builtinPaths.slice(0, 5).join(', ')}.` };
+    reason: `Ändert Dateien, die die Factory selbst steuern: ${rules.builtinPaths.slice(0, 5).join(', ')}.${rules.workflowReasons.length ? ` Workflow-Regel: ${rules.workflowReasons.slice(0, 5).join('; ')}.` : ''}`.slice(0, 2000) };
   if (rules.covered && rules.areaClass) {
     const cls = highest([rules.areaClass, rules.floor]);
     return { ...base, class: cls, source: 'areas', aiClass: null, factors: [],
@@ -263,7 +276,7 @@ export function describeRisk(record: RiskRecord, risk: Config['merge']['risk']):
     : above ? `Liegt über der Grenze für automatisches Mergen (\`${risk.autoMergeUpTo}\`)${record.class === 'critical' ? '; critical wird nie automatisch gemergt' : ''}. Die Factory mergt nicht selbst, ein Mensch muss freigeben.`
       : `Liegt innerhalb der Grenze für automatisches Mergen (\`${risk.autoMergeUpTo}\`).`;
   const cause = {
-    builtin: 'Grund: Der PR ändert eingebaute kritische Pfade der Factory.',
+    builtin: 'Grund: Der PR ändert eingebaute kritische Pfade der Factory oder Workflow-Dateien mit kritischem Inhalt.',
     areas: `Grund: Alle Dateien liegen in konfigurierten Bereichen (${record.matchedAreas.join(', ')}).`,
     ai: `Grund: KI-Bewertung \`${record.aiClass ?? record.class}\`${record.matchedAreas.length ? `; berührte Bereiche: ${record.matchedAreas.join(', ')}` : ''}.`,
     error: 'Grund: Die Risikobewertung ist fehlgeschlagen. Ohne Bewertung gilt jeder PR als critical, unabhängig von seiner Größe.'
