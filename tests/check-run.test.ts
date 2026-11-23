@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { clock, config, MemoryGitHub } from './helpers.js';
 import { MergeManager } from '../src/merge/manager.js';
 import type { MergeFacts, MergePort, MergeReview, ReviewInput } from '../src/merge/contract.js';
-import { checkRunName, checkRunView, GitHubCheckRuns, type CheckRunView, type MergeCheckRuns } from '../src/merge/check-run.js';
+import { approvalIdentifier, checkRunName, checkRunView, CheckApprovals, GitHubCheckRuns, type CheckRunView, type MergeCheckRuns } from '../src/merge/check-run.js';
 
 function fixture() {
   const cfg = config(); cfg.merge.enabled = true; cfg.autonomy.overrides.merge_pr = 'allow'; cfg.llm.provider = 'openai';
@@ -22,10 +22,13 @@ function fixture() {
     dispatch: vi.fn(async () => {}), workflowAvailable: vi.fn(async () => true), canApprove: vi.fn(async login => login === 'maintainer') };
   const shown: { pr: number; head: string; view: CheckRunView }[] = [];
   const checkRuns: MergeCheckRuns = { show: (pr, head, view) => { shown.push({ pr, head, view }); } };
+  const approvals = new CheckApprovals();
   const snapshot = new MemoryGitHub().state;
   const run = (assessor?: ConstructorParameters<typeof MergeManager>[5] extends infer O ? O extends { assessor?: infer A } ? A : never : never) =>
-    new MergeManager(api, cfg, reviewer, 'test', undefined, { checkRuns, ...(assessor ? { assessor } : {}) }).run(structuredClone(snapshot));
-  return { cfg, f, api, shown, run };
+    new MergeManager(api, cfg, reviewer, 'test', undefined, { checkRuns, approvals, ...(assessor ? { assessor } : {}) }).run(structuredClone(snapshot));
+  const click = (input: Partial<Parameters<MergeManager['checkApproval']>[0]> = {}) => new MergeManager(api, cfg, reviewer, 'test', undefined, { checkRuns, approvals })
+    .checkApproval({ pullRequest: 52, head: f.head, identifier: '', login: 'maintainer', deliveryId: 'delivery-1', ...input });
+  return { cfg, f, api, shown, run, click, reviewer, review, approvals };
 }
 
 it('shows a merged pull request as one check run on its head, from in progress to success', async () => {
@@ -126,4 +129,70 @@ it('keeps the merge pass running when writing the check run fails', async () => 
   const report = await new MergeManager(x.api, x.cfg, { review: vi.fn(async () => ({ decision: 'merge' as const, reason: 'ok', findings: [] })) }, 'test', undefined,
     { checkRuns: failing }).run(new MemoryGitHub().state);
   expect(report.merged).toBe(1); expect(report.errors).toEqual([]);
+});
+
+const high = { assess: vi.fn(async () => ({ class: 'high' as const, reason: 'Schreibt in ein externes System.', factors: [] })) };
+const buttonOf = (x: ReturnType<typeof fixture>) => x.shown.at(-1)!.view.actions?.[0];
+it('offers the button Freigeben with an identifier bound to the approval id, and a valid click approves like the comment', async () => {
+  const x = fixture(); x.cfg.merge.risk.enabled = true;
+  await x.run(high);
+  const id = [...x.f.comments].reverse().find(c => c.body.includes('/harness approve'))!.body.match(/\/harness approve ([a-f0-9]{64})/)![1]!;
+  const button = buttonOf(x)!;
+  expect(button).toMatchObject({ label: 'Freigeben', identifier: approvalIdentifier(id) });
+  expect(button.identifier.length).toBeLessThanOrEqual(20);
+  expect(await x.click({ identifier: button.identifier })).toEqual({ applied: true });
+  expect(x.f.comments.at(-1)!.body.replaceAll('\u200b', '')).toContain('Freigegeben von @maintainer über den GitHub-Check');
+  expect((await x.run(high)).merged).toBe(1);
+});
+it('refuses a click from a person without approval rights', async () => {
+  const x = fixture(); x.cfg.merge.risk.enabled = true;
+  await x.run(high);
+  const before = x.f.comments.length;
+  await expect(x.click({ identifier: buttonOf(x)!.identifier, login: 'stranger' })).rejects.toThrow('ACTOR_NOT_AUTHORIZED');
+  expect(x.f.comments.length).toBe(before);
+  await x.run(high);
+  expect(x.api.merge).not.toHaveBeenCalled();
+});
+it('refuses an old identifier or head after a push', async () => {
+  const x = fixture(); x.cfg.merge.risk.enabled = true;
+  await x.run(high);
+  const identifier = buttonOf(x)!.identifier;
+  await expect(x.click({ identifier: 'a:' + '0'.repeat(18) })).rejects.toThrow('STALE_APPROVAL');
+  await expect(x.click({ identifier, head: 'c'.repeat(40) })).rejects.toThrow('STALE_APPROVAL');
+  x.f.head = 'c'.repeat(40);
+  await expect(x.click({ identifier, head: 'a'.repeat(40) })).rejects.toThrow('STALE_APPROVAL');
+  await x.run(high);
+  expect(x.api.merge).not.toHaveBeenCalled();
+});
+it('applies the same delivery only once', async () => {
+  const x = fixture(); x.cfg.merge.risk.enabled = true;
+  await x.run(high);
+  const identifier = buttonOf(x)!.identifier;
+  expect(await x.click({ identifier })).toEqual({ applied: true });
+  const comments = x.f.comments.length;
+  expect(await x.click({ identifier })).toEqual({ applied: false });
+  expect(x.f.comments.length).toBe(comments);
+});
+it('offers no button for critical risk', async () => {
+  const x = fixture(); x.cfg.merge.risk.enabled = true;
+  await x.run({ assess: vi.fn(async () => ({ class: 'critical' as const, reason: 'Ändert die Pipeline.', factors: [] })) });
+  expect(x.shown.some(s => s.view.actions)).toBe(false);
+  await expect(x.click({ identifier: approvalIdentifier('a'.repeat(64)) })).rejects.toThrow('STALE_APPROVAL');
+});
+it('offers Zurückstellung überstimmen for a defer without blocking finding, and approves it', async () => {
+  const x = fixture(); x.review.decision = 'defer'; x.review.findings = [{ path: 'file.txt', severity: 'warning', explanation: 'Unklar.' }];
+  await x.run();
+  const button = buttonOf(x)!;
+  expect(button).toMatchObject({ description: 'Zurückstellung überstimmen' });
+  expect(button.label.length).toBeLessThanOrEqual(20);
+  expect(await x.click({ identifier: button.identifier })).toEqual({ applied: true });
+  expect((await x.run()).merged).toBe(1);
+});
+it('offers no button for request_changes or a blocking finding', async () => {
+  const x = fixture(); x.review.decision = 'request_changes';
+  await x.run();
+  expect(x.shown.some(s => s.view.actions)).toBe(false);
+  const y = fixture(); y.review.decision = 'defer'; y.review.findings = [{ path: 'file.txt', severity: 'blocking', explanation: 'Fehler.' }];
+  await y.run();
+  expect(y.shown.some(s => s.view.actions)).toBe(false);
 });

@@ -181,6 +181,24 @@ export function runtimeServer(options: ServerOptions) {
         console.log(JSON.stringify({ event: 'factory-nudge', repositoryId, ...(input.event ? { trigger: input.event } : {}) }));
         send(response, 202, { repositoryId, accepted: true }); return;
       }
+      // The button "Freigeben" of the GitHub check (software-factory#246): the SF Manager forwards the click it received as a
+      // webhook, authenticated like every Manager call. `login` is the sender of the click; it must pass canApprove like the
+      // author of a `/harness approve` comment, and the identifier must match the approval the button was shown for.
+      const checkApproval = path.match(/^\/v1\/repositories\/([1-9][0-9]{0,15})\/check-approval$/);
+      if (checkApproval) {
+        if (request.method !== 'POST') throw new Error('METHOD');
+        const input = z.strictObject({ repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/), pullRequest: z.number().int().positive().safe(), head: z.string().length(40),
+          identifier: z.string().min(1).max(20), login: actorSchema, deliveryId: z.string().regex(/^[\w:.-]{1,100}$/) }).parse(await read(request));
+        const binding = options.bindings.find(b => b.repository.repositoryId === Number(checkApproval[1]));
+        if (!binding) throw new Error('UNKNOWN_REPOSITORY');
+        if (binding.repository.repository.toLowerCase() !== input.repository.toLowerCase()) throw new Error('REPOSITORY_MISMATCH');
+        if (!binding.merge?.checkApproval) { send(response, 404, { code: 'NOT_FOUND' }); return; }
+        const { repository: _repository, ...click } = input; void _repository;
+        const result = await binding.merge.checkApproval(await binding.repository.config(), click);
+        console.log(JSON.stringify({ event: 'factory-check-approval', repositoryId: binding.repository.repositoryId, pullRequest: click.pullRequest, approver: click.login, deliveryId: click.deliveryId, applied: result.applied }));
+        if (result.applied) options.nudge?.(binding.repository.repositoryId);
+        send(response, 200, { ok: true, ...result }); return;
+      }
       const match = path.match(/^\/v1\/repositories\/([1-9][0-9]*)\/(runs|observations|reconcile|deployment|findings|events)(?:\/([a-f0-9]{32})(?:\/(approve|revoke|cancel))?)?$/);
       if (!match) { send(response, 404, { code: 'NOT_FOUND' }); return; }
       const binding = options.bindings.find(b => b.repository.repositoryId === Number(match[1]));

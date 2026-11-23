@@ -7,7 +7,9 @@ import type { MergeStep } from '../runtime/merge.js';
  * the merge pass ignores its own check run, and a failure to write it never fails the pass.
  */
 export const checkRunName = 'Software Factory / Merge';
-export interface CheckRunView { status: 'in_progress' | 'completed'; conclusion?: 'success' | 'neutral' | 'action_required'; title: string; summary: string }
+export interface CheckRunView { status: 'in_progress' | 'completed'; conclusion?: 'success' | 'neutral' | 'action_required'; title: string; summary: string;
+  /** Requested actions (buttons) of the check run; GitHub allows label and identifier up to 20 and description up to 40 characters. */
+  actions?: { label: string; description: string; identifier: string }[] }
 export interface MergeCheckRuns {
   show(pullRequest: number, head: string, view: CheckRunView): void;
   /** Whether the Factory has set its own check run on this head, whatever the token reading the checks can see. */
@@ -31,16 +33,28 @@ const views: Record<MergeStep, { status: CheckRunView['status']; conclusion?: Ch
   error: { status: 'completed', conclusion: 'neutral', title: 'Fehler im Merge-Durchlauf', summary: 'Der Merge-Durchlauf konnte einen Schritt nicht bestätigen; der nächste Durchlauf versucht es erneut.' }
 };
 /** The view of a merge step: the Factory's own texts only (detail is the broker's reason, never model or PR text). */
-export function checkRunView(step: MergeStep, detail?: string | null, risk?: string | null): CheckRunView {
+export function checkRunView(step: MergeStep, detail?: string | null, risk?: string | null, approvalId?: { id: string; overrule: boolean } | null): CheckRunView {
   const { status, conclusion, title, summary } = views[step];
   const reviewed = step === 'review' && risk;
   return { status, ...(conclusion ? { conclusion } : {}), title: reviewed ? `KI-Review fertig, Risiko ${risk}` : title,
-    summary: [(detail ?? '').slice(0, 2000) || summary, risk ? `Risiko: ${risk}` : ''].filter(Boolean).join('\n\n') };
+    summary: [(detail ?? '').slice(0, 2000) || summary, risk ? `Risiko: ${risk}` : ''].filter(Boolean).join('\n\n'),
+    ...(approvalId ? { actions: [approvalId.overrule
+      ? { label: 'Überstimmen', description: 'Zurückstellung überstimmen', identifier: approvalIdentifier(approvalId.id) }
+      : { label: 'Freigeben', description: 'Merge freigeben (wie /harness approve)', identifier: approvalIdentifier(approvalId.id) }] } : {}) };
+}
+/** The identifier of the button: a prefix of the approval id (head, base, review, risk), at most 20 characters. */
+export const approvalIdentifier = (approvalId: string) => `a:${approvalId.slice(0, 18)}`;
+/** Approvals the buttons of the check runs currently stand for, per pull request; an old button after a push matches nothing. */
+export class CheckApprovals {
+  private pending = new Map<number, { head: string; approvalId: string }>();
+  set(pullRequest: number, head: string, approvalId: string) { this.pending.set(pullRequest, { head, approvalId }); }
+  clear(pullRequest: number) { this.pending.delete(pullRequest); }
+  get(pullRequest: number) { return this.pending.get(pullRequest); }
 }
 
 const forbidden = (error: unknown) => !!error && typeof error === 'object' && 'status' in error && [401, 403, 422].includes(Number(error.status));
 const sameView = (a: CheckRunView, b: { status: string; conclusion: string | null; output: { title: string | null; summary: string | null } }) =>
-  a.status === b.status && (a.conclusion ?? null) === (b.conclusion ?? null) && a.title === b.output.title && a.summary === b.output.summary;
+  a.status === b.status && (a.conclusion ?? null) === (b.conclusion ?? null) && !a.actions?.length && a.title === b.output.title && a.summary === b.output.summary;
 
 /**
  * Writes the check runs of one repository with a token that holds checks:write only. Writes are queued one after
@@ -84,8 +98,9 @@ export class GitHubCheckRuns implements MergeCheckRuns {
     const body = { ...this.target, status: view.status, details_url: `https://github.com/${this.repository}/pull/${pullRequest}`,
       external_id: `sf-merge:${pullRequest}`, output: { title: view.title, summary: view.summary },
       ...(view.status === 'completed' ? { conclusion: view.conclusion ?? 'neutral', completed_at: new Date().toISOString() } : {}) };
-    if (id === undefined) id = (await this.api.checks.create({ ...body, name: checkRunName, head_sha: head })).data.id;
-    else await this.api.checks.update({ ...body, check_run_id: id });
+    if (id === undefined) id = (await this.api.checks.create({ ...body, ...(view.actions ? { actions: view.actions } : {}), name: checkRunName, head_sha: head })).data.id;
+    // An update always sets the actions, so the button of a former step disappears.
+    else await this.api.checks.update({ ...body, actions: view.actions ?? [], check_run_id: id });
     this.remember(head, id, key);
   }
   private remember(head: string, id: number, view: string) {

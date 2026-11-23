@@ -1106,6 +1106,46 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "merge_check_approval"
+            },
+            "prNumber": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "head": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40
+            },
+            "approvalId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "approver": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "deliveryId": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "type",
+            "prNumber",
+            "head",
+            "approvalId",
+            "approver",
+            "deliveryId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "merge_risk_handover"
             },
             "prNumber": {

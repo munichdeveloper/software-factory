@@ -13,7 +13,7 @@ import { recordLlmVerdict, setLlmSubject, withLlmContext } from '../llm/analytic
 import { reconstruct } from '../state/reconstruct.js';
 import type { MergeObserver } from '../runtime/merge.js';
 import { dependencies } from '../state/lifecycle.js';
-import { checkRunName, checkRunView, type MergeCheckRuns } from './check-run.js';
+import { approvalIdentifier, checkRunName, checkRunView, type CheckApprovals, type MergeCheckRuns } from './check-run.js';
 
 const safe = (s: string) => s.replaceAll('@', '@\u200b').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 // The broker's own display-only risk and hand-over labels are no input of a review: setting them must not invalidate it.
@@ -75,6 +75,8 @@ export interface MergeOptions {
   observe?: MergeObserver;
   /** Shows the same steps as a check run on the head of each pull request (issue #208); display only. */
   checkRuns?: MergeCheckRuns;
+  /** The approvals the check-run buttons stand for (issue #246); without it the check run has no button. */
+  approvals?: CheckApprovals;
 }
 /** A pull request the Factory published for a task, with the outcome it was published with. */
 interface Ownership { task: Snapshot['issues'][number]; status: string; publishedHead: string | null }
@@ -98,6 +100,23 @@ export class MergeManager {
     const summary = text ? Buffer.from(`\n\n### Software Factory – Mergeprüfung\n\n${safe(text)}`) : Buffer.alloc(0);
     // Keep the full durable decision; bound the extra human-readable presentation.
     await this.api.comment(f.number, journal + summary.subarray(0, Math.max(0, 60000 - Buffer.byteLength(journal) - 4)).toString('utf8'));
+  }
+  /**
+   * A signed click on the button of the check run (issue #246), forwarded by the SF Manager. It counts like `/harness approve <id>`
+   * from the person who clicked, with the same identity check, and only for the approval the button was shown for: another head,
+   * base, review or risk class has another id. Returns whether it was applied; a delivery seen before is not applied again.
+   */
+  async checkApproval(click: { pullRequest: number; head: string; identifier: string; login: string; deliveryId: string }): Promise<{ applied: boolean }> {
+    const pending = this.options.approvals?.get(click.pullRequest);
+    if (!pending || pending.head !== click.head || approvalIdentifier(pending.approvalId) !== click.identifier) throw new Error('STALE_APPROVAL');
+    const f = await this.api.facts(click.pullRequest);
+    if (f.state !== 'open' || f.head !== click.head) throw new Error('STALE_APPROVAL');
+    const key = `merge-check-approval:${click.deliveryId}`;
+    if (this.events(f).some(e => e.key === key)) return { applied: false };
+    if (!await this.api.canApprove(click.login)) throw new Error('ACTOR_NOT_AUTHORIZED');
+    await this.event(f, key, { type: 'merge_check_approval', prNumber: f.number, head: f.head, approvalId: pending.approvalId, approver: click.login, deliveryId: click.deliveryId },
+      `**Freigegeben von @${click.login} über den GitHub-Check.** Die Freigabe gilt nur für diesen Head, diese Basis und dieses Review.`);
+    return { applied: true };
   }
   private async explain(f: MergeFacts, reason: string) {
     await this.event(f, `merge-status:${hash({ head: f.head, base: f.base, reason })}`,
@@ -285,12 +304,14 @@ export class MergeManager {
     }
     return undefined;
   }
-  private note(n: number, step: Parameters<MergeObserver>[1], detail?: string | null, risk?: string | null) {
+  private note(n: number, step: Parameters<MergeObserver>[1], detail?: string | null, risk?: string | null, button?: { id: string; overrule: boolean }) {
     try { this.options.observe?.(n, step, detail, risk); } catch { /* display only: never fails the pass */ }
     const head = this.heads.get(n);
+    // The button of the check run stands for exactly this approval id of this head, never for anything older.
+    if (button && head) this.options.approvals?.set(n, head, button.id); else this.options.approvals?.clear(n);
     if (!head || this.config.merge.checkRun === false) return;
     if (risk) this.risks.set(head, risk);
-    try { this.options.checkRuns?.show(n, head, checkRunView(step, detail, risk ?? this.risks.get(head))); } catch { /* display only */ }
+    try { this.options.checkRuns?.show(n, head, checkRunView(step, detail, risk ?? this.risks.get(head), button && this.options.approvals ? button : null)); } catch { /* display only */ }
   }
   /** The head each pull request had when this pass last read it, and the risk class seen for a head (check runs). */
   private heads = new Map<number, string>();
@@ -576,6 +597,8 @@ export class MergeManager {
         const approverIn = async (comments: MergeFacts['comments']) => {
           const id = approvalFor(); let by: string | null = null;
           for (const c of comments) {
+            const click = decodeEvent(c, this.config.manager.trustedActors)?.data;
+            if (click?.type === 'merge_check_approval') { if (click.approvalId === id && await this.api.canApprove(click.approver)) by = click.approver; continue; }
             const match = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
             if (match?.[2] === id && await this.api.canApprove(c.author)) by = match[1] === 'approve' ? c.author : null;
           }
@@ -602,7 +625,9 @@ export class MergeManager {
             detail += ' Freigabe-Kommentar vorhanden, aber nicht überstimmbar.';
             await this.explain(f, `Die Freigabe wurde ignoriert: nicht überstimmbar. Das KI-Review hat ${blocked ? 'Änderungen verlangt oder einen blockierenden Befund gemeldet' : 'zurückgestellt, die Factory mergt diesen PR aber nicht selbst'}; dafür gibt es keine Freigabe.`);
           }
-          this.note(number, handOver ? 'handover' : 'review-rejected', detail); continue;
+          // The button for a deferral without blocking finding; never for critical, which a person merges themselves.
+          const button = overridable && riskRecord?.class !== 'critical' ? { id: approvalFor(), overrule: true } : undefined;
+          this.note(number, handOver ? 'handover' : 'review-rejected', detail, null, button); continue;
         }
         if (overruledBy) {
           await this.event(f, `merge-defer-overridden:${approvalFor()}`, { type: 'merge_defer_overridden', prNumber: number, head: f.head, base: f.base,
@@ -630,7 +655,8 @@ export class MergeManager {
           const approvalId = approvalFor();
           const approved = !!await approverIn(live.comments);
           if (!approved) {
-            this.note(number, 'approval-required', `${riskGate ? `Risiko ${riskRecord!.class} über der Schwelle ${risk.autoMergeUpTo}: menschliche Freigabe nötig.` : 'Menschliche Freigabe nötig.'} Freigeben mit diesem Kommentar am PR: /harness approve ${approvalId}`);
+            this.note(number, 'approval-required', `${riskGate ? `Risiko ${riskRecord!.class} über der Schwelle ${risk.autoMergeUpTo}: menschliche Freigabe nötig.` : 'Menschliche Freigabe nötig.'} Freigeben mit diesem Kommentar am PR: /harness approve ${approvalId}`, null,
+              riskRecord?.class !== 'critical' ? { id: approvalId, overrule: false } : undefined);
             if (riskGate) await this.event(live, `merge-approval-required:${approvalId}`, { type: 'merge_approval_required', prNumber: number,
               head: f.head, base: f.base, approvalId, riskClass: riskRecord!.class, autoMergeUpTo: risk.autoMergeUpTo });
             // Visible where people look: on the pull request and on its task, with the reason and the command (issue #204).
