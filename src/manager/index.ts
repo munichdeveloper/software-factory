@@ -17,7 +17,12 @@ import { deliverNotifications, type GrantWait, type NotificationSink } from '../
 import { statusMarker, statusView } from './status.js';
 import { admissionCode, RuntimeAdmissionRejected, type WorkerRuntimePort } from '../runtime/contract.js';
 
-export interface ManagerOptions { correlationId: string; now?: () => Date; notifications?: NotificationSink; workerRuntime?: WorkerRuntimePort }
+export interface ManagerOptions { correlationId: string; now?: () => Date; notifications?: NotificationSink; workerRuntime?: WorkerRuntimePort;
+  /**
+   * Told once per run, after the decisions of the observed state are made and before any action runs: the snapshot and
+   * the issues whose worker start the policy allows. A failure here never affects the run.
+   */
+  planned?: (snapshot: Snapshot, starts: number[]) => void | Promise<void> }
 /**
  * A planner proposal keeps only the fields of its own operation. The model often fills `status` on a start_worker;
  * the policy denies any action with foreign fields, so the proposal was lost although its intent was clear.
@@ -336,6 +341,21 @@ export class Manager {
       if (t.latest?.result) entries.push(...t.latest.result.proposedActions.map(action => ({ action, source: 'worker' as const })));
     }
     const budget: Budget = { actions: 0, newIssues: 0, activeWorkers: tasks.reduce((n, t) => n + t.executions.filter(e => e.active).length, 0) };
+    if (this.options.planned) {
+      try {
+        // A preview on the observed state: the policy decides again per action once it is executed.
+        const preview: Budget = { ...budget }, starts: number[] = [];
+        for (const entry of entries) {
+          const parsed = actionSchema.safeParse(entry.action);
+          if (!parsed.success || !['start_worker', 'retry_worker'].includes(parsed.data.kind) || this.config.execution.dryRun) continue;
+          const action = parsed.data, task = tasks.find(t => t.issue.number === action.issueNumber);
+          if (!task || starts.includes(action.issueNumber)) continue;
+          const decision = evaluate(action, { config: this.config, task, budget: preview, source: entry.source, readyIsGrant: !!snapshot.readyIsGrant, approved: false });
+          if (decision.outcome === 'allow') { starts.push(action.issueNumber); preview.actions++; preview.activeWorkers++; }
+        }
+        await this.options.planned(snapshot, starts);
+      } catch { /* the view must not fail a reconciliation */ }
+    }
     const seen = new Set<string>();
     for (const entry of entries) {
       const parsed = actionSchema.safeParse(entry.action);
