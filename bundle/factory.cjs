@@ -72217,6 +72217,8 @@ function validateChanges(artifact) {
 var smallPullRequestGuidance = "\n\nFactory working rule, small pull requests: keep this change to the one concern of this task. Change only what the task and its acceptance criteria need: no drive-by refactoring, renaming, reformatting, dependency upgrades or unrelated fixes, even where they look worthwhile; mention them in your summary instead. If the task bundles several independent concerns or is too large for one reviewable change, do not build one large change: make no changes, report `blocked` and name in your summary how to split it into follow-up tasks, one concern each.";
 var riskIsolationGuidance = "\n\nFactory working rule, isolate risk: pull requests that change authentication, permissions or roles, anything involving money (payments, billing, prices, invoices, credits) or data migrations need a person to approve the merge; everything else merges automatically. If this task mixes such a risky part with routine work that is useful and correct on its own, do not build one mixed change: make no changes, report `blocked` and start your summary with `Risk split:` followed by the routine part and the risky part; the Factory then creates the two tasks. If the risky part cannot be separated, or the task is only the risky part, implement it and keep the risky change as small as possible.";
 var scopeGuidance = (config2) => !config2.workers.coding || !config2.workers.coding.smallPullRequests ? "" : smallPullRequestGuidance + (config2.merge.risk.enabled && config2.merge.risk.mode === "enforce" ? riskIsolationGuidance : "");
+var testSecretGuidance = "\n\nFactory working rule, test secrets: test and example values for tokens, API keys, passwords, private keys, connection strings and similar must be obvious placeholders (for example `test-token`, `dummy-api-key`, `not-a-real-password`) or be assembled at runtime from harmless parts. Never use realistic vendor formats: known key prefixes, high-entropy strings of real key length, PEM blocks or real-looking connection strings with credentials. This applies to tests, fixtures, examples, docs and seed data. If existing code validates a specific secret format, build the test value at runtime (string concatenation or `repeat`) instead of writing a literal that looks real.";
+var workingRules = (config2) => scopeGuidance(config2) + testSecretGuidance;
 var taskId = (repository, issue2) => `github:${repository}#${issue2}`;
 async function prepareCoding(github, config2, repository, issue2, id, correlationId) {
   const auth2 = await authorizeDelegation(github, config2, issue2, id);
@@ -72235,7 +72237,7 @@ async function prepareCoding(github, config2, repository, issue2, id, correlatio
     task: {
       id: taskId(github.repository, issue2),
       version: auth2.input.taskVersion,
-      description: scopeGuidance(config2) && auth2.input.description.length + scopeGuidance(config2).length <= 2e4 ? auth2.input.description + scopeGuidance(config2) : auth2.input.description,
+      description: auth2.input.description.length + workingRules(config2).length <= 2e4 ? auth2.input.description + workingRules(config2) : auth2.input.description,
       acceptanceCriteria: auth2.input.acceptanceCriteria,
       contextReferences: auth2.input.contextReferences
     },

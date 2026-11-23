@@ -30,7 +30,7 @@ it('dispatches Codex when selected and supplies only a generic single-run reques
   expect(prepared.request.worker).toBe('codex');
   expect(prepared.request).not.toHaveProperty('repository');
   expect(prepared.request.model).toBe('gpt-6.1-sol');
-  expect(prepared.request.task.description.endsWith(smallPullRequestGuidance)).toBe(true);
+  expect(prepared.request.task.description.endsWith(smallPullRequestGuidance + testSecretGuidance)).toBe(true);
 });
 it('appends the test secret rule with and without the small pull request rule', async () => {
   const on = (await fixture()).prepared.request.task.description;
