@@ -132,6 +132,18 @@ describe('reading an issue from GitHub', () => {
       commits: [{ author: { login: 'someone', type: 'User' }, commit: { author: { name: 'Someone' } } }] });
     expect((await reader.read(pending())).outcome).toBe('replacement');
   });
+  it('does not count merge commits, Claude sessions or unlinked commits as a person\'s', async () => {
+    const { reader } = fake({ commits: [
+      { author: { login: 'sf-app[bot]', type: 'Bot' }, commit: { author: { name: 'sf-app[bot]' } } },
+      { parents: [{}, {}], author: { login: 'someone', type: 'User' }, commit: { author: { name: 'Someone' } } },
+      { author: null, commit: { author: { name: 'Claude', email: 'noreply@anthropic.com' } } },
+      { author: null, commit: { author: { name: 'Unlinked', email: 'unlinked@example.com' } } }] });
+    expect((await reader.read(pending())).outcome).toBe('automatic');
+  });
+  it('counts a linked person\'s own commit on a Factory PR as human-merge', async () => {
+    const { reader } = fake({ commits: [{ author: { login: 'someone', type: 'User' }, commit: { author: { name: 'Someone', email: 'someone@example.com' } } }] });
+    expect((await reader.read(pending())).outcome).toBe('human-merge');
+  });
   it('finds a person\'s merge with sf:needs-human, and an issue closed without a merge', async () => {
     const human = fake({ prEvents: [label('sf:needs-human', 'labeled', 3), label('sf:needs-human', 'unlabeled', 5), label('other', 'labeled', 1)] });
     expect(await human.reader.read(pending({ mergedBy: 'human' }))).toMatchObject({ outcome: 'human-merge', waits: [{ kind: 'needs-human', startedAt: at(3), endedAt: at(5) }] });

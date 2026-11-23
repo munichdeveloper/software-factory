@@ -91,6 +91,19 @@ export interface OutcomeReader { read(issue: PendingOutcome): Promise<OutcomeRes
 
 const approveComment = /^\/harness approve [a-f0-9]{64}$/;
 const isBot = (login: string | undefined | null, type?: string | null) => type === 'Bot' || !!login?.endsWith('[bot]');
+/** Commit e-mail of Claude sessions (Claude threads, Claude Code) that push fixes or merges to Factory branches. */
+const claudeCommitEmail = 'noreply@anthropic.com';
+interface CommitLike { parents?: unknown[]; author?: { login?: string; type?: string } | null; commit: { author?: { name?: string; email?: string } | null } }
+/**
+ * A commit that is no human intervention: a merge commit (bringing the base in), a bot's commit, or a commit of a Claude
+ * session. A person no longer commits to Factory branches, so only a commit by a linked, non-bot account that is none of
+ * these counts as a person's.
+ */
+export function isAutomatedCommit(c: CommitLike): boolean {
+  if ((c.parents?.length ?? 0) > 1) return true;
+  if (c.commit.author?.email?.toLowerCase() === claudeCommitEmail) return true;
+  return c.author ? isBot(c.author.login, c.author.type) : true;
+}
 /** Reads the GitHub side of an issue's outcome: at most 2 + 4 lists of `maxPages` pages (default 2) of 100, usually 6 requests. */
 export class GitHubOutcomeReader implements OutcomeReader {
   constructor(private api: Octokit, private owner: string, private repo: string, private maxPages = 2, private now: () => Date = () => new Date()) {}
@@ -116,8 +129,7 @@ export class GitHubOutcomeReader implements OutcomeReader {
       const events = await take(this.api.paginate.iterator(this.api.issues.listEvents, { ...target, issue_number: issue.prNumber, per_page: 100 }));
       const comments = await take(this.api.paginate.iterator(this.api.issues.listComments, { ...target, issue_number: issue.prNumber, per_page: 100 }));
       pr = { openedByFactory: isBot(data.user?.login, data.user?.type) && data.head.ref.startsWith('sf/issue-'),
-        // A commit without a linked GitHub account counts as a person's unless its name says it is a bot.
-        humanCommit: commits.some(c => c.author ? !isBot(c.author.login, c.author.type) : !isBot(c.commit.author?.name)),
+        humanCommit: commits.some(c => !isAutomatedCommit(c)),
         events: labelEvents(events, 'sf:needs-human'), now: data.labels.some(l => (typeof l === 'string' ? l : l.name) === 'sf:needs-human'), approvals: approvals(comments) };
     }
     const end = issue.mergedAt ?? closedAt ?? this.now().toISOString();
