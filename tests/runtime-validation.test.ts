@@ -105,6 +105,20 @@ it('fails a plan whose generated files differ after regeneration, restores them 
   expect(notes.join()).toContain('generated files out of date: run `npm run bundle`'); expect(notes.join()).toContain('bundle/factory.cjs');
   await expect(readFile(join(f.root, 'bundle/factory.cjs'), 'utf8')).rejects.toThrow();
 });
+it('restores generated files through the writable hook and keeps the note when the restore fails', async () => {
+  const run = async (writable: (work: () => Promise<void>) => Promise<void>) => {
+    const f = await fixture(); await materializeCodingArtifact(f.root, f.artifact, f.request); const notes: string[] = [];
+    const report = await runCodingValidation({ target: f.root, artifact: f.artifact, plan: generatedPlan(), workflowRunId: 12, hosted: false, writable, note: async (_n, text) => { notes.push(text); },
+      command: async name => { if (name === 'generated') { await mkdir(join(f.root, 'bundle'), { recursive: true }); await writeFile(join(f.root, 'bundle/factory.cjs'), 'new'); } return 0; } });
+    return { report, notes: notes.join() };
+  };
+  let wrapped = 0;
+  const restored = await run(async work => { wrapped++; await work(); });
+  expect(wrapped).toBe(1); expect(restored.report.reason).toBe('CHECK_FAILED');
+  const denied = await run(async () => { throw Object.assign(new Error('denied'), { code: 'EACCES' }); });
+  expect(denied.report.status).toBe('failed'); expect(denied.report.checks.find(c => c.name === 'generated')?.status).toBe('failed');
+  expect(denied.notes).toContain('generated files out of date: run `npm run bundle`'); expect(denied.notes).toContain('could not be restored');
+});
 it('passes the generated check when the command leaves its paths unchanged', async () => {
   const f = await fixture(); await materializeCodingArtifact(f.root, f.artifact, f.request); const plan = generatedPlan(); const calls: string[] = [];
   const report = await runCodingValidation({ target: f.root, artifact: f.artifact, plan, workflowRunId: 12, hosted: false, command: async name => { calls.push(name); return 0; } });
