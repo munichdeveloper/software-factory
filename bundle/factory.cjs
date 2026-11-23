@@ -72642,6 +72642,16 @@ var GitHubMergePort = class {
     }
     if (!labels2.some((l) => l.name === label2)) await this.api.issues.addLabels({ ...this.target, issue_number: number4, labels: [label2] });
   }
+  async predecessor(number4) {
+    try {
+      const { data } = await this.api.issues.get({ ...this.target, issue_number: number4 });
+      const pr = !!data.pull_request;
+      return { kind: pr ? "pr" : "issue", state: data.state === "closed" ? "closed" : "open", merged: pr && !!data.pull_request?.merged_at, body: data.body ?? "" };
+    } catch (error62) {
+      if (error62 && typeof error62 === "object" && "status" in error62 && error62.status === 404) return null;
+      throw error62;
+    }
+  }
   async pushedSince(from, head) {
     const commits = [];
     let status;
@@ -72849,6 +72859,7 @@ var views = {
   merged: { status: "completed", conclusion: "success", title: "Gemergt", summary: "Der PR ist gemergt." },
   handover: { status: "completed", conclusion: "action_required", title: "An einen Menschen \xFCbergeben", summary: "Die Factory mergt diesen PR nicht selbst." },
   stopped: { status: "completed", conclusion: "neutral", title: "Angehalten", summary: "Die Factory bearbeitet diesen PR nicht weiter." },
+  waiting: { status: "completed", conclusion: "neutral", title: "Wartet auf Vorg\xE4nger", summary: "Der PR wartet auf einen Vorg\xE4nger (Depends on:); Review und Merge folgen danach." },
   error: { status: "completed", conclusion: "neutral", title: "Fehler im Merge-Durchlauf", summary: "Der Merge-Durchlauf konnte einen Schritt nicht best\xE4tigen; der n\xE4chste Durchlauf versucht es erneut." }
 };
 function checkRunView(step, detail, risk) {
@@ -73139,6 +73150,41 @@ ${safe(`${spec.what} bei #${f.number}. Die Factory startet selbst einen weiteren
     await this.explain(updated, done);
     return true;
   }
+  /**
+   * `Depends on: #n` in the pull request text: why the pull request must wait for a predecessor (or a person must look), or
+   * null when every predecessor is done (PR merged, issue closed). Cycles block like a predecessor closed without merge.
+   */
+  async predecessors(f) {
+    const direct = dependencies(f.body);
+    if (!direct.length || !this.api.predecessor) return null;
+    const lookup = this.api.predecessor.bind(this.api), known = /* @__PURE__ */ new Map();
+    const get = async (n) => {
+      if (!known.has(n)) known.set(n, await lookup(n));
+      return known.get(n);
+    };
+    const visited = /* @__PURE__ */ new Set();
+    const walk3 = async (n, path4) => {
+      if (n === f.number) return [...path4, n];
+      if (visited.has(n) || path4.length > 50) return null;
+      visited.add(n);
+      const p = await get(n);
+      if (!p || p.state !== "open") return null;
+      for (const next of dependencies(p.body)) {
+        const found = await walk3(next, [...path4, n]);
+        if (found) return found;
+      }
+      return null;
+    };
+    for (const n of direct) {
+      const cycle = await walk3(n, [f.number]);
+      if (cycle) return { step: "handover", detail: `Zyklus bei \`Depends on:\` erkannt (${cycle.map((x) => `#${x}`).join(" \u2192 ")}); der PR bleibt blockiert, bis ein Mensch den Zyklus aufl\xF6st.` };
+    }
+    const infos = await Promise.all(direct.map(async (n) => [n, await get(n)]));
+    const abandoned = infos.find(([, p]) => p?.kind === "pr" && p.state === "closed" && !p.merged);
+    if (abandoned) return { step: "handover", detail: `Vorg\xE4nger #${abandoned[0]} ohne Merge geschlossen; der PR bleibt blockiert, bis ein Mensch entscheidet.` };
+    const open2 = infos.filter(([, p]) => !p || p.state === "open").map(([n]) => n);
+    return open2.length ? { step: "waiting", detail: `Wartet auf Vorg\xE4nger ${open2.map((n) => `#${n}`).join(", ")}` } : null;
+  }
   ownership(f, snapshot2) {
     const url2 = `https://github.com/${this.api.repository}/pull/${f.number}`;
     for (const task of snapshot2.issues) {
@@ -73227,6 +73273,18 @@ ${safe(`${spec.what} bei #${f.number}. Die Factory startet selbst einen weiteren
           continue;
         }
         const ownership = this.ownership(f, snapshot2), owner = ownership?.task;
+        phase = "Vorg\xE4nger pr\xFCfen";
+        const predecessor = await this.predecessors(f);
+        if (predecessor) {
+          this.note(number4, predecessor.step, predecessor.detail);
+          if (predecessor.step === "handover") {
+            await this.event(f, `merge-handover:${hash2({ protocol: "sf-merge-depends-v1", head: f.head, reason: predecessor.detail })}`, { type: "merge_handover", prNumber: number4, head: f.head, base: f.base, reviewKey: hash2(predecessor.detail), decision: "defer" });
+            await this.needsHuman(f, true);
+          } else await this.needsHuman(f, false);
+          await this.explain(f, predecessor.detail);
+          continue;
+        }
+        phase = "GitHub-Zustand lesen";
         let revalidated = null;
         if (owner && (owner.state === "closed" || owner.labels.includes("harness:blocked"))) {
           this.note(number4, "stopped", "Die zugeh\xF6rige Aufgabe wurde geschlossen oder blockiert.");

@@ -357,14 +357,14 @@ export class MergeManager {
         const ownership = this.ownership(f, snapshot), owner = ownership?.task;
         // Predecessors first: no review, no risk assessment and no merge while one is open (a person gets a closed or cyclic one).
         phase = 'Vorgänger prüfen';
-        const blocked = await this.predecessors(f);
-        if (blocked) {
-          this.note(number, blocked.step, blocked.detail);
-          if (blocked.step === 'handover') {
-            await this.event(f, `merge-handover:${hash({ protocol: 'sf-merge-depends-v1', head: f.head, reason: blocked.detail })}`, { type: 'merge_handover', prNumber: number, head: f.head, base: f.base, reviewKey: hash(blocked.detail), decision: 'defer' });
+        const predecessor = await this.predecessors(f);
+        if (predecessor) {
+          this.note(number, predecessor.step, predecessor.detail);
+          if (predecessor.step === 'handover') {
+            await this.event(f, `merge-handover:${hash({ protocol: 'sf-merge-depends-v1', head: f.head, reason: predecessor.detail })}`, { type: 'merge_handover', prNumber: number, head: f.head, base: f.base, reviewKey: hash(predecessor.detail), decision: 'defer' });
             await this.needsHuman(f, true);
           } else await this.needsHuman(f, false);
-          await this.explain(f, blocked.detail); continue;
+          await this.explain(f, predecessor.detail); continue;
         }
         phase = 'GitHub-Zustand lesen';
         // The published head of a blocked run whose branch was repaired afterwards (its PR text describes that head).
