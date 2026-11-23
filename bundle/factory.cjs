@@ -19835,10 +19835,10 @@ var init_BetaMessageStream = __esm({
           }
         }
         /** @internal A method so that the tool runner's stream can act before and after an event's listeners. */
-        _deliverEvent(event, snapshot) {
+        _deliverEvent(event, snapshot2) {
           this._emit("_rawEvent", event);
-          if (snapshot)
-            this._emit("streamEvent", event, snapshot);
+          if (snapshot2)
+            this._emit("streamEvent", event, snapshot2);
         }
         async _fromReadableStream(readableStream, options) {
           const signal = options?.signal;
@@ -19970,73 +19970,73 @@ var init_BetaMessageStream = __esm({
           if (this.ended) {
             throw new AnthropicError(`stream has ended, this shouldn't happen`);
           }
-          const snapshot = __classPrivateFieldGet(this, _BetaMessageStream_currentMessageSnapshot, "f");
-          if (!snapshot) {
+          const snapshot2 = __classPrivateFieldGet(this, _BetaMessageStream_currentMessageSnapshot, "f");
+          if (!snapshot2) {
             throw new AnthropicError(`request ended without sending any chunks`);
           }
           __classPrivateFieldSet(this, _BetaMessageStream_currentMessageSnapshot, void 0, "f");
-          return maybeParseBetaMessage(snapshot, __classPrivateFieldGet(this, _BetaMessageStream_params, "f"), { logger: __classPrivateFieldGet(this, _BetaMessageStream_logger, "f") });
+          return maybeParseBetaMessage(snapshot2, __classPrivateFieldGet(this, _BetaMessageStream_params, "f"), { logger: __classPrivateFieldGet(this, _BetaMessageStream_logger, "f") });
         }, _BetaMessageStream_accumulateMessage = function _BetaMessageStream_accumulateMessage2(event) {
-          let snapshot = __classPrivateFieldGet(this, _BetaMessageStream_currentMessageSnapshot, "f");
+          let snapshot2 = __classPrivateFieldGet(this, _BetaMessageStream_currentMessageSnapshot, "f");
           if (event.type === "message_start") {
-            if (snapshot) {
+            if (snapshot2) {
               throw new AnthropicError(`Unexpected event order, got ${event.type} before receiving "message_stop"`);
             }
             return event.message;
           }
-          if (!snapshot)
+          if (!snapshot2)
             return;
           switch (event.type) {
             case "message_stop":
-              return snapshot;
+              return snapshot2;
             case "message_delta":
-              snapshot.stop_reason = event.delta.stop_reason;
-              snapshot.stop_sequence = event.delta.stop_sequence;
-              snapshot.stop_details = event.delta.stop_details;
-              snapshot.usage.output_tokens = event.usage.output_tokens;
+              snapshot2.stop_reason = event.delta.stop_reason;
+              snapshot2.stop_sequence = event.delta.stop_sequence;
+              snapshot2.stop_details = event.delta.stop_details;
+              snapshot2.usage.output_tokens = event.usage.output_tokens;
               if (event.delta.container != null) {
-                snapshot.container = event.delta.container;
+                snapshot2.container = event.delta.container;
               }
               if (event.context_management != null) {
-                snapshot.context_management = event.context_management;
+                snapshot2.context_management = event.context_management;
               }
               if (event.input_transformations != null) {
-                snapshot.input_transformations = event.input_transformations;
+                snapshot2.input_transformations = event.input_transformations;
               }
               if (event.usage.input_tokens != null) {
-                snapshot.usage.input_tokens = event.usage.input_tokens;
+                snapshot2.usage.input_tokens = event.usage.input_tokens;
               }
               if (event.usage.cache_creation_input_tokens != null) {
-                snapshot.usage.cache_creation_input_tokens = event.usage.cache_creation_input_tokens;
+                snapshot2.usage.cache_creation_input_tokens = event.usage.cache_creation_input_tokens;
               }
               if (event.usage.cache_read_input_tokens != null) {
-                snapshot.usage.cache_read_input_tokens = event.usage.cache_read_input_tokens;
+                snapshot2.usage.cache_read_input_tokens = event.usage.cache_read_input_tokens;
               }
               if (event.usage.server_tool_use != null) {
-                snapshot.usage.server_tool_use = event.usage.server_tool_use;
+                snapshot2.usage.server_tool_use = event.usage.server_tool_use;
               }
               if (event.usage.iterations != null) {
-                snapshot.usage.iterations = event.usage.iterations;
+                snapshot2.usage.iterations = event.usage.iterations;
               }
               if (event.usage.fallback_credit != null) {
-                snapshot.usage.fallback_credit = event.usage.fallback_credit;
+                snapshot2.usage.fallback_credit = event.usage.fallback_credit;
               }
               if (event.usage.output_tokens_details != null) {
-                snapshot.usage.output_tokens_details = event.usage.output_tokens_details;
+                snapshot2.usage.output_tokens_details = event.usage.output_tokens_details;
               }
-              return snapshot;
+              return snapshot2;
             case "content_block_start":
-              snapshot.content.push(event.content_block);
+              snapshot2.content.push(event.content_block);
               if (event.content_block.type === "fallback") {
-                snapshot.model = event.content_block.to.model;
+                snapshot2.model = event.content_block.to.model;
               }
-              return snapshot;
+              return snapshot2;
             case "content_block_delta": {
-              const snapshotContent = snapshot.content.at(event.index);
+              const snapshotContent = snapshot2.content.at(event.index);
               switch (event.delta.type) {
                 case "text_delta": {
                   if (snapshotContent?.type === "text") {
-                    snapshot.content[event.index] = {
+                    snapshot2.content[event.index] = {
                       ...snapshotContent,
                       text: (snapshotContent.text || "") + event.delta.text
                     };
@@ -20045,7 +20045,7 @@ var init_BetaMessageStream = __esm({
                 }
                 case "citations_delta": {
                   if (snapshotContent?.type === "text") {
-                    snapshot.content[event.index] = {
+                    snapshot2.content[event.index] = {
                       ...snapshotContent,
                       citations: [...snapshotContent.citations ?? [], event.delta.citation]
                     };
@@ -20055,13 +20055,13 @@ var init_BetaMessageStream = __esm({
                 case "input_json_delta": {
                   if (snapshotContent && tracksToolInput(snapshotContent)) {
                     const jsonBuf = (snapshotContent[JSON_BUF_PROPERTY] || "") + event.delta.partial_json;
-                    snapshot.content[event.index] = withLazyInput(snapshotContent, jsonBuf);
+                    snapshot2.content[event.index] = withLazyInput(snapshotContent, jsonBuf);
                   }
                   break;
                 }
                 case "thinking_delta": {
                   if (snapshotContent?.type === "thinking") {
-                    snapshot.content[event.index] = {
+                    snapshot2.content[event.index] = {
                       ...snapshotContent,
                       thinking: snapshotContent.thinking + event.delta.thinking
                     };
@@ -20070,7 +20070,7 @@ var init_BetaMessageStream = __esm({
                 }
                 case "signature_delta": {
                   if (snapshotContent?.type === "thinking") {
-                    snapshot.content[event.index] = {
+                    snapshot2.content[event.index] = {
                       ...snapshotContent,
                       signature: event.delta.signature
                     };
@@ -20083,17 +20083,17 @@ var init_BetaMessageStream = __esm({
                     if ("encrypted_content" in event.delta) {
                       block.encrypted_content = event.delta.encrypted_content;
                     }
-                    snapshot.content[event.index] = block;
+                    snapshot2.content[event.index] = block;
                   }
                   break;
                 }
                 default:
                   checkNever(event.delta);
               }
-              return snapshot;
+              return snapshot2;
             }
             case "content_block_stop": {
-              const snapshotContent = snapshot.content.at(event.index);
+              const snapshotContent = snapshot2.content.at(event.index);
               if (snapshotContent && tracksToolInput(snapshotContent) && JSON_BUF_PROPERTY in snapshotContent) {
                 let input2;
                 try {
@@ -20109,10 +20109,10 @@ var init_BetaMessageStream = __esm({
                   writable: true
                 });
               }
-              return snapshot;
+              return snapshot2;
             }
             default:
-              return snapshot;
+              return snapshot2;
           }
         }, _BetaMessageStream_toolInputParseError = function _BetaMessageStream_toolInputParseError2(block, err) {
           const jsonBuf = block[JSON_BUF_PROPERTY];
@@ -28807,15 +28807,15 @@ var init_BetaToolRunnerStream = __esm({
         get toolCalls() {
           return __classPrivateFieldGet(this, _BetaToolRunnerStream_toolCalls, "f");
         }
-        _deliverEvent(event, snapshot) {
+        _deliverEvent(event, snapshot2) {
           var _a4;
           __classPrivateFieldSet(this, _BetaToolRunnerStream_emitted, (_a4 = __classPrivateFieldGet(this, _BetaToolRunnerStream_emitted, "f"), _a4++, _a4), "f");
-          const block = event.type === "content_block_stop" ? snapshot?.content[event.index] : void 0;
+          const block = event.type === "content_block_stop" ? snapshot2?.content[event.index] : void 0;
           const closed = block?.type === "tool_use" ? block : void 0;
           if (closed) {
             __classPrivateFieldGet(this, _BetaToolRunnerStream_toolCalls, "f").push(closed);
           }
-          super._deliverEvent(event, snapshot);
+          super._deliverEvent(event, snapshot2);
           __classPrivateFieldGet(this, _BetaToolRunnerStream_instances, "m", _BetaToolRunnerStream_track).call(this, event, closed);
           __classPrivateFieldGet(this, _BetaToolRunnerStream_instances, "m", _BetaToolRunnerStream_release).call(this);
         }
@@ -28925,12 +28925,12 @@ function rejectThreadField(fields) {
 function definedEntries(object2) {
   return Object.fromEntries(Object.entries(object2).filter(([, value]) => value !== void 0));
 }
-function partialReply(snapshot, completedBlocks) {
-  const content = snapshot.content.slice(0, completedBlocks);
-  const unfinished = snapshot.content[completedBlocks];
+function partialReply(snapshot2, completedBlocks) {
+  const content = snapshot2.content.slice(0, completedBlocks);
+  const unfinished = snapshot2.content[completedBlocks];
   if (unfinished?.type === "text" && unfinished.text)
     content.push(unfinished);
-  return content.length ? { ...snapshot, content } : null;
+  return content.length ? { ...snapshot2, content } : null;
 }
 function withoutCacheControl(value) {
   if (!isObj(value))
@@ -29178,10 +29178,10 @@ var init_ThreadState = __esm({
          * thread because the server holds either the whole reply or none of it. `completedBlocks` is how many content
          * blocks received `content_block_stop`.
          */
-        recordPartialReply(snapshot, completedBlocks) {
-          if (__classPrivateFieldGet(this, _ThreadState_instances, "m", _ThreadState_dropsRefusedTurn).call(this, snapshot))
+        recordPartialReply(snapshot2, completedBlocks) {
+          if (__classPrivateFieldGet(this, _ThreadState_instances, "m", _ThreadState_dropsRefusedTurn).call(this, snapshot2))
             return;
-          __classPrivateFieldGet(this, _ThreadState_instances, "m", _ThreadState_storeTurn).call(this, partialReply(snapshot, completedBlocks), { partial: true });
+          __classPrivateFieldGet(this, _ThreadState_instances, "m", _ThreadState_storeTurn).call(this, partialReply(snapshot2, completedBlocks), { partial: true });
           if (this.previousMessageId !== null) {
             __classPrivateFieldGet(this, _ThreadState_instances, "m", _ThreadState_startNewThread).call(this, "stream_ended_before_message_stop");
           }
@@ -30317,15 +30317,15 @@ var init_BetaMessageThread = __esm({
         let received;
         let completedBlocks = 0;
         let stopped = false;
-        stream2.on("streamEvent", (event, snapshot) => {
+        stream2.on("streamEvent", (event, snapshot2) => {
           if (stopped)
             return;
-          received = snapshot;
+          received = snapshot2;
           if (event.type === "content_block_stop")
             completedBlocks += 1;
           if (event.type === "message_stop") {
             stopped = true;
-            this._state.recordReply(turn, snapshot);
+            this._state.recordReply(turn, snapshot2);
             this._state.endTurn(turn);
           }
         });
@@ -31249,58 +31249,58 @@ var init_MessageStream = __esm({
           if (this.ended) {
             throw new AnthropicError(`stream has ended, this shouldn't happen`);
           }
-          const snapshot = __classPrivateFieldGet(this, _MessageStream_currentMessageSnapshot, "f");
-          if (!snapshot) {
+          const snapshot2 = __classPrivateFieldGet(this, _MessageStream_currentMessageSnapshot, "f");
+          if (!snapshot2) {
             throw new AnthropicError(`request ended without sending any chunks`);
           }
           __classPrivateFieldSet(this, _MessageStream_currentMessageSnapshot, void 0, "f");
-          return maybeParseMessage(snapshot, __classPrivateFieldGet(this, _MessageStream_params, "f"), { logger: __classPrivateFieldGet(this, _MessageStream_logger, "f") });
+          return maybeParseMessage(snapshot2, __classPrivateFieldGet(this, _MessageStream_params, "f"), { logger: __classPrivateFieldGet(this, _MessageStream_logger, "f") });
         }, _MessageStream_accumulateMessage = function _MessageStream_accumulateMessage2(event) {
-          let snapshot = __classPrivateFieldGet(this, _MessageStream_currentMessageSnapshot, "f");
+          let snapshot2 = __classPrivateFieldGet(this, _MessageStream_currentMessageSnapshot, "f");
           if (event.type === "message_start") {
-            if (snapshot) {
+            if (snapshot2) {
               throw new AnthropicError(`Unexpected event order, got ${event.type} before receiving "message_stop"`);
             }
             return event.message;
           }
-          if (!snapshot)
+          if (!snapshot2)
             return;
           switch (event.type) {
             case "message_stop":
-              return snapshot;
+              return snapshot2;
             case "message_delta":
-              snapshot.stop_reason = event.delta.stop_reason;
-              snapshot.stop_sequence = event.delta.stop_sequence;
-              snapshot.stop_details = event.delta.stop_details;
-              snapshot.usage.output_tokens = event.usage.output_tokens;
+              snapshot2.stop_reason = event.delta.stop_reason;
+              snapshot2.stop_sequence = event.delta.stop_sequence;
+              snapshot2.stop_details = event.delta.stop_details;
+              snapshot2.usage.output_tokens = event.usage.output_tokens;
               if (event.delta.container != null) {
-                snapshot.container = event.delta.container;
+                snapshot2.container = event.delta.container;
               }
               if (event.usage.input_tokens != null) {
-                snapshot.usage.input_tokens = event.usage.input_tokens;
+                snapshot2.usage.input_tokens = event.usage.input_tokens;
               }
               if (event.usage.cache_creation_input_tokens != null) {
-                snapshot.usage.cache_creation_input_tokens = event.usage.cache_creation_input_tokens;
+                snapshot2.usage.cache_creation_input_tokens = event.usage.cache_creation_input_tokens;
               }
               if (event.usage.cache_read_input_tokens != null) {
-                snapshot.usage.cache_read_input_tokens = event.usage.cache_read_input_tokens;
+                snapshot2.usage.cache_read_input_tokens = event.usage.cache_read_input_tokens;
               }
               if (event.usage.server_tool_use != null) {
-                snapshot.usage.server_tool_use = event.usage.server_tool_use;
+                snapshot2.usage.server_tool_use = event.usage.server_tool_use;
               }
               if (event.usage.output_tokens_details != null) {
-                snapshot.usage.output_tokens_details = event.usage.output_tokens_details;
+                snapshot2.usage.output_tokens_details = event.usage.output_tokens_details;
               }
-              return snapshot;
+              return snapshot2;
             case "content_block_start":
-              snapshot.content.push({ ...event.content_block });
-              return snapshot;
+              snapshot2.content.push({ ...event.content_block });
+              return snapshot2;
             case "content_block_delta": {
-              const snapshotContent = snapshot.content.at(event.index);
+              const snapshotContent = snapshot2.content.at(event.index);
               switch (event.delta.type) {
                 case "text_delta": {
                   if (snapshotContent?.type === "text") {
-                    snapshot.content[event.index] = {
+                    snapshot2.content[event.index] = {
                       ...snapshotContent,
                       text: (snapshotContent.text || "") + event.delta.text
                     };
@@ -31309,7 +31309,7 @@ var init_MessageStream = __esm({
                 }
                 case "citations_delta": {
                   if (snapshotContent?.type === "text") {
-                    snapshot.content[event.index] = {
+                    snapshot2.content[event.index] = {
                       ...snapshotContent,
                       citations: [...snapshotContent.citations ?? [], event.delta.citation]
                     };
@@ -31319,13 +31319,13 @@ var init_MessageStream = __esm({
                 case "input_json_delta": {
                   if (snapshotContent && tracksToolInput2(snapshotContent)) {
                     const jsonBuf = (snapshotContent[JSON_BUF_PROPERTY] || "") + event.delta.partial_json;
-                    snapshot.content[event.index] = withLazyInput(snapshotContent, jsonBuf);
+                    snapshot2.content[event.index] = withLazyInput(snapshotContent, jsonBuf);
                   }
                   break;
                 }
                 case "thinking_delta": {
                   if (snapshotContent?.type === "thinking") {
-                    snapshot.content[event.index] = {
+                    snapshot2.content[event.index] = {
                       ...snapshotContent,
                       thinking: snapshotContent.thinking + event.delta.thinking
                     };
@@ -31334,7 +31334,7 @@ var init_MessageStream = __esm({
                 }
                 case "signature_delta": {
                   if (snapshotContent?.type === "thinking") {
-                    snapshot.content[event.index] = {
+                    snapshot2.content[event.index] = {
                       ...snapshotContent,
                       signature: event.delta.signature
                     };
@@ -31344,10 +31344,10 @@ var init_MessageStream = __esm({
                 default:
                   checkNever(event.delta);
               }
-              return snapshot;
+              return snapshot2;
             }
             case "content_block_stop": {
-              const snapshotContent = snapshot.content.at(event.index);
+              const snapshotContent = snapshot2.content.at(event.index);
               if (snapshotContent && tracksToolInput2(snapshotContent) && JSON_BUF_PROPERTY in snapshotContent) {
                 Object.defineProperty(snapshotContent, "input", {
                   value: snapshotContent.input,
@@ -31356,10 +31356,10 @@ var init_MessageStream = __esm({
                   writable: true
                 });
               }
-              return snapshot;
+              return snapshot2;
             }
             default:
-              return snapshot;
+              return snapshot2;
           }
         }, Symbol.asyncIterator)]() {
           const pushQueue = [];
@@ -69722,6 +69722,10 @@ var executionId = (repo, issue2, attempt) => hash2({ repo, issue: issue2.number,
 var digest = external_exports.string().regex(/^[a-f0-9]{64}$/);
 var sha = external_exports.string().regex(/^[a-f0-9]{40}$/);
 var reserved = /^(?:PATH|HOME|USER|SHELL|CI|NODE_OPTIONS|NODE_PATH|DATABASE_URL|COMPOSE_PROJECT_NAME|COMPOSE_FILE|DOCKER_HOST|DOCKER_CONTEXT|LD_.+|GITHUB_.+|GH_.+|ACTIONS_.+|RUNNER_.+|OPENAI_.+|ANTHROPIC_.+|AI_API_KEY|FACTORY_.+|AWS_.+|NPM_CONFIG_.+)$/i;
+var generatedEntry = external_exports.strictObject({
+  command: external_exports.string().min(1).max(200).regex(/^[\w.@:=+/-]+(?: [\w.@:=+/-]+)*$/, "Generated command must be a fixed string without shell metacharacters"),
+  paths: external_exports.string().max(200).regex(/^[\w.@+-][\w.@+/-]*$/, "Generated paths must be relative").refine((p) => !p.split("/").some((part) => part === ".." || part === "." || part === "" || part === ".git"), "Generated paths must stay inside the repository").array().min(1).max(10)
+});
 var validationPlanSchema = external_exports.strictObject({
   version: external_exports.literal(1).default(1),
   profile: external_exports.enum(["npm", "npm-docker", "maven"]).default("npm"),
@@ -69729,13 +69733,15 @@ var validationPlanSchema = external_exports.strictObject({
   javaVersion: external_exports.enum(["17", "21", "25"]).optional(),
   timeoutMinutes: external_exports.number().int().min(1).max(30).default(20),
   composeProjectPrefix: external_exports.string().regex(/^[a-z][a-z0-9-]{0,30}-(?:ci|test|validation)$/).default("sf-validation"),
+  /** Generated files the repository checks in: each command is rerun and must leave its paths as they are. No default. */
+  generated: generatedEntry.array().max(3).optional(),
   environment: external_exports.record(
     external_exports.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine((k) => !reserved.test(k), "Reserved validation environment key"),
     external_exports.string().max(1e3).refine((v) => !v.includes("${{"), "Only literal test values are allowed")
   ).default({})
 }).refine((p) => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6e3, "Validation plan limit").refine((p) => p.profile === "maven" || p.javaVersion === void 0, "javaVersion applies to the maven profile only");
 var validationCheckSchema = external_exports.strictObject({
-  name: external_exports.enum(["install", "test", "build", "browser-install", "browser", "compose-config", "docker-start", "docker-smoke", "docker-stop", "source-integrity"]),
+  name: external_exports.enum(["install", "test", "build", "browser-install", "browser", "compose-config", "docker-start", "docker-smoke", "docker-stop", "generated", "source-integrity"]),
   status: external_exports.enum(["passed", "failed", "skipped"]),
   exitCode: external_exports.number().int().min(-1).max(255).nullable()
 });
@@ -69751,7 +69757,7 @@ var validationReportSchema = external_exports.strictObject({
   sourceRunId: external_exports.number().int().positive().safe(),
   runAttempt: external_exports.literal(1),
   status: external_exports.enum(["passed", "failed", "unsupported", "invalid"]),
-  checks: validationCheckSchema.array().max(10),
+  checks: validationCheckSchema.array().max(11),
   reason: external_exports.enum(["CHECKS_COMPLETED", "CHECK_FAILED", "NO_PUBLISHABLE_CHANGES", "UNSUPPORTED_PROJECT", "VALIDATION_SETUP_FAILED", "SOURCE_CHANGED"]),
   modelSecretPresent: external_exports.literal(false),
   workspaceUnchanged: external_exports.boolean()
@@ -70243,15 +70249,15 @@ var admissionBackoffMinutes = (refusals) => Math.min(15 * 2 ** Math.max(0, refus
 var clearableRefusals = ["EXECUTOR_WRAPPER_RELEASE_MISMATCH", "UNKNOWN_WORKER_DEPLOYMENT_VERSION"];
 var followupOrigin = (body) => body.includes("<!-- harness:followup:") ? Number(body.match(/^Origin: #(\d+)$/m)?.[1] ?? NaN) || null : null;
 var rescueMarker = "urn:sf-rescue";
-function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
+function reconstruct(snapshot2, config2, now = /* @__PURE__ */ new Date()) {
   const dayAgo = now.getTime() - 24 * 3600 * 1e3;
-  const rescuesToday = [...snapshot.comments.values()].reduce((n, comments) => n + comments.filter((c) => {
+  const rescuesToday = [...snapshot2.comments.values()].reduce((n, comments) => n + comments.filter((c) => {
     const event = c.body.includes(rescueMarker) ? decodeEvent(c, config2.manager.trustedActors) : null;
     return event?.data.type === "intent" && event.data.input.contextReferences.includes(rescueMarker) && new Date(event.at).getTime() >= dayAgo;
   }).length, 0);
-  return snapshot.issues.map((issue2) => {
+  return snapshot2.issues.map((issue2) => {
     const version2 = taskVersion(issue2);
-    const events = (snapshot.comments.get(issue2.number) ?? []).flatMap((c) => {
+    const events = (snapshot2.comments.get(issue2.number) ?? []).flatMap((c) => {
       const event = decodeEvent(c, config2.manager.trustedActors);
       return event ? [event] : [];
     });
@@ -70260,9 +70266,9 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
       if (event.data.type !== "intent" || executions.some((e) => e.input.executionId === (event.data.type === "intent" ? event.data.input.executionId : ""))) continue;
       const { input: input2, attempt, actionId: actionId2 } = event.data;
       if (input2.issueNumber !== issue2.number) continue;
-      const matching = snapshot.runs.filter((r) => [`Factory worker ${input2.executionId}`, `Harness worker ${input2.executionId}`].includes(r.title));
+      const matching = snapshot2.runs.filter((r) => [`Factory worker ${input2.executionId}`, `Harness worker ${input2.executionId}`].includes(r.title));
       const run = matching.find((r) => r.status !== "completed") ?? matching[0];
-      const runtime = snapshot.runtimeExecutions?.find((r) => r.executionId === input2.executionId);
+      const runtime = snapshot2.runtimeExecutions?.find((r) => r.executionId === input2.executionId);
       const found = events.find((e) => e.data.type === "result" && e.data.result.executionId === input2.executionId && e.data.result.issueNumber === issue2.number);
       let result = runtime?.result ?? (found?.data.type === "result" ? found.data.result : void 0);
       if (!result && runtime && !["running"].includes(runtime.status)) result = {
@@ -70321,24 +70327,24 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     if (lastRefused) {
       const at = (events.find((e) => e.data.type === "result" && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
       const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 6e4).toISOString();
-      const cleared = !!snapshot.clearedRefusals?.includes(lastRefused.rejected);
+      const cleared = !!snapshot2.clearedRefusals?.includes(lastRefused.rejected);
       const changed = cleared || !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at || !!issue2.managedAt && issue2.managedAt > at;
       refusal = { code: lastRefused.rejected, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
     }
     const criteria = acceptanceCriteria(issue2.body);
     const deps = dependencies(issue2.body);
-    const unresolved = deps.filter((n) => snapshot.dependencyStates.get(n) !== true);
+    const unresolved = deps.filter((n) => snapshot2.dependencyStates.get(n) !== true);
     const automaticBlock = currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
     const explicitBlock = issue2.labels.includes("harness:blocked") && !automaticBlock;
     const semanticBlock = automaticBlock?.cause === "planner" && automaticBlock.taskVersion === version2;
     const protectedPaths = issue2.state === "open" ? protectedPathBlockReason(issue2.title, issue2.body) : void 0;
     const blockReason = unresolved.length ? `Unresolved dependencies: ${unresolved.map((n) => `#${n}`).join(", ")}` : !criteria.length ? "Missing Acceptance criteria section" : protectedPaths ? protectedPaths : explicitBlock ? "Issue explicitly marked blocked; clear the blocked label to resume" : semanticBlock ? "Planner marked task blocked; revise the task or clear the blocked label" : void 0;
     const automaticBlockCause = executions.some((e) => e.ambiguous) ? "dispatch" : unresolved.length ? "dependencies" : !criteria.length || protectedPaths ? "specification" : semanticBlock ? "planner" : latest?.result?.status === "blocked" ? "worker" : void 0;
-    const linked = snapshot.prs.filter((p) => p.closingIssues.includes(issue2.number) || p.referencedIssues.includes(issue2.number));
+    const linked = snapshot2.prs.filter((p) => p.closingIssues.includes(issue2.number) || p.referencedIssues.includes(issue2.number));
     const hasOpenPR = linked.some((p) => p.state === "open");
     const hasClosingMerge = linked.some((p) => p.merged && p.closingIssues.includes(issue2.number) && (!issue2.reopenedAt || !!p.mergedAt && p.mergedAt > issue2.reopenedAt));
     const ownPRsOnly = linked.filter((p) => p.state === "open").every((p) => executions.some((e) => p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`));
-    const carried = !latest && hasOpenPR && (!snapshot.readyIsGrant || issue2.labels.includes("harness:ready")) ? executions.filter((e) => e.input.taskVersion !== version2 && !e.rejected && !!e.result && linked.some((p) => p.state === "open" && p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`)).sort((a, b) => b.at.localeCompare(a.at))[0] : void 0;
+    const carried = !latest && hasOpenPR && (!snapshot2.readyIsGrant || issue2.labels.includes("harness:ready")) ? executions.filter((e) => e.input.taskVersion !== version2 && !e.rejected && !!e.result && linked.some((p) => p.state === "open" && p.headRefName === `sf/issue-${issue2.number}/${e.input.executionId}`)).sort((a, b) => b.at.localeCompare(a.at))[0] : void 0;
     const source = latest ?? carried;
     const failedValidation = source?.runtime?.validation;
     const requestedBy = source?.result?.status === "success" && hasOpenPR ? events.flatMap((e) => e.data.type === "merge_changes_requested" && e.data.executionId === source.input.executionId ? [e.data] : []).at(-1) : void 0;
@@ -70359,14 +70365,14 @@ function reconstruct(snapshot, config2, now = /* @__PURE__ */ new Date()) {
     else if (executions.some((e) => e.active)) desiredStatus = executions.some((e) => e.ambiguous) ? "blocked" : executions.some((e) => e.runtime?.phase === "awaiting-approval") ? "awaiting-approval" : "running";
     else if (hasClosingMerge) desiredStatus = "done";
     else if (blockReason) desiredStatus = "blocked";
-    else if (reworkable) desiredStatus = reworkFrom && snapshot.readyIsGrant ? "ready" : "failed";
-    else if (snapshot.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed < attemptLimit) desiredStatus = "ready";
+    else if (reworkable) desiredStatus = reworkFrom && snapshot2.readyIsGrant ? "ready" : "failed";
+    else if (snapshot2.readyIsGrant && issue2.labels.includes("harness:ready") && !hasOpenPR && latest?.result && ["failed", "cancelled"].includes(latest.result.status) && attemptsUsed < attemptLimit) desiredStatus = "ready";
     else if (latest?.result) desiredStatus = { success: "awaiting-pr", failed: "failed", cancelled: "failed", blocked: "blocked", needs_approval: "awaiting-approval" }[latest.result.status];
     else if (hasOpenPR) desiredStatus = "awaiting-pr";
-    else if (snapshot.readyIsGrant) {
+    else if (snapshot2.readyIsGrant) {
       if (["backlog", "ready", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = issue2.labels.includes("harness:ready") ? "ready" : "backlog";
     } else if (["backlog", "blocked", "awaiting-pr"].includes(desiredStatus)) desiredStatus = "ready";
-    const openFollowups = snapshot.issues.filter((i) => i.state === "open" && followupOrigin(i.body) === issue2.number).map((i) => i.number);
+    const openFollowups = snapshot2.issues.filter((i) => i.state === "open" && followupOrigin(i.body) === issue2.number).map((i) => i.number);
     return {
       issue: issue2,
       version: version2,
@@ -70910,12 +70916,12 @@ ${notification.detail ? `${notification.detail}
     }
   }
 };
-async function deliverNotifications(github, config2, snapshot, sink2, correlationId, now, grantWaits = []) {
+async function deliverNotifications(github, config2, snapshot2, sink2, correlationId, now, grantWaits = []) {
   const settings = config2.notifications.slack;
   if (!settings.enabled || !config2.factory.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") return [];
   const errors = [];
   let attempts = 0;
-  const events = (issue2) => (snapshot.comments.get(issue2) ?? []).flatMap((c) => {
+  const events = (issue2) => (snapshot2.comments.get(issue2) ?? []).flatMap((c) => {
     const event = decodeEvent(c, config2.manager.trustedActors);
     return event ? [event] : [];
   });
@@ -70989,7 +70995,7 @@ async function deliverNotifications(github, config2, snapshot, sink2, correlatio
       errors.push(`Slack ${notification.event} #${notification.number}: Slack accepted delivery but receipt persistence failed${httpStatus(error62)} on #${journal}; automatic resend blocked`);
     }
   };
-  if (settings.events.run_started?.enabled) for (const task of snapshot.issues) for (const event of events(task.number)) {
+  if (settings.events.run_started?.enabled) for (const task of snapshot2.issues) for (const event of events(task.number)) {
     if (event.data.type !== "temporal_receipt" && event.data.type !== "receipt" || !afterStart(event.at) || now.getTime() - Date.parse(event.at) > runStartWindowMs) continue;
     await deliver(task.number, {
       event: "run_started",
@@ -71002,12 +71008,12 @@ async function deliverNotifications(github, config2, snapshot, sink2, correlatio
       detail: runStartDetail(events(task.number), event.data.executionId, event.at, now, config2.execution.maxRetries)
     });
   }
-  for (const parent of snapshot.issues) {
+  for (const parent of snapshot2.issues) {
     const trusted = events(parent.number);
     if (settings.events.issue_created.enabled) for (const event of trusted) {
       if (event.data.type !== "issue_creation_intent") continue;
       const intent = event.data;
-      const created = snapshot.issues.find((i) => i.authorType === "Bot" && afterStart(i.createdAt) && i.body.includes(`<!-- harness:followup:${intent.followupKey} -->`) && i.body.includes(`Origin: #${parent.number}
+      const created = snapshot2.issues.find((i) => i.authorType === "Bot" && afterStart(i.createdAt) && i.body.includes(`<!-- harness:followup:${intent.followupKey} -->`) && i.body.includes(`Origin: #${parent.number}
 Decision: ${intent.actionId}
 `));
       if (created) await deliver(parent.number, {
@@ -71019,7 +71025,7 @@ Decision: ${intent.actionId}
       });
     }
   }
-  if (settings.events.approval_required?.enabled) for (const pr of snapshot.prs) {
+  if (settings.events.approval_required?.enabled) for (const pr of snapshot2.prs) {
     if (pr.state !== "open" || !pr.headSha) continue;
     let comments;
     try {
@@ -71043,7 +71049,7 @@ Decision: ${intent.actionId}
       });
     }
   }
-  if (settings.events.handover_required?.enabled) for (const pr of snapshot.prs) {
+  if (settings.events.handover_required?.enabled) for (const pr of snapshot2.prs) {
     if (pr.state !== "open" || !pr.headSha) continue;
     let comments;
     try {
@@ -71079,14 +71085,14 @@ Decision: ${intent.actionId}
       detail: wait.after ? "Ein weiterer Versuch wartet nur noch auf die Freigabe: eine berechtigte Person setzt das Label harness:ready." : "Bereit zum Start, es fehlt nur die Freigabe: eine berechtigte Person setzt das Label harness:ready."
     });
   }
-  if (settings.events.pr_merged.enabled) for (const pr of snapshot.prs) {
+  if (settings.events.pr_merged.enabled) for (const pr of snapshot2.prs) {
     if (!pr.merged || pr.mergedBy?.type !== "Bot" || !afterStart(pr.mergedAt) || settings.events.pr_merged.actors.length && !settings.events.pr_merged.actors.includes(pr.mergedBy.login)) continue;
     const nativeComments = await github.comments(pr.number);
     const mergedByFactory = nativeComments.some((c) => {
       const e = decodeEvent(c, config2.manager.trustedActors);
       return e?.data.type === "merge_intent" && e.data.prNumber === pr.number && e.data.head === pr.headSha;
     });
-    const parent = snapshot.issues.find((i) => events(i.number).some((e) => e.data.type === "result" && pr.headRefName === `sf/issue-${i.number}/${e.data.result.executionId}` && e.data.result.artifacts.includes(`https://github.com/${github.repository}/pull/${pr.number}`)));
+    const parent = snapshot2.issues.find((i) => events(i.number).some((e) => e.data.type === "result" && pr.headRefName === `sf/issue-${i.number}/${e.data.result.executionId}` && e.data.result.artifacts.includes(`https://github.com/${github.repository}/pull/${pr.number}`)));
     const journal = mergedByFactory ? pr.number : parent?.number;
     if (journal !== void 0) await deliver(journal, {
       event: "pr_merged",
@@ -71279,31 +71285,31 @@ var Manager = class {
     return new Map(this.rejections.filter((r) => !r.recorded).map((r) => [r.issueNumber, r.code]));
   }
   async snapshot() {
-    const snapshot = await this.github.snapshot(this.config.execution.engine === "temporal" ? null : this.config.manager.workflow);
+    const snapshot2 = await this.github.snapshot(this.config.execution.engine === "temporal" ? null : this.config.manager.workflow);
     if (this.config.execution.engine === "temporal") {
       if (!this.options.workerRuntime) throw new Error("Temporal runtime is required; legacy dispatch is forbidden");
-      const ids = [...new Set([...snapshot.comments.values()].flatMap((comments) => comments.flatMap((comment) => {
+      const ids = [...new Set([...snapshot2.comments.values()].flatMap((comments) => comments.flatMap((comment) => {
         const event = decodeEvent(comment, this.config.manager.trustedActors);
         return event?.data.type === "intent" ? [event.data.input.executionId] : [];
       })))];
-      snapshot.runtimeExecutions = await this.options.workerRuntime.observations(ids);
-      snapshot.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant === "ready-label";
-      const codes = new Set([...snapshot.comments.values()].flatMap((comments) => comments.flatMap((comment) => {
+      snapshot2.runtimeExecutions = await this.options.workerRuntime.observations(ids);
+      snapshot2.readyIsGrant = !!this.options.workerRuntime.readyIsGrant && this.config.autonomy.startGrant === "ready-label";
+      const codes = new Set([...snapshot2.comments.values()].flatMap((comments) => comments.flatMap((comment) => {
         const event = decodeEvent(comment, this.config.manager.trustedActors);
         return event?.data.type === "admission_rejected" && clearableRefusals.includes(event.data.code) ? [event.data.code] : [];
       })));
       const runtime = this.options.workerRuntime;
       if (codes.size && runtime.refusalCleared) {
-        snapshot.clearedRefusals = [];
+        snapshot2.clearedRefusals = [];
         for (const code of codes) {
           try {
-            if (await runtime.refusalCleared(code)) snapshot.clearedRefusals.push(code);
+            if (await runtime.refusalCleared(code)) snapshot2.clearedRefusals.push(code);
           } catch {
           }
         }
       }
     }
-    return snapshot;
+    return snapshot2;
   }
   async hasApproval(issue2, id) {
     let approved = false;
@@ -71396,21 +71402,21 @@ var Manager = class {
   /** Keeps the one readable status comment of each managed task current. Never fails a reconciliation. */
   async publishStatus(report) {
     if (!this.github.writeComment || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return;
-    let snapshot;
+    let snapshot2;
     const unchanged = this.observed && !report.decisions.some((d) => d.executed) && !this.rejections.length;
     try {
-      snapshot = unchanged ? this.observed : await this.snapshot();
+      snapshot2 = unchanged ? this.observed : await this.snapshot();
     } catch {
       return;
     }
-    this.settled = snapshot;
+    this.settled = snapshot2;
     try {
-      for (const task of reconstruct(snapshot, this.config, this.now())) {
-        const existing = (snapshot.comments.get(task.issue.number) ?? []).filter((c) => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
+      for (const task of reconstruct(snapshot2, this.config, this.now())) {
+        const existing = (snapshot2.comments.get(task.issue.number) ?? []).filter((c) => c.body.startsWith(statusMarker) && this.config.manager.trustedActors.includes(c.author));
         if (task.issue.state === "closed" && !existing.length) continue;
         const { body, awaitsGrant } = statusView(task, this.config, {
           repository: this.github.repository,
-          readyIsGrant: !!snapshot.readyIsGrant,
+          readyIsGrant: !!snapshot2.readyIsGrant,
           rejection: this.rejections.find((r) => r.issueNumber === task.issue.number)?.code,
           queued: report.decisions.some((d) => d.action.issueNumber === task.issue.number && d.decision.reason === "Maximum parallel workers reached")
         });
@@ -71434,7 +71440,7 @@ var Manager = class {
     const id = actionId(action, policyVersion(this.config));
     await this.event(action.issueNumber, `decision:${id}:${outcome}${outcome === "refused" ? `:${reason}` : ""}`, { type: "decision", action: JSON.stringify(action), outcome, reason });
   }
-  async execute(action, task, snapshot) {
+  async execute(action, task, snapshot2) {
     const live2 = await this.github.getIssue(task.issue.number);
     if (taskVersion(live2) !== action.taskVersion || !live2.labels.includes(managedLabel)) throw new Error("Task changed during execution; deferred to next run");
     if (live2.labels.includes("harness:blocked") && (!task.issue.labels.includes("harness:blocked") || lastBlockLabelEventId(live2) !== lastBlockLabelEventId(task.issue))) throw new Error("Block changed during execution; deferred to next run");
@@ -71447,7 +71453,7 @@ var Manager = class {
             journaled = true;
           }
         }
-        if (action.status === "ready" && snapshot.readyIsGrant && !live2.labels.includes("harness:ready")) return journaled;
+        if (action.status === "ready" && snapshot2.readyIsGrant && !live2.labels.includes("harness:ready")) return journaled;
         const labels2 = withStatus(live2, action.status);
         if ([...live2.labels].sort().join("\0") === [...labels2].sort().join("\0")) return journaled;
         if (action.status === "blocked" && !live2.labels.includes("harness:blocked")) {
@@ -71467,7 +71473,7 @@ var Manager = class {
         await this.github.updateIssue(live2.number, { state: "closed", labels: withStatus(live2, "done") });
         return true;
       case "approve_task": {
-        if (snapshot.readyIsGrant) return false;
+        if (snapshot2.readyIsGrant) return false;
         const labels2 = withStatus(live2, "ready");
         if ([...live2.labels].sort().join("\0") === [...labels2].sort().join("\0")) return false;
         await this.github.updateIssue(live2.number, { labels: labels2 });
@@ -71483,7 +71489,7 @@ var Manager = class {
         const f = action.followup;
         const key = hash2({ repository: this.github.repository.toLowerCase(), key: f.key });
         const marker2 = `<!-- harness:followup:${key} -->`;
-        if (snapshot.issues.some((i) => i.body.includes(marker2))) return false;
+        if (snapshot2.issues.some((i) => i.body.includes(marker2))) return false;
         await this.event(live2.number, `issue-creation:${key}:${actionId(action, policyVersion(this.config))}`, {
           type: "issue_creation_intent",
           followupKey: key,
@@ -71503,7 +71509,7 @@ Origin: #${task.issue.number}
 Decision: ${actionId(action, policyVersion(this.config))}
 
 ${marker2}`;
-        const inherits = !!snapshot.readyIsGrant && f.key.startsWith(riskSplitKeyPrefix) && f.context.includes(riskSplitPartMarker);
+        const inherits = !!snapshot2.readyIsGrant && f.key.startsWith(riskSplitKeyPrefix) && f.context.includes(riskSplitPartMarker);
         await this.github.createIssue(f.title, body, [managedLabel, inherits ? "harness:ready" : "harness:backlog"]);
         return true;
       }
@@ -71558,7 +71564,7 @@ ${marker2}`;
           return true;
         }
         const existing = (await this.github.runs(this.config.manager.workflow)).find((r) => r.title === `Factory worker ${id}`);
-        if (!existing) await this.github.dispatch(this.config.manager.workflow, snapshot.defaultBranch, id, live2.number);
+        if (!existing) await this.github.dispatch(this.config.manager.workflow, snapshot2.defaultBranch, id, live2.number);
         const run = existing ?? (await this.github.runs(this.config.manager.workflow)).find((r) => r.title === `Factory worker ${id}`);
         if (run) await this.event(live2.number, `receipt:${id}`, { type: "receipt", executionId: id, runId: run.id });
         const fresh = await this.github.getIssue(live2.number);
@@ -71600,17 +71606,17 @@ ${marker2}`;
       report.outcome = "disabled";
       return report;
     }
-    let snapshot = await this.snapshot();
-    let tasks = reconstruct(snapshot, this.config, this.now());
+    let snapshot2 = await this.snapshot();
+    let tasks = reconstruct(snapshot2, this.config, this.now());
     if (await this.recover(tasks, report)) {
-      snapshot = await this.snapshot();
-      tasks = reconstruct(snapshot, this.config, this.now());
+      snapshot2 = await this.snapshot();
+      tasks = reconstruct(snapshot2, this.config, this.now());
     }
     if (await this.withdrawEdited(tasks, report)) {
-      snapshot = await this.snapshot();
-      tasks = reconstruct(snapshot, this.config, this.now());
+      snapshot2 = await this.snapshot();
+      tasks = reconstruct(snapshot2, this.config, this.now());
     }
-    this.observed = snapshot;
+    this.observed = snapshot2;
     report.tasks = tasks.length;
     for (const t of tasks) {
       if (t.blockReason) {
@@ -71653,8 +71659,8 @@ ${marker2}`;
         break;
       }
       try {
-        snapshot = await this.snapshot();
-        tasks = reconstruct(snapshot, this.config, this.now());
+        snapshot2 = await this.snapshot();
+        tasks = reconstruct(snapshot2, this.config, this.now());
         const task = tasks.find((t) => t.issue.number === action.issueNumber);
         if (!task) {
           report.errors.push(`Proposal references unmanaged issue #${action.issueNumber}`);
@@ -71666,7 +71672,7 @@ ${marker2}`;
           task,
           budget,
           source: entry.source,
-          readyIsGrant: !!snapshot.readyIsGrant,
+          readyIsGrant: !!snapshot2.readyIsGrant,
           approved: await this.hasApproval(action.issueNumber, id)
         });
         const record2 = { action, decision, executed: false };
@@ -71675,7 +71681,7 @@ ${marker2}`;
         if (decision.outcome === "approval") report.nextSteps.push(`Approve #${action.issueNumber} by commenting: /harness approve ${id}`);
         if (decision.outcome !== "allow" || this.config.execution.dryRun) continue;
         const rejectionsBefore = this.rejections.length;
-        record2.executed = await this.execute(action, task, snapshot);
+        record2.executed = await this.execute(action, task, snapshot2);
         const refused = this.rejections.slice(rejectionsBefore).find((r) => !r.recorded && r.issueNumber === action.issueNumber);
         if (refused && /^[A-Z][A-Z0-9_]{0,79}$/.test(refused.code)) await this.audit(action, "refused", refused.code);
         if (record2.executed) {
@@ -72856,11 +72862,11 @@ Gepr\xFCfter Head: \`${f.head}\`; Basis: \`${f.base}\`.`
    * The review asked for changes to a pull request the Factory published for a task: journal that on the task, once per
    * review. It is the source a rework answers (with execution.rework), so the pull request does not wait for nobody.
    */
-  async changesRequested(f, task, snapshot, reviewKey, review) {
+  async changesRequested(f, task, snapshot2, reviewKey, review) {
     const executionId2 = f.headBranch.match(/^sf\/issue-\d+\/([a-f0-9]{32})$/)?.[1];
     if (!executionId2) return;
     const key = `merge-changes-requested:${reviewKey}`;
-    if ((snapshot.comments.get(task.number) ?? []).some((c) => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) return;
+    if ((snapshot2.comments.get(task.number) ?? []).some((c) => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) return;
     const journal = encodeEvent({
       version: 1,
       key,
@@ -72892,9 +72898,9 @@ ${safe(`Das unabh\xE4ngige KI-Review von #${f.number} verlangt \xC4nderungen. ${
     }
   }
   /** Tells the task, once per approval request, that its pull request waits for a person, why, and how to approve. */
-  async approvalOnTask(task, snapshot, data) {
+  async approvalOnTask(task, snapshot2, data) {
     const key = `merge-approval-required:${data.approvalId}`;
-    if ((snapshot.comments.get(task.number) ?? []).some((c) => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) return;
+    if ((snapshot2.comments.get(task.number) ?? []).some((c) => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) return;
     const journal = encodeEvent({ version: 1, key, at: (/* @__PURE__ */ new Date()).toISOString(), correlationId: this.correlationId, data });
     const summary2 = Buffer.from(`
 
@@ -72929,14 +72935,14 @@ ${safe(`PR #${data.prNumber} ist gepr\xFCft, wartet aber auf eine menschliche Fr
    * execution.rework allows one (journaled on the task once per head, like review findings); it resolves the conflict on
    * the current base with the first-attempt agents. Everything else is handed over to a person (sf:needs-human).
    */
-  async conflict(f, snapshot, ownership, adopted) {
+  async conflict(f, snapshot2, ownership, adopted) {
     const conflictKey = hash2({ protocol: "sf-merge-conflict-v1", repository: this.api.repository.toLowerCase(), head: f.head });
     const executionId2 = f.headBranch.match(/^sf\/issue-\d+\/([a-f0-9]{32})$/)?.[1];
-    const task = ownership && !adopted && executionId2 ? reconstruct(snapshot, this.config).find((t) => t.issue.number === ownership.task.number) : void 0;
+    const task = ownership && !adopted && executionId2 ? reconstruct(snapshot2, this.config).find((t) => t.issue.number === ownership.task.number) : void 0;
     const limit3 = !!task && task.attemptsUsed > this.config.execution.maxRetries;
     if (task && executionId2 && this.config.execution.rework && !limit3 && task.latest?.input.executionId === executionId2) {
       const key = `merge-changes-requested:${conflictKey}`;
-      if (!(snapshot.comments.get(task.issue.number) ?? []).some((c) => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) {
+      if (!(snapshot2.comments.get(task.issue.number) ?? []).some((c) => decodeEvent(c, this.config.manager.trustedActors)?.key === key)) {
         const journal = encodeEvent({
           version: 1,
           key,
@@ -72960,7 +72966,7 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
     await this.explain(f, `Der Branch hat Merge-Konflikte mit der Basis. ${why} Bitte die Konflikte selbst aufl\xF6sen; danach folgen Pflichtpr\xFCfungen, Validierung und ein neues KI-Review.`);
   }
   /** Merges the base into the branch (once per head and base), then dispatches the validation of the new head. */
-  async updateBranch(f, snapshot, ownership, adopted, done) {
+  async updateBranch(f, snapshot2, ownership, adopted, done) {
     const key = `branch-update:${hash2({ head: f.head, base: f.base })}`;
     if (this.events(f).some((e) => e.key === key)) {
       await this.explain(f, "Branch-Aktualisierung wurde bereits angefordert; GitHub-Status pr\xFCfen.");
@@ -72972,7 +72978,7 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
       head = await this.api.update(f.number, f.head);
     } catch (error62) {
       if (!(error62 instanceof Error && error62.message === "MERGE_CONFLICT")) throw error62;
-      await this.conflict(f, snapshot, ownership, adopted);
+      await this.conflict(f, snapshot2, ownership, adopted);
       return false;
     }
     const updated = await this.read(f.number);
@@ -72984,10 +72990,10 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
     await this.explain(updated, done);
     return true;
   }
-  ownership(f, snapshot) {
+  ownership(f, snapshot2) {
     const url2 = `https://github.com/${this.api.repository}/pull/${f.number}`;
-    for (const task of snapshot.issues) {
-      const comments = snapshot.comments.get(task.number) ?? [];
+    for (const task of snapshot2.issues) {
+      const comments = snapshot2.comments.get(task.number) ?? [];
       for (const c of comments) {
         const e = decodeEvent(c, this.config.manager.trustedActors);
         if (e?.data.type !== "result" || f.headBranch !== `sf/issue-${task.number}/${e.data.result.executionId}` || !e.data.result.artifacts.includes(url2)) continue;
@@ -73023,11 +73029,11 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
     this.heads.set(number4, f.head);
     return f;
   }
-  owned(f, snapshot) {
-    return this.ownership(f, snapshot)?.task;
+  owned(f, snapshot2) {
+    return this.ownership(f, snapshot2)?.task;
   }
-  eligible(f, snapshot) {
-    const owned = this.config.merge.includeFactoryPRs && !!this.ownership(f, snapshot);
+  eligible(f, snapshot2) {
+    const owned = this.config.merge.includeFactoryPRs && !!this.ownership(f, snapshot2);
     return this.options.ownedOnly ? owned : f.labels.includes(this.config.merge.adoptLabel) || owned;
   }
   /**
@@ -73046,32 +73052,32 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
     for (const workflow of new Set(this.config.merge.postMergeWorkflows)) await this.dispatch(f, workflow, f.baseBranch, sha4);
   }
   /** One merge pass; its model calls are recorded for analytics under the pull request (and issue) they review. */
-  run(snapshot) {
-    return withLlmContext({}, () => this.pass(snapshot));
+  run(snapshot2) {
+    return withLlmContext({}, () => this.pass(snapshot2));
   }
-  async pass(snapshot) {
+  async pass(snapshot2) {
     const report = { reviewed: 0, updated: 0, merged: 0, errors: [] };
     if (!this.config.factory.enabled || !this.config.merge.enabled || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return report;
     if (permission(this.config, "merge_pr") === "deny") return report;
     for (const number4 of await this.api.candidates()) {
-      setLlmSubject({ repository: this.api.repository, prNumber: number4, issueNumber: snapshot.prs.find((p) => p.number === number4)?.closingIssues[0] ?? null });
+      setLlmSubject({ repository: this.api.repository, prNumber: number4, issueNumber: snapshot2.prs.find((p) => p.number === number4)?.closingIssues[0] ?? null });
       if (report.reviewed >= this.config.merge.maxReviewsPerRun || report.updated + report.merged >= this.config.merge.maxActionsPerRun) break;
       let f;
       let phase = "GitHub-Zustand lesen";
       try {
         f = await this.read(number4);
-        if (!this.eligible(f, snapshot)) continue;
+        if (!this.eligible(f, snapshot2)) continue;
         if (f.state === "closed") {
           this.note(number4, f.mergeSha ? "merged" : "stopped", f.mergeSha ? null : "PR wurde ohne Merge geschlossen.");
           phase = "\xDCbergabe-Label entfernen";
-          await this.needsHuman(f, false, this.owned(f, snapshot));
+          await this.needsHuman(f, false, this.owned(f, snapshot2));
           if (f.mergeSha && f.mergeActorType === "Bot" && this.events(f).some((e) => e.data.type === "merge_intent" && e.data.head === f.head)) {
             await this.event(f, `merge-completed:${f.head}`, { type: "merge_completed", prNumber: number4, head: f.head, mergeSha: f.mergeSha });
             await this.postMerge(f, f.mergeSha);
           }
           continue;
         }
-        const ownership = this.ownership(f, snapshot), owner = ownership?.task;
+        const ownership = this.ownership(f, snapshot2), owner = ownership?.task;
         let revalidated = null;
         if (owner && (owner.state === "closed" || owner.labels.includes("harness:blocked"))) {
           this.note(number4, "stopped", "Die zugeh\xF6rige Aufgabe wurde geschlossen oder blockiert.");
@@ -73107,7 +73113,7 @@ ${safe(`Der Branch von #${f.number} hat Merge-Konflikte mit ${f.baseBranch}. Die
         if (f.state === "open" && !f.draft && f.sameRepository && !blockedLabel(f) && f.mergeState === "DIRTY") {
           phase = "Merge-Konflikt behandeln";
           this.note(number4, "conflict");
-          await this.conflict(f, snapshot, ownership, adopted);
+          await this.conflict(f, snapshot2, ownership, adopted);
           continue;
         }
         if (f.state === "open" && !f.draft) {
@@ -73187,7 +73193,7 @@ Gepr\xFCfter Head: \`${f.head}\`.`
         if (this.config.merge.updateBranch && behind(f, this.config) && !f.unresolvedThreads.length && !["CHANGES_REQUESTED", "REVIEW_REQUIRED"].includes(f.reviewDecision ?? "")) {
           phase = "Branch-Aktualisierung";
           this.note(number4, "branch-update", `Branch lag ${f.behindBy ?? "einige"} Commit(s) hinter der Basis.`);
-          if (await this.updateBranch(f, snapshot, ownership, adopted, `Der Branch enthielt ${f.behindBy ?? "einige"} neuere Commit(s) der Basis nicht und wurde von der Factory aktualisiert. Pflichtpr\xFCfungen, Validierung und KI-Review folgen f\xFCr den neuen Stand.`)) report.updated++;
+          if (await this.updateBranch(f, snapshot2, ownership, adopted, `Der Branch enthielt ${f.behindBy ?? "einige"} neuere Commit(s) der Basis nicht und wurde von der Factory aktualisiert. Pflichtpr\xFCfungen, Validierung und KI-Review folgen f\xFCr den neuen Stand.`)) report.updated++;
           continue;
         }
         const risk = this.config.merge.risk;
@@ -73280,7 +73286,7 @@ ${riskNote ? `${riskNote}
         }
         if (owner && !adopted && (review.decision === "request_changes" || review.findings.some((x) => x.severity === "blocking"))) {
           phase = "Nacharbeit an der Aufgabe vermerken";
-          await this.changesRequested(f, owner, snapshot, reviewKey, review);
+          await this.changesRequested(f, owner, snapshot2, reviewKey, review);
         }
         const blocked2 = review.decision === "request_changes" || review.findings.some((x) => x.severity === "blocking");
         const handOver = !!owner && !adopted && (blocked2 && !this.config.execution.rework || review.decision === "defer");
@@ -73301,7 +73307,7 @@ ${riskNote ? `${riskNote}
           continue;
         }
         const live2 = await this.read(number4);
-        if (hash2(factsKey(live2)) !== hash2(factsKey(f)) || !this.eligible(live2, snapshot) || live2.state !== "open" || live2.draft || !live2.sameRepository || live2.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
+        if (hash2(factsKey(live2)) !== hash2(factsKey(f)) || !this.eligible(live2, snapshot2) || live2.state !== "open" || live2.draft || !live2.sameRepository || live2.labels.some((l) => ["sf:blocked", "harness:blocked"].includes(l))) {
           this.note(number4, "review", "Stand hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung folgt.");
           await this.explain(live2, "PR, Head, Basis oder Freigabe hat sich w\xE4hrend der KI-Pr\xFCfung ge\xE4ndert; erneute Pr\xFCfung erforderlich.");
           continue;
@@ -73349,7 +73355,7 @@ ${riskNote ? `${riskNote}
             });
             phase = "\xDCbergabe-Label setzen";
             await this.needsHuman(live2, true, liveOwner);
-            if (liveOwner && riskGate) await this.approvalOnTask(liveOwner, snapshot, {
+            if (liveOwner && riskGate) await this.approvalOnTask(liveOwner, snapshot2, {
               type: "merge_approval_required",
               prNumber: number4,
               head: f.head,
@@ -73372,7 +73378,7 @@ ${riskNote ? `${riskNote}
           }
           phase = "Branch-Aktualisierung";
           this.note(number4, "branch-update", "KI hat eine Branch-Aktualisierung veranlasst.");
-          if (await this.updateBranch(live2, snapshot, ownership, adopted, "KI hat eine Branch-Aktualisierung veranlasst. Neue Tests und eine neue KI-Entscheidung sind vor dem Merge erforderlich.")) report.updated++;
+          if (await this.updateBranch(live2, snapshot2, ownership, adopted, "KI hat eine Branch-Aktualisierung veranlasst. Neue Tests und eine neue KI-Entscheidung sind vor dem Merge erforderlich.")) report.updated++;
           continue;
         }
         const gate = mergeGate(live2, this.config);
@@ -74180,6 +74186,31 @@ async function fingerprint(root, paths) {
   }
   return hash2(entries);
 }
+async function snapshot(root, paths) {
+  const listed = (0, import_node_child_process5.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...paths], { cwd: root, encoding: "utf8", maxBuffer: 1e7 });
+  const files = /* @__PURE__ */ new Map();
+  for (const path4 of listed.split("\0").filter(Boolean)) {
+    const full = await regularPath(root, path4);
+    try {
+      const stat3 = await (0, import_promises4.lstat)(full);
+      if (stat3.isFile()) files.set(path4, { data: await (0, import_promises4.readFile)(full), mode: stat3.mode & 73 });
+    } catch (e) {
+      if (!(e && typeof e === "object" && "code" in e && e.code === "ENOENT")) throw e;
+    }
+  }
+  return files;
+}
+async function restore(root, before, after) {
+  for (const path4 of after.keys()) if (!before.has(path4)) await (0, import_promises4.unlink)(await regularPath(root, path4));
+  for (const [path4, file2] of before) {
+    const now = after.get(path4);
+    if (now && now.data.equals(file2.data) && now.mode === file2.mode) continue;
+    const full = await regularPath(root, path4);
+    await (0, import_promises4.mkdir)((0, import_node_path4.dirname)(full), { recursive: true });
+    await (0, import_promises4.writeFile)(full, file2.data);
+    await (0, import_promises4.chmod)(full, file2.mode ? 493 : 420);
+  }
+}
 async function runCodingValidation(options) {
   const { artifact, command } = options, plan = validationPlanSchema.parse(options.plan), root = await (0, import_promises4.realpath)((0, import_node_path4.resolve)(options.target));
   const report = {
@@ -74255,6 +74286,26 @@ async function runCodingValidation(options) {
           }
         }
       }
+    }
+    if (plan.generated?.length && report.status === "failed" && report.checks.length && report.checks.every((c) => c.status !== "failed")) {
+      const messages = [];
+      let ok = true;
+      for (const entry of plan.generated) {
+        const was = await snapshot(root, entry.paths), remaining = Math.floor(budget - (Date.now() - started) / 1e3);
+        const exitCode = remaining > 0 ? await command("generated", entry.command.split(" "), Math.min(600, remaining), environment).catch(() => -1) : -1;
+        const now = await snapshot(root, entry.paths), changed = [.../* @__PURE__ */ new Set([...was.keys(), ...now.keys()])].filter((path4) => {
+          const a = was.get(path4), b = now.get(path4);
+          return !a || !b || !a.data.equals(b.data) || a.mode !== b.mode;
+        }).sort();
+        if (changed.length) {
+          await restore(root, was, now);
+          messages.push(`generated files out of date: run \`${entry.command}\` (${changed.slice(0, 20).join(", ")}${changed.length > 20 ? ", ..." : ""})`);
+        }
+        if (exitCode !== 0) messages.push(`generated command \`${entry.command}\` failed with exit code ${exitCode}`);
+        if (exitCode !== 0 || changed.length) ok = false;
+      }
+      report.checks.push({ name: "generated", status: ok ? "passed" : "failed", exitCode: ok ? 0 : 1 });
+      if (!ok) await options.note?.("generated", messages.join("\n") + "\n").catch(() => void 0);
     }
   } catch {
     report.status = "unsupported";
@@ -74390,7 +74441,8 @@ credential=${credential2}
       workflowRunId: Number(process.env.GITHUB_RUN_ID),
       sourceRunId: Number(process.env.SF_SOURCE_RUN_ID),
       hosted: true,
-      command: hostedValidationCommand((0, import_node_path5.resolve)(values.source), (0, import_node_path5.resolve)((0, import_node_path5.dirname)(output2), "logs"))
+      command: hostedValidationCommand((0, import_node_path5.resolve)(values.source), (0, import_node_path5.resolve)((0, import_node_path5.dirname)(output2), "logs")),
+      note: (name, text) => (0, import_promises5.appendFile)((0, import_node_path5.resolve)((0, import_node_path5.dirname)(output2), "logs", `${name}.log`), text)
     });
     await (0, import_promises5.writeFile)(output2, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ validation: report.status, executionId: report.executionId, originalModelStatus: artifact.result.status }));

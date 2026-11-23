@@ -5,8 +5,8 @@ import type { CodingArtifact } from '../workers/coding.js';
 const digest = z.string().regex(/^[a-f0-9]{64}$/), sha = z.string().regex(/^[a-f0-9]{40}$/);
 const reserved = /^(?:PATH|HOME|USER|SHELL|CI|NODE_OPTIONS|NODE_PATH|DATABASE_URL|COMPOSE_PROJECT_NAME|COMPOSE_FILE|DOCKER_HOST|DOCKER_CONTEXT|LD_.+|GITHUB_.+|GH_.+|ACTIONS_.+|RUNNER_.+|OPENAI_.+|ANTHROPIC_.+|AI_API_KEY|FACTORY_.+|AWS_.+|NPM_CONFIG_.+)$/i;
 const generatedEntry = z.strictObject({
-  command: z.string().min(1).max(200).regex(/^[\w.@:=+\/-]+(?: [\w.@:=+\/-]+)*$/, 'Generated command must be a fixed string without shell metacharacters'),
-  paths: z.string().max(200).regex(/^[\w.@+-][\w.@+\/-]*$/, 'Generated paths must be relative').refine(p => !p.split('/').some(part => part === '..' || part === '.' || part === '' || part === '.git'), 'Generated paths must stay inside the repository').array().min(1).max(10),
+  command: z.string().min(1).max(200).regex(/^[\w.@:=+/-]+(?: [\w.@:=+/-]+)*$/, 'Generated command must be a fixed string without shell metacharacters'),
+  paths: z.string().max(200).regex(/^[\w.@+-][\w.@+/-]*$/, 'Generated paths must be relative').refine(p => !p.split('/').some(part => part === '..' || part === '.' || part === '' || part === '.git'), 'Generated paths must stay inside the repository').array().min(1).max(10),
 });
 export const validationPlanSchema = z.strictObject({
   version: z.literal(1).default(1), profile: z.enum(['npm', 'npm-docker', 'maven']).default('npm'),
