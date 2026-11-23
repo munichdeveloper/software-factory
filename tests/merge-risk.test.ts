@@ -71,6 +71,21 @@ describe('classification', () => {
     expect((await classifyRisk([change('AGENTS.md')], r, assessor)).class).toBe('critical');
     expect(assessor.assess).not.toHaveBeenCalled();
   });
+  it('names the files to split off in a mixed critical pull request, with the class of the rest (#244)', async () => {
+    const r = risk(), assessor = { assess: vi.fn() };
+    const record = await classifyRisk([change('AGENTS.md'), change('docs/a.md'), change('db/migration/V2__x.sql')], r, assessor);
+    expect(record).toMatchObject({ class: 'critical', source: 'builtin', split: { paths: ['AGENTS.md'], restFiles: 2, restClass: 'high' } });
+    const text = describeRisk(record, r);
+    expect(text).toContain('Abspalten');
+    expect(text).toContain('`AGENTS.md`');
+    expect(text).toContain('Depends on: #<neuer PR>');
+    expect(text).toContain('Klasse `high`');
+  });
+  it('gives no split section when only critical files change (#244)', async () => {
+    const r = risk(), record = await classifyRisk([change('AGENTS.md'), change('CODEOWNERS')], r, { assess: vi.fn() });
+    expect(record.split).toBeUndefined();
+    expect(describeRisk(record, r)).not.toContain('Abspalten');
+  });
   it('lowers the class only for a change covered completely by areas, without a model call', async () => {
     const assessor = { assess: vi.fn(async () => ({ class: 'high' as const, reason: 'x', factors: [] })) };
     expect(await classifyRisk([change('docs/a.md'), change('README.md')], risk(), assessor)).toMatchObject({ class: 'low', source: 'areas', aiClass: null });
