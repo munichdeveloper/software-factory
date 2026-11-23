@@ -14,13 +14,16 @@ import type { SanityMonitor } from './sanity.js';
 import type { RuntimeEvents } from './events.js';
 import type { QueueBoard } from './queue.js';
 import { loadAnalytics, type AnalyticsIssueSync } from './analytics.js';
+import type { OutcomeReader } from './outcomes.js';
 import { loadMetrics } from './metrics.js';
 
 export interface RuntimeBinding { repository: RuntimeRepository; controller: RuntimeController;
   /** A planner, or a choice made from the repository configuration that is current at each reconciliation. */
   planner: Planner | ((config: Config) => Planner);
   /** Reviews and merges the Factory's validated pull requests after a reconciliation, where configured. */
-  merge?: RuntimeMerge }
+  merge?: RuntimeMerge;
+  /** Reads the GitHub side of an issue's outcome class and wait phases (cost analytics); absent where nothing is derived. */
+  outcomes?: OutcomeReader }
 export interface ServerOptions { managerToken: string; workerToken: string; bindings: RuntimeBinding[]; store: RuntimeStore;
   /** Binds and persists a repository the SF Manager rolls out to Temporal; absent where the runtime takes no registrations. */
   register?: (registration: Registration) => Promise<RuntimeBinding>;
@@ -92,7 +95,7 @@ export async function reconcileBinding(binding: RuntimeBinding, options: Pick<Se
   await options.monitor?.observed(binding.repository, config, manager.lastSnapshot, report);
   await options.events?.observed(binding.repository, config, manager.lastSnapshot, manager.lastPreflightRefusals);
   options.queue?.observed(binding.repository, config, manager.settledSnapshot, report, manager.lastRejections, binding.merge?.progress());
-  await options.analytics?.observed(binding.repository.repository, manager.settledSnapshot, binding.merge?.progress());
+  await options.analytics?.observed(binding.repository.repository, manager.settledSnapshot, binding.merge?.progress(), binding.outcomes);
   return report;
 }
 

@@ -1,4 +1,5 @@
 import { analyticsLookbackDays, weekOf, type AnalyticsCall, type AnalyticsIssue, type AnalyticsStore } from './analytics.js';
+import { outcomeClasses, waitMs, type Outcome } from './outcomes.js';
 import { routerEvaluation, type RouterEvaluation } from './router-eval.js';
 
 /**
@@ -24,6 +25,12 @@ export interface MetricsItem {
   /** Intake to the start of the first coding run. */
   pickupMs: number | null;
   codingRuns: number; failedCodingRuns: number; codingMs: number; reviews: number; costUsd: number;
+  /** Outcome class (software-factory#239); null until it is derived from GitHub. */
+  outcome: Outcome | null;
+  /** Intake to merge minus the phases in which the issue waited for a person (union); null without intake or outcome. */
+  netLeadMs: number | null;
+  /** Summed wait phases (union, between intake and merge); null until the outcome is derived. */
+  humanWaitMs: number | null;
 }
 export interface MetricsRepository {
   repository: string; merged: number; mergedByFactory: number; leadMedianMs: number | null; firstPassYield: number | null; costPerMergedUsd: number | null;
@@ -37,6 +44,13 @@ export interface MetricsView {
     human: Distribution & { wait: Distribution };
     /** Merges in the period whose intake was never seen (issues settled before intake was recorded). */
     unknownIntake: number;
+    /**
+     * Intake to merge net of the phases that waited for a person, over ALL merged issues (also a person's merge without a
+     * recorded handover) whose outcome is derived; `byClass` per outcome class.
+     */
+    net: Distribution & { byClass: Record<Exclude<Outcome, 'abandoned'>, Distribution> };
+    /** The summed wait phases of the same issues; `issuesWithWait` counts those with any wait. */
+    humanWait: Distribution & { issuesWithWait: number };
   };
   flow: {
     merged: number; mergedByFactory: number; mergedByHuman: number;
@@ -57,6 +71,12 @@ export interface MetricsView {
     codingShare: number | null;
     /** Merge reviews per merged issue. */
     reviewsPerMerge: number | null;
+    /**
+     * Outcome of every closed managed issue of the period (merged in it, or abandoned in it): `counts` per class,
+     * `closed` their sum, `unclassified` merged issues whose outcome is not derived yet. `automationRate` is
+     * automatic / closed, unlike the legacy `automationRate` above (a share of merges only).
+     */
+    outcomes: { counts: Record<Outcome, number>; closed: number; unclassified: number; automationRate: number | null };
   };
   weekly: { week: string; merged: number; mergedByFactory: number; leadMedianMs: number | null }[];
   repositoryRows: MetricsRepository[];
@@ -94,24 +114,33 @@ export function metricsView(calls: AnalyticsCall[], issues: (AnalyticsIssue & { 
   const callsOf = new Map<string, AnalyticsCall[]>();
   for (const c of mine) if (c.issueNumber !== null) { const k = key(c.repository, c.issueNumber); callsOf.set(k, [...callsOf.get(k) ?? [], c]); }
 
-  const items: MetricsItem[] = [];
+  const items: MetricsItem[] = [], merged: MetricsItem[] = [];
   for (const issue of ownIssues) {
-    if (!issue.mergedAt || !issue.mergedBy || !inRange(issue.mergedAt)) continue;
-    // A person's merge counts only after the merge pass handed the pull request over; one merged before the Factory
-    // reached its merge step is not a run that waited for a person.
-    if (issue.mergedBy === 'human' && !issue.handoverAt) continue;
+    if (!issue.mergedAt || !inRange(issue.mergedAt)) continue;
     const own = (callsOf.get(key(issue.repository, issue.issueNumber)) ?? []).filter(c => c.at <= issue.mergedAt!);
     const coding = own.filter(c => c.step === 'coding').sort((a, b) => runStart(a).localeCompare(runStart(b)));
     const first = coding[0];
-    items.push({ repository: issue.repository, issueNumber: issue.issueNumber, title: issue.title || null,
-      url: `https://github.com/${issue.repository}/issues/${issue.issueNumber}`, prNumber: issue.prNumber, mergedBy: issue.mergedBy,
+    const leadMs = between(issue.qualifiedAt, issue.mergedAt), outcome = issue.outcome ?? null;
+    const humanWaitMs = outcome ? waitMs(issue.waits ?? [], issue.qualifiedAt ?? null, issue.mergedAt) : null;
+    const item: MetricsItem = { repository: issue.repository, issueNumber: issue.issueNumber, title: issue.title || null,
+      url: `https://github.com/${issue.repository}/issues/${issue.issueNumber}`, prNumber: issue.prNumber, mergedBy: issue.mergedBy ?? 'human',
       qualifiedAt: issue.qualifiedAt ?? null, handoverAt: issue.handoverAt ?? null, mergedAt: issue.mergedAt,
-      leadMs: between(issue.qualifiedAt, issue.mergedAt), waitMs: issue.mergedBy === 'human' ? between(issue.handoverAt, issue.mergedAt) : null,
+      leadMs, waitMs: issue.mergedBy === 'human' ? between(issue.handoverAt, issue.mergedAt) : null,
       pickupMs: first ? between(issue.qualifiedAt, runStart(first)) : null,
       codingRuns: coding.length, failedCodingRuns: coding.filter(c => c.outcome !== 'success').length,
       codingMs: coding.reduce((s, c) => s + (c.durationMs ?? 0), 0), reviews: own.filter(c => c.step === 'review').length,
-      costUsd: Math.round(own.reduce((s, c) => s + (c.costUsd ?? 0), 0) * 10000) / 10000 });
+      costUsd: Math.round(own.reduce((s, c) => s + (c.costUsd ?? 0), 0) * 10000) / 10000,
+      outcome, humanWaitMs, netLeadMs: leadMs !== null && humanWaitMs !== null ? Math.max(0, leadMs - humanWaitMs) : null };
+    merged.push(item);
+    // The legacy items and counts: a person's merge counts only after the merge pass handed the pull request over; one
+    // merged before the Factory reached its merge step is not a run that waited for a person. The outcome fields below
+    // do not depend on that.
+    if (issue.mergedBy && !(issue.mergedBy === 'human' && !issue.handoverAt)) items.push(item);
   }
+  const counts = Object.fromEntries(outcomeClasses.map(c => [c, merged.filter(i => i.outcome === c).length])) as Record<Outcome, number>;
+  counts.abandoned = ownIssues.filter(i => i.outcome === 'abandoned' && inRange(i.closedAt)).length;
+  const closed = outcomeClasses.reduce((sum, c) => sum + counts[c], 0);
+  const classified = merged.filter(i => i.outcome !== null);
   items.sort((a, b) => b.mergedAt.localeCompare(a.mergedAt));
 
   const byFactory = items.filter(i => i.mergedBy === 'factory'), byHuman = items.filter(i => i.mergedBy === 'human');
@@ -129,7 +158,10 @@ export function metricsView(calls: AnalyticsCall[], issues: (AnalyticsIssue & { 
     leadTime: {
       factory: distribution(byFactory.map(i => i.leadMs)),
       human: { ...distribution(byHuman.map(i => i.leadMs)), wait: distribution(byHuman.map(i => i.waitMs)) },
-      unknownIntake: items.filter(i => i.leadMs === null).length
+      unknownIntake: items.filter(i => i.leadMs === null).length,
+      net: { ...distribution(classified.map(i => i.netLeadMs)), byClass: Object.fromEntries(outcomeClasses.filter(c => c !== 'abandoned')
+        .map(c => [c, distribution(classified.filter(i => i.outcome === c).map(i => i.netLeadMs))])) as Record<Exclude<Outcome, 'abandoned'>, Distribution> },
+      humanWait: { ...distribution(classified.map(i => i.humanWaitMs)), issuesWithWait: classified.filter(i => (i.humanWaitMs ?? 0) > 0).length }
     },
     flow: {
       merged: items.length, mergedByFactory: byFactory.length, mergedByHuman: byHuman.length,
@@ -141,6 +173,7 @@ export function metricsView(calls: AnalyticsCall[], issues: (AnalyticsIssue & { 
       pickup: distribution(items.map(i => i.pickupMs)),
       codingRun: distribution(codingInPeriod.map(c => c.durationMs ?? null)),
       codingShare: ratio(timed.reduce((s, i) => s + i.codingMs, 0), timed.reduce((s, i) => s + i.leadMs!, 0)),
+      outcomes: { counts, closed, unclassified: merged.length - classified.length, automationRate: ratio(counts.automatic, closed) },
       reviewsPerMerge: items.length ? Math.round(items.reduce((s, i) => s + i.reviews, 0) / items.length * 100) / 100 : null
     },
     weekly: [...weekly.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([week, list]) => ({ week, merged: list.length,
