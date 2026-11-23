@@ -41,9 +41,12 @@ export interface Regeneration { artifact: CodingArtifact; regenerated: string[];
 /**
  * Reruns the generated outputs a repository declares for regeneration (`generated` entries with `regenerate: true`)
  * after the offline agent, on a checkout of the base with the artifact applied and the locked dependencies installed.
- * Only changes inside an entry's `paths` are adopted into the artifact; a change elsewhere, a failing or timed-out
- * command, or a result beyond the artifact limits adopts nothing and ends the result `blocked` (SF #281). The hosted
- * validation still reruns every entry as its `generated` check and restores the files.
+ * Only changes inside an entry's `paths` are adopted into the artifact; a change elsewhere, a timed-out
+ * command or a result beyond the artifact limits adopts nothing and ends the result `blocked` (SF #281). A command that
+ * exits with a code other than 0 (timeouts 124/137 excepted) is, like a failing install, a problem of the change itself:
+ * the artifact is returned unchanged with `failure` set and a log warning, nothing is blocked, and the hosted validation
+ * reports the `generated` check as failed (`CHECK_FAILED`) so rework applies (SF #292). The validation still reruns
+ * every entry as its `generated` check and restores the files.
  */
 export async function regenerateCodingArtifact(options: { target: string; artifact: CodingArtifact; plan: ValidationPlan;
   command: ValidationCommand; log?: (line: string) => void }): Promise<Regeneration> {
@@ -66,7 +69,13 @@ export async function regenerateCodingArtifact(options: { target: string; artifa
     const start = await files(root); let current = start;
     for (const entry of entries) {
       const exitCode = await options.command('regenerate', entry.command.split(' '), regenerateCommandSeconds, environment).catch(() => -1);
-      if (exitCode !== 0) return block(`\`${entry.command}\` ${exitCode === 124 || exitCode === 137 ? `timed out after ${regenerateCommandSeconds} s` : `failed with exit code ${exitCode}`}`);
+      const timedOut = exitCode === 124 || exitCode === 137;
+      if (timedOut) return block(`\`${entry.command}\` timed out after ${regenerateCommandSeconds} s`);
+      if (exitCode !== 0) {
+        const reason = `\`${entry.command}\` failed with exit code ${exitCode}`;
+        log(`::warning::Generated files were not regenerated: ${reason}; validation decides`);
+        return { ...unchanged, failure: reason };
+      }
       const next = await files(root), outside = changed(current, next).filter(path => !inside(path, entry.paths));
       if (outside.length) return block(`\`${entry.command}\` changed files outside its declared paths: ${list(outside)}`);
       current = next;

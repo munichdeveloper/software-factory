@@ -317,3 +317,7 @@ needed). Without the broker's Jev key, when Jev is unreachable, gives no usable 
 asked when something changed, not on every reconciliation. Each decision is logged (`factory-router`, purpose
 `planner`) and reported to the router's Slack channel like other routing decisions.
 
+
+## Regenerating generated files (`regenerate`)
+
+A `generated` entry in the validation plan with `"regenerate": true` is rerun by the Factory after the run (see [temporal-validation.md](temporal-validation.md)). Timeouts (exit code 124/137), changes outside the entry's `paths` and results beyond the artifact limits block the result (`GENERATED_FILES_FAILED`). A command that fails with any other non-zero exit code adopts nothing but does not block: the artifact is returned unchanged with the warning `Generated files were not regenerated: <command> failed with exit code <n>; validation decides`, the hosted validation's `generated` check fails (`CHECK_FAILED`) and `execution.rework` applies.
