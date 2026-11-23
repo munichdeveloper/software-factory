@@ -3,7 +3,7 @@ import { zipSync, strToU8 } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 import { ActionsCodingExecutor, decodeCodingArchive, executorWrapper, legacyValidationGuidance, storedSelection, validationGuidance } from '../src/runtime/coding-executor.js';
 import type { AgentSelection } from '../src/runtime/agent-selection.js';
-import { smallPullRequestGuidance } from '../src/workers/coding.js';
+import { smallPullRequestGuidance, testSecretGuidance } from '../src/workers/coding.js';
 import { codingExecutionSchema } from '../src/runtime/coding-contract.js';
 import type { EffectPort, EffectRequest } from '../src/runtime/effects.js';
 import { snapshotSchema, type RunSnapshot } from '../src/runtime/contract.js';
@@ -160,7 +160,7 @@ it('tells a validated execution to leave dependency installs and project checks 
   const f = fixture(snapshotSchema.parse({ ...snapshot, validationPlan: defaultValidationPlan() }));
   await f.poll(); await f.poll();
   expect(f.requests).toHaveLength(1);
-  expect(f.requests[0]!.task.description).toBe(snapshot.admission.input.description + validationGuidance + smallPullRequestGuidance);
+  expect(f.requests[0]!.task.description).toBe(snapshot.admission.input.description + validationGuidance + smallPullRequestGuidance + testSecretGuidance);
   expect(validationGuidance).toContain('Do not install dependencies');
 });
 it('keeps the earlier guidance for an execution dispatched before it changed', async () => {
@@ -171,14 +171,14 @@ it('keeps the earlier guidance for an execution dispatched before it changed', a
 });
 it('adds only the small pull request rule without a validation plan', async () => {
   const f = fixture(); await f.poll();
-  expect(f.requests[0]!.task.description).toBe(snapshot.admission.input.description + smallPullRequestGuidance);
+  expect(f.requests[0]!.task.description).toBe(snapshot.admission.input.description + smallPullRequestGuidance + testSecretGuidance);
   expect(smallPullRequestGuidance).toContain('no drive-by refactoring');
 });
 it('leaves the small pull request rule out where the repository switches it off', async () => {
   const f = fixture(snapshotSchema.parse({ ...snapshot, validationPlan: defaultValidationPlan() }));
   f.cfg.workers.coding = { ...(f.cfg.workers.coding as object), smallPullRequests: false } as typeof f.cfg.workers.coding;
   await f.poll();
-  expect(f.requests[0]!.task.description).toBe(snapshot.admission.input.description + validationGuidance);
+  expect(f.requests[0]!.task.description).toBe(snapshot.admission.input.description + validationGuidance + testSecretGuidance);
 });
 it('keeps the rule an execution was first sent when the repository switches it later', async () => {
   const f = fixture(); await f.poll();

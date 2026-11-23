@@ -3,7 +3,7 @@ import { unzipSync } from 'fflate';
 import { z } from 'zod';
 import { codingExecutionSchema } from './coding-contract.js';
 import { agentSelectionSchema, type AgentSelection } from './agent-selection.js';
-import { codingArtifactSchema, scopeGuidance, validateChanges, type CodingArtifact } from '../workers/coding.js';
+import { codingArtifactSchema, scopeGuidance, testSecretGuidance, validateChanges, type CodingArtifact } from '../workers/coding.js';
 import { attemptAgents, type CodingAgent, type Config } from '../config/index.js';
 import type { Routing } from '../llm/router.js';
 import { codingRouteSchema, type RunSnapshot } from './contract.js';
@@ -289,8 +289,16 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
         catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
         return { text: scopeGuidance(config) };
       } })).text;
+    // Not a scope rule: sent whatever smallPullRequests and merge.risk say, resolved once and stored like the scope above.
+    const secrets = (await effects.perform({ key: 'coding-secrets', payload: { baseSha: snapshot.baseSha }, authorize, contentAddressed: true,
+      validate: z.strictObject({ text: z.string().max(2000) }).parse, reconcile: async () => null,
+      apply: async () => {
+        try { await this.api.git.getRef({ ...target, ref: `heads/sf-temporal-executor/${input.executionId}` }); return { text: '' }; }
+        catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 404)) throw error; }
+        return { text: testSecretGuidance };
+      } })).text;
     let description = input.description;
-    for (const text of [guidance, scope]) if (text && description.length + text.length <= 20000) description += text;
+    for (const text of [guidance, scope, secrets]) if (text && description.length + text.length <= 20000) description += text;
     // Resolved once and stored: later polls rebuild the identical request even when a named branch has moved since.
     const extra = await effects.perform({ key: 'coding-context', payload: { baseSha: snapshot.baseSha, rework: reworkOf(input) }, authorize, contentAddressed: true,
       validate: z.strictObject({ entries: z.string().max(1000).array().max(30) }).parse, reconcile: async () => null,

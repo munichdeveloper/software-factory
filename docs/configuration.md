@@ -70,6 +70,9 @@ Generated JSON schemas share the executable Zod source.
 | `router` | absent | Model router (0.16.0): a decision model picks model and effort per call among the candidates of each purpose, see [Model router](#model-router) |
 | `reporting.persistDecisions` | `true` | Deduplicated decision comments; execution intents/results and automatic block provenance always durable |
 
+Every coding request also carries a fixed working rule on test secrets (no config key, independent of `workers.coding.smallPullRequests` and `merge.risk`): values for tokens, API keys, passwords, private keys and connection strings in tests, fixtures, examples, docs and seed data must be obvious placeholders such as `test-token` or be built at runtime from harmless parts, never a realistic vendor format, so secret scanners do not flag them. Like the other rules it is only appended when the description stays within 20000 characters.
+
+
 ## Policy defaults
 
 | Action | Advisory | Supervised | Autonomous |
