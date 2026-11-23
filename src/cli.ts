@@ -24,7 +24,7 @@ import { RuntimeHttpClient } from './runtime/client.js';
 import { codingExecutionSchema } from './runtime/coding-contract.js';
 import { providerProbe, selectAgent } from './runtime/agent-selection.js';
 import { validationPlanSchema } from './runtime/validation-contract.js';
-import { hostedValidationCommand, materializeCodingArtifact, runCodingValidation } from './runtime/validation.js';
+import { hostedValidationCommand, hostedWritable, materializeCodingArtifact, runCodingValidation } from './runtime/validation.js';
 import { mkdir, stat } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -69,7 +69,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     const output = resolve(values.output); await mkdir(dirname(output), { recursive: true });
     const report = await runCodingValidation({ target: resolve(values.source), artifact, plan, workflowRunId: Number(process.env.GITHUB_RUN_ID),
       sourceRunId: Number(process.env.SF_SOURCE_RUN_ID), hosted: true, command: hostedValidationCommand(resolve(values.source), resolve(dirname(output), 'logs')),
-      note: (name, text) => appendFile(resolve(dirname(output), 'logs', `${name}.log`), text) });
+      note: (name, text) => appendFile(resolve(dirname(output), 'logs', `${name}.log`), text), writable: hostedWritable(resolve(values.source)) });
     await writeFile(output, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ validation: report.status, executionId: report.executionId, originalModelStatus: artifact.result.status })); return;
   }

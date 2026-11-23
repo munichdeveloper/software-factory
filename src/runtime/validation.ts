@@ -31,6 +31,15 @@ export async function materializeCodingArtifact(target: string, source: unknown,
   }
   return artifact;
 }
+// Runs a write of the validator itself. On a hosted runner the tree belongs to sf-validator, so the runner user
+// takes it over for the write and hands it back afterwards (hostedWritable).
+export type Writable = (work: () => Promise<void>) => Promise<void>;
+export function hostedWritable(target: string): Writable {
+  return async work => {
+    execFileSync('sudo', ['-n', 'chown', '-R', `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`, target]);
+    try { await work(); } finally { execFileSync('sudo', ['-n', 'chown', '-R', 'sf-validator:sf-validator', target]); }
+  };
+}
 export type ValidationCommand = (name: string, args: string[], seconds: number, environment: Record<string, string>) => Promise<number>;
 async function fingerprint(root: string, paths: string[]) {
   const entries = [];
@@ -62,7 +71,7 @@ async function restore(root: string, before: Snapshot, after: Snapshot) {
   }
 }
 export async function runCodingValidation(options: { target: string; artifact: CodingArtifact; plan: ValidationPlan; workflowRunId: number; sourceRunId?: number;
-  command: ValidationCommand; hosted: boolean; note?: (name: string, text: string) => Promise<void> }): Promise<ValidationReport> {
+  command: ValidationCommand; hosted: boolean; note?: (name: string, text: string) => Promise<void>; writable?: Writable }): Promise<ValidationReport> {
   const { artifact, command } = options, plan = validationPlanSchema.parse(options.plan), root = await realpath(resolve(options.target));
   const report: ValidationReport = { version: 1, executionId: artifact.result.executionId, taskId: artifact.result.taskId, taskVersion: artifact.result.taskVersion,
     baseSha: artifact.baseSha, artifactHash: hash(artifact), planHash: hash(plan), workflowRunId: options.workflowRunId, sourceRunId: options.sourceRunId ?? options.workflowRunId, runAttempt: 1,
@@ -126,7 +135,11 @@ export async function runCodingValidation(options: { target: string; artifact: C
         const exitCode = remaining > 0 ? await command('generated', entry.command.split(' '), Math.min(600, remaining), environment).catch(() => -1) : -1;
         const now = await snapshot(root, entry.paths), changed = [...new Set([...was.keys(), ...now.keys()])].filter(path => {
           const a = was.get(path), b = now.get(path); return !a || !b || !a.data.equals(b.data) || a.mode !== b.mode; }).sort();
-        if (changed.length) { await restore(root, was, now); messages.push(`generated files out of date: run \`${entry.command}\` (${changed.slice(0, 20).join(', ')}${changed.length > 20 ? ', ...' : ''})`); }
+        if (changed.length) {
+          messages.push(`generated files out of date: run \`${entry.command}\` (${changed.slice(0, 20).join(', ')}${changed.length > 20 ? ', ...' : ''})`);
+          // A failed restore leaves the tree changed, so source integrity still fails; the note above survives it.
+          await (options.writable ?? (work => work()))(() => restore(root, was, now)).catch(() => { messages.push('generated files could not be restored'); });
+        }
         if (exitCode !== 0) messages.push(`generated command \`${entry.command}\` failed with exit code ${exitCode}`);
         if (exitCode !== 0 || changed.length) ok = false;
       }
