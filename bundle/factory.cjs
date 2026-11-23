@@ -41,9 +41,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// node_modules/yaml/dist/nodes/identity.js
+// ../software-factory/node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS({
-  "node_modules/yaml/dist/nodes/identity.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/identity.js"(exports2) {
     "use strict";
     var ALIAS = /* @__PURE__ */ Symbol.for("yaml.alias");
     var DOC = /* @__PURE__ */ Symbol.for("yaml.document");
@@ -98,9 +98,9 @@ var require_identity = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/visit.js
+// ../software-factory/node_modules/yaml/dist/visit.js
 var require_visit = __commonJS({
-  "node_modules/yaml/dist/visit.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/visit.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var BREAK = /* @__PURE__ */ Symbol("break visit");
@@ -256,9 +256,9 @@ var require_visit = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/doc/directives.js
+// ../software-factory/node_modules/yaml/dist/doc/directives.js
 var require_directives = __commonJS({
-  "node_modules/yaml/dist/doc/directives.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/doc/directives.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var visit2 = require_visit();
@@ -427,9 +427,9 @@ var require_directives = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/doc/anchors.js
+// ../software-factory/node_modules/yaml/dist/doc/anchors.js
 var require_anchors = __commonJS({
-  "node_modules/yaml/dist/doc/anchors.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/doc/anchors.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var visit2 = require_visit();
@@ -497,9 +497,9 @@ var require_anchors = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/doc/applyReviver.js
+// ../software-factory/node_modules/yaml/dist/doc/applyReviver.js
 var require_applyReviver = __commonJS({
-  "node_modules/yaml/dist/doc/applyReviver.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/doc/applyReviver.js"(exports2) {
     "use strict";
     function applyReviver(reviver, obj, key, val) {
       if (val && typeof val === "object") {
@@ -547,9 +547,9 @@ var require_applyReviver = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/nodes/toJS.js
+// ../software-factory/node_modules/yaml/dist/nodes/toJS.js
 var require_toJS = __commonJS({
-  "node_modules/yaml/dist/nodes/toJS.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/toJS.js"(exports2) {
     "use strict";
     var identity = require_identity();
     function toJS(value, arg, ctx) {
@@ -577,9 +577,9 @@ var require_toJS = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/nodes/Node.js
+// ../software-factory/node_modules/yaml/dist/nodes/Node.js
 var require_Node = __commonJS({
-  "node_modules/yaml/dist/nodes/Node.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/Node.js"(exports2) {
     "use strict";
     var applyReviver = require_applyReviver();
     var identity = require_identity();
@@ -618,9 +618,9 @@ var require_Node = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/nodes/Alias.js
+// ../software-factory/node_modules/yaml/dist/nodes/Alias.js
 var require_Alias = __commonJS({
-  "node_modules/yaml/dist/nodes/Alias.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/Alias.js"(exports2) {
     "use strict";
     var anchors = require_anchors();
     var visit2 = require_visit();
@@ -736,9 +736,9 @@ var require_Alias = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/nodes/Scalar.js
+// ../software-factory/node_modules/yaml/dist/nodes/Scalar.js
 var require_Scalar = __commonJS({
-  "node_modules/yaml/dist/nodes/Scalar.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/Scalar.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Node = require_Node();
@@ -766,9 +766,9 @@ var require_Scalar = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/doc/createNode.js
+// ../software-factory/node_modules/yaml/dist/doc/createNode.js
 var require_createNode = __commonJS({
-  "node_modules/yaml/dist/doc/createNode.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/doc/createNode.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var identity = require_identity();
@@ -841,9 +841,9 @@ var require_createNode = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/nodes/Collection.js
+// ../software-factory/node_modules/yaml/dist/nodes/Collection.js
 var require_Collection = __commonJS({
-  "node_modules/yaml/dist/nodes/Collection.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/Collection.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var identity = require_identity();
@@ -984,9 +984,9 @@ var require_Collection = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/stringify/stringifyComment.js
+// ../software-factory/node_modules/yaml/dist/stringify/stringifyComment.js
 var require_stringifyComment = __commonJS({
-  "node_modules/yaml/dist/stringify/stringifyComment.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/stringify/stringifyComment.js"(exports2) {
     "use strict";
     var stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, "#");
     function indentComment(comment, indent) {
@@ -1001,9 +1001,9 @@ var require_stringifyComment = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/stringify/foldFlowLines.js
+// ../software-factory/node_modules/yaml/dist/stringify/foldFlowLines.js
 var require_foldFlowLines = __commonJS({
-  "node_modules/yaml/dist/stringify/foldFlowLines.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/stringify/foldFlowLines.js"(exports2) {
     "use strict";
     var FOLD_FLOW = "flow";
     var FOLD_BLOCK = "block";
@@ -1137,9 +1137,9 @@ ${indent}${text.slice(fold + 1, end2)}`;
   }
 });
 
-// node_modules/yaml/dist/stringify/stringifyString.js
+// ../software-factory/node_modules/yaml/dist/stringify/stringifyString.js
 var require_stringifyString = __commonJS({
-  "node_modules/yaml/dist/stringify/stringifyString.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/stringify/stringifyString.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var foldFlowLines = require_foldFlowLines();
@@ -1420,9 +1420,9 @@ ${indent}`);
   }
 });
 
-// node_modules/yaml/dist/stringify/stringify.js
+// ../software-factory/node_modules/yaml/dist/stringify/stringify.js
 var require_stringify = __commonJS({
-  "node_modules/yaml/dist/stringify/stringify.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/stringify/stringify.js"(exports2) {
     "use strict";
     var anchors = require_anchors();
     var identity = require_identity();
@@ -1544,9 +1544,9 @@ ${ctx.indent}${str}`;
   }
 });
 
-// node_modules/yaml/dist/stringify/stringifyPair.js
+// ../software-factory/node_modules/yaml/dist/stringify/stringifyPair.js
 var require_stringifyPair = __commonJS({
-  "node_modules/yaml/dist/stringify/stringifyPair.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/stringify/stringifyPair.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -1677,9 +1677,9 @@ ${ctx.indent}`;
   }
 });
 
-// node_modules/yaml/dist/log.js
+// ../software-factory/node_modules/yaml/dist/log.js
 var require_log = __commonJS({
-  "node_modules/yaml/dist/log.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/log.js"(exports2) {
     "use strict";
     var node_process = require("process");
     function debug(logLevel, ...messages) {
@@ -1699,9 +1699,9 @@ var require_log = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/merge.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/merge.js
 var require_merge = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/merge.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/merge.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -1759,9 +1759,9 @@ var require_merge = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/nodes/addPairToJSMap.js
+// ../software-factory/node_modules/yaml/dist/nodes/addPairToJSMap.js
 var require_addPairToJSMap = __commonJS({
-  "node_modules/yaml/dist/nodes/addPairToJSMap.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/addPairToJSMap.js"(exports2) {
     "use strict";
     var log = require_log();
     var merge3 = require_merge();
@@ -1823,9 +1823,9 @@ var require_addPairToJSMap = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/nodes/Pair.js
+// ../software-factory/node_modules/yaml/dist/nodes/Pair.js
 var require_Pair = __commonJS({
-  "node_modules/yaml/dist/nodes/Pair.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/Pair.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var stringifyPair = require_stringifyPair();
@@ -1863,9 +1863,9 @@ var require_Pair = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/stringify/stringifyCollection.js
+// ../software-factory/node_modules/yaml/dist/stringify/stringifyCollection.js
 var require_stringifyCollection = __commonJS({
-  "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/stringify/stringifyCollection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var stringify2 = require_stringify();
@@ -2014,9 +2014,9 @@ ${indent}${end}`;
   }
 });
 
-// node_modules/yaml/dist/nodes/YAMLMap.js
+// ../software-factory/node_modules/yaml/dist/nodes/YAMLMap.js
 var require_YAMLMap = __commonJS({
-  "node_modules/yaml/dist/nodes/YAMLMap.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/YAMLMap.js"(exports2) {
     "use strict";
     var stringifyCollection = require_stringifyCollection();
     var addPairToJSMap = require_addPairToJSMap();
@@ -2158,9 +2158,9 @@ var require_YAMLMap = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/common/map.js
+// ../software-factory/node_modules/yaml/dist/schema/common/map.js
 var require_map = __commonJS({
-  "node_modules/yaml/dist/schema/common/map.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/common/map.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var YAMLMap = require_YAMLMap();
@@ -2180,9 +2180,9 @@ var require_map = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/nodes/YAMLSeq.js
+// ../software-factory/node_modules/yaml/dist/nodes/YAMLSeq.js
 var require_YAMLSeq = __commonJS({
-  "node_modules/yaml/dist/nodes/YAMLSeq.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/nodes/YAMLSeq.js"(exports2) {
     "use strict";
     var createNode = require_createNode();
     var stringifyCollection = require_stringifyCollection();
@@ -2296,9 +2296,9 @@ var require_YAMLSeq = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/common/seq.js
+// ../software-factory/node_modules/yaml/dist/schema/common/seq.js
 var require_seq = __commonJS({
-  "node_modules/yaml/dist/schema/common/seq.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/common/seq.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var YAMLSeq = require_YAMLSeq();
@@ -2318,9 +2318,9 @@ var require_seq = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/common/string.js
+// ../software-factory/node_modules/yaml/dist/schema/common/string.js
 var require_string = __commonJS({
-  "node_modules/yaml/dist/schema/common/string.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/common/string.js"(exports2) {
     "use strict";
     var stringifyString = require_stringifyString();
     var string4 = {
@@ -2337,9 +2337,9 @@ var require_string = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/common/null.js
+// ../software-factory/node_modules/yaml/dist/schema/common/null.js
 var require_null = __commonJS({
-  "node_modules/yaml/dist/schema/common/null.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/common/null.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var nullTag = {
@@ -2355,9 +2355,9 @@ var require_null = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/core/bool.js
+// ../software-factory/node_modules/yaml/dist/schema/core/bool.js
 var require_bool = __commonJS({
-  "node_modules/yaml/dist/schema/core/bool.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/core/bool.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var boolTag = {
@@ -2379,9 +2379,9 @@ var require_bool = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/stringify/stringifyNumber.js
+// ../software-factory/node_modules/yaml/dist/stringify/stringifyNumber.js
 var require_stringifyNumber = __commonJS({
-  "node_modules/yaml/dist/stringify/stringifyNumber.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/stringify/stringifyNumber.js"(exports2) {
     "use strict";
     function stringifyNumber({ format, minFractionDigits, tag, value }) {
       if (typeof value === "bigint")
@@ -2406,9 +2406,9 @@ var require_stringifyNumber = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/core/float.js
+// ../software-factory/node_modules/yaml/dist/schema/core/float.js
 var require_float = __commonJS({
-  "node_modules/yaml/dist/schema/core/float.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/core/float.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var stringifyNumber = require_stringifyNumber();
@@ -2452,9 +2452,9 @@ var require_float = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/core/int.js
+// ../software-factory/node_modules/yaml/dist/schema/core/int.js
 var require_int = __commonJS({
-  "node_modules/yaml/dist/schema/core/int.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/core/int.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -2497,9 +2497,9 @@ var require_int = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/core/schema.js
+// ../software-factory/node_modules/yaml/dist/schema/core/schema.js
 var require_schema = __commonJS({
-  "node_modules/yaml/dist/schema/core/schema.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/core/schema.js"(exports2) {
     "use strict";
     var map2 = require_map();
     var _null4 = require_null();
@@ -2525,9 +2525,9 @@ var require_schema = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/json/schema.js
+// ../software-factory/node_modules/yaml/dist/schema/json/schema.js
 var require_schema2 = __commonJS({
-  "node_modules/yaml/dist/schema/json/schema.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/json/schema.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var map2 = require_map();
@@ -2592,9 +2592,9 @@ var require_schema2 = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/binary.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/binary.js
 var require_binary = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/binary.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/binary.js"(exports2) {
     "use strict";
     var node_buffer = require("buffer");
     var Scalar = require_Scalar();
@@ -2658,9 +2658,9 @@ var require_binary = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/pairs.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/pairs.js
 var require_pairs = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/pairs.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/pairs.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -2736,9 +2736,9 @@ ${cn.comment}` : item.comment;
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/omap.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/omap.js
 var require_omap = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/omap.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/omap.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var toJS = require_toJS();
@@ -2814,9 +2814,9 @@ var require_omap = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/bool.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/bool.js
 var require_bool2 = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/bool.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/bool.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     function boolStringify({ value, source }, ctx) {
@@ -2846,9 +2846,9 @@ var require_bool2 = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/float.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/float.js
 var require_float2 = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/float.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/float.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var stringifyNumber = require_stringifyNumber();
@@ -2895,9 +2895,9 @@ var require_float2 = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/int.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/int.js
 var require_int2 = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/int.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/int.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -2974,9 +2974,9 @@ var require_int2 = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/set.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/set.js
 var require_set = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/set.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/set.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -3063,9 +3063,9 @@ var require_set = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
 var require_timestamp = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports2) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     function parseSexagesimal(str, asBigInt) {
@@ -3151,9 +3151,9 @@ var require_timestamp = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/schema.js
+// ../software-factory/node_modules/yaml/dist/schema/yaml-1.1/schema.js
 var require_schema3 = __commonJS({
-  "node_modules/yaml/dist/schema/yaml-1.1/schema.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/yaml-1.1/schema.js"(exports2) {
     "use strict";
     var map2 = require_map();
     var _null4 = require_null();
@@ -3195,9 +3195,9 @@ var require_schema3 = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/tags.js
+// ../software-factory/node_modules/yaml/dist/schema/tags.js
 var require_tags = __commonJS({
-  "node_modules/yaml/dist/schema/tags.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/tags.js"(exports2) {
     "use strict";
     var map2 = require_map();
     var _null4 = require_null();
@@ -3289,9 +3289,9 @@ var require_tags = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/schema/Schema.js
+// ../software-factory/node_modules/yaml/dist/schema/Schema.js
 var require_Schema = __commonJS({
-  "node_modules/yaml/dist/schema/Schema.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/schema/Schema.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var map2 = require_map();
@@ -3321,9 +3321,9 @@ var require_Schema = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/stringify/stringifyDocument.js
+// ../software-factory/node_modules/yaml/dist/stringify/stringifyDocument.js
 var require_stringifyDocument = __commonJS({
-  "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/stringify/stringifyDocument.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var stringify2 = require_stringify();
@@ -3401,9 +3401,9 @@ var require_stringifyDocument = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/doc/Document.js
+// ../software-factory/node_modules/yaml/dist/doc/Document.js
 var require_Document = __commonJS({
-  "node_modules/yaml/dist/doc/Document.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/doc/Document.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var Collection2 = require_Collection();
@@ -3710,9 +3710,9 @@ var require_Document = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/errors.js
+// ../software-factory/node_modules/yaml/dist/errors.js
 var require_errors = __commonJS({
-  "node_modules/yaml/dist/errors.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/errors.js"(exports2) {
     "use strict";
     var YAMLError = class extends Error {
       constructor(name, pos, code, message) {
@@ -3775,9 +3775,9 @@ ${pointer}
   }
 });
 
-// node_modules/yaml/dist/compose/resolve-props.js
+// ../software-factory/node_modules/yaml/dist/compose/resolve-props.js
 var require_resolve_props = __commonJS({
-  "node_modules/yaml/dist/compose/resolve-props.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/resolve-props.js"(exports2) {
     "use strict";
     function resolveProps(tokens, { flow, indicator, next, offset, onError, parentIndent, startOnNewline }) {
       let spaceBefore = false;
@@ -3909,9 +3909,9 @@ var require_resolve_props = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/util-contains-newline.js
+// ../software-factory/node_modules/yaml/dist/compose/util-contains-newline.js
 var require_util_contains_newline = __commonJS({
-  "node_modules/yaml/dist/compose/util-contains-newline.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/util-contains-newline.js"(exports2) {
     "use strict";
     function containsNewline(key) {
       if (!key)
@@ -3951,9 +3951,9 @@ var require_util_contains_newline = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/util-flow-indent-check.js
+// ../software-factory/node_modules/yaml/dist/compose/util-flow-indent-check.js
 var require_util_flow_indent_check = __commonJS({
-  "node_modules/yaml/dist/compose/util-flow-indent-check.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/util-flow-indent-check.js"(exports2) {
     "use strict";
     var utilContainsNewline = require_util_contains_newline();
     function flowIndentCheck(indent, fc, onError) {
@@ -3969,9 +3969,9 @@ var require_util_flow_indent_check = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/util-map-includes.js
+// ../software-factory/node_modules/yaml/dist/compose/util-map-includes.js
 var require_util_map_includes = __commonJS({
-  "node_modules/yaml/dist/compose/util-map-includes.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/util-map-includes.js"(exports2) {
     "use strict";
     var identity = require_identity();
     function mapIncludes(ctx, items, search) {
@@ -3985,9 +3985,9 @@ var require_util_map_includes = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/resolve-block-map.js
+// ../software-factory/node_modules/yaml/dist/compose/resolve-block-map.js
 var require_resolve_block_map = __commonJS({
-  "node_modules/yaml/dist/compose/resolve-block-map.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/resolve-block-map.js"(exports2) {
     "use strict";
     var Pair = require_Pair();
     var YAMLMap = require_YAMLMap();
@@ -4093,9 +4093,9 @@ var require_resolve_block_map = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/resolve-block-seq.js
+// ../software-factory/node_modules/yaml/dist/compose/resolve-block-seq.js
 var require_resolve_block_seq = __commonJS({
-  "node_modules/yaml/dist/compose/resolve-block-seq.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/resolve-block-seq.js"(exports2) {
     "use strict";
     var YAMLSeq = require_YAMLSeq();
     var resolveProps = require_resolve_props();
@@ -4144,9 +4144,9 @@ var require_resolve_block_seq = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/resolve-end.js
+// ../software-factory/node_modules/yaml/dist/compose/resolve-end.js
 var require_resolve_end = __commonJS({
-  "node_modules/yaml/dist/compose/resolve-end.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/resolve-end.js"(exports2) {
     "use strict";
     function resolveEnd(end, offset, reqSpace, onError) {
       let comment = "";
@@ -4187,9 +4187,9 @@ var require_resolve_end = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/resolve-flow-collection.js
+// ../software-factory/node_modules/yaml/dist/compose/resolve-flow-collection.js
 var require_resolve_flow_collection = __commonJS({
-  "node_modules/yaml/dist/compose/resolve-flow-collection.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/resolve-flow-collection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Pair = require_Pair();
@@ -4381,9 +4381,9 @@ var require_resolve_flow_collection = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/compose-collection.js
+// ../software-factory/node_modules/yaml/dist/compose/compose-collection.js
 var require_compose_collection = __commonJS({
-  "node_modules/yaml/dist/compose/compose-collection.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/compose-collection.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -4446,9 +4446,9 @@ var require_compose_collection = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/resolve-block-scalar.js
+// ../software-factory/node_modules/yaml/dist/compose/resolve-block-scalar.js
 var require_resolve_block_scalar = __commonJS({
-  "node_modules/yaml/dist/compose/resolve-block-scalar.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/resolve-block-scalar.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     function resolveBlockScalar(ctx, scalar, onError) {
@@ -4629,9 +4629,9 @@ var require_resolve_block_scalar = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/resolve-flow-scalar.js
+// ../software-factory/node_modules/yaml/dist/compose/resolve-flow-scalar.js
 var require_resolve_flow_scalar = __commonJS({
-  "node_modules/yaml/dist/compose/resolve-flow-scalar.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/resolve-flow-scalar.js"(exports2) {
     "use strict";
     var Scalar = require_Scalar();
     var resolveEnd = require_resolve_end();
@@ -4850,9 +4850,9 @@ var require_resolve_flow_scalar = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/compose-scalar.js
+// ../software-factory/node_modules/yaml/dist/compose/compose-scalar.js
 var require_compose_scalar = __commonJS({
-  "node_modules/yaml/dist/compose/compose-scalar.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/compose-scalar.js"(exports2) {
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
@@ -4931,9 +4931,9 @@ var require_compose_scalar = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/util-empty-scalar-position.js
+// ../software-factory/node_modules/yaml/dist/compose/util-empty-scalar-position.js
 var require_util_empty_scalar_position = __commonJS({
-  "node_modules/yaml/dist/compose/util-empty-scalar-position.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/util-empty-scalar-position.js"(exports2) {
     "use strict";
     function emptyScalarPosition(offset, before, pos) {
       if (before) {
@@ -4961,9 +4961,9 @@ var require_util_empty_scalar_position = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/compose-node.js
+// ../software-factory/node_modules/yaml/dist/compose/compose-node.js
 var require_compose_node = __commonJS({
-  "node_modules/yaml/dist/compose/compose-node.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/compose-node.js"(exports2) {
     "use strict";
     var Alias = require_Alias();
     var identity = require_identity();
@@ -5067,9 +5067,9 @@ var require_compose_node = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/compose-doc.js
+// ../software-factory/node_modules/yaml/dist/compose/compose-doc.js
 var require_compose_doc = __commonJS({
-  "node_modules/yaml/dist/compose/compose-doc.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/compose-doc.js"(exports2) {
     "use strict";
     var Document = require_Document();
     var composeNode = require_compose_node();
@@ -5110,9 +5110,9 @@ var require_compose_doc = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/compose/composer.js
+// ../software-factory/node_modules/yaml/dist/compose/composer.js
 var require_composer = __commonJS({
-  "node_modules/yaml/dist/compose/composer.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/compose/composer.js"(exports2) {
     "use strict";
     var node_process = require("process");
     var directives = require_directives();
@@ -5318,9 +5318,9 @@ ${end.comment}` : end.comment;
   }
 });
 
-// node_modules/yaml/dist/parse/cst-scalar.js
+// ../software-factory/node_modules/yaml/dist/parse/cst-scalar.js
 var require_cst_scalar = __commonJS({
-  "node_modules/yaml/dist/parse/cst-scalar.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/parse/cst-scalar.js"(exports2) {
     "use strict";
     var resolveBlockScalar = require_resolve_block_scalar();
     var resolveFlowScalar = require_resolve_flow_scalar();
@@ -5503,9 +5503,9 @@ var require_cst_scalar = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/parse/cst-stringify.js
+// ../software-factory/node_modules/yaml/dist/parse/cst-stringify.js
 var require_cst_stringify = __commonJS({
-  "node_modules/yaml/dist/parse/cst-stringify.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/parse/cst-stringify.js"(exports2) {
     "use strict";
     var stringify2 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
@@ -5564,9 +5564,9 @@ var require_cst_stringify = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/parse/cst-visit.js
+// ../software-factory/node_modules/yaml/dist/parse/cst-visit.js
 var require_cst_visit = __commonJS({
-  "node_modules/yaml/dist/parse/cst-visit.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/parse/cst-visit.js"(exports2) {
     "use strict";
     var BREAK = /* @__PURE__ */ Symbol("break visit");
     var SKIP = /* @__PURE__ */ Symbol("skip children");
@@ -5626,9 +5626,9 @@ var require_cst_visit = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/parse/cst.js
+// ../software-factory/node_modules/yaml/dist/parse/cst.js
 var require_cst = __commonJS({
-  "node_modules/yaml/dist/parse/cst.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/parse/cst.js"(exports2) {
     "use strict";
     var cstScalar = require_cst_scalar();
     var cstStringify = require_cst_stringify();
@@ -5728,9 +5728,9 @@ var require_cst = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/parse/lexer.js
+// ../software-factory/node_modules/yaml/dist/parse/lexer.js
 var require_lexer = __commonJS({
-  "node_modules/yaml/dist/parse/lexer.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/parse/lexer.js"(exports2) {
     "use strict";
     var cst = require_cst();
     function isEmpty(ch) {
@@ -6317,9 +6317,9 @@ var require_lexer = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/parse/line-counter.js
+// ../software-factory/node_modules/yaml/dist/parse/line-counter.js
 var require_line_counter = __commonJS({
-  "node_modules/yaml/dist/parse/line-counter.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/parse/line-counter.js"(exports2) {
     "use strict";
     var LineCounter = class {
       constructor() {
@@ -6348,9 +6348,9 @@ var require_line_counter = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/parse/parser.js
+// ../software-factory/node_modules/yaml/dist/parse/parser.js
 var require_parser = __commonJS({
-  "node_modules/yaml/dist/parse/parser.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/parse/parser.js"(exports2) {
     "use strict";
     var node_process = require("process");
     var cst = require_cst();
@@ -7222,9 +7222,9 @@ var require_parser = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/public-api.js
+// ../software-factory/node_modules/yaml/dist/public-api.js
 var require_public_api = __commonJS({
-  "node_modules/yaml/dist/public-api.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/public-api.js"(exports2) {
     "use strict";
     var composer = require_composer();
     var Document = require_Document();
@@ -7319,9 +7319,9 @@ var require_public_api = __commonJS({
   }
 });
 
-// node_modules/yaml/dist/index.js
+// ../software-factory/node_modules/yaml/dist/index.js
 var require_dist = __commonJS({
-  "node_modules/yaml/dist/index.js"(exports2) {
+  "../software-factory/node_modules/yaml/dist/index.js"(exports2) {
     "use strict";
     var composer = require_composer();
     var Document = require_Document();
@@ -7371,7 +7371,7 @@ var require_dist = __commonJS({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/tslib.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/tslib.mjs
 function __classPrivateFieldSet(receiver, state, value, kind, f) {
   if (kind === "m")
     throw new TypeError("Private method is not writable");
@@ -7389,11 +7389,11 @@ function __classPrivateFieldGet(receiver, state, kind, f) {
   return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 }
 var init_tslib = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/tslib.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/tslib.mjs"() {
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/errors.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/errors.mjs
 function isAbortError(err) {
   return typeof err === "object" && err !== null && // Spec-compliant fetch implementations
   ("name" in err && err.name === "AbortError" || // Expo fetch
@@ -7401,7 +7401,7 @@ function isAbortError(err) {
 }
 var castToError;
 var init_errors = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/errors.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/errors.mjs"() {
     castToError = (err) => {
       if (err instanceof Error)
         return err;
@@ -7430,10 +7430,10 @@ var init_errors = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/core/error.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/core/error.mjs
 var AnthropicError, APIError, APIUserAbortError, APIConnectionError, APIConnectionTimeoutError, RetryableError, BadRequestError, AuthenticationError, PermissionDeniedError, NotFoundError, RequestTimeoutError, ConflictError, PreconditionFailedError, ContentTooLargeError, UnprocessableEntityError, RateLimitError, RequestHeaderFieldsTooLargeError, ClientClosedRequestError, InternalServerError, NotImplementedError, ServiceUnavailableError, GatewayTimeoutError, OverloadedError, STATUS_ERROR_CLASSES;
 var init_error = __esm({
-  "node_modules/@anthropic-ai/sdk/core/error.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/core/error.mjs"() {
     init_errors();
     AnthropicError = /* @__PURE__ */ (() => {
       class AnthropicError2 extends Error {
@@ -7562,7 +7562,7 @@ var init_error = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/values.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/values.mjs
 function maybeObj(x) {
   if (typeof x !== "object") {
     return {};
@@ -7586,7 +7586,7 @@ function checkNever(_value) {
 }
 var startsWithSchemeRegexp, isAbsoluteURL, isArray, isReadonlyArray, validatePositiveInteger, CREDENTIAL_OPTIONS, safeJSON;
 var init_values = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/values.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/values.mjs"() {
     init_error();
     startsWithSchemeRegexp = /^[a-z][a-z0-9+.-]*:/i;
     isAbsoluteURL = (url2) => {
@@ -7614,10 +7614,10 @@ var init_values = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/sleep.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/sleep.mjs
 var sleep;
 var init_sleep = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/sleep.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/sleep.mjs"() {
     sleep = (ms, signal) => new Promise((resolve4) => {
       if (signal?.aborted)
         return resolve4();
@@ -7634,15 +7634,15 @@ var init_sleep = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/version.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/version.mjs
 var VERSION;
 var init_version = __esm({
-  "node_modules/@anthropic-ai/sdk/version.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/version.mjs"() {
     VERSION = "1.5.0";
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/detect-platform.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/detect-platform.mjs
 function getDetectedPlatform() {
   if (typeof Deno !== "undefined" && Deno.build != null) {
     return "deno";
@@ -7680,7 +7680,7 @@ function getBrowserInfo() {
 }
 var isRunningInBrowser, getPlatformProperties, normalizeArch, normalizePlatform, _platformHeaders, getPlatformHeaders;
 var init_detect_platform = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/detect-platform.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/detect-platform.mjs"() {
     init_version();
     isRunningInBrowser = () => {
       return (
@@ -7781,7 +7781,7 @@ var init_detect_platform = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/request-signal.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/request-signal.mjs
 function makeCleanup(signal, listener) {
   return () => signal.removeEventListener("abort", listener);
 }
@@ -7802,13 +7802,13 @@ function releaseRequestSignal(controller) {
 }
 var cleanups, registry2;
 var init_request_signal = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/request-signal.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/request-signal.mjs"() {
     cleanups = /* @__PURE__ */ new WeakMap();
     registry2 = typeof globalThis.FinalizationRegistry === "function" ? new globalThis.FinalizationRegistry((controller) => releaseRequestSignal(controller)) : null;
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/shims.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/shims.mjs
 function getDefaultFetch() {
   if (typeof fetch !== "undefined") {
     return fetch;
@@ -7889,7 +7889,7 @@ async function CancelReadableStream(stream2) {
 }
 var droppedReaders;
 var init_shims = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/shims.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/shims.mjs"() {
     droppedReaders = typeof FinalizationRegistry === "undefined" ? void 0 : /* @__PURE__ */ new FinalizationRegistry(async (iter) => {
       try {
         await iter.return?.();
@@ -7899,10 +7899,10 @@ var init_shims = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/request-options.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/request-options.mjs
 var FallbackEncoder;
 var init_request_options = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/request-options.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/request-options.mjs"() {
     FallbackEncoder = ({ headers, body }) => {
       return {
         bodyHeaders: {
@@ -7914,15 +7914,15 @@ var init_request_options = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/version.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/version.mjs
 var VERSION2;
 var init_version2 = __esm({
-  "node_modules/@opentelemetry/api/dist/version.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/version.mjs"() {
     VERSION2 = "1.10.0";
   }
 });
 
-// node_modules/@opentelemetry/api/dist/internal/semver.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/internal/semver.mjs
 function _makeCompatibilityCheck(ownVersion) {
   const acceptedVersions = /* @__PURE__ */ new Set([ownVersion]);
   const rejectedVersions = /* @__PURE__ */ new Set();
@@ -7968,14 +7968,14 @@ function _makeCompatibilityCheck(ownVersion) {
 }
 var re, isCompatible;
 var init_semver = __esm({
-  "node_modules/@opentelemetry/api/dist/internal/semver.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/internal/semver.mjs"() {
     init_version2();
     re = /^(\d+)\.(\d+)\.(\d+)(-(.+))?$/;
     isCompatible = _makeCompatibilityCheck(VERSION2);
   }
 });
 
-// node_modules/@opentelemetry/api/dist/internal/global-utils.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/internal/global-utils.mjs
 function _makeGlobalApi() {
   return Object.defineProperty({}, "version", {
     value: VERSION2,
@@ -8017,7 +8017,7 @@ function unregisterGlobal(type, diag2) {
 }
 var major, GLOBAL_OPENTELEMETRY_API_KEY, _global, _compatibleGlobalApi;
 var init_global_utils = __esm({
-  "node_modules/@opentelemetry/api/dist/internal/global-utils.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/internal/global-utils.mjs"() {
     init_version2();
     init_semver();
     major = VERSION2.split(".")[0];
@@ -8026,7 +8026,7 @@ var init_global_utils = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/diag/ComponentLogger.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/diag/ComponentLogger.mjs
 function logProxy(funcName, namespace, args) {
   const logger = getGlobal("diag");
   if (!logger) return;
@@ -8034,7 +8034,7 @@ function logProxy(funcName, namespace, args) {
 }
 var DiagComponentLogger;
 var init_ComponentLogger = __esm({
-  "node_modules/@opentelemetry/api/dist/diag/ComponentLogger.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/diag/ComponentLogger.mjs"() {
     init_global_utils();
     DiagComponentLogger = class {
       constructor(props) {
@@ -8059,7 +8059,7 @@ var init_ComponentLogger = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/diag/internal/logLevelLogger.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/diag/internal/logLevelLogger.mjs
 function createLogLevelDiagLogger(maxLevel, logger) {
   if (maxLevel < 0) maxLevel = 0;
   else if (maxLevel > 9999) maxLevel = 9999;
@@ -8079,14 +8079,14 @@ function createLogLevelDiagLogger(maxLevel, logger) {
   };
 }
 var init_logLevelLogger = __esm({
-  "node_modules/@opentelemetry/api/dist/diag/internal/logLevelLogger.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/diag/internal/logLevelLogger.mjs"() {
   }
 });
 
-// node_modules/@opentelemetry/api/dist/api/diag.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/api/diag.mjs
 var API_NAME, DiagAPI;
 var init_diag = __esm({
-  "node_modules/@opentelemetry/api/dist/api/diag.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/api/diag.mjs"() {
     init_global_utils();
     init_ComponentLogger();
     init_logLevelLogger();
@@ -8146,10 +8146,10 @@ var init_diag = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/baggage/internal/baggage-impl.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/baggage/internal/baggage-impl.mjs
 var BaggageImpl;
 var init_baggage_impl = __esm({
-  "node_modules/@opentelemetry/api/dist/baggage/internal/baggage-impl.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/baggage/internal/baggage-impl.mjs"() {
     BaggageImpl = class BaggageImpl2 {
       constructor(entries) {
         this._entries = entries ? new Map(entries) : /* @__PURE__ */ new Map();
@@ -8184,26 +8184,26 @@ var init_baggage_impl = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/baggage/utils.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/baggage/utils.mjs
 function createBaggage(entries = {}) {
   return new BaggageImpl(new Map(Object.entries(entries)));
 }
 var diag;
 var init_utils = __esm({
-  "node_modules/@opentelemetry/api/dist/baggage/utils.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/baggage/utils.mjs"() {
     init_diag();
     init_baggage_impl();
     diag = DiagAPI.instance();
   }
 });
 
-// node_modules/@opentelemetry/api/dist/context/context.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/context/context.mjs
 function createContextKey(description) {
   return Symbol.for(description);
 }
 var ROOT_CONTEXT;
 var init_context = __esm({
-  "node_modules/@opentelemetry/api/dist/context/context.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/context/context.mjs"() {
     ROOT_CONTEXT = new class BaseContext {
       /**
       * Construct a new context which inherits values from an optional parent context.
@@ -8229,10 +8229,10 @@ var init_context = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/propagation/TextMapPropagator.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/propagation/TextMapPropagator.mjs
 var defaultTextMapGetter, defaultTextMapSetter;
 var init_TextMapPropagator = __esm({
-  "node_modules/@opentelemetry/api/dist/propagation/TextMapPropagator.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/propagation/TextMapPropagator.mjs"() {
     defaultTextMapGetter = {
       get(carrier, key) {
         if (carrier == null) return;
@@ -8250,10 +8250,10 @@ var init_TextMapPropagator = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/invalid-span-constants.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/invalid-span-constants.mjs
 var INVALID_SPANID, INVALID_TRACEID, INVALID_SPAN_CONTEXT;
 var init_invalid_span_constants = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/invalid-span-constants.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/invalid-span-constants.mjs"() {
     INVALID_SPANID = "0000000000000000";
     INVALID_TRACEID = "00000000000000000000000000000000";
     INVALID_SPAN_CONTEXT = {
@@ -8264,10 +8264,10 @@ var init_invalid_span_constants = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/NonRecordingSpan.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/NonRecordingSpan.mjs
 var NonRecordingSpan;
 var init_NonRecordingSpan = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/NonRecordingSpan.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/NonRecordingSpan.mjs"() {
     init_invalid_span_constants();
     NonRecordingSpan = class {
       constructor(spanContext = INVALID_SPAN_CONTEXT) {
@@ -8308,7 +8308,7 @@ var init_NonRecordingSpan = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/spancontext-utils.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/spancontext-utils.mjs
 function isValidHex(id, length) {
   if (typeof id !== "string" || id.length !== length) return false;
   let r = 0;
@@ -8329,7 +8329,7 @@ function wrapSpanContext(spanContext) {
 }
 var isHex;
 var init_spancontext_utils = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/spancontext-utils.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/spancontext-utils.mjs"() {
     init_NonRecordingSpan();
     isHex = new Uint8Array([
       0,
@@ -8439,10 +8439,10 @@ var init_spancontext_utils = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/context/NoopContextManager.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/context/NoopContextManager.mjs
 var NoopContextManager;
 var init_NoopContextManager = __esm({
-  "node_modules/@opentelemetry/api/dist/context/NoopContextManager.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/context/NoopContextManager.mjs"() {
     init_context();
     NoopContextManager = class {
       active() {
@@ -8469,10 +8469,10 @@ var init_NoopContextManager = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/api/context.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/api/context.mjs
 var API_NAME2, NOOP_CONTEXT_MANAGER, NOOP_TOKEN, ContextAPI;
 var init_context2 = __esm({
-  "node_modules/@opentelemetry/api/dist/api/context.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/api/context.mjs"() {
     init_global_utils();
     init_diag();
     init_NoopContextManager();
@@ -8567,7 +8567,7 @@ var init_context2 = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/context-utils.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/context-utils.mjs
 function getSpan(context2) {
   return context2.getValue(SPAN_KEY) || void 0;
 }
@@ -8589,7 +8589,7 @@ function getSpanContext(context2) {
 }
 var SPAN_KEY;
 var init_context_utils = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/context-utils.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/context-utils.mjs"() {
     init_context();
     init_context2();
     init_NonRecordingSpan();
@@ -8597,13 +8597,13 @@ var init_context_utils = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/NoopTracer.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/NoopTracer.mjs
 function isSpanContext(spanContext) {
   return spanContext !== null && typeof spanContext === "object" && "spanId" in spanContext && typeof spanContext["spanId"] === "string" && "traceId" in spanContext && typeof spanContext["traceId"] === "string" && "traceFlags" in spanContext && typeof spanContext["traceFlags"] === "number";
 }
 var contextApi, NoopTracer;
 var init_NoopTracer = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/NoopTracer.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/NoopTracer.mjs"() {
     init_context2();
     init_NonRecordingSpan();
     init_context_utils();
@@ -8640,10 +8640,10 @@ var init_NoopTracer = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/ProxyTracer.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/ProxyTracer.mjs
 var NOOP_TRACER, ProxyTracer;
 var init_ProxyTracer = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/ProxyTracer.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/ProxyTracer.mjs"() {
     init_NoopTracer();
     NOOP_TRACER = new NoopTracer();
     ProxyTracer = class {
@@ -8675,10 +8675,10 @@ var init_ProxyTracer = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/span_kind.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/span_kind.mjs
 var SpanKind;
 var init_span_kind = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/span_kind.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/span_kind.mjs"() {
     SpanKind = /* @__PURE__ */ (function(SpanKind2) {
       SpanKind2[SpanKind2["INTERNAL"] = 0] = "INTERNAL";
       SpanKind2[SpanKind2["SERVER"] = 1] = "SERVER";
@@ -8690,10 +8690,10 @@ var init_span_kind = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/status.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/status.mjs
 var SpanStatusCode;
 var init_status = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/status.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/status.mjs"() {
     SpanStatusCode = /* @__PURE__ */ (function(SpanStatusCode2) {
       SpanStatusCode2[SpanStatusCode2["UNSET"] = 0] = "UNSET";
       SpanStatusCode2[SpanStatusCode2["OK"] = 1] = "OK";
@@ -8703,10 +8703,10 @@ var init_status = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/NoopTracerProvider.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/NoopTracerProvider.mjs
 var NoopTracerProvider;
 var init_NoopTracerProvider = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/NoopTracerProvider.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/NoopTracerProvider.mjs"() {
     init_NoopTracer();
     NoopTracerProvider = class {
       getTracer(_name, _version, _options) {
@@ -8716,10 +8716,10 @@ var init_NoopTracerProvider = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace/ProxyTracerProvider.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace/ProxyTracerProvider.mjs
 var NOOP_TRACER_PROVIDER, ProxyTracerProvider;
 var init_ProxyTracerProvider = __esm({
-  "node_modules/@opentelemetry/api/dist/trace/ProxyTracerProvider.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace/ProxyTracerProvider.mjs"() {
     init_ProxyTracer();
     init_NoopTracerProvider();
     NOOP_TRACER_PROVIDER = new NoopTracerProvider();
@@ -8749,19 +8749,19 @@ var init_ProxyTracerProvider = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/context-api.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/context-api.mjs
 var context;
 var init_context_api = __esm({
-  "node_modules/@opentelemetry/api/dist/context-api.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/context-api.mjs"() {
     init_context2();
     context = ContextAPI.getInstance();
   }
 });
 
-// node_modules/@opentelemetry/api/dist/propagation/NoopTextMapPropagator.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/propagation/NoopTextMapPropagator.mjs
 var NoopTextMapPropagator;
 var init_NoopTextMapPropagator = __esm({
-  "node_modules/@opentelemetry/api/dist/propagation/NoopTextMapPropagator.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/propagation/NoopTextMapPropagator.mjs"() {
     NoopTextMapPropagator = class {
       /** Noop inject function does nothing */
       inject(_context, _carrier) {
@@ -8777,7 +8777,7 @@ var init_NoopTextMapPropagator = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/baggage/context-helpers.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/baggage/context-helpers.mjs
 function getBaggage(context2) {
   return context2.getValue(BAGGAGE_KEY) || void 0;
 }
@@ -8792,17 +8792,17 @@ function deleteBaggage(context2) {
 }
 var BAGGAGE_KEY;
 var init_context_helpers = __esm({
-  "node_modules/@opentelemetry/api/dist/baggage/context-helpers.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/baggage/context-helpers.mjs"() {
     init_context();
     init_context2();
     BAGGAGE_KEY = createContextKey("OpenTelemetry Baggage Key");
   }
 });
 
-// node_modules/@opentelemetry/api/dist/api/propagation.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/api/propagation.mjs
 var API_NAME3, NOOP_TEXT_MAP_PROPAGATOR, PropagationAPI;
 var init_propagation = __esm({
-  "node_modules/@opentelemetry/api/dist/api/propagation.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/api/propagation.mjs"() {
     init_global_utils();
     init_diag();
     init_utils();
@@ -8870,19 +8870,19 @@ var init_propagation = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/propagation-api.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/propagation-api.mjs
 var propagation;
 var init_propagation_api = __esm({
-  "node_modules/@opentelemetry/api/dist/propagation-api.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/propagation-api.mjs"() {
     init_propagation();
     propagation = PropagationAPI.getInstance();
   }
 });
 
-// node_modules/@opentelemetry/api/dist/api/trace.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/api/trace.mjs
 var API_NAME4, TraceAPI;
 var init_trace = __esm({
-  "node_modules/@opentelemetry/api/dist/api/trace.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/api/trace.mjs"() {
     init_global_utils();
     init_diag();
     init_context_utils();
@@ -8938,18 +8938,18 @@ var init_trace = __esm({
   }
 });
 
-// node_modules/@opentelemetry/api/dist/trace-api.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/trace-api.mjs
 var trace;
 var init_trace_api = __esm({
-  "node_modules/@opentelemetry/api/dist/trace-api.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/trace-api.mjs"() {
     init_trace();
     trace = TraceAPI.getInstance();
   }
 });
 
-// node_modules/@opentelemetry/api/dist/index.mjs
+// ../software-factory/node_modules/@opentelemetry/api/dist/index.mjs
 var init_dist = __esm({
-  "node_modules/@opentelemetry/api/dist/index.mjs"() {
+  "../software-factory/node_modules/@opentelemetry/api/dist/index.mjs"() {
     init_span_kind();
     init_status();
     init_context_api();
@@ -8958,7 +8958,7 @@ var init_dist = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/bytes.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/bytes.mjs
 function concatBytes(buffers) {
   let length = 0;
   for (const buffer of buffers) {
@@ -8982,11 +8982,11 @@ function decodeUTF8(bytes) {
 }
 var encodeUTF8_, decodeUTF8_;
 var init_bytes = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/bytes.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/bytes.mjs"() {
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/decoders/line.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/decoders/line.mjs
 function findNewlineIndex(buffer, startIndex) {
   const newline = 10;
   const carriage = 13;
@@ -9002,7 +9002,7 @@ function findNewlineIndex(buffer, startIndex) {
 }
 var _LineDecoder_buffer, _LineDecoder_carriageReturnIndex, LineDecoder;
 var init_line = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/decoders/line.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/decoders/line.mjs"() {
     init_tslib();
     init_bytes();
     LineDecoder = /* @__PURE__ */ (() => {
@@ -9055,10 +9055,10 @@ var init_line = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/env.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/env.mjs
 var readEnv;
 var init_env = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/env.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/env.mjs"() {
     readEnv = (env) => {
       if (typeof globalThis.process !== "undefined") {
         return globalThis.process.env?.[env]?.trim() || void 0;
@@ -9071,7 +9071,7 @@ var init_env = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/log.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/log.mjs
 function noop() {
 }
 function makeLogFn(fnLevel, logger, logLevel) {
@@ -9119,7 +9119,7 @@ function debugLogRequestDetails(logger, message, details) {
 }
 var defaultLogLevel, levelNumbers, parseLogLevel, noopLogger, cachedLoggers, lastEnvLevel, cachedDefaultLogger, formatRequestDetails;
 var init_log = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/log.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/log.mjs"() {
     init_values();
     init_env();
     defaultLogLevel = "warn";
@@ -9169,7 +9169,7 @@ var init_log = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/core/streaming.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/core/streaming.mjs
 async function* _iterSSEMessages(response, controller) {
   if (!response.body) {
     controller.abort();
@@ -9250,7 +9250,7 @@ async function* _iterSSEMessages(response, controller) {
 }
 var _Stream_client, Stream;
 var init_streaming = __esm({
-  "node_modules/@anthropic-ai/sdk/core/streaming.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/core/streaming.mjs"() {
     init_tslib();
     init_error();
     init_shims();
@@ -9433,7 +9433,7 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/headers.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/headers.mjs
 function* iterateHeaders(headers) {
   if (!headers)
     return;
@@ -9474,7 +9474,7 @@ function* iterateHeaders(headers) {
 }
 var brand_privateNullableHeaders, clearSentinel, APPEND_HEADERS, appendHeaderValue, buildHeaders;
 var init_headers = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/headers.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/headers.mjs"() {
     init_values();
     brand_privateNullableHeaders = /* @__PURE__ */ Symbol.for("brand.privateNullableHeaders");
     clearSentinel = /* @__PURE__ */ Symbol("clear");
@@ -9526,7 +9526,7 @@ var init_headers = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/tracing.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/tracing.mjs
 function resolveOpenTelemetryOptions(option) {
   const { tracerProvider, propagation: propagation2, traces } = option === false ? { traces: false } : option ?? optionFromEnv();
   const { enabled, contentMode, maxContentBytes } = typeof traces === "boolean" ? { enabled: traces } : traces ?? {};
@@ -9797,7 +9797,7 @@ function errorType(error62) {
 }
 var INSTRUMENTATION_SCOPE, ATTR_ERROR_TYPE, ATTR_GEN_AI_CONVERSATION_ID, ATTR_GEN_AI_PROVIDER_NAME, ATTR_HTTP_REQUEST_METHOD, ATTR_HTTP_REQUEST_RESEND_COUNT, ATTR_HTTP_RESPONSE_STATUS_CODE, ATTR_HTTP_ROUTE, ATTR_SERVER_ADDRESS, ATTR_SERVER_PORT, ATTR_URL_FULL, ATTR_URL_PATH, ATTR_URL_QUERY, ATTR_URL_SCHEME, ATTR_ANTHROPIC_SESSION_THREAD_ID, DEFAULT_MAX_CONTENT_BYTES, CONTENT_QUERY_PARAMS;
 var init_tracing = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/tracing.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/tracing.mjs"() {
     init_dist();
     init_error();
     init_streaming();
@@ -9825,10 +9825,10 @@ var init_tracing = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/qs/formats.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/qs/formats.mjs
 var default_format, default_formatter, formatters, RFC1738;
 var init_formats = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/qs/formats.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/qs/formats.mjs"() {
     default_format = "RFC3986";
     default_formatter = (v) => String(v);
     formatters = {
@@ -9839,7 +9839,7 @@ var init_formats = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/qs/utils.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/qs/utils.mjs
 function is_buffer(obj) {
   if (!obj || typeof obj !== "object") {
     return false;
@@ -9858,7 +9858,7 @@ function maybe_map(val, fn) {
 }
 var has, hex_table, limit, encode3;
 var init_utils2 = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/qs/utils.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/qs/utils.mjs"() {
     init_formats();
     init_values();
     has = (obj, key) => (has = Object.hasOwn ?? Function.prototype.call.bind(Object.prototype.hasOwnProperty), has(obj, key));
@@ -9925,7 +9925,7 @@ var init_utils2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/qs/stringify.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/qs/stringify.mjs
 function is_non_nullish_primitive(v) {
   return typeof v === "string" || typeof v === "number" || typeof v === "boolean" || typeof v === "symbol" || typeof v === "bigint";
 }
@@ -10165,7 +10165,7 @@ function stringify(object2, opts = {}) {
 }
 var array_prefix_generators, push_to_array, toISOString, defaults, sentinel;
 var init_stringify = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/qs/stringify.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/qs/stringify.mjs"() {
     init_utils2();
     init_formats();
     init_values();
@@ -10210,20 +10210,20 @@ var init_stringify = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/query.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/query.mjs
 function stringifyQuery(query) {
   return stringify(query, { arrayFormat: "brackets" });
 }
 var init_query = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/query.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/query.mjs"() {
     init_stringify();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/core/resource.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/core/resource.mjs
 var APIResource;
 var init_resource = __esm({
-  "node_modules/@anthropic-ai/sdk/core/resource.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/core/resource.mjs"() {
     APIResource = class {
       constructor(client) {
         this._client = client;
@@ -10232,7 +10232,7 @@ var init_resource = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/parse.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/parse.mjs
 async function defaultParseResponse(client, props) {
   const { response, requestLogID, retryOfRequestLogID, startTime } = props;
   const body = await (async () => {
@@ -10283,14 +10283,14 @@ function addResponseIDs(value, response) {
   });
 }
 var init_parse = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/parse.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/parse.mjs"() {
     init_streaming();
     init_log();
     init_request_signal();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/uploads.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/uploads.mjs
 function makeFile(fileBits, fileName, options) {
   checkFileSupport();
   return new File(fileBits, fileName ?? "", options);
@@ -10321,7 +10321,7 @@ function supportsFormData(fetchObject) {
 }
 var checkFileSupport, isAsyncIterable, multipartFormRequestOptions, supportsFormDataMap, createForm, addFormValue;
 var init_uploads = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/uploads.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/uploads.mjs"() {
     init_shims();
     init_tracing();
     checkFileSupport = () => {
@@ -10388,10 +10388,10 @@ var init_uploads = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/tracing/attributes.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/attributes.mjs
 var ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_INPUT_MESSAGES, ATTR_GEN_AI_OPERATION_NAME, ATTR_GEN_AI_OUTPUT_MESSAGES, ATTR_GEN_AI_OUTPUT_TYPE, ATTR_GEN_AI_REQUEST_MAX_TOKENS, ATTR_GEN_AI_REQUEST_MODEL, ATTR_GEN_AI_REQUEST_REASONING_LEVEL, ATTR_GEN_AI_REQUEST_STOP_SEQUENCES, ATTR_GEN_AI_REQUEST_STREAM, ATTR_GEN_AI_RESPONSE_ID, ATTR_GEN_AI_RESPONSE_MODEL, ATTR_GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK, ATTR_GEN_AI_SYSTEM_INSTRUCTIONS, ATTR_GEN_AI_TOOL_CALL_ARGUMENTS, ATTR_GEN_AI_TOOL_CALL_ID, ATTR_GEN_AI_TOOL_DESCRIPTION, ATTR_GEN_AI_TOOL_NAME, ATTR_GEN_AI_TOOL_TYPE, ATTR_GEN_AI_USAGE_CACHE_WRITE_INPUT_TOKENS, ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, ATTR_GEN_AI_USAGE_INPUT_TOKENS, ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS, GEN_AI_OPERATION_NAME_VALUE_CHAT, GEN_AI_OPERATION_NAME_VALUE_EXECUTE_TOOL, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT, GEN_AI_OUTPUT_TYPE_VALUE_JSON, GEN_AI_TOOL_TYPE_VALUE_FUNCTION, ATTR_ANTHROPIC_REQUEST_ID, ATTR_ANTHROPIC_ORGANIZATION_ID, ATTR_ANTHROPIC_WORKSPACE_ID, ATTR_ANTHROPIC_BETA, ATTR_ANTHROPIC_CONTENT_TRUNCATED, ATTR_ANTHROPIC_MESSAGE_STOP_REASON, ATTR_ANTHROPIC_MESSAGE_COUNT_TOKENS_INPUT_TOKENS, ATTR_ANTHROPIC_REQUEST_SERVICE_TIER, ATTR_ANTHROPIC_RESPONSE_SERVICE_TIER, ATTR_ANTHROPIC_THINKING_BUDGET_TOKENS, ATTR_ANTHROPIC_THINKING_TYPE, ATTR_ANTHROPIC_TOOL_RESULT_CONTENT, ATTR_ANTHROPIC_TOOLSET_NAME, ATTR_ANTHROPIC_USAGE_CACHE_CREATION_EPHEMERAL_1H_INPUT_TOKENS, ATTR_ANTHROPIC_USAGE_CACHE_CREATION_EPHEMERAL_5M_INPUT_TOKENS, ATTR_ANTHROPIC_USAGE_COMPACTION_INPUT_TOKENS, ATTR_ANTHROPIC_USAGE_COMPACTION_OUTPUT_TOKENS, RESPONSE_HEADER_ATTRIBUTES;
 var init_attributes = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/tracing/attributes.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/attributes.mjs"() {
     init_tracing();
     init_tracing();
     ATTR_GEN_AI_AGENT_NAME = "gen_ai.agent.name";
@@ -10448,7 +10448,7 @@ var init_attributes = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/tracing/content.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/content.mjs
 function setMessageContentAttributes(call, body, output2, limit3) {
   const span = call.span;
   const requestSize = call.requestContentSize;
@@ -10719,12 +10719,12 @@ function utf8Length(text) {
   return size;
 }
 var init_content = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/tracing/content.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/content.mjs"() {
     init_attributes();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/tracing/response.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/response.mjs
 function setResponseAttributes(span, message, usage, complete) {
   span.setAttribute(ATTR_GEN_AI_RESPONSE_ID, message.id);
   span.setAttribute(ATTR_GEN_AI_RESPONSE_MODEL, message.model);
@@ -10761,12 +10761,12 @@ function setResponseAttributes(span, message, usage, complete) {
   }
 }
 var init_response = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/tracing/response.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/response.mjs"() {
     init_attributes();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/tracing/api-call.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/api-call.mjs
 function setAnthropicSpanAttributes(client, span, result) {
   if (!span.isRecording()) {
     return;
@@ -10867,7 +10867,7 @@ function recordSessionsCreateResponse(client, call, session) {
   }
 }
 var init_api_call = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/tracing/api-call.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/api-call.mjs"() {
     init_error();
     init_streaming();
     init_headers();
@@ -10878,7 +10878,7 @@ var init_api_call = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/trace-headers.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/trace-headers.mjs
 function traceHeaderNames() {
   const names = /* @__PURE__ */ new Set(["traceparent", "tracestate", "baggage"]);
   try {
@@ -10891,13 +10891,13 @@ function traceHeaderNames() {
   return names;
 }
 var init_trace_headers = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/trace-headers.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/trace-headers.mjs"() {
     init_dist();
     init_log();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/tracing/headers.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/headers.mjs
 function takeTraceHeaders(headers) {
   const names = traceHeaderNames();
   const taken = Array.from(headers.entries()).filter(([name]) => names.has(name));
@@ -10919,12 +10919,12 @@ function withoutTraceHeaders(middleware) {
   };
 }
 var init_headers2 = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/tracing/headers.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/headers.mjs"() {
     init_trace_headers();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/tracing/streaming.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/streaming.mjs
 function recordStreamedMessageContent(client, call, body, message) {
   if (!call.span.isRecording() || client.openTelemetry.traces.contentMode !== "content") {
     return;
@@ -11039,7 +11039,7 @@ function endMessagesCreateSpanWhenStreamEnds(client, span, stream2, props) {
   });
 }
 var init_streaming2 = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/tracing/streaming.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/streaming.mjs"() {
     init_dist();
     init_error();
     init_streaming();
@@ -11052,7 +11052,7 @@ var init_streaming2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/tracing/environments.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/environments.mjs
 function startEnvironmentWorkSpan(client, work, parentContext) {
   return client._tracer?.startSpan("anthropic.environment.work", {
     kind: SpanKind.INTERNAL,
@@ -11095,14 +11095,14 @@ async function withEnvironmentWorkSpan(client, span, signal, handle) {
   guardTracing(client, () => endEnvironmentWorkSpan(span, signal));
 }
 var init_environments = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/tracing/environments.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/environments.mjs"() {
     init_dist();
     init_tracing();
     init_attributes();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/stainless-helper-header.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/stainless-helper-header.mjs
 function helperHeader(value) {
   return { [STAINLESS_HELPER_HEADER]: value };
 }
@@ -11153,14 +11153,14 @@ function stainlessHelperHeaderFromFile(file2) {
 }
 var STAINLESS_HELPER_HEADER, STAINLESS_HELPER_METHOD_HEADER, SDK_HELPER_SYMBOL;
 var init_stainless_helper_header = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/stainless-helper-header.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/stainless-helper-header.mjs"() {
     STAINLESS_HELPER_HEADER = "x-stainless-helper";
     STAINLESS_HELPER_METHOD_HEADER = "x-stainless-helper-method";
     SDK_HELPER_SYMBOL = /* @__PURE__ */ Symbol("anthropic.sdk.stainlessHelper");
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/tracing/tools.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/tools.mjs
 function startToolRunnerSpan(client, params, conversationId) {
   if (!client._tracer)
     return void 0;
@@ -11229,7 +11229,7 @@ async function withToolUseSpan(client, tool, toolUse, options, run) {
   }
 }
 var init_tools = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/tracing/tools.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing/tools.mjs"() {
     init_dist();
     init_stainless_helper_header();
     init_tracing();
@@ -11239,9 +11239,9 @@ var init_tools = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/tracing.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing.mjs
 var init_tracing2 = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/tracing.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/tracing.mjs"() {
     init_api_call();
     init_headers2();
     init_streaming2();
@@ -11250,10 +11250,10 @@ var init_tracing2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/core/api-promise.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/core/api-promise.mjs
 var _APIPromise_client, APIPromise;
 var init_api_promise = __esm({
-  "node_modules/@anthropic-ai/sdk/core/api-promise.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/core/api-promise.mjs"() {
     init_tslib();
     init_parse();
     init_tracing();
@@ -11371,10 +11371,10 @@ var init_api_promise = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/core/pagination.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/core/pagination.mjs
 var _AbstractPage_client, AbstractPage, PagePromise, Page, PageCursor, BidirectionalPageCursor, ReportPageCursor;
 var init_pagination = __esm({
-  "node_modules/@anthropic-ai/sdk/core/pagination.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/core/pagination.mjs"() {
     init_tslib();
     init_error();
     init_parse();
@@ -11582,13 +11582,13 @@ var init_pagination = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/path.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/path.mjs
 function encodeURIPath(str) {
   return str.replace(/[^A-Za-z0-9\-._~!$&'()*+,;=:@]+/g, encodeURIComponent);
 }
 var EMPTY, createPathTagFunction, path;
 var init_path = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/path.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/path.mjs"() {
     init_error();
     EMPTY = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.create(null));
     createPathTagFunction = (pathEncoder = encodeURIPath) => function path4(statics, ...params) {
@@ -11650,10 +11650,10 @@ ${underline}`);
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/files.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/files.mjs
 var FileNotDownloadableError, StorageQuotaExceededError, FileExpiredError, Files;
 var init_files = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/files.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/files.mjs"() {
     init_resource();
     init_error();
     init_pagination();
@@ -11861,10 +11861,10 @@ var init_files = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/shared.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/shared.mjs
 var ClaudeCodeKeyCreatorNotMemberError, ClaudeCodeVersionTooOldError, CMEKKeyDisabledError, CMEKKeyNetworkBlockedError, OrganizationOnHoldError, OrganizationTypeNotSupportedError, RequestBodyEncodingInvalidError, RequestBodyEncodingUnsupportedError, RequestBodyTooLargeAfterDecodingError, EnforcedSpendLimitReachedError, CMEKContextUnavailableError, CMEKKeyUnreachableError;
 var init_shared = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/shared.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/shared.mjs"() {
     init_error();
     ClaudeCodeKeyCreatorNotMemberError = class extends BadRequestError {
     };
@@ -11893,10 +11893,10 @@ var init_shared = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/deployment-runs.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/deployment-runs.mjs
 var DeploymentRuns;
 var init_deployment_runs = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/deployment-runs.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/deployment-runs.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -11976,10 +11976,10 @@ var init_deployment_runs = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/deployments.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/deployments.mjs
 var Deployments;
 var init_deployments = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/deployments.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/deployments.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -12247,10 +12247,10 @@ var init_deployments = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/dreams.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/dreams.mjs
 var Dreams;
 var init_dreams = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/dreams.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/dreams.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -12445,10 +12445,10 @@ var init_dreams = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/files.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/files.mjs
 var Files2;
 var init_files2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/files.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/files.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -12664,10 +12664,10 @@ var init_files2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/models.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/models.mjs
 var Models;
 var init_models = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/models.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/models.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -12754,9 +12754,9 @@ var init_models = __esm({
   }
 });
 
-// node_modules/@stablelib/base64/lib/base64.js
+// ../software-factory/node_modules/@stablelib/base64/lib/base64.js
 var require_base64 = __commonJS({
-  "node_modules/@stablelib/base64/lib/base64.js"(exports2) {
+  "../software-factory/node_modules/@stablelib/base64/lib/base64.js"(exports2) {
     "use strict";
     var __extends = exports2 && exports2.__extends || /* @__PURE__ */ (function() {
       var extendStatics = function(d, b) {
@@ -12967,9 +12967,9 @@ var require_base64 = __commonJS({
   }
 });
 
-// node_modules/fast-sha256/sha256.js
+// ../software-factory/node_modules/fast-sha256/sha256.js
 var require_sha256 = __commonJS({
-  "node_modules/fast-sha256/sha256.js"(exports2, module2) {
+  "../software-factory/node_modules/fast-sha256/sha256.js"(exports2, module2) {
     (function(root, factory) {
       var exports3 = {};
       factory(exports3);
@@ -13391,9 +13391,9 @@ var require_sha256 = __commonJS({
   }
 });
 
-// node_modules/standardwebhooks/dist/timing_safe_equal.js
+// ../software-factory/node_modules/standardwebhooks/dist/timing_safe_equal.js
 var require_timing_safe_equal = __commonJS({
-  "node_modules/standardwebhooks/dist/timing_safe_equal.js"(exports2) {
+  "../software-factory/node_modules/standardwebhooks/dist/timing_safe_equal.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.timingSafeEqual = timingSafeEqual;
@@ -13425,9 +13425,9 @@ var require_timing_safe_equal = __commonJS({
   }
 });
 
-// node_modules/standardwebhooks/dist/index.js
+// ../software-factory/node_modules/standardwebhooks/dist/index.js
 var require_dist2 = __commonJS({
-  "node_modules/standardwebhooks/dist/index.js"(exports2) {
+  "../software-factory/node_modules/standardwebhooks/dist/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.Webhook = exports2.WebhookVerificationError = void 0;
@@ -13557,10 +13557,10 @@ var require_dist2 = __commonJS({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/webhooks.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/webhooks.mjs
 var import_standardwebhooks, Webhooks;
 var init_webhooks = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/webhooks.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/webhooks.mjs"() {
     init_resource();
     import_standardwebhooks = __toESM(require_dist2(), 1);
     Webhooks = class extends APIResource {
@@ -13591,10 +13591,10 @@ var init_webhooks = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/agents/versions.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/agents/versions.mjs
 var Versions;
 var init_versions = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/agents/versions.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/agents/versions.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -13638,10 +13638,10 @@ var init_versions = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/agents/agents.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/agents/agents.mjs
 var Agents;
 var init_agents = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/agents/agents.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/agents/agents.mjs"() {
     init_resource();
     init_versions();
     init_versions();
@@ -13814,10 +13814,10 @@ var init_agents = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/uuid.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/uuid.mjs
 var uuid42;
 var init_uuid = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/uuid.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/uuid.mjs"() {
     uuid42 = function() {
       const { crypto: crypto3 } = globalThis;
       if (crypto3?.randomUUID) {
@@ -13831,7 +13831,7 @@ var init_uuid = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/abort.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/abort.mjs
 function linkAbort(external, controller) {
   if (!external)
     return () => {
@@ -13846,11 +13846,11 @@ function linkAbort(external, controller) {
   return () => external.removeEventListener("abort", onAbort);
 }
 var init_abort = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/abort.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/abort.mjs"() {
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/backoff.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/backoff.mjs
 function isStatus(e, code) {
   return e instanceof APIError && e.status === code;
 }
@@ -13870,12 +13870,12 @@ function applyJitter(ms) {
   return ms * (1 - Math.random() * 0.25);
 }
 var init_backoff = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/backoff.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/backoff.mjs"() {
     init_error();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/helper-client.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/helper-client.mjs
 function copyClientForHelper(client, { authToken, helper }) {
   if (!authToken) {
     throw new AnthropicError(`copyClientForHelper: expected a non-empty authToken but received ${JSON.stringify(authToken)}`);
@@ -13901,14 +13901,14 @@ function copyClientForHelper(client, { authToken, helper }) {
   });
 }
 var init_helper_client = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/helper-client.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/helper-client.mjs"() {
     init_error();
     init_headers();
     init_stainless_helper_header();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/environments/poller.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/environments/poller.mjs
 function backoff2(attempt) {
   return backoff(attempt, POLL_BACKOFF_BASE_MS, POLL_BACKOFF_CAP_MS);
 }
@@ -13919,7 +13919,7 @@ function defaultWorkerId() {
 }
 var _WorkPoller_runnerClient, _WorkPoller_consumed, _WorkPoller_controller, _WorkPoller_detachExternal, _WorkPoller_autoStop, _WorkPoller_drain, _WorkPoller_blockMs, _WorkPoller_reclaimOlderThanMs, _WorkPoller_requestOpts, _IdleLog_log, _IdleLog_environmentId, _IdleLog_idleSince, _IdleLog_lastReport, POLL_BLOCK_MS, POLL_BACKOFF_BASE_MS, POLL_BACKOFF_CAP_MS, IDLE_REPORT_INTERVAL_MS, WorkPoller, IdleLog;
 var init_poller = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/environments/poller.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/environments/poller.mjs"() {
     init_tslib();
     init_dist();
     init_error();
@@ -14085,10 +14085,10 @@ var init_poller = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/base64.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/base64.mjs
 var fromBase64;
 var init_base64 = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/base64.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/base64.mjs"() {
     init_error();
     fromBase64 = (str) => {
       if (typeof globalThis.Buffer !== "undefined") {
@@ -14108,10 +14108,10 @@ var init_base64 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/async-queue.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/async-queue.mjs
 var _AsyncQueue_items, _AsyncQueue_waiters, _AsyncQueue_closed, AsyncQueue;
 var init_async_queue = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/async-queue.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/async-queue.mjs"() {
     init_tslib();
     AsyncQueue = /* @__PURE__ */ (() => {
       class AsyncQueue2 {
@@ -14180,10 +14180,10 @@ var init_async_queue = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/tools/ToolError.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/tools/ToolError.mjs
 var ToolError;
 var init_ToolError = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/tools/ToolError.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/tools/ToolError.mjs"() {
     ToolError = /* @__PURE__ */ (() => {
       class ToolError2 extends Error {
         constructor(content) {
@@ -14202,7 +14202,7 @@ var init_ToolError = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/toolsets/sanitize.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/toolsets/sanitize.mjs
 function wellFormed(text) {
   return text.replace(LONE_SURROGATE_RE, "\uFFFD");
 }
@@ -14241,7 +14241,7 @@ function errorTextContent(content) {
 }
 var LINE_UNSAFE, CONTROL_RE, LONE_SURROGATE_RE, FIELD_MAX, LOG_MAX;
 var init_sanitize = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/toolsets/sanitize.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/toolsets/sanitize.mjs"() {
     LINE_UNSAFE = "\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069";
     CONTROL_RE = /* @__PURE__ */ (() => new RegExp(`[${LINE_UNSAFE}]+`, "g"))();
     LONE_SURROGATE_RE = /[\uD800-\uDFFF]/gu;
@@ -14250,7 +14250,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/tools/BetaRunnableTool.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/tools/BetaRunnableTool.mjs
 function toolName(tool) {
   return "name" in tool ? tool.name : "mcp_server_name" in tool ? tool.mcp_server_name : tool.type;
 }
@@ -14267,13 +14267,13 @@ async function runRunnableTool(tool, rawInput, context2) {
   }
 }
 var init_BetaRunnableTool = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/tools/BetaRunnableTool.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/tools/BetaRunnableTool.mjs"() {
     init_ToolError();
     init_sanitize();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/tools/SessionToolRunner.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/tools/SessionToolRunner.mjs
 function endsTurn(ev) {
   if (ev.type !== "session.status_idle")
     return false;
@@ -14308,7 +14308,7 @@ function toSessionContent(content) {
 }
 var _IdleClock_maxIdleMs, _IdleClock_onExpire, _IdleClock_blockers, _IdleClock_armPending, _IdleClock_timer, _SessionToolRunner_instances, _SessionToolRunner_consumed, _SessionToolRunner_controller, _SessionToolRunner_detachExternal, _SessionToolRunner_requestOpts, _SessionToolRunner_toolByName, _SessionToolRunner_logger, _SessionToolRunner_seen, _SessionToolRunner_answered, _SessionToolRunner_confirmationVerdicts, _SessionToolRunner_awaitingConfirmation, _SessionToolRunner_results, _SessionToolRunner_inFlightCount, _SessionToolRunner_sendRetryWindowMs, _SessionToolRunner_onIdle, _SessionToolRunner_idleClock, _SessionToolRunner_otelContext, _SessionToolRunner_primaryThreadId, _SessionToolRunner_historyRead, _SessionToolRunner_requestOptions, _SessionToolRunner_streamLoop, _SessionToolRunner_reconcile, _SessionToolRunner_ingestHistory, _SessionToolRunner_notePrimaryThread, _SessionToolRunner_handleStreamEvent, _SessionToolRunner_routeToolEvent, _SessionToolRunner_noteConfirmation, _SessionToolRunner_applyVerdict, _SessionToolRunner_surfaceCall, _SessionToolRunner_execute, _SessionToolRunner_sendResult, _SessionToolRunner_drain, STREAM_BACKOFF_START_MS, STREAM_BACKOFF_CAP_MS, TOOL_TIMEOUT_MS, DRAIN_TIMEOUT_MS, SEND_BACKOFF_START_MS, SEND_BACKOFF_CAP_MS, SEND_RETRY_WINDOW_MS, DEFAULT_MAX_IDLE_MS, IdleClock, SessionToolRunner;
 var init_SessionToolRunner = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/tools/SessionToolRunner.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/tools/SessionToolRunner.mjs"() {
     init_tslib();
     init_dist();
     init_error();
@@ -14852,7 +14852,7 @@ var init_SessionToolRunner = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/tools/agent-toolset/sync-interval.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/sync-interval.mjs
 function checkMemorySyncInterval(ms, option) {
   if (!(ms >= MIN_MEMORY_SYNC_INTERVAL_MS)) {
     throw new AnthropicError(`${option} must be at least ${MIN_MEMORY_SYNC_INTERVAL_MS}ms (got ${ms}); to run without memory sync, pass \`memorySyncIntervalMs: null\` to the worker instead`);
@@ -14860,16 +14860,16 @@ function checkMemorySyncInterval(ms, option) {
 }
 var DEFAULT_MEMORY_SYNC_INTERVAL_MS, MIN_MEMORY_SYNC_INTERVAL_MS;
 var init_sync_interval = __esm({
-  "node_modules/@anthropic-ai/sdk/tools/agent-toolset/sync-interval.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/sync-interval.mjs"() {
     init_error();
     DEFAULT_MEMORY_SYNC_INTERVAL_MS = 15e3;
     MIN_MEMORY_SYNC_INTERVAL_MS = 5e3;
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils.mjs
 var init_utils3 = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils.mjs"() {
     init_values();
     init_base64();
     init_env();
@@ -14880,7 +14880,7 @@ var init_utils3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/helpers/beta/json-schema.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/helpers/beta/json-schema.mjs
 function betaTool(options) {
   const { name, inputSchema, description, run, ...extraProps } = options;
   if (inputSchema.type !== "object") {
@@ -14897,11 +14897,11 @@ function betaTool(options) {
   };
 }
 var init_json_schema = __esm({
-  "node_modules/@anthropic-ai/sdk/helpers/beta/json-schema.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/helpers/beta/json-schema.mjs"() {
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/promise.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/promise.mjs
 function promiseWithResolvers() {
   let resolve4;
   let reject;
@@ -14912,11 +14912,11 @@ function promiseWithResolvers() {
   return { promise: promise2, resolve: resolve4, reject };
 }
 var init_promise = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/promise.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/promise.mjs"() {
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/node.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/node.mjs
 var node_exports = {};
 __export(node_exports, {
   child_process: () => child_process,
@@ -14929,7 +14929,7 @@ __export(node_exports, {
 });
 var child_process, crypto, fs, os, path2, stream, util;
 var init_node = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/node.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/node.mjs"() {
     child_process = __toESM(require("node:child_process"), 1);
     crypto = __toESM(require("node:crypto"), 1);
     fs = __toESM(require("node:fs"), 1);
@@ -14940,7 +14940,7 @@ var init_node = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/tools/agent-toolset/fs-util.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/fs-util.mjs
 function isWithin(root, p) {
   const rel = path2.relative(root, p);
   return rel === "" || !rel.startsWith(".." + path2.sep) && rel !== ".." && !path2.isAbsolute(rel);
@@ -15055,7 +15055,7 @@ function fsErrorMessage(err, file2) {
 }
 var fs2, DIR_CREATE_MODE, FILE_CREATE_MODE, MAX_SYMLINK_HOPS;
 var init_fs_util = __esm({
-  "node_modules/@anthropic-ai/sdk/tools/agent-toolset/fs-util.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/fs-util.mjs"() {
     init_node();
     init_ToolError();
     fs2 = fs.promises;
@@ -15065,7 +15065,7 @@ var init_fs_util = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/tools/agent-toolset/skills.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/skills.mjs
 async function setupSkills(ctx) {
   const { client, sessionId } = ctx;
   if (!client)
@@ -15254,7 +15254,7 @@ async function readHead(file2, n) {
 }
 var fs3, execFileAsync, INCONSISTENT_LISTING, PLAIN_TYPE_CHARS;
 var init_skills = __esm({
-  "node_modules/@anthropic-ai/sdk/tools/agent-toolset/skills.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/skills.mjs"() {
     init_node();
     init_error();
     init_log();
@@ -15266,7 +15266,7 @@ var init_skills = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/file-store.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/file-store.mjs
 function isPathLegal(p) {
   return p.startsWith("/") && !p.split("/").includes("..");
 }
@@ -15448,7 +15448,7 @@ function oldEnoughToCache(st, walkStartNs) {
 }
 var fsp, C, OWNER_ONLY_DIR_MODE, OWNER_ONLY_FILE_MODE, OWNER_ONLY_EXEC_MODE, O_NOFOLLOW, O_NONBLOCK, FileStoreError, FileStore, TIMESTAMP_TRUST_MARGIN_NS, _internals, LocalFileStore, asyncDispose;
 var init_file_store = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/file-store.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/file-store.mjs"() {
     init_node();
     init_bytes();
     fsp = fs.promises;
@@ -15714,7 +15714,7 @@ var init_file_store = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/tools/agent-toolset/memories.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/memories.mjs
 function markerSha(memoryStoreId) {
   return crypto.createHash("sha256").update(`version ${MARKER_VERSION}
 ${memoryStoreId}`, "utf-8").digest("hex");
@@ -15742,7 +15742,7 @@ async function settledOrAborted(p, signal) {
 }
 var _SessionMemoryStores_instances, _SessionMemoryStores_client, _SessionMemoryStores_workdir, _SessionMemoryStores_syncIntervalMs, _SessionMemoryStores_syncDeletions, _SessionMemoryStores_log, _SessionMemoryStores_lastSyncAt, _SessionMemoryStores_finished, _SessionMemoryStores_stores, _SessionMemoryStores_storeRoot, _SessionMemoryStores_scanMarker, _SessionMemoryStores_syncStore, _SessionMemoryStores_flushStore, _SessionMemoryStores_recover, _SessionMemoryStores_settleSent, _SessionMemoryStores_stampAndPull, _SessionMemoryStores_syncPath, _SessionMemoryStores_removeLocal, _SessionMemoryStores_write, _SessionMemoryStores_pullAll, _SessionMemoryStores_uploadAll, _SessionMemoryStores_listMemories, _SessionMemoryStores_upload, _SessionMemoryStores_corroboratedDelete, _SessionMemoryStores_deleteRemote, MEMORY_FLUSH_TIMEOUT_MS, MARKER_PATH, MARKER_VERSION, DELETE_CORROBORATION_MS, LIST_PAGE_SIZE, FULL_LIST_PAGE_SIZE, FETCH_CONCURRENCY, UPLOAD_CONCURRENCY, DELETE_CAP_FLOOR, DELETE_CAP_CEILING, SessionMemoryError, DeletePass, SessionMemoryStores;
 var init_memories = __esm({
-  "node_modules/@anthropic-ai/sdk/tools/agent-toolset/memories.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/memories.mjs"() {
     init_tslib();
     init_node();
     init_error();
@@ -16448,7 +16448,7 @@ ${store.memoryStoreId}`);
   }
 });
 
-// node_modules/@anthropic-ai/sdk/tools/agent-toolset/node.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/node.mjs
 var node_exports2 = {};
 __export(node_exports2, {
   BashSession: () => BashSession,
@@ -16941,7 +16941,7 @@ async function findRg() {
 }
 var fs4, fssync, path3, cp, crypto2, readline, _BashSession_instances, _BashSession_proc, _BashSession_buf, _BashSession_truncated, _BashSession_closed, _BashSession_waiting, _BashSession_append, _LineRangeCollector_instances, _LineRangeCollector_filePath, _LineRangeCollector_startLine, _LineRangeCollector_endLine, _LineRangeCollector_start, _LineRangeCollector_end, _LineRangeCollector_limit, _LineRangeCollector_line, _LineRangeCollector_collected, _LineRangeCollector_collectedBytes, _LineRangeCollector_collect, _LineRangeCollector_overLimitError, BASH_OUTPUT_LIMIT, BASH_DEFAULT_TIMEOUT_MS, DEFAULT_MAX_FILE_BYTES, READ_STREAM_CHUNK_BYTES, NEWLINE, GREP_OUTPUT_LIMIT, GREP_MAX_LINE_LENGTH, GLOB_RESULT_LIMIT, BashTimeoutError, ANSI_RE, fsGlob, BashSession, LineRangeCollector, WALK_MAX_DEPTH, WALK_MAX_ENTRIES;
 var init_node2 = __esm({
-  "node_modules/@anthropic-ai/sdk/tools/agent-toolset/node.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/tools/agent-toolset/node.mjs"() {
     init_tslib();
     fs4 = __toESM(require("node:fs/promises"), 1);
     fssync = __toESM(require("node:fs"), 1);
@@ -17162,7 +17162,7 @@ ${out}`;
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/environments/worker.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/environments/worker.mjs
 function hasMemoryStore(session) {
   return session.resources.some((r) => r.type === "memory_store");
 }
@@ -17289,7 +17289,7 @@ async function heartbeatLoop(client, work, lease, logger, requestOptions, onLeas
 }
 var _EnvironmentWorker_instances, _EnvironmentWorker_signal, _EnvironmentWorker_handleItem, _Lease_ctrl, _Lease_endReason, HEARTBEAT_DEFAULT_MS, HEARTBEAT_TTL_DEFAULT_MS, NO_HEARTBEAT_SENTINEL, EnvironmentWorker, Lease;
 var init_worker = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/environments/worker.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/environments/worker.mjs"() {
     init_tslib();
     init_error();
     init_log();
@@ -17595,10 +17595,10 @@ var init_worker = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/environments/work.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/environments/work.mjs
 var BetaHeartbeatPreconditionFailedError, Work;
 var init_work = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/environments/work.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/environments/work.mjs"() {
     init_resource();
     init_error();
     init_pagination();
@@ -17941,10 +17941,10 @@ var init_work = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/environments/environments.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/environments/environments.mjs
 var BetaEnvironmentArchivedError, BetaInvalidConfigTypeChangeError, BetaInvalidMetadataError, BetaEnvironmentCreateDisabledError, BetaEnvironmentUpdateDisabledError, BetaEnvironmentNotFoundError, Environments;
 var init_environments2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/environments/environments.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/environments/environments.mjs"() {
     init_resource();
     init_work();
     init_work();
@@ -18207,10 +18207,10 @@ var init_environments2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memories.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memories.mjs
 var Memories;
 var init_memories2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memories.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memories.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -18386,10 +18386,10 @@ var init_memories2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memory-versions.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memory-versions.mjs
 var MemoryVersions;
 var init_memory_versions = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memory-versions.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memory-versions.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -18512,10 +18512,10 @@ var init_memory_versions = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memory-stores.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memory-stores.mjs
 var MemoryStores;
 var init_memory_stores = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memory-stores.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/memory-stores/memory-stores.mjs"() {
     init_resource();
     init_memories2();
     init_memories2();
@@ -18712,10 +18712,10 @@ var init_memory_stores = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/decoders/jsonl.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/decoders/jsonl.mjs
 var JSONLDecoder;
 var init_jsonl = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/decoders/jsonl.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/decoders/jsonl.mjs"() {
     init_error();
     init_shims();
     init_line();
@@ -18761,17 +18761,17 @@ var init_jsonl = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/error.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/error.mjs
 var init_error2 = __esm({
-  "node_modules/@anthropic-ai/sdk/error.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/error.mjs"() {
     init_error();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/messages/batches.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/messages/batches.mjs
 var Batches;
 var init_batches = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/messages/batches.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/messages/batches.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -19064,10 +19064,10 @@ var init_batches = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/constants.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/constants.mjs
 var MODEL_NONSTREAMING_TOKENS;
 var init_constants = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/constants.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/constants.mjs"() {
     MODEL_NONSTREAMING_TOKENS = {
       "claude-opus-4@20250514": 8192,
       "anthropic.claude-opus-4-1-20250805-v1:0": 8192,
@@ -19076,7 +19076,7 @@ var init_constants = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/beta-parser.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/beta-parser.mjs
 function getOutputFormat(params) {
   return params?.output_format ?? params?.output_config?.format;
 }
@@ -19149,19 +19149,19 @@ function parseBetaOutputFormat(params, content) {
   }
 }
 var init_beta_parser = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/beta-parser.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/beta-parser.mjs"() {
     init_error();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/streaming.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/streaming.mjs
 var init_streaming3 = __esm({
-  "node_modules/@anthropic-ai/sdk/streaming.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/streaming.mjs"() {
     init_streaming();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/beta-messages-request.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/beta-messages-request.mjs
 function messagesCreateHeaders(params, options) {
   const { betas, user_profile_id, workspace_id, tools, messages } = params;
   return buildHeaders([
@@ -19200,7 +19200,7 @@ function assertOneOutputFormat(params) {
   }
 }
 var init_beta_messages_request = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/beta-messages-request.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/beta-messages-request.mjs"() {
     init_error2();
     init_headers();
     init_stainless_helper_header();
@@ -19209,10 +19209,10 @@ var init_beta_messages_request = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/_vendor/partial-json-parser/parser.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/_vendor/partial-json-parser/parser.mjs
 var tokenize, strip, unstrip, generate, partialParse;
 var init_parser = __esm({
-  "node_modules/@anthropic-ai/sdk/_vendor/partial-json-parser/parser.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/_vendor/partial-json-parser/parser.mjs"() {
     tokenize = (input2) => {
       let current = 0;
       let tokens = [];
@@ -19445,7 +19445,7 @@ var init_parser = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/message-stream-utils.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/message-stream-utils.mjs
 function withLazyInput(prev, jsonBuf) {
   const next = {};
   for (const key of Object.keys(prev)) {
@@ -19470,19 +19470,19 @@ function withLazyInput(prev, jsonBuf) {
 }
 var JSON_BUF_PROPERTY;
 var init_message_stream_utils = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/message-stream-utils.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/message-stream-utils.mjs"() {
     init_parser();
     JSON_BUF_PROPERTY = "__json_buf";
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/BetaMessageStream.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/BetaMessageStream.mjs
 function tracksToolInput(content) {
   return content.type === "tool_use" || content.type === "server_tool_use" || content.type === "mcp_tool_use";
 }
 var _BetaMessageStream_instances, _BetaMessageStream_currentMessageSnapshot, _BetaMessageStream_params, _BetaMessageStream_connectedPromise, _BetaMessageStream_resolveConnectedPromise, _BetaMessageStream_rejectConnectedPromise, _BetaMessageStream_endPromise, _BetaMessageStream_resolveEndPromise, _BetaMessageStream_rejectEndPromise, _BetaMessageStream_listeners, _BetaMessageStream_ended, _BetaMessageStream_errored, _BetaMessageStream_aborted, _BetaMessageStream_catchingPromiseCreated, _BetaMessageStream_response, _BetaMessageStream_request_id, _BetaMessageStream_workspace_id, _BetaMessageStream_logger, _BetaMessageStream_client, _BetaMessageStream_span, _BetaMessageStream_spanBody, _BetaMessageStream_getFinalMessage, _BetaMessageStream_getFinalText, _BetaMessageStream_handleError, _BetaMessageStream_beginRequest, _BetaMessageStream_addStreamEvent, _BetaMessageStream_endRequest, _BetaMessageStream_accumulateMessage, _BetaMessageStream_toolInputParseError, BetaMessageStream;
 var init_BetaMessageStream = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/BetaMessageStream.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/BetaMessageStream.mjs"() {
     init_tslib();
     init_stainless_helper_header();
     init_error2();
@@ -20177,7 +20177,7 @@ var init_BetaMessageStream = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/toolsets/family.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/toolsets/family.mjs
 function toolsetFamily(toolset) {
   return TOOLSET_TYPE_TO_FAMILY[toolset.type];
 }
@@ -20186,7 +20186,7 @@ function isRunnableToolset(t) {
 }
 var TOOLSET_TYPE_TO_FAMILY;
 var init_family = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/toolsets/family.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/toolsets/family.mjs"() {
     TOOLSET_TYPE_TO_FAMILY = {
       browser_toolset_20260801: "browser",
       computer_toolset_20260801: "computer"
@@ -20194,10 +20194,10 @@ var init_family = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/toolsets/errors.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/toolsets/errors.mjs
 var ToolsetUsageError, ToolsetContractError;
 var init_errors2 = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/toolsets/errors.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/toolsets/errors.mjs"() {
     init_error();
     ToolsetUsageError = class extends AnthropicError {
       constructor(message, options) {
@@ -20216,7 +20216,7 @@ var init_errors2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/toolsets/run.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/toolsets/run.mjs
 function notExecutedText(family) {
   return Object.prototype.hasOwnProperty.call(NOT_EXECUTED_BY_FAMILY, family) ? NOT_EXECUTED_BY_FAMILY[family] : NOT_EXECUTED;
 }
@@ -20256,7 +20256,7 @@ async function runToolsetMember(toolset, toolUse, options = {}) {
 }
 var NOT_EXECUTED, NOT_EXECUTED_BY_FAMILY;
 var init_run = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/toolsets/run.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/toolsets/run.mjs"() {
     init_error();
     init_ToolError();
     init_errors2();
@@ -20270,17 +20270,17 @@ var init_run = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/messages/index.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/messages/index.mjs
 var init_messages = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/messages/index.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/messages/index.mjs"() {
     init_messages2();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/api-keys.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/api-keys.mjs
 var APIKeys;
 var init_api_keys = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/api-keys.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/api-keys.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -20359,10 +20359,10 @@ var init_api_keys = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/artifacts.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/artifacts.mjs
 var Artifacts;
 var init_artifacts = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/artifacts.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/artifacts.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -20400,10 +20400,10 @@ var init_artifacts = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/connectors.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/connectors.mjs
 var Connectors;
 var init_connectors = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/connectors.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/connectors.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -20453,10 +20453,10 @@ var init_connectors = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/cost.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/cost.mjs
 var Cost;
 var init_cost = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/cost.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/cost.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -20531,10 +20531,10 @@ var init_cost = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/cost-report.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/cost-report.mjs
 var CostReport;
 var init_cost_report = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/cost-report.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/cost-report.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -20596,10 +20596,10 @@ var init_cost_report = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/plugins.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/plugins.mjs
 var Plugins;
 var init_plugins = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/plugins.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/plugins.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -20652,10 +20652,10 @@ var init_plugins = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/skills.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/skills.mjs
 var Skills;
 var init_skills2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/skills.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/skills.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -20703,10 +20703,10 @@ var init_skills2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/summaries.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/summaries.mjs
 var Summaries;
 var init_summaries = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/summaries.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/summaries.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -20749,10 +20749,10 @@ var init_summaries = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/usage.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/usage.mjs
 var Usage;
 var init_usage = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/usage.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/usage.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -20828,10 +20828,10 @@ var init_usage = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/usage-report.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/usage-report.mjs
 var UsageReport;
 var init_usage_report = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/usage-report.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/usage-report.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -20893,10 +20893,10 @@ var init_usage_report = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/user-cost-report.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/user-cost-report.mjs
 var UserCostReport;
 var init_user_cost_report = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/user-cost-report.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/user-cost-report.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -20965,10 +20965,10 @@ var init_user_cost_report = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/user-usage-report.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/user-usage-report.mjs
 var UserUsageReport;
 var init_user_usage_report = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/user-usage-report.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/user-usage-report.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -21037,10 +21037,10 @@ var init_user_usage_report = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/users.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/users.mjs
 var Users;
 var init_users = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/users.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/users.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -21088,10 +21088,10 @@ var init_users = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/chat/projects.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/chat/projects.mjs
 var Projects;
 var init_projects = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/chat/projects.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/chat/projects.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -21138,10 +21138,10 @@ var init_projects = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/chat/chat.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/chat/chat.mjs
 var Chat;
 var init_chat = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/chat/chat.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/chat/chat.mjs"() {
     init_resource();
     init_projects();
     init_projects();
@@ -21158,10 +21158,10 @@ var init_chat = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/apps.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/apps.mjs
 var Apps;
 var init_apps = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/apps.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/apps/apps.mjs"() {
     init_resource();
     init_chat();
     init_chat();
@@ -21178,10 +21178,10 @@ var init_apps = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/analytics.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/analytics.mjs
 var Analytics;
 var init_analytics = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/analytics.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/analytics/analytics.mjs"() {
     init_resource();
     init_artifacts();
     init_artifacts();
@@ -21246,10 +21246,10 @@ var init_analytics = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/compliance-settings.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/compliance-settings.mjs
 var ComplianceSettings;
 var init_compliance_settings = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/compliance-settings.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/compliance-settings.mjs"() {
     init_resource();
     init_tracing();
     ComplianceSettings = class extends APIResource {
@@ -21316,10 +21316,10 @@ var init_compliance_settings = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/external-keys.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/external-keys.mjs
 var ExternalKeys;
 var init_external_keys = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/external-keys.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/external-keys.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -21487,10 +21487,10 @@ var init_external_keys = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/invites.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/invites.mjs
 var Invites;
 var init_invites = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/invites.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/invites.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -21610,10 +21610,10 @@ var init_invites = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/plugin-marketplaces.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugin-marketplaces.mjs
 var PluginMarketplaces;
 var init_plugin_marketplaces = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/plugin-marketplaces.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugin-marketplaces.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -21865,10 +21865,10 @@ var init_plugin_marketplaces = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/rate-limits.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rate-limits.mjs
 var RateLimits;
 var init_rate_limits = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/rate-limits.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rate-limits.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -21906,10 +21906,10 @@ var init_rate_limits = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/users.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/users.mjs
 var Users2;
 var init_users2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/users.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/users.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -22007,10 +22007,10 @@ var init_users2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/webhooks.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/webhooks.mjs
 var Webhooks2;
 var init_webhooks2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/webhooks.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/webhooks.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -22238,10 +22238,10 @@ var init_webhooks2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/slack-channels.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/slack-channels.mjs
 var SlackChannels;
 var init_slack_channels = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/slack-channels.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/slack-channels.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -22482,10 +22482,10 @@ var init_slack_channels = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/slack-workspaces.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/slack-workspaces.mjs
 var SlackWorkspaces;
 var init_slack_workspaces = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/slack-workspaces.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/slack-workspaces.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -22621,10 +22621,10 @@ var init_slack_workspaces = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/bundles/targets.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/bundles/targets.mjs
 var Targets;
 var init_targets = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/bundles/targets.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/bundles/targets.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -22794,10 +22794,10 @@ var init_targets = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/bundles/bundles.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/bundles/bundles.mjs
 var Bundles;
 var init_bundles = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/bundles/bundles.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/bundles/bundles.mjs"() {
     init_resource();
     init_targets();
     init_targets();
@@ -22887,10 +22887,10 @@ var init_bundles = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/claude-tag.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/claude-tag.mjs
 var BetaSlackChannelSetUpSettingsRefusedError, BetaAPIKeyScopeMissingError, BetaClaudeTagWritesNotEnabledError, BetaComplianceConfigurationRestrictedError, BetaOrganizationLevelScopedAPIKeyRequiredError, BetaSlackChannelSetUpEnvironmentNotFoundError, BetaSlackChannelSetUpSettingsConflictError, ClaudeTag;
 var init_claude_tag = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/claude-tag.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/claude-tag/claude-tag.mjs"() {
     init_resource();
     init_slack_channels();
     init_slack_channels();
@@ -22937,10 +22937,10 @@ var init_claude_tag = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/issuers.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/issuers.mjs
 var Issuers;
 var init_issuers = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/issuers.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/issuers.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -23134,10 +23134,10 @@ var init_issuers = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/rules/workspaces.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/rules/workspaces.mjs
 var Workspaces;
 var init_workspaces = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/rules/workspaces.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/rules/workspaces.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -23271,10 +23271,10 @@ var init_workspaces = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/rules/rules.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/rules/rules.mjs
 var Rules;
 var init_rules = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/rules/rules.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/rules/rules.mjs"() {
     init_resource();
     init_workspaces();
     init_workspaces();
@@ -23499,10 +23499,10 @@ var init_rules = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/federation.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/federation.mjs
 var Federation;
 var init_federation = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/federation.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/federation.mjs"() {
     init_resource();
     init_issuers();
     init_issuers();
@@ -23523,10 +23523,10 @@ var init_federation = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/installation-settings.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/installation-settings.mjs
 var InstallationSettings;
 var init_installation_settings = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/installation-settings.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/installation-settings.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -23694,10 +23694,10 @@ var init_installation_settings = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/shares.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/shares.mjs
 var Shares;
 var init_shares = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/shares.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/shares.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -23756,10 +23756,10 @@ var init_shares = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/versions.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/versions.mjs
 var Versions2;
 var init_versions2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/versions.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/versions.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -23998,10 +23998,10 @@ var init_versions2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/plugins.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/plugins.mjs
 var BetaScanFailedError, BetaPluginNameTakenError, BetaScanPendingError, BetaSkillNameTakenError, BetaRegistrationPendingError, Plugins2;
 var init_plugins2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/plugins.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/plugins/plugins.mjs"() {
     init_resource();
     init_installation_settings();
     init_installation_settings();
@@ -24341,10 +24341,10 @@ var init_plugins2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-groups/members.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-groups/members.mjs
 var Members;
 var init_members = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-groups/members.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-groups/members.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -24456,10 +24456,10 @@ var init_members = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-groups/rbac-groups.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-groups/rbac-groups.mjs
 var RBACGroups;
 var init_rbac_groups = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-groups/rbac-groups.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-groups/rbac-groups.mjs"() {
     init_resource();
     init_members();
     init_members();
@@ -24611,10 +24611,10 @@ var init_rbac_groups = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-roles/permissions.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-roles/permissions.mjs
 var Permissions;
 var init_permissions = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-roles/permissions.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-roles/permissions.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -24651,10 +24651,10 @@ var init_permissions = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-roles/rbac-roles.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-roles/rbac-roles.mjs
 var RBACRoles;
 var init_rbac_roles = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-roles/rbac-roles.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/rbac-roles/rbac-roles.mjs"() {
     init_resource();
     init_permissions();
     init_permissions();
@@ -24721,10 +24721,10 @@ var init_rbac_roles = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/service-accounts/workspaces.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/service-accounts/workspaces.mjs
 var Workspaces2;
 var init_workspaces2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/service-accounts/workspaces.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/service-accounts/workspaces.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -24869,10 +24869,10 @@ var init_workspaces2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/service-accounts/service-accounts.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/service-accounts/service-accounts.mjs
 var ServiceAccounts;
 var init_service_accounts = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/service-accounts/service-accounts.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/service-accounts/service-accounts.mjs"() {
     init_resource();
     init_workspaces2();
     init_workspaces2();
@@ -25073,10 +25073,10 @@ var init_service_accounts = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/effective.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/effective.mjs
 var Effective;
 var init_effective = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/effective.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/effective.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -25115,10 +25115,10 @@ var init_effective = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/increase-requests.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/increase-requests.mjs
 var IncreaseRequests;
 var init_increase_requests = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/increase-requests.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/increase-requests.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -25236,10 +25236,10 @@ var init_increase_requests = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/spend-limits.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/spend-limits.mjs
 var BetaSpendLimitsAdminAPIWritesNotEnabledError, SpendLimits;
 var init_spend_limits = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/spend-limits.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/spend-limits/spend-limits.mjs"() {
     init_resource();
     init_effective();
     init_effective();
@@ -25405,10 +25405,10 @@ var init_spend_limits = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/telemetry-destinations/workspaces.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/telemetry-destinations/workspaces.mjs
 var Workspaces3;
 var init_workspaces3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/telemetry-destinations/workspaces.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/telemetry-destinations/workspaces.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -25539,10 +25539,10 @@ var init_workspaces3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/telemetry-destinations/telemetry-destinations.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/telemetry-destinations/telemetry-destinations.mjs
 var TelemetryDestinations;
 var init_telemetry_destinations = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/telemetry-destinations/telemetry-destinations.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/telemetry-destinations/telemetry-destinations.mjs"() {
     init_resource();
     init_workspaces3();
     init_workspaces3();
@@ -25771,10 +25771,10 @@ var init_telemetry_destinations = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/members.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/members.mjs
 var Members2;
 var init_members2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/members.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/members.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -25923,10 +25923,10 @@ var init_members2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/rate-limits.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/rate-limits.mjs
 var RateLimits2;
 var init_rate_limits2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/rate-limits.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/rate-limits.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -26009,10 +26009,10 @@ var init_rate_limits2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/service-accounts.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/service-accounts.mjs
 var ServiceAccounts2;
 var init_service_accounts2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/service-accounts.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/service-accounts.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -26237,10 +26237,10 @@ var init_service_accounts2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/workspaces.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/workspaces.mjs
 var Workspaces4;
 var init_workspaces4 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/workspaces.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/workspaces/workspaces.mjs"() {
     init_resource();
     init_members2();
     init_members2();
@@ -26407,10 +26407,10 @@ var init_workspaces4 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/organization/organization.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/organization.mjs
 var BetaBillingFrozenError, Organization;
 var init_organization = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/organization/organization.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/organization/organization.mjs"() {
     init_resource();
     init_api_keys();
     init_api_keys();
@@ -26532,10 +26532,10 @@ var init_organization = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/sessions/events.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/events.mjs
 var Events;
 var init_events = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/sessions/events.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/events.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -26692,10 +26692,10 @@ var init_events = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/sessions/resources.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/resources.mjs
 var Resources;
 var init_resources = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/sessions/resources.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/resources.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -26868,10 +26868,10 @@ var init_resources = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/sessions/threads/events.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/threads/events.mjs
 var Events2;
 var init_events2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/sessions/threads/events.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/threads/events.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -26952,10 +26952,10 @@ var init_events2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/sessions/threads/threads.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/threads/threads.mjs
 var Threads;
 var init_threads = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/sessions/threads/threads.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/threads/threads.mjs"() {
     init_resource();
     init_events2();
     init_events2();
@@ -27069,10 +27069,10 @@ var init_threads = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/sessions/sessions.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/sessions.mjs
 var Sessions;
 var init_sessions = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/sessions/sessions.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/sessions/sessions.mjs"() {
     init_resource();
     init_events();
     init_events();
@@ -27317,10 +27317,10 @@ var init_sessions = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/skills/versions.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/skills/versions.mjs
 var Versions3;
 var init_versions3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/skills/versions.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/skills/versions.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -27518,10 +27518,10 @@ var init_versions3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/skills/skills.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/skills/skills.mjs
 var Skills2;
 var init_skills3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/skills/skills.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/skills/skills.mjs"() {
     init_resource();
     init_versions3();
     init_versions3();
@@ -27688,10 +27688,10 @@ var init_skills3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/tunnels/certificates.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/tunnels/certificates.mjs
 var Certificates;
 var init_certificates = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/tunnels/certificates.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/tunnels/certificates.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -27853,10 +27853,10 @@ var init_certificates = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/tunnels/tunnels.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/tunnels/tunnels.mjs
 var Tunnels;
 var init_tunnels = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/tunnels/tunnels.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/tunnels/tunnels.mjs"() {
     init_resource();
     init_certificates();
     init_certificates();
@@ -28086,10 +28086,10 @@ var init_tunnels = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/user-profiles/action-urls.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/user-profiles/action-urls.mjs
 var ActionURLs;
 var init_action_urls = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/user-profiles/action-urls.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/user-profiles/action-urls.mjs"() {
     init_resource();
     init_headers();
     init_tracing();
@@ -28130,10 +28130,10 @@ var init_action_urls = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/user-profiles/user-profiles.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/user-profiles/user-profiles.mjs
 var UserProfiles;
 var init_user_profiles = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/user-profiles/user-profiles.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/user-profiles/user-profiles.mjs"() {
     init_resource();
     init_action_urls();
     init_action_urls();
@@ -28330,10 +28330,10 @@ var init_user_profiles = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/vaults/credentials.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/vaults/credentials.mjs
 var Credentials;
 var init_credentials = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/vaults/credentials.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/vaults/credentials.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -28567,10 +28567,10 @@ var init_credentials = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/vaults/vaults.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/vaults/vaults.mjs
 var Vaults;
 var init_vaults = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/vaults/vaults.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/vaults/vaults.mjs"() {
     init_resource();
     init_credentials();
     init_credentials();
@@ -28769,24 +28769,24 @@ var init_vaults = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/index.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/index.mjs
 var init_beta = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/index.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/index.mjs"() {
     init_messages();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta.mjs
 var init_beta2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta.mjs"() {
     init_beta();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/BetaToolRunnerStream.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/BetaToolRunnerStream.mjs
 var _BetaToolRunnerStream_instances, _BetaToolRunnerStream_onToolCall, _BetaToolRunnerStream_emitted, _BetaToolRunnerStream_readers, _BetaToolRunnerStream_toolCalls, _BetaToolRunnerStream_closed, _BetaToolRunnerStream_ready, _BetaToolRunnerStream_fallback, _BetaToolRunnerStream_track, _BetaToolRunnerStream_release, _BetaToolRunnerStream_removeReader, BetaToolRunnerStream;
 var init_BetaToolRunnerStream = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/BetaToolRunnerStream.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/BetaToolRunnerStream.mjs"() {
     init_tslib();
     init_BetaMessageStream();
     BetaToolRunnerStream = /* @__PURE__ */ (() => {
@@ -28888,7 +28888,7 @@ var init_BetaToolRunnerStream = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/threads/ThreadState.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/threads/ThreadState.mjs
 function isUnfinishedStopReason(stopReason) {
   return UNFINISHED_STOP_REASONS.some((unfinished) => unfinished === stopReason);
 }
@@ -28963,7 +28963,7 @@ function toMessageList(input2) {
 }
 var _ThreadState_instances, _ThreadState_fields, _ThreadState_stored, _ThreadState_staged, _ThreadState_anchor, _ThreadState_turn, _ThreadState_logger, _ThreadState_lastReply_get, _ThreadState_repeatsLastReply, _ThreadState_startNewThread, _ThreadState_retryPartialTurn, _ThreadState_dropsRefusedTurn, _ThreadState_storeTurn, _ThreadState_adoptContainer, _ThreadState_checkCreateOnly, _ThreadState_requestOptions, Turn, ThreadState, UNFINISHED_STOP_REASONS, MESSAGE_THREADS_BETA, CREATE_ONLY_FIELDS, REPLAY_ERROR_CODES;
 var init_ThreadState = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/threads/ThreadState.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/threads/ThreadState.mjs"() {
     init_tslib();
     init_error();
     init_headers();
@@ -29325,7 +29325,7 @@ var init_ThreadState = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/threads/tool-runner-params.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/threads/tool-runner-params.mjs
 function splitToolRunnerParams(params) {
   const { stream: stream2, max_iterations, runToolsEagerly, thread, ...threadParams } = params;
   if (thread !== void 0 && thread !== false) {
@@ -29334,11 +29334,11 @@ function splitToolRunnerParams(params) {
   return { settings: { stream: stream2, max_iterations, runToolsEagerly }, thread, threadParams };
 }
 var init_tool_runner_params = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/threads/tool-runner-params.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/threads/tool-runner-params.mjs"() {
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/tools/BetaToolRunner.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/tools/BetaToolRunner.mjs
 function sameMessages(a, b) {
   return a.length === b.length && a.every((message, i) => sameMessage(message, b[i]));
 }
@@ -29589,7 +29589,7 @@ function determineNextStepFromStopReason(stopReason) {
 }
 var _BetaToolRunner_instances, _BetaToolRunner_consumed, _BetaToolRunner_mutated, _BetaToolRunner_thread, _BetaToolRunner_settings, _BetaToolRunner_options, _BetaToolRunner_helperHeader, _BetaToolRunner_messagesWithoutReply, _BetaToolRunner_message, _BetaToolRunner_stream, _BetaToolRunner_toolResponse, _BetaToolRunner_completion, _BetaToolRunner_iterationCount, _BetaToolRunner_toolRunnerOtelContext, _BetaToolRunner_compaction, _BetaToolRunner_calls, _BetaToolRunner_lastStopReason, _BetaToolRunner_toolOverrides, _BetaToolRunner_pendingToolChanges, _BetaToolRunner_withToolRunnerSpan, _BetaToolRunner_send, _BetaToolRunner_turnOptions, _BetaToolRunner_streamThatStartsTools, _BetaToolRunner_startedCallsSettled, _BetaToolRunner_compact, _BetaToolRunner_compactionThread, _BetaToolRunner_runnableTools, _BetaToolRunner_availableToolNames, _BetaToolRunner_recordRemovalsFromHistory, _BetaToolRunner_compactAfterFinalTurn, _BetaToolRunner_generateToolResponse, _BetaToolRunner_toolsetFamilies, _BetaToolRunner_toolsetParams, _BetaToolRunner_flushPendingToolChanges, _BetaToolRunner_pendingToolChangesMessage, USE_A_NEW_RUNNER, REMOVE_WITH_A_NEW_RUNNER, BetaToolRunner, MESSAGES_CHANGED_WHILE_COMPACTING;
 var init_BetaToolRunner = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/tools/BetaToolRunner.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/tools/BetaToolRunner.mjs"() {
     init_tslib();
     init_dist();
     init_BetaRunnableTool();
@@ -30216,10 +30216,10 @@ var init_BetaToolRunner = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/threads/BetaMessageThread.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/threads/BetaMessageThread.mjs
 var BetaMessageThread;
 var init_BetaMessageThread = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/threads/BetaMessageThread.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/threads/BetaMessageThread.mjs"() {
     init_api_promise();
     init_error();
     init_parse();
@@ -30379,10 +30379,10 @@ var init_BetaMessageThread = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/messages/messages.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/messages/messages.mjs
 var DEPRECATED_MODELS, MODELS_TO_WARN_WITH_THINKING_ENABLED, Messages, BETA_CLIENT_TOOL_UNION_KEYS;
 var init_messages2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/messages/messages.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/messages/messages.mjs"() {
     init_batches();
     init_resource();
     init_constants();
@@ -30611,10 +30611,10 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/beta/beta.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/beta.mjs
 var BetaUnsupportedCharsetError, Beta;
 var init_beta3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/beta/beta.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/beta/beta.mjs"() {
     init_resource();
     init_deployment_runs();
     init_deployment_runs();
@@ -30702,7 +30702,7 @@ var init_beta3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/internal/messages-request.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/messages-request.mjs
 function messagesCreateHeaders2(params, options) {
   const { user_profile_id, workspace_id, tools, messages } = params;
   return buildHeaders([
@@ -30721,7 +30721,7 @@ function startMessagesStreamSpan2(client, body, options) {
   return startApiCallSpan(client, "anthropic.messages.create", options, messagesCreateSpanSettings(client, { ...body, stream: true }, headers));
 }
 var init_messages_request = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/internal/messages-request.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/internal/messages-request.mjs"() {
     init_headers();
     init_stainless_helper_header();
     init_tracing();
@@ -30729,7 +30729,7 @@ var init_messages_request = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/parser.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/parser.mjs
 function getOutputFormat2(params) {
   return params?.output_config?.format;
 }
@@ -30790,18 +30790,18 @@ function parseOutputFormat(params, content) {
   }
 }
 var init_parser2 = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/parser.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/parser.mjs"() {
     init_error();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/MessageStream.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/MessageStream.mjs
 function tracksToolInput2(content) {
   return content.type === "tool_use" || content.type === "server_tool_use";
 }
 var _MessageStream_instances, _MessageStream_currentMessageSnapshot, _MessageStream_params, _MessageStream_connectedPromise, _MessageStream_resolveConnectedPromise, _MessageStream_rejectConnectedPromise, _MessageStream_endPromise, _MessageStream_resolveEndPromise, _MessageStream_rejectEndPromise, _MessageStream_listeners, _MessageStream_ended, _MessageStream_errored, _MessageStream_aborted, _MessageStream_catchingPromiseCreated, _MessageStream_response, _MessageStream_request_id, _MessageStream_workspace_id, _MessageStream_logger, _MessageStream_client, _MessageStream_span, _MessageStream_getFinalMessage, _MessageStream_getFinalText, _MessageStream_handleError, _MessageStream_beginRequest, _MessageStream_addStreamEvent, _MessageStream_endRequest, _MessageStream_accumulateMessage, MessageStream;
 var init_MessageStream = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/MessageStream.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/MessageStream.mjs"() {
     init_tslib();
     init_stainless_helper_header();
     init_errors();
@@ -31421,10 +31421,10 @@ var init_MessageStream = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/messages/batches.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/messages/batches.mjs
 var Batches2;
 var init_batches2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/messages/batches.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/messages/batches.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -31692,10 +31692,10 @@ var init_batches2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/messages/messages.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/messages/messages.mjs
 var AvailableToolsLimitExceededError, CompactionBlockAmbiguousError, CompactionBlockMisplacedError, CompactionContentMismatchError, CompactionIncompleteTurnError, CompactionNothingToSummarizeError, CompactionSignatureInvalidError, CompactionTooManyToolReferencesError, CompactionToolChangesMismatchError, ThreadAlreadyContinuedError, ThreadContinueInFlightError, ThreadFingerprintMismatchError, ThreadUnsupportedRequestError, ToolNameConflictError, ToolReferenceUnresolvedError, ThreadNotFoundError, CompactionUnavailableError, Messages2, DEPRECATED_MODELS2, MODELS_TO_WARN_WITH_THINKING_ENABLED2;
 var init_messages3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/messages/messages.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/messages/messages.mjs"() {
     init_resource();
     init_headers();
     init_tracing();
@@ -31926,10 +31926,10 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/api-keys.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/api-keys.mjs
 var OrgAPIKeyLimitExceededError, WorkspaceAPIKeyLimitExceededError, APIKeys2;
 var init_api_keys2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/api-keys.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/api-keys.mjs"() {
     init_resource();
     init_error();
     init_pagination();
@@ -32013,10 +32013,10 @@ var init_api_keys2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/external-keys.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/external-keys.mjs
 var ExternalKeyInWorkspacePolicyError, ExternalKeyChangedError, ExternalKeys2;
 var init_external_keys2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/external-keys.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/external-keys.mjs"() {
     init_resource();
     init_error();
     init_pagination();
@@ -32188,10 +32188,10 @@ var init_external_keys2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/invites.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/invites.mjs
 var AlreadyMemberError, CannotInviteEmailsWithUnverifiedDomainsError, EmailDomainNotAllowedError, InviteAlreadyExistsError, Invites2;
 var init_invites2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/invites.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/invites.mjs"() {
     init_resource();
     init_error();
     init_pagination();
@@ -32320,10 +32320,10 @@ var init_invites2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/compliance-settings.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/compliance-settings.mjs
 var ComplianceSettings2;
 var init_compliance_settings2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/compliance-settings.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/compliance-settings.mjs"() {
     init_resource();
     init_tracing();
     ComplianceSettings2 = class extends APIResource {
@@ -32388,10 +32388,10 @@ var init_compliance_settings2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/rate-limits.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rate-limits.mjs
 var RateLimits3;
 var init_rate_limits3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/rate-limits.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rate-limits.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -32428,10 +32428,10 @@ var init_rate_limits3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/users.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/users.mjs
 var CannotRemoveLastMemberError, Users3;
 var init_users3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/users.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/users.mjs"() {
     init_resource();
     init_error();
     init_pagination();
@@ -32532,10 +32532,10 @@ var init_users3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/artifacts.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/artifacts.mjs
 var Artifacts2;
 var init_artifacts2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/artifacts.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/artifacts.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -32572,10 +32572,10 @@ var init_artifacts2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/connectors.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/connectors.mjs
 var Connectors2;
 var init_connectors2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/connectors.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/connectors.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -32624,10 +32624,10 @@ var init_connectors2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/plugins.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/plugins.mjs
 var Plugins3;
 var init_plugins3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/plugins.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/plugins.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -32679,10 +32679,10 @@ var init_plugins3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/skills.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/skills.mjs
 var Skills3;
 var init_skills4 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/skills.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/skills.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -32729,10 +32729,10 @@ var init_skills4 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/summaries.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/summaries.mjs
 var Summaries2;
 var init_summaries2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/summaries.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/summaries.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -32774,10 +32774,10 @@ var init_summaries2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/users.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/users.mjs
 var Users4;
 var init_users4 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/users.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/users.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -32824,10 +32824,10 @@ var init_users4 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/chat/projects.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/chat/projects.mjs
 var Projects2;
 var init_projects2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/chat/projects.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/chat/projects.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -32873,10 +32873,10 @@ var init_projects2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/chat/chat.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/chat/chat.mjs
 var Chat2;
 var init_chat2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/chat/chat.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/chat/chat.mjs"() {
     init_resource();
     init_projects2();
     init_projects2();
@@ -32893,10 +32893,10 @@ var init_chat2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/apps.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/apps.mjs
 var Apps2;
 var init_apps2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/apps.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/apps/apps.mjs"() {
     init_resource();
     init_chat2();
     init_chat2();
@@ -32913,10 +32913,10 @@ var init_apps2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/analytics/analytics.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/analytics.mjs
 var Analytics2;
 var init_analytics2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/analytics/analytics.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/analytics/analytics.mjs"() {
     init_resource();
     init_artifacts2();
     init_artifacts2();
@@ -32957,10 +32957,10 @@ var init_analytics2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/federation/issuers.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/federation/issuers.mjs
 var Issuers2;
 var init_issuers2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/federation/issuers.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/federation/issuers.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -33123,10 +33123,10 @@ var init_issuers2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/federation/rules/workspaces.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/federation/rules/workspaces.mjs
 var Workspaces5;
 var init_workspaces5 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/federation/rules/workspaces.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/federation/rules/workspaces.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -33242,10 +33242,10 @@ var init_workspaces5 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/federation/rules/rules.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/federation/rules/rules.mjs
 var Rules2;
 var init_rules2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/federation/rules/rules.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/federation/rules/rules.mjs"() {
     init_resource();
     init_workspaces5();
     init_workspaces5();
@@ -33439,10 +33439,10 @@ var init_rules2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/federation/federation.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/federation/federation.mjs
 var Federation2;
 var init_federation2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/federation/federation.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/federation/federation.mjs"() {
     init_resource();
     init_issuers2();
     init_issuers2();
@@ -33463,10 +33463,10 @@ var init_federation2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/rbac-groups/members.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rbac-groups/members.mjs
 var Members3;
 var init_members3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/rbac-groups/members.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rbac-groups/members.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -33575,10 +33575,10 @@ var init_members3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/rbac-groups/rbac-groups.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rbac-groups/rbac-groups.mjs
 var RBACGroupGrantsOwnerAccessError, RBACGroupOwnerAccessUnconfirmedError, RBACGroups2;
 var init_rbac_groups2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/rbac-groups/rbac-groups.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rbac-groups/rbac-groups.mjs"() {
     init_resource();
     init_members3();
     init_members3();
@@ -33732,10 +33732,10 @@ var init_rbac_groups2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/rbac-roles/permissions.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rbac-roles/permissions.mjs
 var Permissions2;
 var init_permissions2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/rbac-roles/permissions.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rbac-roles/permissions.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -33771,10 +33771,10 @@ var init_permissions2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/rbac-roles/rbac-roles.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rbac-roles/rbac-roles.mjs
 var RBACRoles2;
 var init_rbac_roles2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/rbac-roles/rbac-roles.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/rbac-roles/rbac-roles.mjs"() {
     init_resource();
     init_permissions2();
     init_permissions2();
@@ -33839,10 +33839,10 @@ var init_rbac_roles2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/service-accounts/workspaces.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/service-accounts/workspaces.mjs
 var Workspaces6;
 var init_workspaces6 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/service-accounts/workspaces.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/service-accounts/workspaces.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -33969,10 +33969,10 @@ var init_workspaces6 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/service-accounts/service-accounts.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/service-accounts/service-accounts.mjs
 var ServiceAccounts3;
 var init_service_accounts3 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/service-accounts/service-accounts.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/service-accounts/service-accounts.mjs"() {
     init_resource();
     init_workspaces6();
     init_workspaces6();
@@ -34142,10 +34142,10 @@ var init_service_accounts3 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/effective.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/effective.mjs
 var Effective2;
 var init_effective2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/effective.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/effective.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -34183,10 +34183,10 @@ var init_effective2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/increase-requests.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/increase-requests.mjs
 var IncreaseRequests2;
 var init_increase_requests2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/increase-requests.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/increase-requests.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -34300,10 +34300,10 @@ var init_increase_requests2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/spend-limits.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/spend-limits.mjs
 var SpendLimits2;
 var init_spend_limits2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/spend-limits.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/spend-limits/spend-limits.mjs"() {
     init_resource();
     init_effective2();
     init_effective2();
@@ -34324,10 +34324,10 @@ var init_spend_limits2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/workspaces/members.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/workspaces/members.mjs
 var Members4;
 var init_members4 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/workspaces/members.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/workspaces/members.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -34471,10 +34471,10 @@ var init_members4 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/workspaces/rate-limits.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/workspaces/rate-limits.mjs
 var RateLimits4;
 var init_rate_limits4 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/workspaces/rate-limits.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/workspaces/rate-limits.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -34555,10 +34555,10 @@ var init_rate_limits4 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/workspaces/service-accounts.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/workspaces/service-accounts.mjs
 var ServiceAccounts4;
 var init_service_accounts4 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/workspaces/service-accounts.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/workspaces/service-accounts.mjs"() {
     init_resource();
     init_pagination();
     init_tracing();
@@ -34755,10 +34755,10 @@ var init_service_accounts4 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/workspaces/workspaces.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/workspaces/workspaces.mjs
 var KeyProfileMismatchError, WorkspaceMemberLimitExceededError, WorkspacePolicyViolationError, Workspaces7;
 var init_workspaces7 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/workspaces/workspaces.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/workspaces/workspaces.mjs"() {
     init_resource();
     init_members4();
     init_members4();
@@ -34924,10 +34924,10 @@ var init_workspaces7 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/organization/organization.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/organization.mjs
 var OrgMemberLimitExceededError, ConcurrentMembershipChangeError, Organization2;
 var init_organization2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/organization/organization.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/organization/organization.mjs"() {
     init_resource();
     init_api_keys2();
     init_api_keys2();
@@ -35032,10 +35032,10 @@ var init_organization2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/skills/versions.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/skills/versions.mjs
 var Versions4;
 var init_versions4 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/skills/versions.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/skills/versions.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -35183,10 +35183,10 @@ var init_versions4 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/skills/skills.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/skills/skills.mjs
 var SkillReadBlockedUndecryptableError, Skills4;
 var init_skills5 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/skills/skills.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/skills/skills.mjs"() {
     init_resource();
     init_versions4();
     init_versions4();
@@ -35337,10 +35337,10 @@ var init_skills5 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/user-profiles/action-urls.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/user-profiles/action-urls.mjs
 var ActionURLs2;
 var init_action_urls2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/user-profiles/action-urls.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/user-profiles/action-urls.mjs"() {
     init_resource();
     init_headers();
     init_tracing();
@@ -35377,10 +35377,10 @@ var init_action_urls2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/user-profiles/user-profiles.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/user-profiles/user-profiles.mjs
 var UserProfileNotFoundError, UserProfiles2;
 var init_user_profiles2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/user-profiles/user-profiles.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/user-profiles/user-profiles.mjs"() {
     init_resource();
     init_action_urls2();
     init_action_urls2();
@@ -35528,10 +35528,10 @@ var init_user_profiles2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/core/error-classes.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/core/error-classes.mjs
 var ERROR_CODE_CLASSES;
 var init_error_classes = __esm({
-  "node_modules/@anthropic-ai/sdk/core/error-classes.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/core/error-classes.mjs"() {
     init_files();
     init_shared();
     init_beta3();
@@ -35628,7 +35628,7 @@ var init_error_classes = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/credentials/types.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/types.mjs
 function requireSecureTokenEndpoint(baseURL) {
   if (!baseURL)
     return;
@@ -35774,7 +35774,7 @@ async function readLimitedText(resp) {
 }
 var GRANT_TYPE_JWT_BEARER, GRANT_TYPE_REFRESH_TOKEN, TOKEN_ENDPOINT, OAUTH_API_BETA_HEADER, FEDERATION_BETA_HEADER, ADVISORY_REFRESH_THRESHOLD_IN_SECONDS, MANDATORY_REFRESH_THRESHOLD_IN_SECONDS, ADVISORY_REFRESH_BACKOFF_IN_SECONDS, MAX_TOKEN_RESPONSE_BYTES, MAX_ERROR_BODY_CHARS, SAFE_ERROR_KEYS, WorkloadIdentityError;
 var init_types = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/credentials/types.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/types.mjs"() {
     init_error();
     GRANT_TYPE_JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer";
     GRANT_TYPE_REFRESH_TOKEN = "refresh_token";
@@ -35798,19 +35798,19 @@ var init_types = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/utils/time.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/time.mjs
 function nowAsSeconds() {
   return Math.floor(Date.now() / 1e3);
 }
 var init_time = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/utils/time.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/utils/time.mjs"() {
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/credentials/token-cache.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/token-cache.mjs
 var TokenCache;
 var init_token_cache = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/credentials/token-cache.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/token-cache.mjs"() {
     init_types();
     init_time();
     TokenCache = class {
@@ -35903,7 +35903,7 @@ var init_token_cache = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/core/credentials.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/core/credentials.mjs
 function validateProfileName(name) {
   if (!name) {
     throw new Error("profile name is empty");
@@ -35920,7 +35920,7 @@ function validateProfileName(name) {
 }
 var CREDENTIALS_FILE_VERSION, PROFILE_NAME_PATTERN, loadConfigWithSource, getCredentialsPath, getRootConfigPath, supportsLocalConfigFiles, getActiveProfileName;
 var init_credentials2 = __esm({
-  "node_modules/@anthropic-ai/sdk/core/credentials.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/core/credentials.mjs"() {
     init_error();
     init_detect_platform();
     init_utils3();
@@ -36090,7 +36090,7 @@ var init_credentials2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/credentials/identity-token.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/identity-token.mjs
 function identityTokenFromFile(path4) {
   if (!path4) {
     throw new AnthropicError("Identity token file path is empty");
@@ -36117,12 +36117,12 @@ function identityTokenFromValue(token) {
   return () => token;
 }
 var init_identity_token = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/credentials/identity-token.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/identity-token.mjs"() {
     init_error();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/credentials/oidc-federation.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/oidc-federation.mjs
 function oidcFederationProvider(config2) {
   return async () => {
     requireSecureTokenEndpoint(config2.baseURL);
@@ -36181,14 +36181,14 @@ function oidcFederationProvider(config2) {
   };
 }
 var init_oidc_federation = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/credentials/oidc-federation.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/oidc-federation.mjs"() {
     init_types();
     init_time();
     init_version();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/credentials/user-oauth.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/user-oauth.mjs
 function userOAuthProvider(config2) {
   return async (opts) => {
     const { fs: fs5 } = await Promise.resolve().then(() => (init_node(), node_exports));
@@ -36263,7 +36263,7 @@ function userOAuthProvider(config2) {
   };
 }
 var init_user_oauth = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/credentials/user-oauth.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/user-oauth.mjs"() {
     init_credentials2();
     init_types();
     init_time();
@@ -36271,7 +36271,7 @@ var init_user_oauth = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/lib/credentials/credential-chain.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/credential-chain.mjs
 function resolveCredentialsFromConfig(config2, options) {
   const credentialsPath = config2.authentication.credentials_path ?? null;
   const effectiveBaseURL = (config2.base_url || options.baseURL).replace(/\/+$/, "");
@@ -36403,7 +36403,7 @@ function cachedExchangeProvider(exchange, credentialsPath, onCacheWriteError, on
   };
 }
 var init_credential_chain = __esm({
-  "node_modules/@anthropic-ai/sdk/lib/credentials/credential-chain.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/lib/credentials/credential-chain.mjs"() {
     init_env();
     init_credentials2();
     init_types();
@@ -36414,7 +36414,7 @@ var init_credential_chain = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/core/middleware.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/core/middleware.mjs
 function isFetchOriginError(err) {
   return typeof err === "object" && err !== null && fetchOriginErrors.has(err);
 }
@@ -36510,7 +36510,7 @@ function applyMiddleware(fetchFn, middleware, options, client) {
 }
 var fetchOriginErrors;
 var init_middleware = __esm({
-  "node_modules/@anthropic-ai/sdk/core/middleware.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/core/middleware.mjs"() {
     init_errors();
     init_parse();
     init_log();
@@ -36520,7 +36520,7 @@ var init_middleware = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/internal/to-file.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/internal/to-file.mjs
 async function toFile(value, name, options) {
   checkFileSupport();
   value = await value;
@@ -36574,7 +36574,7 @@ function propsForError(value) {
 }
 var isBlobLike, isFileLike, isResponseLike;
 var init_to_file = __esm({
-  "node_modules/@anthropic-ai/sdk/internal/to-file.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/internal/to-file.mjs"() {
     init_uploads();
     init_uploads();
     isBlobLike = (value) => value != null && typeof value === "object" && typeof value.size === "number" && typeof value.type === "string" && typeof value.text === "function" && typeof value.slice === "function" && typeof value.arrayBuffer === "function";
@@ -36583,17 +36583,17 @@ var init_to_file = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/core/uploads.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/core/uploads.mjs
 var init_uploads2 = __esm({
-  "node_modules/@anthropic-ai/sdk/core/uploads.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/core/uploads.mjs"() {
     init_to_file();
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/models.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/models.mjs
 var Models2;
 var init_models2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/models.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/models.mjs"() {
     init_resource();
     init_pagination();
     init_headers();
@@ -36670,9 +36670,9 @@ var init_models2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/resources/index.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/resources/index.mjs
 var init_resources2 = __esm({
-  "node_modules/@anthropic-ai/sdk/resources/index.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/resources/index.mjs"() {
     init_shared();
     init_messages3();
     init_beta3();
@@ -36684,10 +36684,10 @@ var init_resources2 = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/client.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/client.mjs
 var _BaseAnthropic_instances, _a3, _BaseAnthropic_encoder, _BaseAnthropic_apiKeyFunction, _BaseAnthropic_openTelemetry, _BaseAnthropic_baseURLOverridden, warnedOfKeyAndTokenInEnv, BaseAnthropic, Anthropic;
 var init_client = __esm({
-  "node_modules/@anthropic-ai/sdk/client.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/client.mjs"() {
     init_tslib();
     init_values();
     init_sleep();
@@ -37673,16 +37673,16 @@ var init_client = __esm({
   }
 });
 
-// node_modules/@anthropic-ai/sdk/index.mjs
+// ../software-factory/node_modules/@anthropic-ai/sdk/index.mjs
 var init_sdk = __esm({
-  "node_modules/@anthropic-ai/sdk/index.mjs"() {
+  "../software-factory/node_modules/@anthropic-ai/sdk/index.mjs"() {
     init_client();
   }
 });
 
-// node_modules/ajv/dist/compile/codegen/code.js
+// ../software-factory/node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
-  "node_modules/ajv/dist/compile/codegen/code.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/codegen/code.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.regexpCode = exports2.getEsmExportName = exports2.getProperty = exports2.safeStringify = exports2.stringify = exports2.strConcat = exports2.addCodeArg = exports2.str = exports2._ = exports2.nil = exports2._Code = exports2.Name = exports2.IDENTIFIER = exports2._CodeOrName = void 0;
@@ -37834,9 +37834,9 @@ var require_code = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/codegen/scope.js
+// ../software-factory/node_modules/ajv/dist/compile/codegen/scope.js
 var require_scope = __commonJS({
-  "node_modules/ajv/dist/compile/codegen/scope.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/codegen/scope.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ValueScope = exports2.ValueScopeName = exports2.Scope = exports2.varKinds = exports2.UsedValueState = void 0;
@@ -37979,9 +37979,9 @@ var require_scope = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/codegen/index.js
+// ../software-factory/node_modules/ajv/dist/compile/codegen/index.js
 var require_codegen = __commonJS({
-  "node_modules/ajv/dist/compile/codegen/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/codegen/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.or = exports2.and = exports2.not = exports2.CodeGen = exports2.operators = exports2.varKinds = exports2.ValueScopeName = exports2.ValueScope = exports2.Scope = exports2.Name = exports2.regexpCode = exports2.stringify = exports2.getProperty = exports2.nil = exports2.strConcat = exports2.str = exports2._ = void 0;
@@ -38699,9 +38699,9 @@ var require_codegen = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/util.js
+// ../software-factory/node_modules/ajv/dist/compile/util.js
 var require_util = __commonJS({
-  "node_modules/ajv/dist/compile/util.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/util.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.checkStrictMode = exports2.getErrorPath = exports2.Type = exports2.useFunc = exports2.setEvaluated = exports2.evaluatedPropsToName = exports2.mergeEvaluated = exports2.eachItem = exports2.unescapeJsonPointer = exports2.escapeJsonPointer = exports2.escapeFragment = exports2.unescapeFragment = exports2.schemaRefOrVal = exports2.schemaHasRulesButRef = exports2.schemaHasRules = exports2.checkUnknownRules = exports2.alwaysValidSchema = exports2.toHash = void 0;
@@ -38866,9 +38866,9 @@ var require_util = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/names.js
+// ../software-factory/node_modules/ajv/dist/compile/names.js
 var require_names = __commonJS({
-  "node_modules/ajv/dist/compile/names.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/names.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -38905,9 +38905,9 @@ var require_names = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/errors.js
+// ../software-factory/node_modules/ajv/dist/compile/errors.js
 var require_errors2 = __commonJS({
-  "node_modules/ajv/dist/compile/errors.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/errors.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.extendErrors = exports2.resetErrorsCount = exports2.reportExtraError = exports2.reportError = exports2.keyword$DataError = exports2.keywordError = void 0;
@@ -39027,9 +39027,9 @@ var require_errors2 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/validate/boolSchema.js
+// ../software-factory/node_modules/ajv/dist/compile/validate/boolSchema.js
 var require_boolSchema = __commonJS({
-  "node_modules/ajv/dist/compile/validate/boolSchema.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/validate/boolSchema.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.boolOrEmptySchema = exports2.topBoolOrEmptySchema = void 0;
@@ -39078,9 +39078,9 @@ var require_boolSchema = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/rules.js
+// ../software-factory/node_modules/ajv/dist/compile/rules.js
 var require_rules = __commonJS({
-  "node_modules/ajv/dist/compile/rules.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/rules.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getRules = exports2.isJSONType = void 0;
@@ -39109,9 +39109,9 @@ var require_rules = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/validate/applicability.js
+// ../software-factory/node_modules/ajv/dist/compile/validate/applicability.js
 var require_applicability = __commonJS({
-  "node_modules/ajv/dist/compile/validate/applicability.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/validate/applicability.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.shouldUseRule = exports2.shouldUseGroup = exports2.schemaHasRulesForType = void 0;
@@ -39132,9 +39132,9 @@ var require_applicability = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/validate/dataType.js
+// ../software-factory/node_modules/ajv/dist/compile/validate/dataType.js
 var require_dataType = __commonJS({
-  "node_modules/ajv/dist/compile/validate/dataType.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/validate/dataType.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.reportTypeError = exports2.checkDataTypes = exports2.checkDataType = exports2.coerceAndCheckDataType = exports2.getJSONTypes = exports2.getSchemaTypes = exports2.DataType = void 0;
@@ -39316,9 +39316,9 @@ var require_dataType = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/validate/defaults.js
+// ../software-factory/node_modules/ajv/dist/compile/validate/defaults.js
 var require_defaults = __commonJS({
-  "node_modules/ajv/dist/compile/validate/defaults.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/validate/defaults.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.assignDefaults = void 0;
@@ -39353,9 +39353,9 @@ var require_defaults = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/code.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/code.js
 var require_code2 = __commonJS({
-  "node_modules/ajv/dist/vocabularies/code.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/code.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateUnion = exports2.validateArray = exports2.usePattern = exports2.callValidateCode = exports2.schemaProperties = exports2.allSchemaProperties = exports2.noPropertyInData = exports2.propertyInData = exports2.isOwnProperty = exports2.hasPropFunc = exports2.reportMissingProp = exports2.checkMissingProp = exports2.checkReportMissingProp = void 0;
@@ -39486,9 +39486,9 @@ var require_code2 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/validate/keyword.js
+// ../software-factory/node_modules/ajv/dist/compile/validate/keyword.js
 var require_keyword = __commonJS({
-  "node_modules/ajv/dist/compile/validate/keyword.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/validate/keyword.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateKeywordUsage = exports2.validSchemaType = exports2.funcKeywordCode = exports2.macroKeywordCode = void 0;
@@ -39604,9 +39604,9 @@ var require_keyword = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/validate/subschema.js
+// ../software-factory/node_modules/ajv/dist/compile/validate/subschema.js
 var require_subschema = __commonJS({
-  "node_modules/ajv/dist/compile/validate/subschema.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/validate/subschema.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.extendSubschemaMode = exports2.extendSubschemaData = exports2.getSubschema = void 0;
@@ -39687,9 +39687,9 @@ var require_subschema = __commonJS({
   }
 });
 
-// node_modules/fast-deep-equal/index.js
+// ../software-factory/node_modules/fast-deep-equal/index.js
 var require_fast_deep_equal = __commonJS({
-  "node_modules/fast-deep-equal/index.js"(exports2, module2) {
+  "../software-factory/node_modules/fast-deep-equal/index.js"(exports2, module2) {
     "use strict";
     module2.exports = function equal(a, b) {
       if (a === b) return true;
@@ -39722,9 +39722,9 @@ var require_fast_deep_equal = __commonJS({
   }
 });
 
-// node_modules/json-schema-traverse/index.js
+// ../software-factory/node_modules/json-schema-traverse/index.js
 var require_json_schema_traverse = __commonJS({
-  "node_modules/json-schema-traverse/index.js"(exports2, module2) {
+  "../software-factory/node_modules/json-schema-traverse/index.js"(exports2, module2) {
     "use strict";
     var traverse = module2.exports = function(schema, opts, cb) {
       if (typeof opts == "function") {
@@ -39810,9 +39810,9 @@ var require_json_schema_traverse = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/resolve.js
+// ../software-factory/node_modules/ajv/dist/compile/resolve.js
 var require_resolve = __commonJS({
-  "node_modules/ajv/dist/compile/resolve.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/resolve.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getSchemaRefs = exports2.resolveUrl = exports2.normalizeId = exports2._getFullPath = exports2.getFullPath = exports2.inlineRef = void 0;
@@ -39966,9 +39966,9 @@ var require_resolve = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/validate/index.js
+// ../software-factory/node_modules/ajv/dist/compile/validate/index.js
 var require_validate = __commonJS({
-  "node_modules/ajv/dist/compile/validate/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/validate/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getData = exports2.KeywordCxt = exports2.validateFunctionCode = void 0;
@@ -40474,9 +40474,9 @@ var require_validate = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/runtime/validation_error.js
+// ../software-factory/node_modules/ajv/dist/runtime/validation_error.js
 var require_validation_error = __commonJS({
-  "node_modules/ajv/dist/runtime/validation_error.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/runtime/validation_error.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var ValidationError = class extends Error {
@@ -40490,9 +40490,9 @@ var require_validation_error = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/ref_error.js
+// ../software-factory/node_modules/ajv/dist/compile/ref_error.js
 var require_ref_error = __commonJS({
-  "node_modules/ajv/dist/compile/ref_error.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/ref_error.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var resolve_1 = require_resolve();
@@ -40507,9 +40507,9 @@ var require_ref_error = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/compile/index.js
+// ../software-factory/node_modules/ajv/dist/compile/index.js
 var require_compile = __commonJS({
-  "node_modules/ajv/dist/compile/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/compile/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.resolveSchema = exports2.getCompilingSchema = exports2.resolveRef = exports2.compileSchema = exports2.SchemaEnv = void 0;
@@ -40731,9 +40731,9 @@ var require_compile = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/data.json
+// ../software-factory/node_modules/ajv/dist/refs/data.json
 var require_data = __commonJS({
-  "node_modules/ajv/dist/refs/data.json"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/refs/data.json"(exports2, module2) {
     module2.exports = {
       $id: "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#",
       description: "Meta-schema for $data reference (JSON AnySchema extension proposal)",
@@ -40750,9 +40750,9 @@ var require_data = __commonJS({
   }
 });
 
-// node_modules/fast-uri/lib/utils.js
+// ../software-factory/node_modules/fast-uri/lib/utils.js
 var require_utils = __commonJS({
-  "node_modules/fast-uri/lib/utils.js"(exports2, module2) {
+  "../software-factory/node_modules/fast-uri/lib/utils.js"(exports2, module2) {
     "use strict";
     var isUUID = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu);
     var isIPv4 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
@@ -41284,9 +41284,9 @@ var require_utils = __commonJS({
   }
 });
 
-// node_modules/fast-uri/lib/schemes.js
+// ../software-factory/node_modules/fast-uri/lib/schemes.js
 var require_schemes = __commonJS({
-  "node_modules/fast-uri/lib/schemes.js"(exports2, module2) {
+  "../software-factory/node_modules/fast-uri/lib/schemes.js"(exports2, module2) {
     "use strict";
     var { isUUID } = require_utils();
     var URN_REG = /^([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-./:;=@]|%[\da-f]{2})+)$/iu;
@@ -41495,9 +41495,9 @@ var require_schemes = __commonJS({
   }
 });
 
-// node_modules/fast-uri/index.js
+// ../software-factory/node_modules/fast-uri/index.js
 var require_fast_uri = __commonJS({
-  "node_modules/fast-uri/index.js"(exports2, module2) {
+  "../software-factory/node_modules/fast-uri/index.js"(exports2, module2) {
     "use strict";
     var { normalizeIPv6, removeDotSegments, removeDotSegmentsRelative, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = require_utils();
     var { SCHEMES, getSchemeHandler } = require_schemes();
@@ -41925,9 +41925,9 @@ var require_fast_uri = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/runtime/uri.js
+// ../software-factory/node_modules/ajv/dist/runtime/uri.js
 var require_uri = __commonJS({
-  "node_modules/ajv/dist/runtime/uri.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/runtime/uri.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var uri = require_fast_uri();
@@ -41936,9 +41936,9 @@ var require_uri = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/core.js
+// ../software-factory/node_modules/ajv/dist/core.js
 var require_core = __commonJS({
-  "node_modules/ajv/dist/core.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/core.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.CodeGen = exports2.Name = exports2.nil = exports2.stringify = exports2.str = exports2._ = exports2.KeywordCxt = void 0;
@@ -42547,9 +42547,9 @@ var require_core = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/core/id.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/core/id.js
 var require_id = __commonJS({
-  "node_modules/ajv/dist/vocabularies/core/id.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/core/id.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var def = {
@@ -42562,9 +42562,9 @@ var require_id = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/core/ref.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/core/ref.js
 var require_ref = __commonJS({
-  "node_modules/ajv/dist/vocabularies/core/ref.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/core/ref.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.callRef = exports2.getValidate = void 0;
@@ -42684,9 +42684,9 @@ var require_ref = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/core/index.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/core/index.js
 var require_core2 = __commonJS({
-  "node_modules/ajv/dist/vocabularies/core/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/core/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var id_1 = require_id();
@@ -42705,9 +42705,9 @@ var require_core2 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/limitNumber.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/limitNumber.js
 var require_limitNumber = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -42737,9 +42737,9 @@ var require_limitNumber = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/multipleOf.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/multipleOf.js
 var require_multipleOf = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -42765,9 +42765,9 @@ var require_multipleOf = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/runtime/ucs2length.js
+// ../software-factory/node_modules/ajv/dist/runtime/ucs2length.js
 var require_ucs2length = __commonJS({
-  "node_modules/ajv/dist/runtime/ucs2length.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/runtime/ucs2length.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     function ucs2length(str) {
@@ -42791,9 +42791,9 @@ var require_ucs2length = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/limitLength.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/limitLength.js
 var require_limitLength = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -42823,9 +42823,9 @@ var require_limitLength = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/pattern.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/pattern.js
 var require_pattern = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -42860,9 +42860,9 @@ var require_pattern = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/limitProperties.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/limitProperties.js
 var require_limitProperties = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -42889,9 +42889,9 @@ var require_limitProperties = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/required.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/required.js
 var require_required = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/required.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/required.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -42971,9 +42971,9 @@ var require_required = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/limitItems.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/limitItems.js
 var require_limitItems = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -43000,9 +43000,9 @@ var require_limitItems = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/runtime/equal.js
+// ../software-factory/node_modules/ajv/dist/runtime/equal.js
 var require_equal = __commonJS({
-  "node_modules/ajv/dist/runtime/equal.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/runtime/equal.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var equal = require_fast_deep_equal();
@@ -43011,9 +43011,9 @@ var require_equal = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
 var require_uniqueItems = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var dataType_1 = require_dataType();
@@ -43078,9 +43078,9 @@ var require_uniqueItems = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/const.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/const.js
 var require_const = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/const.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/const.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -43107,9 +43107,9 @@ var require_const = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/enum.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/enum.js
 var require_enum = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/enum.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/enum.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -43156,9 +43156,9 @@ var require_enum = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/index.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/index.js
 var require_validation = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var limitNumber_1 = require_limitNumber();
@@ -43194,9 +43194,9 @@ var require_validation = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
 var require_additionalItems = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateAdditionalItems = void 0;
@@ -43247,9 +43247,9 @@ var require_additionalItems = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/items.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/items.js
 var require_items = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/items.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/items.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateTuple = void 0;
@@ -43304,9 +43304,9 @@ var require_items = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
 var require_prefixItems = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var items_1 = require_items();
@@ -43321,9 +43321,9 @@ var require_prefixItems = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/items2020.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/items2020.js
 var require_items2020 = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -43356,9 +43356,9 @@ var require_items2020 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/contains.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/contains.js
 var require_contains = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -43450,9 +43450,9 @@ var require_contains = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/dependencies.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/dependencies.js
 var require_dependencies = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.validateSchemaDeps = exports2.validatePropertyDeps = exports2.error = void 0;
@@ -43544,9 +43544,9 @@ var require_dependencies = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
 var require_propertyNames = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -43587,9 +43587,9 @@ var require_propertyNames = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
 var require_additionalProperties = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -43693,9 +43693,9 @@ var require_additionalProperties = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/properties.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/properties.js
 var require_properties = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var validate_1 = require_validate();
@@ -43751,9 +43751,9 @@ var require_properties = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
 var require_patternProperties = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -43825,9 +43825,9 @@ var require_patternProperties = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/not.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/not.js
 var require_not = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/not.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/not.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util();
@@ -43856,9 +43856,9 @@ var require_not = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/anyOf.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/anyOf.js
 var require_anyOf = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -43873,9 +43873,9 @@ var require_anyOf = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/oneOf.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/oneOf.js
 var require_oneOf = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -43931,9 +43931,9 @@ var require_oneOf = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/allOf.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/allOf.js
 var require_allOf = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util();
@@ -43958,9 +43958,9 @@ var require_allOf = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/if.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/if.js
 var require_if = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/if.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/if.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -44027,9 +44027,9 @@ var require_if = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/thenElse.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/thenElse.js
 var require_thenElse = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util();
@@ -44045,9 +44045,9 @@ var require_thenElse = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/index.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/index.js
 var require_applicator = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var additionalItems_1 = require_additionalItems();
@@ -44093,9 +44093,9 @@ var require_applicator = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/dynamic/dynamicAnchor.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/dynamic/dynamicAnchor.js
 var require_dynamicAnchor = __commonJS({
-  "node_modules/ajv/dist/vocabularies/dynamic/dynamicAnchor.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/dynamic/dynamicAnchor.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.dynamicAnchor = void 0;
@@ -44128,9 +44128,9 @@ var require_dynamicAnchor = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/dynamic/dynamicRef.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/dynamic/dynamicRef.js
 var require_dynamicRef = __commonJS({
-  "node_modules/ajv/dist/vocabularies/dynamic/dynamicRef.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/dynamic/dynamicRef.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.dynamicRef = void 0;
@@ -44174,9 +44174,9 @@ var require_dynamicRef = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/dynamic/recursiveAnchor.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/dynamic/recursiveAnchor.js
 var require_recursiveAnchor = __commonJS({
-  "node_modules/ajv/dist/vocabularies/dynamic/recursiveAnchor.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/dynamic/recursiveAnchor.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var dynamicAnchor_1 = require_dynamicAnchor();
@@ -44195,9 +44195,9 @@ var require_recursiveAnchor = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/dynamic/recursiveRef.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/dynamic/recursiveRef.js
 var require_recursiveRef = __commonJS({
-  "node_modules/ajv/dist/vocabularies/dynamic/recursiveRef.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/dynamic/recursiveRef.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var dynamicRef_1 = require_dynamicRef();
@@ -44210,9 +44210,9 @@ var require_recursiveRef = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/dynamic/index.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/dynamic/index.js
 var require_dynamic = __commonJS({
-  "node_modules/ajv/dist/vocabularies/dynamic/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/dynamic/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var dynamicAnchor_1 = require_dynamicAnchor();
@@ -44224,9 +44224,9 @@ var require_dynamic = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/dependentRequired.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/dependentRequired.js
 var require_dependentRequired = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/dependentRequired.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/dependentRequired.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var dependencies_1 = require_dependencies();
@@ -44241,9 +44241,9 @@ var require_dependentRequired = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/applicator/dependentSchemas.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/applicator/dependentSchemas.js
 var require_dependentSchemas = __commonJS({
-  "node_modules/ajv/dist/vocabularies/applicator/dependentSchemas.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/applicator/dependentSchemas.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var dependencies_1 = require_dependencies();
@@ -44257,9 +44257,9 @@ var require_dependentSchemas = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/validation/limitContains.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/validation/limitContains.js
 var require_limitContains = __commonJS({
-  "node_modules/ajv/dist/vocabularies/validation/limitContains.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/validation/limitContains.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var util_1 = require_util();
@@ -44277,9 +44277,9 @@ var require_limitContains = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/next.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/next.js
 var require_next = __commonJS({
-  "node_modules/ajv/dist/vocabularies/next.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/next.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var dependentRequired_1 = require_dependentRequired();
@@ -44290,9 +44290,9 @@ var require_next = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/unevaluated/unevaluatedProperties.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/unevaluated/unevaluatedProperties.js
 var require_unevaluatedProperties = __commonJS({
-  "node_modules/ajv/dist/vocabularies/unevaluated/unevaluatedProperties.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/unevaluated/unevaluatedProperties.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -44356,9 +44356,9 @@ var require_unevaluatedProperties = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/unevaluated/unevaluatedItems.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/unevaluated/unevaluatedItems.js
 var require_unevaluatedItems = __commonJS({
-  "node_modules/ajv/dist/vocabularies/unevaluated/unevaluatedItems.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/unevaluated/unevaluatedItems.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -44400,9 +44400,9 @@ var require_unevaluatedItems = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/unevaluated/index.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/unevaluated/index.js
 var require_unevaluated = __commonJS({
-  "node_modules/ajv/dist/vocabularies/unevaluated/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/unevaluated/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var unevaluatedProperties_1 = require_unevaluatedProperties();
@@ -44412,9 +44412,9 @@ var require_unevaluated = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/format/format.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/format/format.js
 var require_format = __commonJS({
-  "node_modules/ajv/dist/vocabularies/format/format.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/format/format.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -44502,9 +44502,9 @@ var require_format = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/format/index.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/format/index.js
 var require_format2 = __commonJS({
-  "node_modules/ajv/dist/vocabularies/format/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/format/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var format_1 = require_format();
@@ -44513,9 +44513,9 @@ var require_format2 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/metadata.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/metadata.js
 var require_metadata = __commonJS({
-  "node_modules/ajv/dist/vocabularies/metadata.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/metadata.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.contentVocabulary = exports2.metadataVocabulary = void 0;
@@ -44536,9 +44536,9 @@ var require_metadata = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/draft2020.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/draft2020.js
 var require_draft2020 = __commonJS({
-  "node_modules/ajv/dist/vocabularies/draft2020.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/draft2020.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var core_1 = require_core2();
@@ -44564,9 +44564,9 @@ var require_draft2020 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/discriminator/types.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/discriminator/types.js
 var require_types = __commonJS({
-  "node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.DiscrError = void 0;
@@ -44578,9 +44578,9 @@ var require_types = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/vocabularies/discriminator/index.js
+// ../software-factory/node_modules/ajv/dist/vocabularies/discriminator/index.js
 var require_discriminator = __commonJS({
-  "node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -44683,9 +44683,9 @@ var require_discriminator = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/json-schema-2020-12/schema.json
+// ../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/schema.json
 var require_schema4 = __commonJS({
-  "node_modules/ajv/dist/refs/json-schema-2020-12/schema.json"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/schema.json"(exports2, module2) {
     module2.exports = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $id: "https://json-schema.org/draft/2020-12/schema",
@@ -44743,9 +44743,9 @@ var require_schema4 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/json-schema-2020-12/meta/applicator.json
+// ../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/applicator.json
 var require_applicator2 = __commonJS({
-  "node_modules/ajv/dist/refs/json-schema-2020-12/meta/applicator.json"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/applicator.json"(exports2, module2) {
     module2.exports = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $id: "https://json-schema.org/draft/2020-12/meta/applicator",
@@ -44796,9 +44796,9 @@ var require_applicator2 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/json-schema-2020-12/meta/unevaluated.json
+// ../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/unevaluated.json
 var require_unevaluated2 = __commonJS({
-  "node_modules/ajv/dist/refs/json-schema-2020-12/meta/unevaluated.json"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/unevaluated.json"(exports2, module2) {
     module2.exports = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $id: "https://json-schema.org/draft/2020-12/meta/unevaluated",
@@ -44816,9 +44816,9 @@ var require_unevaluated2 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/json-schema-2020-12/meta/content.json
+// ../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/content.json
 var require_content = __commonJS({
-  "node_modules/ajv/dist/refs/json-schema-2020-12/meta/content.json"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/content.json"(exports2, module2) {
     module2.exports = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $id: "https://json-schema.org/draft/2020-12/meta/content",
@@ -44837,9 +44837,9 @@ var require_content = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/json-schema-2020-12/meta/core.json
+// ../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/core.json
 var require_core3 = __commonJS({
-  "node_modules/ajv/dist/refs/json-schema-2020-12/meta/core.json"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/core.json"(exports2, module2) {
     module2.exports = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $id: "https://json-schema.org/draft/2020-12/meta/core",
@@ -44893,9 +44893,9 @@ var require_core3 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/json-schema-2020-12/meta/format-annotation.json
+// ../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/format-annotation.json
 var require_format_annotation = __commonJS({
-  "node_modules/ajv/dist/refs/json-schema-2020-12/meta/format-annotation.json"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/format-annotation.json"(exports2, module2) {
     module2.exports = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $id: "https://json-schema.org/draft/2020-12/meta/format-annotation",
@@ -44912,9 +44912,9 @@ var require_format_annotation = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/json-schema-2020-12/meta/meta-data.json
+// ../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/meta-data.json
 var require_meta_data = __commonJS({
-  "node_modules/ajv/dist/refs/json-schema-2020-12/meta/meta-data.json"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/meta-data.json"(exports2, module2) {
     module2.exports = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $id: "https://json-schema.org/draft/2020-12/meta/meta-data",
@@ -44953,9 +44953,9 @@ var require_meta_data = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/json-schema-2020-12/meta/validation.json
+// ../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/validation.json
 var require_validation2 = __commonJS({
-  "node_modules/ajv/dist/refs/json-schema-2020-12/meta/validation.json"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/meta/validation.json"(exports2, module2) {
     module2.exports = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $id: "https://json-schema.org/draft/2020-12/meta/validation",
@@ -45048,9 +45048,9 @@ var require_validation2 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/refs/json-schema-2020-12/index.js
+// ../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/index.js
 var require_json_schema_2020_12 = __commonJS({
-  "node_modules/ajv/dist/refs/json-schema-2020-12/index.js"(exports2) {
+  "../software-factory/node_modules/ajv/dist/refs/json-schema-2020-12/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var metaSchema = require_schema4();
@@ -45083,9 +45083,9 @@ var require_json_schema_2020_12 = __commonJS({
   }
 });
 
-// node_modules/ajv/dist/2020.js
+// ../software-factory/node_modules/ajv/dist/2020.js
 var require__ = __commonJS({
-  "node_modules/ajv/dist/2020.js"(exports2, module2) {
+  "../software-factory/node_modules/ajv/dist/2020.js"(exports2, module2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.MissingRefError = exports2.ValidationError = exports2.CodeGen = exports2.Name = exports2.nil = exports2.stringify = exports2.str = exports2._ = exports2.KeywordCxt = exports2.Ajv2020 = void 0;
@@ -45166,7 +45166,7 @@ var import_node_crypto3 = require("node:crypto");
 var import_node_util = require("node:util");
 var import_node_url = require("node:url");
 
-// node_modules/zod/v4/classic/external.js
+// ../software-factory/node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
   $brand: () => $brand,
@@ -45429,7 +45429,7 @@ __export(external_exports, {
   xor: () => xor
 });
 
-// node_modules/zod/v4/core/index.js
+// ../software-factory/node_modules/zod/v4/core/index.js
 var core_exports2 = {};
 __export(core_exports2, {
   $ZodAny: () => $ZodAny,
@@ -45746,7 +45746,7 @@ __export(core_exports2, {
   withParser: () => withParser
 });
 
-// node_modules/zod/v4/core/util.js
+// ../software-factory/node_modules/zod/v4/core/util.js
 var util_exports = {};
 __export(util_exports, {
   BIGINT_FORMAT_RANGES: () => BIGINT_FORMAT_RANGES,
@@ -46602,7 +46602,7 @@ function constantCatch(value) {
   return fn;
 }
 
-// node_modules/zod/v4/core/core.js
+// ../software-factory/node_modules/zod/v4/core/core.js
 var _a;
 var NEVER = /* @__PURE__ */ Object.freeze({
   status: "aborted"
@@ -46724,7 +46724,7 @@ function config(newConfig) {
   return globalConfig;
 }
 
-// node_modules/zod/v4/core/errors.js
+// ../software-factory/node_modules/zod/v4/core/errors.js
 function _getMessage() {
   const internals = this._zod;
   internals.message ?? (internals.message = JSON.stringify(internals.def, jsonStringifyReplacer, 2));
@@ -46916,7 +46916,7 @@ function prettifyError(error62) {
   return lines.join("\n");
 }
 
-// node_modules/zod/v4/core/parse.js
+// ../software-factory/node_modules/zod/v4/core/parse.js
 function finalizeParams(callee, params) {
   return { callee: params?.callee ?? callee, Err: params?.Err };
 }
@@ -47076,7 +47076,7 @@ var _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
 };
 var safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync($ZodRealError);
 
-// node_modules/zod/v4/core/regexes.js
+// ../software-factory/node_modules/zod/v4/core/regexes.js
 var regexes_exports = {};
 __export(regexes_exports, {
   anyString: () => anyString,
@@ -47248,7 +47248,7 @@ var sha512_hex = /^[0-9a-fA-F]{128}$/;
 var sha512_base64 = /* @__PURE__ */ fixedBase64(86, "==");
 var sha512_base64url = /* @__PURE__ */ fixedBase64url(86);
 
-// node_modules/zod/v4/core/checks.js
+// ../software-factory/node_modules/zod/v4/core/checks.js
 var $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
   var _a4;
   inst._zod ?? (inst._zod = {});
@@ -47724,7 +47724,7 @@ var $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (ins
   };
 });
 
-// node_modules/zod/v4/core/doc.js
+// ../software-factory/node_modules/zod/v4/core/doc.js
 var Doc = class {
   constructor(args = [], closed = {}) {
     this.content = [];
@@ -47765,14 +47765,14 @@ ${content.join("\n")}
   }
 };
 
-// node_modules/zod/v4/core/versions.js
+// ../software-factory/node_modules/zod/v4/core/versions.js
 var version = {
   major: 4,
   minor: 6,
   patch: 7
 };
 
-// node_modules/zod/v4/core/schemas.js
+// ../software-factory/node_modules/zod/v4/core/schemas.js
 var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a4;
   inst ?? (inst = {});
@@ -50214,7 +50214,7 @@ function handleRefineResult(result, payload, input2, inst) {
   }
 }
 
-// node_modules/zod/v4/core/memoizer.js
+// ../software-factory/node_modules/zod/v4/core/memoizer.js
 var $ZodCyclicError = class extends Error {
   constructor() {
     super(`Cannot parse a reference cycle that closes through a transform`);
@@ -50491,7 +50491,7 @@ function isBackEdge(ctx, value) {
   return backEdges !== void 0 && isRef(value) && backEdges.has(value);
 }
 
-// node_modules/zod/v4/locales/index.js
+// ../software-factory/node_modules/zod/v4/locales/index.js
 var locales_exports = {};
 __export(locales_exports, {
   ar: () => ar_default,
@@ -50559,7 +50559,7 @@ __export(locales_exports, {
   zhTW: () => zh_TW_default
 });
 
-// node_modules/zod/v4/locales/ar.js
+// ../software-factory/node_modules/zod/v4/locales/ar.js
 var error = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0641", verb: "\u0623\u0646 \u064A\u062D\u0648\u064A" },
@@ -50671,7 +50671,7 @@ function ar_default() {
   };
 }
 
-// node_modules/zod/v4/locales/az.js
+// ../software-factory/node_modules/zod/v4/locales/az.js
 var error2 = () => {
   const Sizable = {
     string: { unit: "simvol", verb: "olmal\u0131d\u0131r" },
@@ -50782,7 +50782,7 @@ function az_default() {
   };
 }
 
-// node_modules/zod/v4/locales/be.js
+// ../software-factory/node_modules/zod/v4/locales/be.js
 function getBelarusianPlural(count2, one, few, many) {
   const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
@@ -50951,7 +50951,7 @@ function be_default() {
   };
 }
 
-// node_modules/zod/v4/locales/bg.js
+// ../software-factory/node_modules/zod/v4/locales/bg.js
 var error4 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0430", verb: "\u0434\u0430 \u0441\u044A\u0434\u044A\u0440\u0436\u0430" },
@@ -51077,7 +51077,7 @@ function bg_default() {
   };
 }
 
-// node_modules/zod/v4/locales/bn.js
+// ../software-factory/node_modules/zod/v4/locales/bn.js
 var error5 = () => {
   const Sizable = {
     string: { unit: "\u0985\u0995\u09CD\u09B7\u09B0", verb: "\u09A5\u09BE\u0995\u09A4\u09C7 \u09B9\u09AC\u09C7" },
@@ -51191,7 +51191,7 @@ function bn_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ca.js
+// ../software-factory/node_modules/zod/v4/locales/ca.js
 var error6 = () => {
   const Sizable = {
     string: { unit: "car\xE0cters", verb: "contenir" },
@@ -51305,7 +51305,7 @@ function ca_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ckb.js
+// ../software-factory/node_modules/zod/v4/locales/ckb.js
 var error7 = () => {
   const Sizable = {
     string: { unit: "\u067E\u06CC\u062A", verb: "\u0628\u06CE\u062A" },
@@ -51438,7 +51438,7 @@ function ckb_default() {
   };
 }
 
-// node_modules/zod/v4/locales/cs.js
+// ../software-factory/node_modules/zod/v4/locales/cs.js
 var error8 = () => {
   const Sizable = {
     string: { unit: "znak\u016F", verb: "m\xEDt" },
@@ -51555,7 +51555,7 @@ function cs_default() {
   };
 }
 
-// node_modules/zod/v4/locales/da.js
+// ../software-factory/node_modules/zod/v4/locales/da.js
 var error9 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "havde" },
@@ -51676,7 +51676,7 @@ function da_default() {
   };
 }
 
-// node_modules/zod/v4/locales/de.js
+// ../software-factory/node_modules/zod/v4/locales/de.js
 var error10 = () => {
   const Sizable = {
     string: { unit: "Zeichen", verb: "zu haben" },
@@ -51790,7 +51790,7 @@ function de_default() {
   };
 }
 
-// node_modules/zod/v4/locales/el.js
+// ../software-factory/node_modules/zod/v4/locales/el.js
 var error11 = () => {
   const Sizable = {
     string: { unit: "\u03C7\u03B1\u03C1\u03B1\u03BA\u03C4\u03AE\u03C1\u03B5\u03C2", verb: "\u03BD\u03B1 \u03AD\u03C7\u03B5\u03B9" },
@@ -51903,7 +51903,7 @@ function el_default() {
   };
 }
 
-// node_modules/zod/v4/locales/en.js
+// ../software-factory/node_modules/zod/v4/locales/en.js
 var error12 = () => {
   const Sizable = {
     string: { unit: "characters", verb: "to have" },
@@ -52028,7 +52028,7 @@ function en_default() {
   };
 }
 
-// node_modules/zod/v4/locales/eo.js
+// ../software-factory/node_modules/zod/v4/locales/eo.js
 var error13 = () => {
   const Sizable = {
     string: { unit: "karaktrojn", verb: "havi" },
@@ -52143,7 +52143,7 @@ function eo_default() {
   };
 }
 
-// node_modules/zod/v4/locales/es.js
+// ../software-factory/node_modules/zod/v4/locales/es.js
 var error14 = () => {
   const Sizable = {
     string: { unit: "caracteres", verb: "tener" },
@@ -52280,7 +52280,7 @@ function es_default() {
   };
 }
 
-// node_modules/zod/v4/locales/fa.js
+// ../software-factory/node_modules/zod/v4/locales/fa.js
 var error15 = () => {
   const Sizable = {
     string: { unit: "\u06A9\u0627\u0631\u0627\u06A9\u062A\u0631", verb: "\u062F\u0627\u0634\u062A\u0647 \u0628\u0627\u0634\u062F" },
@@ -52400,7 +52400,7 @@ function fa_default() {
   };
 }
 
-// node_modules/zod/v4/locales/fi.js
+// ../software-factory/node_modules/zod/v4/locales/fi.js
 var error16 = () => {
   const Sizable = {
     string: { unit: "merkki\xE4", subject: "merkkijonon" },
@@ -52518,7 +52518,7 @@ function fi_default() {
   };
 }
 
-// node_modules/zod/v4/locales/fr.js
+// ../software-factory/node_modules/zod/v4/locales/fr.js
 var error17 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -52648,7 +52648,7 @@ function fr_default() {
   };
 }
 
-// node_modules/zod/v4/locales/fr-CA.js
+// ../software-factory/node_modules/zod/v4/locales/fr-CA.js
 var error18 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -52761,7 +52761,7 @@ function fr_CA_default() {
   };
 }
 
-// node_modules/zod/v4/locales/gu.js
+// ../software-factory/node_modules/zod/v4/locales/gu.js
 var error19 = () => {
   const Sizable = {
     string: { unit: "\u0A85\u0A95\u0ACD\u0AB7\u0AB0", verb: "\u0AB9\u0ACB\u0AB5\u0ABE \u0A9C\u0ACB\u0A88\u0A8F" },
@@ -52875,7 +52875,7 @@ function gu_default() {
   };
 }
 
-// node_modules/zod/v4/locales/he.js
+// ../software-factory/node_modules/zod/v4/locales/he.js
 var error20 = () => {
   const TypeNames = {
     string: { label: "\u05DE\u05D7\u05E8\u05D5\u05D6\u05EA", gender: "f" },
@@ -53077,7 +53077,7 @@ function he_default() {
   };
 }
 
-// node_modules/zod/v4/locales/hi.js
+// ../software-factory/node_modules/zod/v4/locales/hi.js
 var error21 = () => {
   const Sizable = {
     string: { unit: "\u0905\u0915\u094D\u0937\u0930", verb: "\u0930\u0916\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F" },
@@ -53189,7 +53189,7 @@ function hi_default() {
   };
 }
 
-// node_modules/zod/v4/locales/hr.js
+// ../software-factory/node_modules/zod/v4/locales/hr.js
 var error22 = () => {
   const Sizable = {
     string: { unit: "znakova", verb: "imati" },
@@ -53316,7 +53316,7 @@ function hr_default() {
   };
 }
 
-// node_modules/zod/v4/locales/hu.js
+// ../software-factory/node_modules/zod/v4/locales/hu.js
 var error23 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "legyen" },
@@ -53430,7 +53430,7 @@ function hu_default() {
   };
 }
 
-// node_modules/zod/v4/locales/hy.js
+// ../software-factory/node_modules/zod/v4/locales/hy.js
 function getArmenianPlural(count2, one, many) {
   return Math.abs(count2) === 1 ? one : many;
 }
@@ -53589,7 +53589,7 @@ function hy_default() {
   };
 }
 
-// node_modules/zod/v4/locales/id.js
+// ../software-factory/node_modules/zod/v4/locales/id.js
 var error25 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "memiliki" },
@@ -53701,7 +53701,7 @@ function id_default() {
   };
 }
 
-// node_modules/zod/v4/locales/is.js
+// ../software-factory/node_modules/zod/v4/locales/is.js
 var error26 = () => {
   const Sizable = {
     string: { unit: "stafi", verb: "a\xF0 hafa" },
@@ -53816,7 +53816,7 @@ function is_default() {
   };
 }
 
-// node_modules/zod/v4/locales/it.js
+// ../software-factory/node_modules/zod/v4/locales/it.js
 var error27 = () => {
   const Sizable = {
     string: { unit: "caratteri", verb: "avere" },
@@ -53930,7 +53930,7 @@ function it_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ja.js
+// ../software-factory/node_modules/zod/v4/locales/ja.js
 var error28 = () => {
   const Sizable = {
     string: { unit: "\u6587\u5B57", verb: "\u3067\u3042\u308B" },
@@ -54043,7 +54043,7 @@ function ja_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ka.js
+// ../software-factory/node_modules/zod/v4/locales/ka.js
 var error29 = () => {
   const Sizable = {
     string: { unit: "\u10E1\u10D8\u10DB\u10D1\u10DD\u10DA\u10DD", verb: "\u10E3\u10DC\u10D3\u10D0 \u10E8\u10D4\u10D8\u10EA\u10D0\u10D5\u10D3\u10D4\u10E1" },
@@ -54161,7 +54161,7 @@ function ka_default() {
   };
 }
 
-// node_modules/zod/v4/locales/km.js
+// ../software-factory/node_modules/zod/v4/locales/km.js
 var error30 = () => {
   const Sizable = {
     string: { unit: "\u178F\u17BD\u17A2\u1780\u17D2\u179F\u179A", verb: "\u1782\u17BD\u179A\u1798\u17B6\u1793" },
@@ -54277,12 +54277,12 @@ function km_default() {
   };
 }
 
-// node_modules/zod/v4/locales/kh.js
+// ../software-factory/node_modules/zod/v4/locales/kh.js
 function kh_default() {
   return km_default();
 }
 
-// node_modules/zod/v4/locales/kn.js
+// ../software-factory/node_modules/zod/v4/locales/kn.js
 var error31 = () => {
   const Sizable = {
     string: { unit: "\u0C85\u0C95\u0CCD\u0CB7\u0CB0\u0C97\u0CB3\u0CC1", verb: "\u0CB9\u0CCA\u0C82\u0CA6\u0CB2\u0CC1" },
@@ -54398,7 +54398,7 @@ function kn_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ko.js
+// ../software-factory/node_modules/zod/v4/locales/ko.js
 var error32 = () => {
   const Sizable = {
     string: { unit: "\uBB38\uC790", verb: "to have" },
@@ -54515,7 +54515,7 @@ function ko_default() {
   };
 }
 
-// node_modules/zod/v4/locales/lt.js
+// ../software-factory/node_modules/zod/v4/locales/lt.js
 var capitalizeFirstCharacter = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
@@ -54723,7 +54723,7 @@ function lt_default() {
   };
 }
 
-// node_modules/zod/v4/locales/mk.js
+// ../software-factory/node_modules/zod/v4/locales/mk.js
 var error34 = () => {
   const Sizable = {
     string: { unit: "\u0437\u043D\u0430\u0446\u0438", verb: "\u0434\u0430 \u0438\u043C\u0430\u0430\u0442" },
@@ -54838,7 +54838,7 @@ function mk_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ms.js
+// ../software-factory/node_modules/zod/v4/locales/ms.js
 var error35 = () => {
   const Sizable = {
     string: { unit: "aksara", verb: "mempunyai" },
@@ -54951,7 +54951,7 @@ function ms_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ne.js
+// ../software-factory/node_modules/zod/v4/locales/ne.js
 var error36 = () => {
   const Sizable = {
     string: { unit: "\u0905\u0915\u094D\u0937\u0930", verb: "\u0939\u0941\u0928\u0941\u092A\u0930\u094D\u091B" },
@@ -55063,7 +55063,7 @@ function ne_default() {
   };
 }
 
-// node_modules/zod/v4/locales/nl.js
+// ../software-factory/node_modules/zod/v4/locales/nl.js
 var error37 = () => {
   const Sizable = {
     string: { unit: "tekens", verb: "heeft" },
@@ -55179,7 +55179,7 @@ function nl_default() {
   };
 }
 
-// node_modules/zod/v4/locales/nn.js
+// ../software-factory/node_modules/zod/v4/locales/nn.js
 var error38 = () => {
   const Sizable = {
     string: { unit: "teikn", verb: "\xE5 ha" },
@@ -55293,7 +55293,7 @@ function nn_default() {
   };
 }
 
-// node_modules/zod/v4/locales/no.js
+// ../software-factory/node_modules/zod/v4/locales/no.js
 var error39 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "\xE5 ha" },
@@ -55407,7 +55407,7 @@ function no_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ota.js
+// ../software-factory/node_modules/zod/v4/locales/ota.js
 var error40 = () => {
   const Sizable = {
     string: { unit: "harf", verb: "olmal\u0131d\u0131r" },
@@ -55522,7 +55522,7 @@ function ota_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ps.js
+// ../software-factory/node_modules/zod/v4/locales/ps.js
 var error41 = () => {
   const Sizable = {
     string: { unit: "\u062A\u0648\u06A9\u064A", verb: "\u0648\u0644\u0631\u064A" },
@@ -55642,7 +55642,7 @@ function ps_default() {
   };
 }
 
-// node_modules/zod/v4/locales/pl.js
+// ../software-factory/node_modules/zod/v4/locales/pl.js
 var error42 = () => {
   const Sizable = {
     string: { unit: "znak\xF3w", verb: "mie\u0107" },
@@ -55757,7 +55757,7 @@ function pl_default() {
   };
 }
 
-// node_modules/zod/v4/locales/pt.js
+// ../software-factory/node_modules/zod/v4/locales/pt.js
 var error43 = () => {
   const Sizable = {
     string: { unit: "caracteres" },
@@ -55901,7 +55901,7 @@ function pt_default() {
   };
 }
 
-// node_modules/zod/v4/locales/pt-BR.js
+// ../software-factory/node_modules/zod/v4/locales/pt-BR.js
 var error44 = () => {
   const Sizable = {
     string: { unit: "caracteres" },
@@ -56046,7 +56046,7 @@ function pt_BR_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ro.js
+// ../software-factory/node_modules/zod/v4/locales/ro.js
 var error45 = () => {
   const Sizable = {
     string: { unit: "caractere", verb: "s\u0103 aib\u0103" },
@@ -56169,7 +56169,7 @@ function ro_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ru.js
+// ../software-factory/node_modules/zod/v4/locales/ru.js
 function getRussianPlural(count2, one, few, many) {
   const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
@@ -56338,7 +56338,7 @@ function ru_default() {
   };
 }
 
-// node_modules/zod/v4/locales/sk.js
+// ../software-factory/node_modules/zod/v4/locales/sk.js
 var error47 = () => {
   const Sizable = {
     string: { unit: "znakov", verb: "ma\u0165" },
@@ -56455,7 +56455,7 @@ function sk_default() {
   };
 }
 
-// node_modules/zod/v4/locales/sl.js
+// ../software-factory/node_modules/zod/v4/locales/sl.js
 var error48 = () => {
   const Sizable = {
     string: { unit: "znakov", verb: "imeti" },
@@ -56570,7 +56570,7 @@ function sl_default() {
   };
 }
 
-// node_modules/zod/v4/locales/sv.js
+// ../software-factory/node_modules/zod/v4/locales/sv.js
 var error49 = () => {
   const Sizable = {
     string: { unit: "tecken", verb: "att ha" },
@@ -56686,7 +56686,7 @@ function sv_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ta.js
+// ../software-factory/node_modules/zod/v4/locales/ta.js
 var error50 = () => {
   const Sizable = {
     string: { unit: "\u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1\u0B95\u0BCD\u0B95\u0BB3\u0BCD", verb: "\u0B95\u0BCA\u0BA3\u0BCD\u0B9F\u0BBF\u0BB0\u0BC1\u0B95\u0BCD\u0B95 \u0BB5\u0BC7\u0BA3\u0BCD\u0B9F\u0BC1\u0BAE\u0BCD" },
@@ -56802,7 +56802,7 @@ function ta_default() {
   };
 }
 
-// node_modules/zod/v4/locales/tg.js
+// ../software-factory/node_modules/zod/v4/locales/tg.js
 var error51 = () => {
   const Sizable = {
     string: { unit: "\u0430\u043B\u043E\u043C\u0430\u0442", verb: "\u0434\u043E\u0448\u0442\u0430 \u0431\u043E\u0448\u0430\u0434" },
@@ -56919,7 +56919,7 @@ function tg_default() {
   };
 }
 
-// node_modules/zod/v4/locales/th.js
+// ../software-factory/node_modules/zod/v4/locales/th.js
 var error52 = () => {
   const Sizable = {
     string: { unit: "\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23", verb: "\u0E04\u0E27\u0E23\u0E21\u0E35" },
@@ -57035,7 +57035,7 @@ function th_default() {
   };
 }
 
-// node_modules/zod/v4/locales/tk.js
+// ../software-factory/node_modules/zod/v4/locales/tk.js
 var error53 = () => {
   const Sizable = {
     string: { unit: "simwol", verb: "bolmaly" },
@@ -57143,7 +57143,7 @@ function tk_default() {
   };
 }
 
-// node_modules/zod/v4/locales/tr.js
+// ../software-factory/node_modules/zod/v4/locales/tr.js
 var error54 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "olmal\u0131" },
@@ -57254,7 +57254,7 @@ function tr_default() {
   };
 }
 
-// node_modules/zod/v4/locales/uk.js
+// ../software-factory/node_modules/zod/v4/locales/uk.js
 var error55 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0456\u0432", verb: "\u043C\u0430\u0442\u0438\u043C\u0435" },
@@ -57368,12 +57368,12 @@ function uk_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ua.js
+// ../software-factory/node_modules/zod/v4/locales/ua.js
 function ua_default() {
   return uk_default();
 }
 
-// node_modules/zod/v4/locales/ur.js
+// ../software-factory/node_modules/zod/v4/locales/ur.js
 var error56 = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0648\u0641", verb: "\u06C1\u0648\u0646\u0627" },
@@ -57489,7 +57489,7 @@ function ur_default() {
   };
 }
 
-// node_modules/zod/v4/locales/uz.js
+// ../software-factory/node_modules/zod/v4/locales/uz.js
 var error57 = () => {
   const Sizable = {
     string: { unit: "belgi", verb: "bo\u2018lishi kerak" },
@@ -57603,7 +57603,7 @@ function uz_default() {
   };
 }
 
-// node_modules/zod/v4/locales/vi.js
+// ../software-factory/node_modules/zod/v4/locales/vi.js
 var error58 = () => {
   const Sizable = {
     string: { unit: "k\xFD t\u1EF1", verb: "c\xF3" },
@@ -57717,7 +57717,7 @@ function vi_default() {
   };
 }
 
-// node_modules/zod/v4/locales/zh-CN.js
+// ../software-factory/node_modules/zod/v4/locales/zh-CN.js
 var error59 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u7B26", verb: "\u5305\u542B" },
@@ -57832,7 +57832,7 @@ function zh_CN_default() {
   };
 }
 
-// node_modules/zod/v4/locales/zh-TW.js
+// ../software-factory/node_modules/zod/v4/locales/zh-TW.js
 var error60 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u5143", verb: "\u64C1\u6709" },
@@ -57945,7 +57945,7 @@ function zh_TW_default() {
   };
 }
 
-// node_modules/zod/v4/locales/yo.js
+// ../software-factory/node_modules/zod/v4/locales/yo.js
 var error61 = () => {
   const Sizable = {
     string: { unit: "\xE0mi", verb: "n\xED" },
@@ -58058,7 +58058,7 @@ function yo_default() {
   };
 }
 
-// node_modules/zod/v4/core/registries.js
+// ../software-factory/node_modules/zod/v4/core/registries.js
 var _a2;
 var $output = /* @__PURE__ */ Symbol("ZodOutput");
 var $input = /* @__PURE__ */ Symbol("ZodInput");
@@ -58108,7 +58108,7 @@ function registry() {
 (_a2 = globalThis).__zod_globalRegistry ?? (_a2.__zod_globalRegistry = registry());
 var globalRegistry = globalThis.__zod_globalRegistry;
 
-// node_modules/zod/v4/core/compile.js
+// ../software-factory/node_modules/zod/v4/core/compile.js
 var INVALID = /* @__PURE__ */ Symbol.for("zod.compile.invalid");
 var FALLBACK_FLAG = /* @__PURE__ */ Symbol.for("zod.compile.fallback");
 var ZodCompileAsyncError = class extends Error {
@@ -59718,7 +59718,7 @@ function generateTransformCheck(doc, ctx, schema, accessor) {
   return accessor;
 }
 
-// node_modules/zod/v4/core/api.js
+// ../software-factory/node_modules/zod/v4/core/api.js
 function snapshotChecks(def) {
   if (def.checks)
     def.checks = [...def.checks];
@@ -60777,7 +60777,7 @@ function _stringFormat(Class2, format, fnOrRegex, _params = {}) {
   return inst;
 }
 
-// node_modules/zod/v4/core/to-json-schema.js
+// ../software-factory/node_modules/zod/v4/core/to-json-schema.js
 function assignProps(target, ...sources) {
   for (const source of sources) {
     for (const key of Reflect.ownKeys(source)) {
@@ -61307,7 +61307,7 @@ var createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) =
   return finalize(ctx, schema);
 };
 
-// node_modules/zod/v4/core/json-schema-processors.js
+// ../software-factory/node_modules/zod/v4/core/json-schema-processors.js
 var narrowMin = (agg, key, value) => {
   if (agg[key] === void 0 || value > agg[key])
     agg[key] = value;
@@ -62055,7 +62055,7 @@ function toJSONSchema(input2, params) {
   return finalize(ctx, input2);
 }
 
-// node_modules/zod/v4/core/json-schema-generator.js
+// ../software-factory/node_modules/zod/v4/core/json-schema-generator.js
 var JSONSchemaGenerator = class {
   /** @deprecated Access via ctx instead */
   get metadataRegistry() {
@@ -62133,10 +62133,10 @@ var JSONSchemaGenerator = class {
   }
 };
 
-// node_modules/zod/v4/core/json-schema.js
+// ../software-factory/node_modules/zod/v4/core/json-schema.js
 var json_schema_exports = {};
 
-// node_modules/zod/v4/classic/schemas.js
+// ../software-factory/node_modules/zod/v4/classic/schemas.js
 var schemas_exports2 = {};
 __export(schemas_exports2, {
   ZodAny: () => ZodAny,
@@ -62317,7 +62317,7 @@ __export(schemas_exports2, {
   xor: () => xor
 });
 
-// node_modules/zod/v4/classic/checks.js
+// ../software-factory/node_modules/zod/v4/classic/checks.js
 var checks_exports2 = {};
 __export(checks_exports2, {
   endsWith: () => _endsWith,
@@ -62352,7 +62352,7 @@ __export(checks_exports2, {
   uppercase: () => _uppercase
 });
 
-// node_modules/zod/v4/classic/errors.js
+// ../software-factory/node_modules/zod/v4/classic/errors.js
 var _installedErrorProtos = /* @__PURE__ */ new WeakSet([Object.prototype, Error.prototype]);
 function _lazyMethod(proto, key, make) {
   Object.defineProperty(proto, key, {
@@ -62398,7 +62398,7 @@ var ZodRealError = /* @__PURE__ */ $constructor("ZodError", initializer2, void 0
   Parent: Error
 });
 
-// node_modules/zod/v4/classic/parse.js
+// ../software-factory/node_modules/zod/v4/classic/parse.js
 var parse2 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
 var safeParse2 = /* @__PURE__ */ _safeParse(ZodRealError);
@@ -62412,7 +62412,7 @@ var safeDecode2 = /* @__PURE__ */ _safeDecode(ZodRealError);
 var safeEncodeAsync2 = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
 var safeDecodeAsync2 = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
 
-// node_modules/zod/v4/classic/schemas.js
+// ../software-factory/node_modules/zod/v4/classic/schemas.js
 function _ensureDefaultLocale() {
   if (!globalConfig.localeError)
     config(en_default());
@@ -63877,7 +63877,7 @@ function preprocess(fn, schema) {
   });
 }
 
-// node_modules/zod/v4/classic/compat.js
+// ../software-factory/node_modules/zod/v4/classic/compat.js
 var ZodIssueCode = {
   invalid_type: "invalid_type",
   too_big: "too_big",
@@ -63903,7 +63903,7 @@ var ZodFirstPartyTypeKind;
 /* @__PURE__ */ (function(ZodFirstPartyTypeKind2) {
 })(ZodFirstPartyTypeKind || (ZodFirstPartyTypeKind = {}));
 
-// node_modules/zod/v4/classic/iso.js
+// ../software-factory/node_modules/zod/v4/classic/iso.js
 var iso_exports = {};
 __export(iso_exports, {
   ZodISODate: () => ZodISODate,
@@ -63928,7 +63928,7 @@ function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 
-// node_modules/zod/v4/classic/from-json-schema.js
+// ../software-factory/node_modules/zod/v4/classic/from-json-schema.js
 var z = {
   ...schemas_exports2,
   ...checks_exports2,
@@ -64661,7 +64661,7 @@ function fromJSONSchema(schema, params) {
   return convertSchema(normalized, ctx);
 }
 
-// node_modules/zod/v4/core/visit.js
+// ../software-factory/node_modules/zod/v4/core/visit.js
 var RESOLVING = /* @__PURE__ */ Symbol("z.visit/resolving");
 function visit(schema, fnOrHandlers) {
   const fn = typeof fnOrHandlers === "function" ? fnOrHandlers : (node2, rewritten) => {
@@ -64816,7 +64816,7 @@ function visit(schema, fnOrHandlers) {
   return run(schema);
 }
 
-// node_modules/zod/v4/classic/deep-partial.js
+// ../software-factory/node_modules/zod/v4/classic/deep-partial.js
 function deepPartial(schema) {
   return visit(schema, {
     object: (s) => s.partial(),
@@ -64828,7 +64828,7 @@ function deepPartial(schema) {
   });
 }
 
-// node_modules/zod/v4/classic/in-out.js
+// ../software-factory/node_modules/zod/v4/classic/in-out.js
 function withChecks(side, checks) {
   if (!checks?.length)
     return side;
@@ -64858,7 +64858,7 @@ function output(schema) {
   });
 }
 
-// node_modules/zod/v4/classic/coerce.js
+// ../software-factory/node_modules/zod/v4/classic/coerce.js
 var coerce_exports = {};
 __export(coerce_exports, {
   bigint: () => bigint3,
@@ -65600,7 +65600,7 @@ function loadConfig(source) {
   return result.data;
 }
 
-// node_modules/universal-user-agent/index.js
+// ../software-factory/node_modules/universal-user-agent/index.js
 function getUserAgent() {
   if (typeof navigator === "object" && "userAgent" in navigator) {
     return navigator.userAgent;
@@ -65611,7 +65611,7 @@ function getUserAgent() {
   return "<environment undetectable>";
 }
 
-// node_modules/before-after-hook/lib/register.js
+// ../software-factory/node_modules/before-after-hook/lib/register.js
 function register(state, name, method, options) {
   if (typeof method !== "function") {
     throw new Error("method for before hook must be a function");
@@ -65634,7 +65634,7 @@ function register(state, name, method, options) {
   });
 }
 
-// node_modules/before-after-hook/lib/add.js
+// ../software-factory/node_modules/before-after-hook/lib/add.js
 function addHook(state, kind, name, hook2) {
   const orig = hook2;
   if (!state.registry[name]) {
@@ -65669,7 +65669,7 @@ function addHook(state, kind, name, hook2) {
   });
 }
 
-// node_modules/before-after-hook/lib/remove.js
+// ../software-factory/node_modules/before-after-hook/lib/remove.js
 function removeHook(state, name, method) {
   if (!state.registry[name]) {
     return;
@@ -65683,7 +65683,7 @@ function removeHook(state, name, method) {
   state.registry[name].splice(index, 1);
 }
 
-// node_modules/before-after-hook/index.js
+// ../software-factory/node_modules/before-after-hook/index.js
 var bind = Function.bind;
 var bindable = bind.bind(bind);
 function bindApi(hook2, state, name) {
@@ -65717,7 +65717,7 @@ function Collection() {
 }
 var before_after_hook_default = { Singular, Collection };
 
-// node_modules/@octokit/endpoint/dist-bundle/index.js
+// ../software-factory/node_modules/@octokit/endpoint/dist-bundle/index.js
 var VERSION3 = "0.0.0-development";
 var userAgent = `octokit-endpoint.js/${VERSION3} ${getUserAgent()}`;
 var DEFAULTS = {
@@ -66030,7 +66030,7 @@ function withDefaults(oldDefaults, newDefaults) {
 }
 var endpoint = withDefaults(null, DEFAULTS);
 
-// node_modules/content-type/dist/index.js
+// ../software-factory/node_modules/content-type/dist/index.js
 var SP = 32;
 var HTAB = 9;
 var SEMI = 59;
@@ -66214,7 +66214,7 @@ function unescapeQuotedPairs(str, start, end) {
   return result + str.slice(start, end);
 }
 
-// node_modules/json-with-bigint/json-with-bigint.js
+// ../software-factory/node_modules/json-with-bigint/json-with-bigint.js
 var intRegex = /^-?\d+$/;
 var noiseValue = /^-?\d+n+$/;
 var originalStringify = JSON.stringify;
@@ -66549,7 +66549,7 @@ var JSONParse = (text, reviver) => {
   }
 };
 
-// node_modules/@octokit/request-error/dist-src/index.js
+// ../software-factory/node_modules/@octokit/request-error/dist-src/index.js
 var RequestError = class extends Error {
   name;
   /**
@@ -66588,7 +66588,7 @@ var RequestError = class extends Error {
   }
 };
 
-// node_modules/@octokit/request/dist-bundle/index.js
+// ../software-factory/node_modules/@octokit/request/dist-bundle/index.js
 var VERSION4 = "10.0.16";
 var defaults_default = {
   headers: {
@@ -66770,7 +66770,7 @@ function withDefaults2(oldEndpoint, newDefaults) {
 }
 var request = withDefaults2(endpoint, defaults_default);
 
-// node_modules/@octokit/graphql/dist-bundle/index.js
+// ../software-factory/node_modules/@octokit/graphql/dist-bundle/index.js
 var VERSION5 = "0.0.0-development";
 function _buildMessageForResponseErrors(data) {
   return `Request failed due to following response errors:
@@ -66880,7 +66880,7 @@ function withCustomRequest(customRequest) {
   });
 }
 
-// node_modules/@octokit/auth-token/dist-bundle/index.js
+// ../software-factory/node_modules/@octokit/auth-token/dist-bundle/index.js
 var b64url = "(?:[a-zA-Z0-9_-]+)";
 var sep = "\\.";
 var jwtRE = new RegExp(`^${b64url}${sep}${b64url}${sep}${b64url}$`);
@@ -66925,10 +66925,10 @@ var createTokenAuth = function createTokenAuth2(token) {
   });
 };
 
-// node_modules/@octokit/core/dist-src/version.js
+// ../software-factory/node_modules/@octokit/core/dist-src/version.js
 var VERSION6 = "7.0.8";
 
-// node_modules/@octokit/core/dist-src/index.js
+// ../software-factory/node_modules/@octokit/core/dist-src/index.js
 var noop3 = () => {
 };
 var consoleWarn = console.warn.bind(console);
@@ -67062,10 +67062,10 @@ var Octokit = class {
   auth;
 };
 
-// node_modules/@octokit/plugin-request-log/dist-src/version.js
+// ../software-factory/node_modules/@octokit/plugin-request-log/dist-src/version.js
 var VERSION7 = "6.0.0";
 
-// node_modules/@octokit/plugin-request-log/dist-src/index.js
+// ../software-factory/node_modules/@octokit/plugin-request-log/dist-src/index.js
 function requestLog(octokit) {
   octokit.hook.wrap("request", (request2, options) => {
     octokit.log.debug("request", options);
@@ -67089,7 +67089,7 @@ function requestLog(octokit) {
 }
 requestLog.VERSION = VERSION7;
 
-// node_modules/@octokit/plugin-paginate-rest/dist-bundle/index.js
+// ../software-factory/node_modules/@octokit/plugin-paginate-rest/dist-bundle/index.js
 var VERSION8 = "0.0.0-development";
 function normalizePaginatedListResponse(response) {
   if (!response.data) {
@@ -67205,10 +67205,10 @@ function paginateRest(octokit) {
 }
 paginateRest.VERSION = VERSION8;
 
-// node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/version.js
+// ../software-factory/node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/version.js
 var VERSION9 = "17.0.0";
 
-// node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/generated/endpoints.js
+// ../software-factory/node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/generated/endpoints.js
 var Endpoints = {
   actions: {
     addCustomLabelsToSelfHostedRunnerForOrg: [
@@ -69500,7 +69500,7 @@ var Endpoints = {
 };
 var endpoints_default = Endpoints;
 
-// node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/endpoints-to-methods.js
+// ../software-factory/node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/endpoints-to-methods.js
 var endpointMethodsMap = /* @__PURE__ */ new Map();
 for (const [scope, endpoints] of Object.entries(endpoints_default)) {
   for (const [methodName, endpoint2] of Object.entries(endpoints)) {
@@ -69623,7 +69623,7 @@ function decorate(octokit, scope, methodName, defaults3, decorations) {
   return Object.assign(withDecorations, requestWithDefaults);
 }
 
-// node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/index.js
+// ../software-factory/node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/index.js
 function restEndpointMethods(octokit) {
   const api = endpointsToMethods(octokit);
   return {
@@ -69640,10 +69640,10 @@ function legacyRestEndpointMethods(octokit) {
 }
 legacyRestEndpointMethods.VERSION = VERSION9;
 
-// node_modules/@octokit/rest/dist-src/version.js
+// ../software-factory/node_modules/@octokit/rest/dist-src/version.js
 var VERSION10 = "22.0.1";
 
-// node_modules/@octokit/rest/dist-src/index.js
+// ../software-factory/node_modules/@octokit/rest/dist-src/index.js
 var Octokit2 = Octokit.plugin(requestLog, legacyRestEndpointMethods, paginateRest).defaults(
   {
     userAgent: `octokit-rest.js/${VERSION10}`
@@ -73292,7 +73292,9 @@ ${safe(`${spec.what} bei #${f.number}. Die Factory startet selbst einen weiteren
         const rejected = cached2 ? void 0 : this.events(f).find((e) => e.data.type === "merge_review" && e.data.verdictKey === verdictKey && rejects(e.data.review));
         if (rejected?.data.type === "merge_review") {
           const earlier = rejected.data;
-          this.note(number4, "review-rejected", `KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}).`);
+          const wasBlocked = earlier.review.decision === "request_changes" || earlier.review.findings.some((x) => x.severity === "blocking");
+          const wasHandedOver = !!owner && !adopted && (wasBlocked && !this.config.execution.rework || earlier.review.decision === "defer");
+          this.note(number4, wasHandedOver ? "handover" : "review-rejected", `KI-Review hat diesen Stand bereits abgelehnt (${earlier.review.decision}). Ein neues Review folgt erst nach einem neuen Commit, einer ge\xE4nderten Aufgabe oder Konfiguration.`);
           await this.event(
             f,
             `merge-status:${hash2({ head: f.head, verdictKey })}`,
