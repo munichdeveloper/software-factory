@@ -138,7 +138,11 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm run build
-      - run: npm run check
+      # `npm run check` would run the unit tests a second time before test:coverage (software-factory#237); call its
+      # other parts on their own and run the suite once, with the coverage thresholds.
+      - run: npm run build
+      - run: npm run lint
+      - run: npm run validate:workflows
       - run: npm run test:coverage
       - run: npm run test:integration
         env:
