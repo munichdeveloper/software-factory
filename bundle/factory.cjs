@@ -73703,7 +73703,12 @@ if start "$release" && { verify || { verified=0; [ "$verify_rollback" != 1 ]; };
     # must not fail a deployment whose new release is already active.
     rm -rf -- "$dir" 2>/dev/null || echo "SF_DEPLOY_PRUNE_FAILED=$(basename "$dir")"
   done < <(ls -1dt "$root"/releases/*/ 2>/dev/null)
-  docker image prune --force --filter "label=com.docker.compose.project=$project" >/dev/null 2>&1 || true
+  # Every deployment builds images and build cache that nothing removed: only dangling images went, so each release
+  # left its tagged images (app:<sha>) and the BuildKit cache grew without bound (Hostinger disk alerts 2026-11-23).
+  # --all drops every image of this project no container uses; a rollback to a kept release rebuilds it. The build
+  # cache is shared by all projects on the host, so only entries unused for three days go.
+  docker image prune --all --force --filter "label=com.docker.compose.project=$project" >/dev/null 2>&1 || true
+  docker builder prune --force --filter until=72h >/dev/null 2>&1 || true
   if [ "$verified" = 0 ]; then echo "SF_DEPLOY_RESULT=verify-failed"; exit 5; fi
   echo "SF_DEPLOY_RESULT=deployed"
   exit 0
