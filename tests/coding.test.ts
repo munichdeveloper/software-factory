@@ -2,14 +2,15 @@ import { expect, it, vi } from 'vitest';
 import { config, issue, MemoryGitHub } from './helpers.js';
 import { Manager } from '../src/manager/index.js';
 import { StaticPlanner } from '../src/llm/provider.js';
-import { prepareCoding, publishCoding, smallPullRequestGuidance, validateChanges, type CodingArtifact } from '../src/workers/coding.js';
+import { prepareCoding, publishCoding, smallPullRequestGuidance, testSecretGuidance, validateChanges, type CodingArtifact } from '../src/workers/coding.js';
 import { decodeEvent } from '../src/state/events.js';
 
 const base = { sha: 'c'.repeat(40), branch: 'main' };
-async function fixture() {
+async function fixture(options: { smallPullRequests?: boolean; padding?: number } = {}) {
   const cfg = config(); cfg.workers.test.enabled = false;
-  cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false, smallPullRequests: true };
+  cfg.workers.coding = { enabled: true, agent: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high', validationWorkflow: null, loopback: false, smallPullRequests: options.smallPullRequests ?? true };
   const gh = new MemoryGitHub(); gh.state.issues = [issue()];
+  if (options.padding) gh.state.issues[0]!.body += 'x'.repeat(options.padding);
   await new Manager(gh, cfg, new StaticPlanner(), { correlationId: 'test' }).run();
   const intent = (await gh.comments(1)).map(c => decodeEvent(c, cfg.manager.trustedActors)).find(e => e?.data.type === 'intent')!;
   if (intent.data.type !== 'intent') throw new Error('No delegation');
@@ -30,6 +31,21 @@ it('dispatches Codex when selected and supplies only a generic single-run reques
   expect(prepared.request).not.toHaveProperty('repository');
   expect(prepared.request.model).toBe('gpt-6.1-sol');
   expect(prepared.request.task.description.endsWith(smallPullRequestGuidance)).toBe(true);
+});
+it('appends the test secret rule with and without the small pull request rule', async () => {
+  const on = (await fixture()).prepared.request.task.description;
+  expect(on.endsWith(smallPullRequestGuidance + testSecretGuidance)).toBe(true);
+  const off = (await fixture({ smallPullRequests: false })).prepared.request.task.description;
+  expect(off.endsWith(testSecretGuidance)).toBe(true); expect(off).not.toContain(smallPullRequestGuidance);
+  expect(testSecretGuidance).toContain('not-a-real-password'); expect(testSecretGuidance).toContain('PEM blocks');
+  expect(testSecretGuidance).toContain('build the test value at runtime');
+});
+it('drops the working rules when the description would exceed the limit', async () => {
+  const body = (await fixture()).prepared.request.task.description.length - smallPullRequestGuidance.length - testSecretGuidance.length;
+  const fits = await fixture({ padding: 20000 - body - smallPullRequestGuidance.length - testSecretGuidance.length });
+  expect(fits.prepared.request.task.description).toHaveLength(20000);
+  const over = (await fixture({ padding: 20000 - body - smallPullRequestGuidance.length - testSecretGuidance.length + 1 })).prepared.request.task.description;
+  expect(over).not.toContain(testSecretGuidance); expect(over.length).toBe(20001 - smallPullRequestGuidance.length - testSecretGuidance.length);
 });
 it('publishes a correlated PR and persists the result once across repeated callbacks', async () => {
   const f = await fixture();

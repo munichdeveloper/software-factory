@@ -60,6 +60,10 @@ export const riskIsolationGuidance = '\n\nFactory working rule, isolate risk: pu
 export const scopeGuidance = (config: Config) => !config.workers.coding || !config.workers.coding.smallPullRequests ? ''
   : smallPullRequestGuidance + (config.merge.risk.enabled && config.merge.risk.mode === 'enforce' ? riskIsolationGuidance : '');
 
+export const testSecretGuidance = '\n\nFactory working rule, test secrets: test and example values for tokens, API keys, passwords, private keys, connection strings and similar must be obvious placeholders (for example `test-token`, `dummy-api-key`, `not-a-real-password`) or be assembled at runtime from harmless parts. Never use realistic vendor formats: known key prefixes, high-entropy strings of real key length, PEM blocks or real-looking connection strings with credentials. This applies to tests, fixtures, examples, docs and seed data. If existing code validates a specific secret format, build the test value at runtime (string concatenation or `repeat`) instead of writing a literal that looks real.';
+
+const workingRules = (config: Config) => scopeGuidance(config) + testSecretGuidance;
+
 const taskId = (repository: string, issue: number) => `github:${repository}#${issue}`;
 
 export async function prepareCoding(github: GitHubPort, config: Config, repository: CodingRepositoryPort,
@@ -72,8 +76,8 @@ export async function prepareCoding(github: GitHubPort, config: Config, reposito
   sha.parse(base.sha);
   return { base, request: { contractVersion: '3.0', executionId: id, worker: 'codex',
     task: { id: taskId(github.repository, issue), version: auth.input.taskVersion,
-      description: scopeGuidance(config) && auth.input.description.length + scopeGuidance(config).length <= 20000
-        ? auth.input.description + scopeGuidance(config) : auth.input.description,
+      description: auth.input.description.length + workingRules(config).length <= 20000
+        ? auth.input.description + workingRules(config) : auth.input.description,
       acceptanceCriteria: auth.input.acceptanceCriteria, contextReferences: auth.input.contextReferences },
     baseSha: base.sha, allowedActions: ['edit_workspace', 'run_commands'], model: config.workers.coding.model,
     effort: config.workers.coding.reasoningEffort,
