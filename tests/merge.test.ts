@@ -550,3 +550,44 @@ it('still defers on a workflow waiting in action_required and on a deferring rev
   const y = reworking(); y.review.decision = 'defer'; await y.owned();
   expect(y.handovers()).toEqual([expect.objectContaining({ decision: 'defer' })]); expect(y.tasks).toEqual([]);
 });
+
+type Pre = { kind: 'pr' | 'issue'; state: 'open' | 'closed'; merged: boolean; body: string };
+const withPredecessors = (preds: Record<number, Pre>, body = 'Depends on: #12') => {
+  const x = fixture(); x.f.body = body;
+  x.api.predecessor = vi.fn(async n => preds[n] ?? null);
+  x.api.needsHuman = vi.fn(async () => {});
+  return x;
+};
+const pre = (over: Partial<Pre> = {}): Pre => ({ kind: 'pr', state: 'open', merged: false, body: '', ...over });
+it('waits for an open predecessor PR without review, risk assessment or merge', async () => {
+  const x = withPredecessors({ 12: pre() });
+  const note = vi.fn(); await x.run({ observe: note });
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.api.update).not.toHaveBeenCalled();
+  expect(note).toHaveBeenCalledWith(52, 'waiting', 'Wartet auf Vorgänger #12', undefined);
+  expect(x.f.comments.at(-1)!.body).toContain('Wartet auf Vorgänger #12');
+});
+it('runs the normal flow once the predecessor PR is merged', async () => {
+  const x = withPredecessors({ 12: pre({ state: 'closed', merged: true }) });
+  expect((await x.run()).merged).toBe(1); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
+});
+it('keeps blocking on a predecessor PR closed without merge and hands over to a person', async () => {
+  const x = withPredecessors({ 12: pre({ state: 'closed' }) });
+  const note = vi.fn(); await x.run({ observe: note });
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
+  expect(note).toHaveBeenCalledWith(52, 'handover', expect.stringContaining('Vorgänger #12 ohne Merge geschlossen'), undefined);
+  expect(x.f.comments.at(-1)!.body).toContain('Vorgänger #12 ohne Merge geschlossen');
+  expect(x.api.needsHuman).toHaveBeenCalledWith(52, true);
+});
+it('treats an issue as predecessor: open waits, closed releases', async () => {
+  const preds = { 12: pre({ kind: 'issue' }) };
+  const x = withPredecessors(preds); await x.run();
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.f.comments.at(-1)!.body).toContain('Wartet auf Vorgänger #12');
+  preds[12] = pre({ kind: 'issue', state: 'closed' });
+  expect((await x.run()).merged).toBe(1);
+});
+it('detects a dependency cycle and reports it as a block', async () => {
+  const x = withPredecessors({ 12: pre({ body: 'Depends on: #13' }), 13: pre({ body: 'Depends on: #52' }) });
+  await x.run(); expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
+  expect(x.f.comments.at(-1)!.body).toContain('Zyklus');
+  expect(x.api.needsHuman).toHaveBeenCalledWith(52, true);
+});

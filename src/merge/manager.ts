@@ -12,6 +12,7 @@ import { combineReviews, contextLimitError, defaultMaxParts, partsLimitError, re
 import { recordLlmVerdict, setLlmSubject, withLlmContext } from '../llm/analytics.js';
 import { reconstruct } from '../state/reconstruct.js';
 import type { MergeObserver } from '../runtime/merge.js';
+import { dependencies } from '../state/lifecycle.js';
 import { checkRunName, checkRunView, type MergeCheckRuns } from './check-run.js';
 
 const safe = (s: string) => s.replaceAll('@', '@\u200b').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -240,6 +241,36 @@ export class MergeManager {
     await this.explain(updated, done);
     return true;
   }
+  /**
+   * `Depends on: #n` in the pull request text: why the pull request must wait for a predecessor (or a person must look), or
+   * null when every predecessor is done (PR merged, issue closed). Cycles block like a predecessor closed without merge.
+   */
+  private async predecessors(f: MergeFacts): Promise<{ step: 'waiting' | 'handover'; detail: string } | null> {
+    const direct = dependencies(f.body);
+    if (!direct.length || !this.api.predecessor) return null;
+    const lookup = this.api.predecessor.bind(this.api), known = new Map<number, Awaited<ReturnType<typeof lookup>>>();
+    const get = async (n: number) => { if (!known.has(n)) known.set(n, await lookup(n)); return known.get(n)!; };
+    // A cycle runs back to this pull request through open predecessors only; done ones never wait.
+    const visited = new Set<number>();
+    const walk = async (n: number, path: number[]): Promise<number[] | null> => {
+      if (n === f.number) return [...path, n];
+      if (visited.has(n) || path.length > 50) return null;
+      visited.add(n);
+      const p = await get(n);
+      if (!p || p.state !== 'open') return null;
+      for (const next of dependencies(p.body)) { const found = await walk(next, [...path, n]); if (found) return found; }
+      return null;
+    };
+    for (const n of direct) {
+      const cycle = await walk(n, [f.number]);
+      if (cycle) return { step: 'handover', detail: `Zyklus bei \`Depends on:\` erkannt (${cycle.map(x => `#${x}`).join(' → ')}); der PR bleibt blockiert, bis ein Mensch den Zyklus auflöst.` };
+    }
+    const infos = await Promise.all(direct.map(async n => [n, await get(n)] as const));
+    const abandoned = infos.find(([, p]) => p?.kind === 'pr' && p.state === 'closed' && !p.merged);
+    if (abandoned) return { step: 'handover', detail: `Vorgänger #${abandoned[0]} ohne Merge geschlossen; der PR bleibt blockiert, bis ein Mensch entscheidet.` };
+    const open = infos.filter(([, p]) => !p || p.state === 'open').map(([n]) => n);
+    return open.length ? { step: 'waiting', detail: `Wartet auf Vorgänger ${open.map(n => `#${n}`).join(', ')}` } : null;
+  }
   private ownership(f: MergeFacts, snapshot: Snapshot): Ownership | undefined {
     const url = `https://github.com/${this.api.repository}/pull/${f.number}`;
     for (const task of snapshot.issues) {
@@ -324,6 +355,18 @@ export class MergeManager {
           continue;
         }
         const ownership = this.ownership(f, snapshot), owner = ownership?.task;
+        // Predecessors first: no review, no risk assessment and no merge while one is open (a person gets a closed or cyclic one).
+        phase = 'Vorgänger prüfen';
+        const blocked = await this.predecessors(f);
+        if (blocked) {
+          this.note(number, blocked.step, blocked.detail);
+          if (blocked.step === 'handover') {
+            await this.event(f, `merge-handover:${hash({ protocol: 'sf-merge-depends-v1', head: f.head, reason: blocked.detail })}`, { type: 'merge_handover', prNumber: number, head: f.head, base: f.base, reviewKey: hash(blocked.detail), decision: 'defer' });
+            await this.needsHuman(f, true);
+          } else await this.needsHuman(f, false);
+          await this.explain(f, blocked.detail); continue;
+        }
+        phase = 'GitHub-Zustand lesen';
         // The published head of a blocked run whose branch was repaired afterwards (its PR text describes that head).
         let revalidated: string | null = null;
         if (owner && (owner.state === 'closed' || owner.labels.includes('harness:blocked'))) { this.note(number, 'stopped', 'Die zugehörige Aufgabe wurde geschlossen oder blockiert.'); await this.explain(f, 'Die zugehörige Aufgabe wurde geschlossen oder blockiert.'); continue; }
