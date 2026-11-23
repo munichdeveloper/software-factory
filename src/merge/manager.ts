@@ -501,8 +501,8 @@ export class MergeManager {
         const risk = this.config.merge.risk;
         // One assessment per head, base and risk configuration; the built-in list is part of the protocol. v3 (0.26.0):
         // fixed Haiku assessor and hard rules, so heads assessed by Jev are assessed again.
-        const riskKey = risk.enabled ? hash({ protocol: 'sf-merge-risk-v3', repository: this.api.repository.toLowerCase(), head: f.head, base: f.base,
-          risk, builtin: builtinCriticalPaths }) : null;
+        const riskKey = risk.enabled ? hash({ protocol: 'sf-merge-risk-v4', repository: this.api.repository.toLowerCase(), head: f.head, base: f.base,
+          risk, builtin: builtinCriticalPaths, requiredChecks: this.config.merge.requiredChecks, validationWorkflow: this.config.merge.validationWorkflow }) : null;
         const cachedRisk = riskKey ? this.events(f).find(e => e.data.type === 'merge_risk' && e.data.riskKey === riskKey) : undefined;
         let context: Promise<ReviewInput> | undefined;
         const current = f;
@@ -542,7 +542,7 @@ export class MergeManager {
         const assessing: Promise<RiskRecord | null> = !riskKey ? Promise.resolve(null) : cachedRisk?.data.type === 'merge_risk' ? Promise.resolve(cachedRisk.data.risk)
           // Without a review plan (more than maxParts parts) the whole change set is assessed at once, as before parts existed.
           : load().then(input => plan().then(parts => parts.map(p => p.changes), () => [input.changes])
-            .then(parts => classifyRisk(input.changes, risk, assessor, parts)),
+            .then(parts => classifyRisk(input.changes, risk, assessor, parts, this.config.merge)),
             () => classifyRisk([], risk, { assess: () => Promise.reject(new Error('No context')) }));
         const [review, riskRecord] = await Promise.all([reviewing, assessing]);
         await this.event(f, `merge-review:${reviewKey}`, { type: 'merge_review', head: f.head, base: f.base, reviewKey, review, verdictKey },

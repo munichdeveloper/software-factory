@@ -181,9 +181,25 @@ merge:
         class: high
 ```
 
-- Built-in critical paths cannot be lowered: `.github/workflows/**`,
-  `.github/actions/**`, `.github/software-factory.yml`,
-  `.github/software-factory.validation.json`, `AGENTS.md` and `CODEOWNERS`.
+- Built-in critical paths cannot be lowered: `.github/actions/**`,
+  `.github/software-factory.yml`, `.github/software-factory.validation.json`,
+  `AGENTS.md` and `CODEOWNERS`.
+- Workflow files (`.github/workflows/*.yml`) are judged by content, not by path,
+  because a workflow of a pull request runs in its own version and could weaken
+  its own required checks. Always `critical`: workflows that include
+  `munichdeveloper/software-factory` via `uses:` (the Factory wrappers), and
+  workflow files that are added, deleted or renamed. `critical` by a comparison
+  of the YAML at base and head (no model): `on:` changed; `permissions:` new,
+  widened or removed (workflow or job level); new `secrets.*` references; new or
+  changed `uses:` (except a move between pinned commit SHAs of the same action);
+  and, in jobs delivering a required check (`merge.requiredChecks`, every job of
+  `merge.validationWorkflow`), a removed or renamed job, a new or changed `if:`
+  or `continue-on-error`, or a removed or changed `run` command. A file that
+  cannot be read or compared as YAML is `critical` (fail closed). Every other
+  workflow change (extra steps, `env`, `with` values, caches) counts like normal
+  code with at least `medium`. The risk comment names the rule, for example
+  "permissions geändert in test.yml". The AI review is told to check workflow
+  changes for weakened required checks (for example new `SKIP_*` variables).
 - A change covered completely by areas takes the highest area class without a
   model call. Otherwise the AI assessor decides, and touched areas plus the size
   rule (`maxLowRiskLines`, `maxMediumRiskLines`, `maxMediumRiskFiles`) act as a
