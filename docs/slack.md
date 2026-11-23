@@ -28,6 +28,9 @@ notifications:
       approval_required: # Optional; leave it out to keep it off.
         enabled: true
         channel: null
+      risk_handover_required: # Optional; leave it out to keep it off.
+        enabled: true
+        channel: null
       grant_required: # Optional; leave it out to keep it off.
         enabled: true
         channel: null
@@ -78,6 +81,21 @@ authorization. Existing installations continue with notifications disabled.
   new head, base or assessment asks again and is announced again. Requests for a
   head the PR no longer has, or for a closed PR, are not announced. Like
   `run_started`, leaving it out keeps it off and the configuration hash unchanged.
+- `risk_handover_required`: the risk class is above `autoMergeUpTo` and `merge.risk.aboveThreshold`
+  is `block` (critical always is), so the Factory never merges the PR and a person merges it
+  themselves ("bitte selbst mergen"). The Manager writes a trusted `merge_risk_handover` event on the
+  PR once per head and base; a new head or base is announced again, the same head is not.
+  Like `approval_required` it carries the risk details below. Leaving it out keeps it off and the
+  configuration hash unchanged.
+- Risk details (`approval_required` and `risk_handover_required`): the message adds what the
+  `merge_risk` record of the same head and base says: the class, the source (KI-Bewertung,
+  konfigurierte Bereiche or eingebaute kritische Pfade), a size line (lines and files, and whether
+  size decided the class), the reason (at most 1000 characters) and up to 5 factors
+  (`factor: path – explanation`, each at most 300 characters). This text comes from the model and the
+  PR content, so it is untrusted: it is sent as plain text with escaping, `parse: none` and no link
+  names, and capped so the message stays within Slack's limits. Without a risk record the message
+  carries the class and threshold only. Recommended channel for both events: `#factory-todo`
+  (set `channel` per event; the default channel stays for the other events).
 - `grant_required`: in a repository whose `harness:ready` label is a person's grant
   (every repository the SF Manager registered with the Temporal runtime), a task waits
   for nothing but that grant: the Manager's status comment on the Issue says

@@ -546,6 +546,8 @@ export class MergeManager {
         const riskGate = !!riskKey && !!riskRecord && risk.mode === 'enforce' && review.decision === 'merge' &&
           permission(this.config, 'merge_pr') === 'allow' && aboveThreshold(riskRecord.class, risk);
         if (riskGate && risk.aboveThreshold === 'block') {
+          await this.event(live, `merge-risk-handover:${hash({ head: f.head, base: f.base, riskKey })}`, { type: 'merge_risk_handover', prNumber: number,
+            head: f.head, base: f.base, riskKey, riskClass: riskRecord!.class, autoMergeUpTo: risk.autoMergeUpTo });
           this.note(number, 'handover', `Risiko ${riskRecord!.class} über der Schwelle ${risk.autoMergeUpTo}; bitte selbst mergen.`);
           await this.explain(live, `Risiko ${riskRecord!.class} liegt über der Schwelle ${risk.autoMergeUpTo}; die Factory mergt diesen PR nicht. Bitte selbst prüfen und mergen.`); continue;
         }

@@ -33,6 +33,10 @@ export const eventSchema = z.strictObject({
     // Written once per approval request of a risk gate; the Slack notice for a PR awaiting `/harness approve` reads it.
     z.strictObject({ type: z.literal('merge_approval_required'), prNumber: z.number().int().positive(), head: z.string().length(40), base: z.string().length(40),
       approvalId: z.string().regex(/^[a-f0-9]{64}$/), riskClass: riskClassSchema, autoMergeUpTo: riskClassSchema }),
+    // Written once per head and base when a risk class above the threshold with `aboveThreshold: block` stops a pull request
+    // (a person merges it themselves); the Slack notice risk_handover_required reads it.
+    z.strictObject({ type: z.literal('merge_risk_handover'), prNumber: z.number().int().positive(), head: z.string().length(40), base: z.string().length(40),
+      riskKey: z.string().length(64), riskClass: riskClassSchema, autoMergeUpTo: riskClassSchema }),
     // Written on the task when the independent review asked for changes to a Factory pull request, or when its branch
     // conflicts with the base (cause conflict): the rework source.
     z.strictObject({ type: z.literal('merge_changes_requested'), prNumber: z.number().int().positive(), head: z.string().length(40),

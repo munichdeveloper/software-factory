@@ -65206,6 +65206,13 @@ var aboveThreshold = (cls, risk) => cls === "critical" || riskRank(cls) > riskRa
 function sizeClass(lines, files, risk) {
   return lines > risk.maxMediumRiskLines || files > (risk.maxMediumRiskFiles ?? defaultMaxMediumRiskFiles) ? "high" : lines > risk.maxLowRiskLines ? "medium" : "low";
 }
+function sizeRaisedClass(record2, risk) {
+  const size = sizeClass(record2.lines, record2.files ?? 0, risk);
+  const content = record2.source === "ai" ? contentFloor(record2.factors) : "low";
+  const ruleFloor = record2.ruleHits?.length ? ruleFloorClass : "low";
+  const before = record2.source === "ai" ? highest([record2.aiClass ?? "low", content, ruleFloor]) : highest([...risk.areas.filter((a) => record2.matchedAreas.includes(a.name)).map((a) => a.class), ruleFloor]);
+  return record2.source !== "builtin" && record2.source !== "error" && size === record2.class && riskRank(size) > riskRank(before);
+}
 function describeRisk(record2, risk) {
   const files = record2.files ?? 0, above = aboveThreshold(record2.class, risk), size = sizeClass(record2.lines, files, risk);
   const verdict = risk.mode === "observe" ? `${above ? "Liegt \xFCber" : "Liegt innerhalb"} der Grenze f\xFCr automatisches Mergen (\`${risk.autoMergeUpTo}\`); nur beobachtet, ohne Wirkung auf den Merge.` : above ? `Liegt \xFCber der Grenze f\xFCr automatisches Mergen (\`${risk.autoMergeUpTo}\`)${record2.class === "critical" ? "; critical wird nie automatisch gemergt" : ""}. Die Factory mergt nicht selbst, ein Mensch muss freigeben.` : `Liegt innerhalb der Grenze f\xFCr automatisches Mergen (\`${risk.autoMergeUpTo}\`).`;
@@ -65217,9 +65224,7 @@ function describeRisk(record2, risk) {
   }[record2.source];
   const limits = `Grenzen: bis ${risk.maxLowRiskLines} Zeilen low, bis ${risk.maxMediumRiskLines} Zeilen und ${risk.maxMediumRiskFiles ?? defaultMaxMediumRiskFiles} Dateien medium, dar\xFCber high`;
   const content = record2.source === "ai" ? contentFloor(record2.factors) : "low";
-  const ruleFloor = record2.ruleHits?.length ? ruleFloorClass : "low";
-  const before = record2.source === "ai" ? highest([record2.aiClass ?? "low", content, ruleFloor]) : highest([...risk.areas.filter((a) => record2.matchedAreas.includes(a.name)).map((a) => a.class), ruleFloor]);
-  const raised = record2.source !== "builtin" && record2.source !== "error" && size === record2.class && riskRank(size) > riskRank(before);
+  const raised = sizeRaisedClass(record2, risk);
   const contentLine = record2.source === "ai" && content === record2.class && riskRank(content) > riskRank(record2.aiClass ?? "low") ? `
 - Inhalt: Der PR ber\xFChrt Authentifizierung, Berechtigungen oder Geld (${[...new Set(record2.factors.filter((f) => highRiskFactors.includes(f.factor)).map((f) => f.factor))].join(", ")}); das ist unabh\xE4ngig von der Gr\xF6\xDFe mindestens \`high\`.` : "";
   const hits = record2.source === "builtin" || record2.source === "error" ? [] : record2.ruleHits ?? [];
@@ -65563,6 +65568,8 @@ var configSchema = external_exports.strictObject({
         grant_required: notificationRule.optional(),
         // A Factory PR the review handed over to a person (merge_handover); optional for the same reason.
         handover_required: notificationRule.optional(),
+        // A PR a risk class above the threshold stops with aboveThreshold: block (merge_risk_handover); optional for the same reason.
+        risk_handover_required: notificationRule.optional(),
         // Runtime events (docs/failure-events.md, issue #188), posted by the broker; optional for the same reason.
         // start_refused posts only refusals that hold for the whole repository, once per repository, code and day.
         validation_failed: notificationRule.optional(),
@@ -70027,6 +70034,17 @@ var eventSchema = external_exports.strictObject({
       riskClass: riskClassSchema,
       autoMergeUpTo: riskClassSchema
     }),
+    // Written once per head and base when a risk class above the threshold with `aboveThreshold: block` stops a pull request
+    // (a person merges it themselves); the Slack notice risk_handover_required reads it.
+    external_exports.strictObject({
+      type: external_exports.literal("merge_risk_handover"),
+      prNumber: external_exports.number().int().positive(),
+      head: external_exports.string().length(40),
+      base: external_exports.string().length(40),
+      riskKey: external_exports.string().length(64),
+      riskClass: riskClassSchema,
+      autoMergeUpTo: riskClassSchema
+    }),
     // Written on the task when the independent review asked for changes to a Factory pull request, or when its branch
     // conflicts with the base (cause conflict): the rework source.
     external_exports.strictObject({
@@ -70803,9 +70821,26 @@ var labels = {
   issue_created: "SF: Issue autonom angelegt",
   pr_merged: "SF: PR durch Bot gemergt",
   approval_required: "SF: PR wartet auf Freigabe (Risiko \xFCber Schwelle)",
+  risk_handover_required: "SF: PR braucht einen Menschen (Risiko \xFCber Schwelle, bitte selbst mergen)",
   grant_required: "SF: Issue wartet auf Freigabe (harness:ready)",
   handover_required: "SF: PR braucht einen Menschen (KI-Review)"
 };
+var oneLine2 = (text, max) => {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}\u2026` : flat;
+};
+function riskDetail(record2, risk) {
+  const source = { ai: "KI-Bewertung", builtin: "eingebaute kritische Pfade", areas: "konfigurierte Bereiche", error: "Bewertung fehlgeschlagen" }[record2.source];
+  const files = record2.files === void 0 ? "" : ` in ${record2.files} ${record2.files === 1 ? "Datei" : "Dateien"}`;
+  const size = sizeClass(record2.lines, record2.files ?? 0, risk);
+  const sizeText = `Umfang: ${record2.lines} ge\xE4nderte Zeilen${files}; ${sizeRaisedClass(record2, risk) ? `die Gr\xF6\xDFe hat die Klasse auf ${size} angehoben` : "die Gr\xF6\xDFe hat die Klasse nicht bestimmt"}.`;
+  return [
+    `Risikoklasse: ${record2.class} (Quelle: ${source})`,
+    sizeText,
+    ...record2.reason ? [`Begr\xFCndung: ${oneLine2(record2.reason, 1e3)}`] : [],
+    ...record2.factors.slice(0, 5).map((f) => `- ${oneLine2(`${f.factor}: ${f.path} \u2013 ${f.explanation}`, 300)}`)
+  ].join("\n");
+}
 var runStartWindowMs = 24 * 60 * 60 * 1e3;
 var lateStartMs = 10 * 60 * 1e3;
 var failureCode = /^[A-Z][A-Z0-9_]{1,79}$/;
@@ -70896,7 +70931,7 @@ ${notification.detail ? `${notification.detail}
         body: JSON.stringify({
           channel,
           text: text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
-          blocks: [{ type: "section", text: { type: "plain_text", text, emoji: false } }],
+          blocks: [{ type: "section", text: { type: "plain_text", text: text.length > 3e3 ? `${text.slice(0, 2999)}\u2026` : text, emoji: false } }],
           mrkdwn: false,
           parse: "none",
           link_names: false,
@@ -70925,6 +70960,14 @@ async function deliverNotifications(github, config2, snapshot2, sink2, correlati
     const event = decodeEvent(c, config2.manager.trustedActors);
     return event ? [event] : [];
   });
+  const riskText = (comments, head, base) => {
+    const record2 = comments.flatMap((c) => {
+      const e = decodeEvent(c, config2.manager.trustedActors);
+      return e?.data.type === "merge_risk" && e.data.head === head && e.data.base === base ? [e.data.risk] : [];
+    }).at(-1);
+    return record2 ? `
+${riskDetail(record2, config2.merge.risk)}` : "";
+  };
   const afterStart = (date5) => !settings.since || !!date5 && Date.parse(date5) >= Date.parse(settings.since);
   const deliver = async (journal, notification) => {
     const rule = settings.events[notification.event];
@@ -71045,7 +71088,31 @@ Decision: ${intent.actionId}
         url: `https://github.com/${github.repository}/pull/${pr.number}`,
         repository: github.repository,
         approvalId: e.data.approvalId,
-        detail: `Risiko ${e.data.riskClass} liegt \xFCber der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}`
+        detail: `Risiko ${e.data.riskClass} liegt \xFCber der Schwelle ${e.data.autoMergeUpTo}. Freigabe im PR: /harness approve ${e.data.approvalId}` + riskText(comments, e.data.head, e.data.base)
+      });
+    }
+  }
+  if (settings.events.risk_handover_required?.enabled) for (const pr of snapshot2.prs) {
+    if (pr.state !== "open" || !pr.headSha) continue;
+    let comments;
+    try {
+      comments = await github.comments(pr.number);
+    } catch (error62) {
+      if (error62 instanceof Error && error62.message === "ISSUE_OUTSIDE_RUNTIME_SCOPE") continue;
+      throw error62;
+    }
+    for (const c of comments) {
+      const e = decodeEvent(c, config2.manager.trustedActors);
+      if (e?.data.type !== "merge_risk_handover" || e.data.prNumber !== pr.number || e.data.head !== pr.headSha || !afterStart(e.at)) continue;
+      await deliver(pr.number, {
+        event: "risk_handover_required",
+        number: pr.number,
+        title: pr.title ?? `PR #${pr.number}`,
+        actor: "Software Factory",
+        url: `https://github.com/${github.repository}/pull/${pr.number}`,
+        repository: github.repository,
+        approvalId: hash2({ head: e.data.head, base: e.data.base, riskKey: e.data.riskKey }),
+        detail: `Risiko ${e.data.riskClass} liegt \xFCber der Schwelle ${e.data.autoMergeUpTo}; die Factory mergt diesen PR nicht, bitte selbst mergen.` + riskText(comments, e.data.head, e.data.base)
       });
     }
   }
@@ -73445,6 +73512,15 @@ ${riskNote ? `${riskNote}
         }
         const riskGate = !!riskKey && !!riskRecord && risk.mode === "enforce" && review.decision === "merge" && permission(this.config, "merge_pr") === "allow" && aboveThreshold(riskRecord.class, risk);
         if (riskGate && risk.aboveThreshold === "block") {
+          await this.event(live2, `merge-risk-handover:${hash2({ head: f.head, base: f.base, riskKey })}`, {
+            type: "merge_risk_handover",
+            prNumber: number4,
+            head: f.head,
+            base: f.base,
+            riskKey,
+            riskClass: riskRecord.class,
+            autoMergeUpTo: risk.autoMergeUpTo
+          });
           this.note(number4, "handover", `Risiko ${riskRecord.class} \xFCber der Schwelle ${risk.autoMergeUpTo}; bitte selbst mergen.`);
           await this.explain(live2, `Risiko ${riskRecord.class} liegt \xFCber der Schwelle ${risk.autoMergeUpTo}; die Factory mergt diesen PR nicht. Bitte selbst pr\xFCfen und mergen.`);
           continue;

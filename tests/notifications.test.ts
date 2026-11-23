@@ -300,6 +300,64 @@ it('announces a Factory pull request handed over to a person once per review, on
   expect(send).toHaveBeenCalledTimes(2); expect(send.mock.calls[1]![1].detail).toContain('defer');
   delete cfg.notifications.slack.events.handover_required; await handover('d'.repeat(64)); await deliver(); expect(send).toHaveBeenCalledTimes(2);
 });
+
+const riskRecord = (over: Record<string, unknown> = {}) => ({ class: 'high', source: 'ai', aiClass: 'high', matchedAreas: [], builtinPaths: [], lines: 120, files: 3,
+  reason: 'Ändert die Abrechnung.', factors: [{ factor: 'payments', path: 'src/billing.ts', explanation: 'Betrag wird neu berechnet' }], ...over });
+const writeRisk = (gh: MemoryGitHub, risk: unknown, head = 'a'.repeat(40), base = 'b'.repeat(40)) => gh.writeEvent(52, { version: 1, key: `merge-risk:${head}${base}`, at: clock.toISOString(), correlationId: 'test',
+  data: { type: 'merge_risk', head, base, riskKey: key, risk } as never });
+it('adds the risk reason, size and factors to the approval notice', async () => {
+  const f = await approvalFixture(); await f.request();
+  await writeRisk(f.gh, riskRecord({ factors: Array.from({ length: 7 }, (_, i) => ({ factor: 'security', path: `p${i}`, explanation: `e${i}` })) }));
+  await f.deliver();
+  const detail = f.send.mock.calls[0]![1].detail!;
+  expect(detail).toContain(`/harness approve ${key}`);
+  expect(detail).toContain('Risikoklasse: high (Quelle: KI-Bewertung)');
+  expect(detail).toContain('Umfang: 120 geänderte Zeilen in 3 Dateien; die Größe hat die Klasse nicht bestimmt.');
+  expect(detail).toContain('Begründung: Ändert die Abrechnung.');
+  expect(detail).toContain('- security: p0 – e0'); expect(detail).toContain('- security: p4 – e4'); expect(detail).not.toContain('p5');
+});
+it('caps long risk text', async () => {
+  const f = await approvalFixture(); await f.request();
+  await writeRisk(f.gh, riskRecord({ reason: 'r'.repeat(2000), factors: [{ factor: 'security', path: 'x', explanation: 'y'.repeat(1000) }] }));
+  await f.deliver();
+  const lines = f.send.mock.calls[0]![1].detail!.split('\n');
+  expect(lines.find(l => l.startsWith('Begründung: '))!.length).toBeLessThanOrEqual('Begründung: '.length + 1000);
+  expect(lines.find(l => l.startsWith('- security'))!.length).toBeLessThanOrEqual(2 + 300);
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    expect(JSON.parse(String(init!.body)).blocks[0].text.text.length).toBeLessThanOrEqual(3000);
+    return new Response(JSON.stringify({ ok: true, channel, ts: '1.23' }));
+  });
+  await new SlackSink('fixture-token', fetcher).send(channel, { ...f.send.mock.calls[0]![1], title: 't'.repeat(500), detail: 'd'.repeat(5000) });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it('sends the approval notice with class and threshold only without a risk record', async () => {
+  const f = await approvalFixture(); await f.request();
+  await writeRisk(f.gh, riskRecord(), 'c'.repeat(40)); // another head: not this request's record
+  await f.deliver();
+  expect(f.send.mock.calls[0]![1].detail).toBe(`Risiko high liegt über der Schwelle medium. Freigabe im PR: /harness approve ${key}`);
+});
+it('announces a risk handover with details once per head and base', async () => {
+  const cfg = config(); cfg.notifications.slack.enabled = true; cfg.notifications.slack.channel = channel;
+  cfg.notifications.slack.events.risk_handover_required = { enabled: true, channel: null };
+  const gh = new MemoryGitHub();
+  gh.state.prs = [{ number: 52, state: 'open', merged: false, closingIssues: [], referencedIssues: [], title: 'Rework billing', headRefName: 'sf/issue-4/x', headSha: 'a'.repeat(40) }];
+  const handover = (head = 'a'.repeat(40), base = 'b'.repeat(40)) => gh.writeEvent(52, { version: 1, key: `merge-risk-handover:${head}${base}`, at: clock.toISOString(), correlationId: 'test',
+    data: { type: 'merge_risk_handover', prNumber: 52, head, base, riskKey: key, riskClass: 'critical', autoMergeUpTo: 'medium' } });
+  const send = vi.fn<NotificationSink['send']>(async () => ({ channel, timestamp: '1.23' }));
+  const deliver = () => deliverNotifications(gh, cfg, structuredClone(gh.state), { send }, 'test', clock);
+  await handover(); expect(await deliver()).toEqual([]); await deliver(); // no risk record: class and threshold only
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(send.mock.calls[0]![1]).toMatchObject({ event: 'risk_handover_required', number: 52 });
+  expect(send.mock.calls[0]![1].detail).toBe('Risiko critical liegt über der Schwelle medium; die Factory mergt diesen PR nicht, bitte selbst mergen.');
+  expect(send.mock.calls[0]![1].detail).not.toContain('/harness approve');
+  // A new base is announced again, with the risk record of that head and base.
+  await handover('a'.repeat(40), 'd'.repeat(40)); await writeRisk(gh, riskRecord({ class: 'critical' }), 'a'.repeat(40), 'd'.repeat(40)); await deliver();
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(send.mock.calls[1]![1].detail).toContain('bitte selbst mergen'); expect(send.mock.calls[1]![1].detail).toContain('Begründung: Ändert die Abrechnung.');
+  // A moved head is not announced; the event is configurable.
+  gh.state.prs[0]!.headSha = 'e'.repeat(40); await deliver(); expect(send).toHaveBeenCalledTimes(2);
+  expect(config().notifications.slack.events).not.toHaveProperty('risk_handover_required');
+});
 it('leaves configurations without approval notices unchanged', () => {
   expect(config().notifications.slack.events).not.toHaveProperty('approval_required');
 });

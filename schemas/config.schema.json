@@ -1072,6 +1072,28 @@
                   },
                   "additionalProperties": false
                 },
+                "risk_handover_required": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "channel": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^(?:[CG][A-Z0-9]{8,}|#[a-z0-9_-]{1,80})$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
                 "validation_failed": {
                   "type": "object",
                   "properties": {
