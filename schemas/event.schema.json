@@ -1146,7 +1146,9 @@
               "type": "string",
               "enum": [
                 "review",
-                "conflict"
+                "conflict",
+                "checks",
+                "threads"
               ]
             }
           },

@@ -9,13 +9,33 @@ and unresolved discussions. It returns one structured decision in German:
 - `update_branch`: code is acceptable, but the branch must first incorporate the
   current base and get new CI plus a new AI review.
 - `request_changes`: concrete blocking findings, with file-specific explanations.
-- `defer`: pending/failed checks, open discussions, insufficient evidence or other blockers.
+- `defer`: insufficient evidence (stub-only tests, facts outside the diff, spec deviations for a person) or a
+  workflow waiting in `action_required`. Pending checks, red checks and open review threads never reach a
+  `defer`: the merge manager decides them before the review (see below).
 
 The decision, findings, explanation, head SHA and base SHA are recorded on the PR.
 Decisions are reused only for the same complete input and policy. A changed head,
 base, checks, reviews or merge configuration causes a new decision. PR text and
 source are untrusted data, never authority to approve or bypass gates. The model
 has no tools or GitHub credentials. The task planner cannot execute `merge_pr`.
+
+## Checks and review threads before the review
+
+The merge pass resolves these itself instead of handing the PR to a person (issue #251):
+
+- **Pending checks.** While any check on the head is still running (the Factory's own merge check excluded), or a
+  required check is missing, no AI review runs and none is recorded for the head. The pass waits and looks again on
+  the next poll or webhook nudge. A check that stays pending longer than 6 hours (fixed internal limit) hands the PR
+  over (`handover`, `sf:needs-human`) with the check named.
+- **Red checks.** A failed check goes back to rework like `request_changes`; the task carries the check name and what
+  it reports (check summary, failed steps). A secret-scanner alert (e.g. GitGuardian) asks the worker to replace the
+  flagged value with an obvious placeholder; the Factory never dismisses or marks a finding itself. Without rework
+  (`execution.rework` off, `execution.maxRetries` used up, not the latest attempt, not a Factory PR) the PR is handed
+  over with the check named. A required check that failed is re-run once first, as before.
+- **Open review threads.** Unresolved review comments go back to rework with their texts; the Factory resolves no
+  thread itself. The new head is reviewed again after the rework push.
+- **Unchanged.** A workflow in `action_required` stays a `defer` (the Factory never opens that gate), and so does
+  insufficient evidence. Step and label names (`review-rejected`, `handover`, `sf:needs-human`) keep their meaning.
 
 ## Opt-in and configuration
 

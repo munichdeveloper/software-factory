@@ -39,7 +39,9 @@ export class GitHubMergePort implements MergePort {
       }),
       // A token without checks:read (the Temporal broker's) reads the same states from the Actions jobs of the exact head.
       this.api.paginate(this.api.checks.listForRef, { ...this.target, ref: pr.head.sha, filter: 'latest', per_page: 100 })
-        .then(runs => runs.map(c => ({ name: c.name, state: c.status === 'completed' ? c.conclusion ?? 'unknown' : c.status })))
+        .then(runs => runs.map(c => ({ name: c.name, state: c.status === 'completed' ? c.conclusion ?? 'unknown' : c.status,
+          // What the check itself reports; the rework of a red check quotes it.
+          ...(c.output?.summary || c.output?.title ? { summary: [c.output.title, c.output.summary].filter(Boolean).join('\n') } : {}) })))
         .catch(async (error: unknown) => { if (!forbidden(error)) throw error; return this.actionJobs(pr.head.sha); }),
       // Without statuses:read no legacy commit status is visible; required checks are still enforced by name.
       this.api.paginate(this.api.repos.listCommitStatusesForRef, { ...this.target, ref: pr.head.sha, per_page: 100 })
@@ -75,10 +77,14 @@ export class GitHubMergePort implements MergePort {
   /** The latest attempt of every Actions job on `head`, named and reported like its check run. */
   private async actionJobs(head: string) {
     const runs = await this.api.paginate(this.api.actions.listWorkflowRunsForRepo, { ...this.target, head_sha: head, per_page: 100 });
-    const checks: { name: string; state: string }[] = [];
+    const checks: { name: string; state: string; summary?: string }[] = [];
     for (const run of runs.filter(r => r.head_sha === head)) {
       const jobs = await this.api.paginate(this.api.actions.listJobsForWorkflowRun, { ...this.target, run_id: run.id, filter: 'latest', per_page: 100 });
-      checks.push(...jobs.map(j => ({ name: j.name, state: j.status === 'completed' ? j.conclusion ?? 'unknown' : j.status })));
+      checks.push(...jobs.map(j => {
+        const steps = (j.steps ?? []).filter(x => x.conclusion === 'failure').map(x => x.name);
+        return { name: j.name, state: j.status === 'completed' ? j.conclusion ?? 'unknown' : j.status,
+          ...(steps.length ? { summary: `Fehlgeschlagene Schritte: ${steps.join(', ')} (${j.html_url ?? run.html_url})` } : {}) };
+      }));
     }
     return checks;
   }
