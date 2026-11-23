@@ -13,7 +13,7 @@ A large pull request may be reviewed in parts (reviewPart present): you review p
 function reviewInput(input: ReviewInput, config: Config): string {
   const { comments: _comments, labels, ...rest } = input.facts; void _comments;
   // The broker's own risk and hand-over labels are no input of a code review: the risk gate decides on a human approval.
-  const facts = { ...rest, labels: labels.filter(l => !l.startsWith('sf:risk-') && l !== needsHumanLabel) };
+  const facts = { ...rest, ...(labels ? { labels: labels.filter(l => !l.startsWith('sf:risk-') && l !== needsHumanLabel) } : {}) };
   return JSON.stringify({ trustedScope: input.trustedScope, trustedInstructions: input.trustedInstructions,
     ...(input.validationNote ? { trustedValidationNote: input.validationNote } : {}),
     trustedMergeRequirements: { requiredChecks: config.merge.requiredChecks, updateBranch: config.merge.updateBranch,

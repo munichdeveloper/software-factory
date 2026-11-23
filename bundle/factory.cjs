@@ -72692,7 +72692,7 @@ A large pull request may be reviewed in parts (reviewPart present): you review p
 function reviewInput(input2, config2) {
   const { comments: _comments, labels: labels2, ...rest } = input2.facts;
   void _comments;
-  const facts = { ...rest, labels: labels2.filter((l) => !l.startsWith("sf:risk-") && l !== needsHumanLabel) };
+  const facts = { ...rest, ...labels2 ? { labels: labels2.filter((l) => !l.startsWith("sf:risk-") && l !== needsHumanLabel) } : {} };
   return JSON.stringify({
     trustedScope: input2.trustedScope,
     trustedInstructions: input2.trustedInstructions,
