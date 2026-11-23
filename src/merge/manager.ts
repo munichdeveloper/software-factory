@@ -560,19 +560,54 @@ export class MergeManager {
           }
         }
         if (f.checks.some(c => c.state === 'action_required')) { this.note(number, 'gate', 'GitHub verlangt eine Workflow-Freigabe am PR.'); await this.explain(f, mergeGate(f, this.config)!); continue; }
-        if (owner && !adopted && (review.decision === 'request_changes' || review.findings.some(x => x.severity === 'blocking'))) {
+        const blocked = review.decision === 'request_changes' || review.findings.some(x => x.severity === 'blocking');
+        // The risk class only tightens 'allow': above the threshold a person approves (or merges) instead of the Factory.
+        // A deferral a person overrules counts like a merge decision here, so one approval covers both gates.
+        const deferred = review.decision === 'defer' && !blocked;
+        const riskGate = !!riskKey && !!riskRecord && risk.mode === 'enforce' && (review.decision === 'merge' || deferred) &&
+          permission(this.config, 'merge_pr') === 'allow' && aboveThreshold(riskRecord.class, risk);
+        // A person may overrule a deferral, never a request for changes or a blocking finding, and never where the Factory
+        // does not merge at all (critical or aboveThreshold: block).
+        const overridable = deferred && !(riskGate && risk.aboveThreshold === 'block');
+        const approvalFor = () => hash({ repository: this.api.repository, number, head: f!.head, base: f!.base, reviewKey, review,
+          ...(riskGate ? { riskKey, riskClass: riskRecord!.class } : {}) });
+        const approvalLine = `/harness approve ${approvalFor()}`;
+        // The last approve/revoke comment with the current id from a person who may approve decides; null when none approves.
+        const approverIn = async (comments: MergeFacts['comments']) => {
+          const id = approvalFor(); let by: string | null = null;
+          for (const c of comments) {
+            const match = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
+            if (match?.[2] === id && await this.api.canApprove(c.author)) by = match[1] === 'approve' ? c.author : null;
+          }
+          return by;
+        };
+        const overruledBy = overridable ? await approverIn(f.comments) : null;
+        // Hand over to a person what nothing in the Factory will continue: changes without automatic rework, or a deferral.
+        if (owner && !adopted && blocked) {
           phase = 'Nacharbeit an der Aufgabe vermerken';
           await this.changesRequested(f, owner, snapshot, reviewKey, review);
         }
-        // Hand over to a person what nothing in the Factory will continue: changes without automatic rework, or a deferral.
-        const blocked = review.decision === 'request_changes' || review.findings.some(x => x.severity === 'blocking');
-        const handOver = !!owner && !adopted && ((blocked && !this.config.execution.rework) || review.decision === 'defer');
+        const handOver = !!owner && !adopted && ((blocked && !this.config.execution.rework) || (review.decision === 'defer' && !overruledBy));
         if (handOver) await this.event(f, `merge-handover:${reviewKey}`, { type: 'merge_handover', prNumber: number, head: f.head, base: f.base,
           reviewKey, decision: review.decision === 'defer' ? 'defer' : 'request_changes' });
         // sf:needs-human marks what waits for a person: a hand-over, or an approval (below). Another rejection takes it off;
         // the approval and merge path decides it for a review that lets the change through.
-        if (handOver || rejects(review)) { phase = 'Übergabe-Label setzen'; await this.needsHuman(f, handOver); }
-        if (rejects(review)) { this.note(number, handOver ? 'handover' : 'review-rejected', `KI-Entscheidung: ${review.decision}.`); continue; }
+        if (handOver || (rejects(review) && !overruledBy)) { phase = 'Übergabe-Label setzen'; await this.needsHuman(f, handOver); }
+        if (rejects(review) && !overruledBy) {
+          let detail = `KI-Entscheidung: ${review.decision}.`;
+          if (overridable) {
+            detail += ` Eine Person mit Freigaberecht kann die Zurückstellung überstimmen mit diesem Kommentar am PR: ${approvalLine}`;
+            await this.explain(f, `Das KI-Review hat die Entscheidung zurückgestellt (defer), ohne blockierenden Befund. Der Kommentar \`${approvalLine}\` überstimmt die Zurückstellung (nur für diesen Head, diese Basis und dieses Review)${riskGate ? `; er deckt auch die Freigabe für Risiko ${riskRecord!.class} über der Schwelle ${risk.autoMergeUpTo} ab` : ''}.`);
+          } else if ((await Promise.all(f.comments.map(async c => c.body.trim() === approvalLine && await this.api.canApprove(c.author)))).some(Boolean)) {
+            detail += ' Freigabe-Kommentar vorhanden, aber nicht überstimmbar.';
+            await this.explain(f, `Die Freigabe wurde ignoriert: nicht überstimmbar. Das KI-Review hat ${blocked ? 'Änderungen verlangt oder einen blockierenden Befund gemeldet' : 'zurückgestellt, die Factory mergt diesen PR aber nicht selbst'}; dafür gibt es keine Freigabe.`);
+          }
+          this.note(number, handOver ? 'handover' : 'review-rejected', detail); continue;
+        }
+        if (overruledBy) {
+          await this.event(f, `merge-defer-overridden:${approvalFor()}`, { type: 'merge_defer_overridden', prNumber: number, head: f.head, base: f.base,
+            approvalId: approvalFor(), approver: overruledBy }, `**Zurückstellung überstimmt von @${overruledBy}.** Das KI-Review hatte zurückgestellt (defer), ohne blockierenden Befund; die Freigabe gilt nur für diesen Head, diese Basis und dieses Review.`);
+        }
         const live = await this.read(number);
         if (hash(factsKey(live)) !== hash(factsKey(f)) || !this.eligible(live, snapshot) || live.state !== 'open' || live.draft || !live.sameRepository ||
           live.labels.some(l => ['sf:blocked', 'harness:blocked'].includes(l))) { this.note(number, 'review', 'Stand hat sich während der KI-Prüfung geändert; erneute Prüfung folgt.'); await this.explain(live, 'PR, Head, Basis oder Freigabe hat sich während der KI-Prüfung geändert; erneute Prüfung erforderlich.'); continue; }
@@ -585,9 +620,6 @@ export class MergeManager {
             await this.explain(live, 'Die zugehörige Aufgabe wurde während des Reviews geschlossen, blockiert, abgemeldet oder fachlich verändert.'); continue;
           }
         }
-        // The risk class only tightens 'allow': above the threshold a person approves (or merges) instead of the Factory.
-        const riskGate = !!riskKey && !!riskRecord && risk.mode === 'enforce' && review.decision === 'merge' &&
-          permission(this.config, 'merge_pr') === 'allow' && aboveThreshold(riskRecord.class, risk);
         if (riskGate && risk.aboveThreshold === 'block') {
           await this.event(live, `merge-risk-handover:${hash({ head: f.head, base: f.base, riskKey })}`, { type: 'merge_risk_handover', prNumber: number,
             head: f.head, base: f.base, riskKey, riskClass: riskRecord!.class, autoMergeUpTo: risk.autoMergeUpTo });
@@ -595,13 +627,8 @@ export class MergeManager {
           await this.explain(live, `Risiko ${riskRecord!.class} liegt über der Schwelle ${risk.autoMergeUpTo}; die Factory mergt diesen PR nicht. Bitte selbst prüfen und mergen.`); continue;
         }
         if (permission(this.config, 'merge_pr') === 'approval' || riskGate) {
-          const approvalId = hash({ repository: this.api.repository, number, head: f.head, base: f.base, reviewKey, review,
-            ...(riskGate ? { riskKey, riskClass: riskRecord!.class } : {}) });
-          let approved = false;
-          for (const c of live.comments) {
-            const match = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
-            if (match?.[2] === approvalId && await this.api.canApprove(c.author)) approved = match[1] === 'approve';
-          }
+          const approvalId = approvalFor();
+          const approved = !!await approverIn(live.comments);
           if (!approved) {
             this.note(number, 'approval-required', `${riskGate ? `Risiko ${riskRecord!.class} über der Schwelle ${risk.autoMergeUpTo}: menschliche Freigabe nötig.` : 'Menschliche Freigabe nötig.'} Freigeben mit diesem Kommentar am PR: /harness approve ${approvalId}`);
             if (riskGate) await this.event(live, `merge-approval-required:${approvalId}`, { type: 'merge_approval_required', prNumber: number,

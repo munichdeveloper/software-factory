@@ -273,3 +273,48 @@ describe('readable verdict', () => {
     expect(text).toContain('Umfang: 400 geänderte Zeilen. Allein nach Größe');
   });
 });
+
+describe('overruling a deferred review', () => {
+  const merged = (x: ReturnType<typeof fixture>) => (x.api.merge as ReturnType<typeof vi.fn>).mock.calls.length;
+  const idOf = (x: ReturnType<typeof fixture>) => [...x.f.comments].reverse().find(c => c.body.includes('/harness approve'))?.body.match(/\/harness approve ([a-f0-9]{64})/)?.[1];
+  const comment = (x: ReturnType<typeof fixture>, body: string, author = 'maintainer') =>
+    x.f.comments.push({ id: 2000 + x.f.comments.length, author, body, createdAt: clock.toISOString() });
+  const events = (x: ReturnType<typeof fixture>) => x.f.comments.map(c => decodeEvent(c, x.cfg.manager.trustedActors)?.data);
+  const deferred = () => { const x = fixture(); x.review.decision = 'defer'; x.review.reason = 'Secret-Scanner meldet einen Fund.'; return x; };
+
+  it('offers an id for a defer without blocking finding and merges after an authorized approval', async () => {
+    const x = deferred(); await x.run();
+    const id = idOf(x); expect(id).toMatch(/^[a-f0-9]{64}$/); expect(merged(x)).toBe(0);
+    expect(x.f.comments.some(c => c.body.includes('überstimmt die Zurückstellung'))).toBe(true);
+    comment(x, `/harness approve ${id}`); await x.run();
+    expect(merged(x)).toBe(1);
+    expect(x.f.comments.some(c => c.body.replaceAll('\u200b', '').includes('Zurückstellung überstimmt von @maintainer'))).toBe(true);
+    expect(events(x).some(d => d?.type === 'merge_defer_overridden' && d.approver === 'maintainer')).toBe(true);
+  });
+  it('ignores an approval from a person without write access', async () => {
+    const x = deferred(); await x.run();
+    comment(x, `/harness approve ${idOf(x)}`, 'stranger'); await x.run();
+    expect(merged(x)).toBe(0);
+  });
+  it('makes an old id useless after a push', async () => {
+    const x = deferred(); await x.run();
+    const id = idOf(x); x.f.head = 'c'.repeat(40);
+    comment(x, `/harness approve ${id}`); await x.run();
+    expect(merged(x)).toBe(0); expect(idOf(x)).not.toBe(id);
+  });
+  it('offers no id for request_changes or a blocking finding and notes the approval as not overridable', async () => {
+    const x = fixture(); x.review.decision = 'request_changes'; await x.run();
+    expect(idOf(x)).toBeUndefined();
+    const y = deferred(); y.review.findings = [{ severity: 'blocking', path: 'src/service.ts', explanation: 'Fehler' }]; await y.run();
+    expect(idOf(y)).toBeUndefined(); expect(merged(y)).toBe(0);
+  });
+  it('needs only one approval for a defer above the risk threshold', async () => {
+    const x = deferred(); x.assessment.class = 'high'; await x.run();
+    const id = idOf(x)!; comment(x, `/harness approve ${id}`); await x.run();
+    expect(merged(x)).toBe(1);
+  });
+  it('gives no id for a defer above the threshold when the Factory does not merge there', async () => {
+    const x = deferred(); x.assessment.class = 'high'; x.cfg.merge.risk.aboveThreshold = 'block'; await x.run();
+    expect(idOf(x)).toBeUndefined(); expect(merged(x)).toBe(0);
+  });
+});
