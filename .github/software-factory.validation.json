@@ -5,10 +5,18 @@
   "composeProjectPrefix": "sf-validation",
   "generated": [
     {
+      "command": "npm run schemas",
+      "paths": [
+        "schemas"
+      ],
+      "regenerate": true
+    },
+    {
       "command": "npm run bundle",
       "paths": [
         "bundle"
-      ]
+      ],
+      "regenerate": true
     },
     {
       "command": "npm run lint",
