@@ -34,8 +34,12 @@ export interface ReviewInput { facts: MergeFacts; trustedScope: string; trustedI
   /** Set when a large change set is reviewed in parts: which part this is and the pull request's other changed files. */
   part?: { index: number; total: number; otherFiles: { path: string; status: string; lines: number; patch?: string }[] } }
 export interface MergeReviewer { review(input: ReviewInput): Promise<MergeReview> }
+/** A predecessor named by `Depends on:` in a pull request text: a pull request or an issue of the repository. */
+export interface Predecessor { kind: 'pr' | 'issue'; state: 'open' | 'closed'; merged: boolean; body: string }
 export interface MergePort {
   readonly repository: string;
+  /** Looks up a number named by `Depends on:` (pull request or issue); null when it does not exist. */
+  predecessor?(number: number): Promise<Predecessor | null>;
   candidates(): Promise<number[]>;
   facts(number: number): Promise<MergeFacts>;
   context(facts: MergeFacts, maxFiles: number, maxBytes: number): Promise<ReviewInput>;

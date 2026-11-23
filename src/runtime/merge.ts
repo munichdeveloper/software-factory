@@ -8,7 +8,7 @@ export interface MergePassReport { reviewed: number; updated: number; merged: nu
  * where it stopped, the Factory's own reason. Never model or pull request text. Kept in memory; a broker restart starts empty.
  */
 export const mergeSteps = ['checks', 'checks-failed', 'conflict', 'branch-update', 'review', 'review-rejected', 'approval-required', 'gate', 'merging',
-  'merged', 'handover', 'stopped', 'error'] as const;
+  'merged', 'handover', 'stopped', 'waiting', 'error'] as const;
 export type MergeStep = typeof mergeSteps[number];
 export interface MergeProgress { pullRequest: number; step: MergeStep; detail: string | null; risk: string | null; at: string }
 export type MergeObserver = (pullRequest: number, step: MergeStep, detail?: string | null, risk?: string | null) => void;

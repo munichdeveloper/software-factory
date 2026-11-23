@@ -37,6 +37,20 @@ The merge pass resolves these itself instead of handing the PR to a person (issu
 - **Unchanged.** A workflow in `action_required` stays a `defer` (the Factory never opens that gate), and so does
   insufficient evidence. Step and label names (`review-rejected`, `handover`, `sf:needs-human`) keep their meaning.
 
+## Waiting for a predecessor (`Depends on:`)
+
+A line `Depends on: #12, #13` in the PR text names predecessors, with the same syntax as for tasks (`src/state/lifecycle.ts`).
+The numbers may be pull requests or issues. The merge pass looks at this line first, before anything else:
+
+- **Open predecessor** (PR not merged, issue not closed): no AI review, no risk assessment, no merge. The check
+  "Software Factory / Merge" shows "Wartet auf Vorgänger #n" (neutral) and the status comment says the same.
+- **Predecessor PR closed without merge**: it keeps blocking and is reported as "Vorgänger #n ohne Merge geschlossen".
+  The PR is handed over to a person (`sf:needs-human`).
+- **Predecessor merged** (or issue closed): the normal flow (branch update, checks, review, risk) runs in the next pass.
+- **Cycle** (e.g. #5 depends on #6 and #6 on #5): reported as a block and handed over to a person.
+
+Typical use: the critical part lives in its own PR; the rest carries `Depends on: #n` and merges by risk afterwards.
+
 ## Opt-in and configuration
 
 ```yaml

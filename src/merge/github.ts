@@ -1,6 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import { parse } from 'yaml';
-import { needsHumanLabel, type MergeFacts, type MergePort, type ReviewInput } from './contract.js';
+import { needsHumanLabel, type MergeFacts, type MergePort, type Predecessor, type ReviewInput } from './contract.js';
 import { isWorkflowFile } from './workflow-risk.js';
 import { isLockfile, lockfileSummary } from './lockfile.js';
 
@@ -186,6 +186,16 @@ export class GitHubMergePort implements MergePort {
     }
     // GitHub creates a missing label when it is added to an issue or pull request.
     if (!labels.some(l => l.name === label)) await this.api.issues.addLabels({ ...this.target, issue_number: number, labels: [label] });
+  }
+  async predecessor(number: number): Promise<Predecessor | null> {
+    try {
+      const { data } = await this.api.issues.get({ ...this.target, issue_number: number });
+      const pr = !!data.pull_request;
+      return { kind: pr ? 'pr' : 'issue', state: data.state === 'closed' ? 'closed' : 'open', merged: pr && !!data.pull_request?.merged_at, body: data.body ?? '' };
+    } catch (error) {
+      if (error && typeof error === 'object' && 'status' in error && error.status === 404) return null;
+      throw error;
+    }
   }
   async pushedSince(from: string, head: string) {
     const commits: { author?: { login?: string } | null; committer?: { login?: string } | null }[] = [];

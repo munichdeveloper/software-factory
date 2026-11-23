@@ -229,6 +229,18 @@ it('uses real structured Responses review with no tools, keeps untrusted code in
   x.cfg.llm.provider = 'openai'; fetcher.mockResolvedValue(new Response(JSON.stringify({ status: 'incomplete' })));
   await expect(new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input)).rejects.toThrow('incomplete');
 });
+it('does not give the review the risk or hand-over labels, and tells it not to defer for them', async () => {
+  const x = fixture(); const input: ReviewInput = await x.api.context(x.f, 60, 250000);
+  input.facts = { ...input.facts, labels: ['sf:risk-critical', 'sf:risk-low', 'sf:needs-human', 'harness:managed'] };
+  let sent: { instructions: string; input: string } | undefined;
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    sent = JSON.parse(String(init!.body));
+    return new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(x.review) }] }] }));
+  });
+  await new OpenAIMergeReviewer('fixture', x.cfg, fetcher).review(input);
+  expect(JSON.parse(sent!.input).untrustedFacts.labels).toEqual(['harness:managed']);
+  expect(sent!.instructions).toContain('risk gate');
+});
 it('decodes durable journals with a readable explanation after the JSON fence', () => {
   const event = { version: 1 as const, key: 'review', at: clock.toISOString(), correlationId: 'test',
     data: { type: 'merge_status' as const, head: 'a'.repeat(40), base: 'b'.repeat(40), reason: 'Needs work' } };
@@ -549,4 +561,45 @@ it('still defers on a workflow waiting in action_required and on a deferring rev
   // A deferring review of a Factory pull request is still handed over.
   const y = reworking(); y.review.decision = 'defer'; await y.owned();
   expect(y.handovers()).toEqual([expect.objectContaining({ decision: 'defer' })]); expect(y.tasks).toEqual([]);
+});
+
+type Pre = { kind: 'pr' | 'issue'; state: 'open' | 'closed'; merged: boolean; body: string };
+const withPredecessors = (preds: Record<number, Pre>, body = 'Depends on: #12') => {
+  const x = fixture(); x.f.body = body;
+  x.api.predecessor = vi.fn(async n => preds[n] ?? null);
+  x.api.needsHuman = vi.fn(async () => {});
+  return x;
+};
+const pre = (over: Partial<Pre> = {}): Pre => ({ kind: 'pr', state: 'open', merged: false, body: '', ...over });
+it('waits for an open predecessor PR without review, risk assessment or merge', async () => {
+  const x = withPredecessors({ 12: pre() });
+  const note = vi.fn(); await x.run({ observe: note });
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled(); expect(x.api.update).not.toHaveBeenCalled();
+  expect(note).toHaveBeenCalledWith(52, 'waiting', 'Wartet auf Vorgänger #12', undefined);
+  expect(x.f.comments.at(-1)!.body).toContain('Wartet auf Vorgänger #12');
+});
+it('runs the normal flow once the predecessor PR is merged', async () => {
+  const x = withPredecessors({ 12: pre({ state: 'closed', merged: true }) });
+  expect((await x.run()).merged).toBe(1); expect(x.reviewer.review).toHaveBeenCalledTimes(1);
+});
+it('keeps blocking on a predecessor PR closed without merge and hands over to a person', async () => {
+  const x = withPredecessors({ 12: pre({ state: 'closed' }) });
+  const note = vi.fn(); await x.run({ observe: note });
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
+  expect(note).toHaveBeenCalledWith(52, 'handover', expect.stringContaining('Vorgänger #12 ohne Merge geschlossen'), undefined);
+  expect(x.f.comments.at(-1)!.body).toContain('Vorgänger #12 ohne Merge geschlossen');
+  expect(x.api.needsHuman).toHaveBeenCalledWith(52, true);
+});
+it('treats an issue as predecessor: open waits, closed releases', async () => {
+  const preds = { 12: pre({ kind: 'issue' }) };
+  const x = withPredecessors(preds); await x.run();
+  expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.f.comments.at(-1)!.body).toContain('Wartet auf Vorgänger #12');
+  preds[12] = pre({ kind: 'issue', state: 'closed' });
+  expect((await x.run()).merged).toBe(1);
+});
+it('detects a dependency cycle and reports it as a block', async () => {
+  const x = withPredecessors({ 12: pre({ body: 'Depends on: #13' }), 13: pre({ body: 'Depends on: #52' }) });
+  await x.run(); expect(x.reviewer.review).not.toHaveBeenCalled(); expect(x.api.merge).not.toHaveBeenCalled();
+  expect(x.f.comments.at(-1)!.body).toContain('Zyklus');
+  expect(x.api.needsHuman).toHaveBeenCalledWith(52, true);
 });
