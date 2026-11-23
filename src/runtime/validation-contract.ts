@@ -1,13 +1,18 @@
 import { z } from 'zod';
 import { hash } from '../state/identity.js';
-import type { CodingArtifact } from '../workers/coding.js';
+import { isProtectedArtifactPath, type CodingArtifact } from '../workers/coding.js';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/), sha = z.string().regex(/^[a-f0-9]{40}$/);
 const reserved = /^(?:PATH|HOME|USER|SHELL|CI|NODE_OPTIONS|NODE_PATH|DATABASE_URL|COMPOSE_PROJECT_NAME|COMPOSE_FILE|DOCKER_HOST|DOCKER_CONTEXT|LD_.+|GITHUB_.+|GH_.+|ACTIONS_.+|RUNNER_.+|OPENAI_.+|ANTHROPIC_.+|AI_API_KEY|FACTORY_.+|AWS_.+|NPM_CONFIG_.+)$/i;
 const generatedEntry = z.strictObject({
   command: z.string().min(1).max(200).regex(/^[\w.@:=+/-]+(?: [\w.@:=+/-]+)*$/, 'Generated command must be a fixed string without shell metacharacters'),
   paths: z.string().max(200).regex(/^[\w.@+-][\w.@+/-]*$/, 'Generated paths must be relative').refine(p => !p.split('/').some(part => part === '..' || part === '.' || part === '' || part === '.git'), 'Generated paths must stay inside the repository').array().min(1).max(10),
-});
+  /**
+   * The coding job reruns the command after the agent, with network and the locked dependencies installed, and adopts
+   * the changes inside `paths` into the same change (SF #281). No default: plans without it keep their hash.
+   */
+  regenerate: z.literal(true).optional(),
+}).refine(e => !e.regenerate || !e.paths.some(isProtectedArtifactPath), 'Regenerated paths may not name protected files (.github, agent instructions, CODEOWNERS)');
 export const validationPlanSchema = z.strictObject({
   version: z.literal(1).default(1), profile: z.enum(['npm', 'npm-docker', 'maven']).default('npm'),
   /** Maven only: the JDK the validator installs. Absent means the runner's default JDK. */
@@ -19,7 +24,8 @@ export const validationPlanSchema = z.strictObject({
   environment: z.record(z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine(k => !reserved.test(k), 'Reserved validation environment key'),
     z.string().max(1000).refine(v => !v.includes('${{'), 'Only literal test values are allowed')).default({}),
 }).refine(p => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6000, 'Validation plan limit')
-  .refine(p => p.profile === 'maven' || p.javaVersion === undefined, 'javaVersion applies to the maven profile only');
+  .refine(p => p.profile === 'maven' || p.javaVersion === undefined, 'javaVersion applies to the maven profile only')
+  .refine(p => p.profile !== 'maven' || !p.generated?.some(e => e.regenerate), 'regenerate applies to the npm profiles only');
 export type ValidationPlan = z.infer<typeof validationPlanSchema>;
 export const defaultValidationPlan = () => validationPlanSchema.parse({});
 export const validationCheckSchema = z.strictObject({ name: z.enum(['install', 'test', 'build', 'browser-install', 'browser', 'compose-config', 'docker-start', 'docker-smoke', 'docker-stop', 'generated', 'source-integrity']),

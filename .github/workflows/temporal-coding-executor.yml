@@ -89,7 +89,7 @@ jobs:
   code:
     needs: validate
     runs-on: ${{ vars.SF_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 35
+    timeout-minutes: 50
     permissions:
       contents: read
     steps:
@@ -220,10 +220,53 @@ jobs:
           anthropic-api-key: ${{ needs.validate.outputs.credential != 'subscription' && secrets.ANTHROPIC_API_KEY || '' }}
           claude-oauth-token: ${{ needs.validate.outputs.credential == 'subscription' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
           trusted-bot-users: munichdeveloper-sf-manager-local[bot]
+      # Generated outputs the validation plan declares with `regenerate: true` (a bundle built from src/, say): the
+      # offline agent cannot build them, so they are rebuilt here with network and the locked dependencies, on a fresh
+      # checkout of the base with the artifact applied, as the separate validation account with an empty environment
+      # (SF #281). Only changes inside the declared paths are adopted; anything else ends the result blocked. If the
+      # step itself breaks, the agent's artifact is published unchanged and the validation's generated check reports it.
+      - id: regenerating
+        env:
+          SF_VALIDATION_PLAN: ${{ needs.validate.outputs.validation }}
+        run: |
+          regenerate=false
+          if jq -e '(.generated // []) | any(.regenerate == true)' <<<"$SF_VALIDATION_PLAN" >/dev/null 2>&1; then regenerate=true; fi
+          echo "regenerate=$regenerate" >> "$GITHUB_OUTPUT"
+      - if: ${{ steps.regenerating.outputs.regenerate == 'true' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: munichdeveloper/software-factory
+          ref: ${{ inputs.factory-ref }}
+          path: .runtime/factory
+          persist-credentials: false
+      - if: ${{ steps.regenerating.outputs.regenerate == 'true' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.validate.outputs.base-sha }}
+          path: regenerate
+          persist-credentials: false
+      - id: regenerate
+        name: Regenerate declared generated files with network
+        if: ${{ steps.regenerating.outputs.regenerate == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          SF_CODING_REQUEST: ${{ steps.request.outputs.request }}
+          SF_VALIDATION_PLAN: ${{ needs.validate.outputs.validation }}
+          SF_ARTIFACT: ${{ steps.agent.outputs.artifact }}
+        run: |
+          getent passwd sf-validator >/dev/null || sudo adduser --system --home /home/sf-validator --shell /bin/bash --group sf-validator
+          sudo install -d -o sf-validator -g sf-validator /home/sf-validator
+          sudo chmod o+x /home/runner /home/runner/work "$GITHUB_WORKSPACE"
+          node .runtime/factory/bundle/factory.cjs regenerate-coding-artifact --source "$GITHUB_WORKSPACE/regenerate" --file "$SF_ARTIFACT" --output "$RUNNER_TEMP/sf-regenerated/artifact.json"
+          echo "artifact=$RUNNER_TEMP/sf-regenerated/artifact.json" >> "$GITHUB_OUTPUT"
+      - if: ${{ always() && steps.regenerating.outputs.regenerate == 'true' }}
+        name: Stop remaining regeneration processes
+        run: sudo pkill -KILL -u sf-validator || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: coding-result-${{ needs.validate.outputs.execution-id }}
-          path: ${{ steps.agent.outputs.artifact }}
+          path: ${{ steps.regenerate.outcome == 'success' && steps.regenerate.outputs.artifact || steps.agent.outputs.artifact }}
           if-no-files-found: error
           retention-days: 7
       # Token usage of the run (harness usage.json), also when the agent failed, timed out or hit its spend cap.

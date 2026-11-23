@@ -6355,15 +6355,15 @@ var require_parser = __commonJS({
     var node_process = require("process");
     var cst = require_cst();
     var lexer = require_lexer();
-    function includesToken(list, type) {
-      for (let i = 0; i < list.length; ++i)
-        if (list[i].type === type)
+    function includesToken(list2, type) {
+      for (let i = 0; i < list2.length; ++i)
+        if (list2[i].type === type)
           return true;
       return false;
     }
-    function findNonEmptyIndex(list) {
-      for (let i = 0; i < list.length; ++i) {
-        switch (list[i].type) {
+    function findNonEmptyIndex(list2) {
+      for (let i = 0; i < list2.length; ++i) {
+        switch (list2[i].type) {
           case "space":
           case "comment":
           case "newline":
@@ -7618,16 +7618,16 @@ var init_values = __esm({
 var sleep;
 var init_sleep = __esm({
   "node_modules/@anthropic-ai/sdk/internal/utils/sleep.mjs"() {
-    sleep = (ms, signal) => new Promise((resolve4) => {
+    sleep = (ms, signal) => new Promise((resolve5) => {
       if (signal?.aborted)
-        return resolve4();
+        return resolve5();
       const onAbort = () => {
         clearTimeout(timer);
-        resolve4();
+        resolve5();
       };
       const timer = setTimeout(() => {
         signal?.removeEventListener("abort", onAbort);
-        resolve4();
+        resolve5();
       }, ms);
       signal?.addEventListener("abort", onAbort, { once: true });
     });
@@ -11262,8 +11262,8 @@ var init_api_promise = __esm({
     APIPromise = /* @__PURE__ */ (() => {
       class APIPromise2 extends Promise {
         constructor(client, responsePromise, parseResponse = defaultParseResponse) {
-          super((resolve4) => {
-            resolve4(null);
+          super((resolve5) => {
+            resolve5(null);
           });
           this.responsePromise = responsePromise;
           this.parseResponse = parseResponse;
@@ -14154,16 +14154,16 @@ var init_async_queue = __esm({
           if (__classPrivateFieldGet(this, _AsyncQueue_closed, "f") || signal?.aborted) {
             return Promise.resolve({ done: true, value: void 0 });
           }
-          return new Promise((resolve4) => {
+          return new Promise((resolve5) => {
             const waiter = (r) => {
               signal?.removeEventListener("abort", onAbort);
-              resolve4(r);
+              resolve5(r);
             };
             const onAbort = () => {
               const idx = __classPrivateFieldGet(this, _AsyncQueue_waiters, "f").indexOf(waiter);
               if (idx >= 0)
                 __classPrivateFieldGet(this, _AsyncQueue_waiters, "f").splice(idx, 1);
-              resolve4({ done: true, value: void 0 });
+              resolve5({ done: true, value: void 0 });
             };
             __classPrivateFieldGet(this, _AsyncQueue_waiters, "f").push(waiter);
             signal?.addEventListener("abort", onAbort, { once: true });
@@ -14903,13 +14903,13 @@ var init_json_schema = __esm({
 
 // node_modules/@anthropic-ai/sdk/internal/utils/promise.mjs
 function promiseWithResolvers() {
-  let resolve4;
+  let resolve5;
   let reject;
   const promise2 = new Promise((res, rej) => {
-    resolve4 = res;
+    resolve5 = res;
     reject = rej;
   });
-  return { promise: promise2, resolve: resolve4, reject };
+  return { promise: promise2, resolve: resolve5, reject };
 }
 var init_promise = __esm({
   "node_modules/@anthropic-ai/sdk/internal/utils/promise.mjs"() {
@@ -15085,10 +15085,10 @@ async function setupSkills(ctx) {
   for (const skill of session.agent.skills) {
     try {
       const version2 = await client.beta.skills.versions.retrieve(skill.version, { skill_id: skill.skill_id });
-      let dirname4 = path2.basename(version2.name.trim());
-      if (dirname4 === "" || dirname4 === "." || dirname4 === "..")
-        dirname4 = skill.skill_id;
-      const dest = path2.resolve(skillsRoot, dirname4);
+      let dirname5 = path2.basename(version2.name.trim());
+      if (dirname5 === "" || dirname5 === "." || dirname5 === "..")
+        dirname5 = skill.skill_id;
+      const dest = path2.resolve(skillsRoot, dirname5);
       if (dest !== skillsRoot && !dest.startsWith(skillsRoot + path2.sep)) {
         log.warn("skill name escapes the skills dir; skipping", {
           component: "agent-tool-context",
@@ -15728,10 +15728,10 @@ async function settledOrAborted(p, signal) {
     return;
   }
   let onAbort;
-  const aborted2 = new Promise((resolve4) => {
-    onAbort = resolve4;
+  const aborted2 = new Promise((resolve5) => {
+    onAbort = resolve5;
     if (signal.aborted)
-      resolve4();
+      resolve5();
   });
   signal.addEventListener("abort", onAbort, { once: true });
   try {
@@ -16041,8 +16041,8 @@ var init_memories = __esm({
             return;
           }
           for (const [rel, sha4] of Object.entries(scan.files)) {
-            const changed = sha4 !== store.baseline.get(rel) || store.sentShas.has(rel);
-            if (changed && store.refusedShas.get(rel) !== sha4) {
+            const changed2 = sha4 !== store.baseline.get(rel) || store.sentShas.has(rel);
+            if (changed2 && store.refusedShas.get(rel) !== sha4) {
               dirty.set(rel, sha4);
               unsent.add(rel);
             }
@@ -16809,7 +16809,7 @@ function betaGrepTool(ctx) {
   });
 }
 function runRipgrep(rg, pattern, searchPath, signal) {
-  return new Promise((resolve4, reject) => {
+  return new Promise((resolve5, reject) => {
     const proc = cp.spawn(rg, ["-n", "--no-heading", "-e", pattern, "--", searchPath], {
       ...signal ? { signal } : {}
     });
@@ -16831,12 +16831,12 @@ function runRipgrep(rg, pattern, searchPath, signal) {
       if (signal?.aborted)
         return reject(new ToolError("grep: aborted"));
       if (truncated)
-        return resolve4(out + `
+        return resolve5(out + `
 [output truncated at ${GREP_OUTPUT_LIMIT} bytes]`);
       if (code === 0)
-        return resolve4(out);
+        return resolve5(out);
       if (code === 1)
-        return resolve4("no matches");
+        return resolve5("no matches");
       reject(new ToolError(`grep: rg failed: ${errOut || `exit ${code}`}`));
     });
     proc.on("error", (e) => {
@@ -17024,8 +17024,8 @@ var init_node2 = __esm({
 `;
           __classPrivateFieldGet(this, _BashSession_proc, "f").stdin.write(wrapped);
           if (__classPrivateFieldGet(this, _BashSession_buf, "f").indexOf(sentinel2) < 0) {
-            const { promise: sentinelSeen, resolve: resolve4 } = promiseWithResolvers();
-            __classPrivateFieldSet(this, _BashSession_waiting, { sentinel: sentinel2, resolve: resolve4 }, "f");
+            const { promise: sentinelSeen, resolve: resolve5 } = promiseWithResolvers();
+            __classPrivateFieldSet(this, _BashSession_waiting, { sentinel: sentinel2, resolve: resolve5 }, "f");
             let timer;
             let onAbort;
             try {
@@ -17187,8 +17187,8 @@ async function withTimeout(p, ms) {
   try {
     return await Promise.race([
       p.then(() => false, () => false),
-      new Promise((resolve4) => {
-        timer = setTimeout(() => resolve4(true), ms);
+      new Promise((resolve5) => {
+        timer = setTimeout(() => resolve5(true), ms);
       })
     ]);
   } finally {
@@ -19546,12 +19546,12 @@ var init_BetaMessageStream = __esm({
             }
             return this._emit("error", new AnthropicError(String(error62)));
           });
-          __classPrivateFieldSet(this, _BetaMessageStream_connectedPromise, new Promise((resolve4, reject) => {
-            __classPrivateFieldSet(this, _BetaMessageStream_resolveConnectedPromise, resolve4, "f");
+          __classPrivateFieldSet(this, _BetaMessageStream_connectedPromise, new Promise((resolve5, reject) => {
+            __classPrivateFieldSet(this, _BetaMessageStream_resolveConnectedPromise, resolve5, "f");
             __classPrivateFieldSet(this, _BetaMessageStream_rejectConnectedPromise, reject, "f");
           }), "f");
-          __classPrivateFieldSet(this, _BetaMessageStream_endPromise, new Promise((resolve4, reject) => {
-            __classPrivateFieldSet(this, _BetaMessageStream_resolveEndPromise, resolve4, "f");
+          __classPrivateFieldSet(this, _BetaMessageStream_endPromise, new Promise((resolve5, reject) => {
+            __classPrivateFieldSet(this, _BetaMessageStream_resolveEndPromise, resolve5, "f");
             __classPrivateFieldSet(this, _BetaMessageStream_rejectEndPromise, reject, "f");
           }), "f");
           __classPrivateFieldGet(this, _BetaMessageStream_connectedPromise, "f").catch(() => {
@@ -19764,11 +19764,11 @@ var init_BetaMessageStream = __esm({
          *   const message = await stream.emitted('message') // rejects if the stream errors
          */
         emitted(event) {
-          return new Promise((resolve4, reject) => {
+          return new Promise((resolve5, reject) => {
             __classPrivateFieldSet(this, _BetaMessageStream_catchingPromiseCreated, true, "f");
             if (event !== "error")
               this.once("error", reject);
-            this.once(event, resolve4);
+            this.once(event, resolve5);
           });
         }
         async done() {
@@ -20156,7 +20156,7 @@ var init_BetaMessageStream = __esm({
                 if (done) {
                   return { value: void 0, done: true };
                 }
-                return new Promise((resolve4, reject) => readQueue.push({ resolve: resolve4, reject })).then((chunk2) => chunk2 ? { value: chunk2, done: false } : { value: void 0, done: true });
+                return new Promise((resolve5, reject) => readQueue.push({ resolve: resolve5, reject })).then((chunk2) => chunk2 ? { value: chunk2, done: false } : { value: void 0, done: true });
               }
               const chunk = pushQueue.shift();
               return { value: chunk, done: false };
@@ -29294,10 +29294,10 @@ var init_ThreadState = __esm({
         if (__classPrivateFieldGet(this, _ThreadState_anchor, "f").type !== "continue")
           return;
         const { createdWith } = __classPrivateFieldGet(this, _ThreadState_anchor, "f");
-        const changed = CREATE_ONLY_FIELDS.filter((field) => createOnly[field] !== createdWith[field]);
-        if (changed.length) {
-          const names = changed.map((field) => `\`${field}\``).join(" and ");
-          throw new AnthropicError(`Cannot change ${names} on a thread: the server keeps the \`system\` and \`tools\` the thread was created with. To change them, start a new thread from \`thread.params\`.` + (changed.includes("tools") ? " To add or remove tools on this thread, send `tool_addition` or `tool_removal` blocks in a `system` message." : ""));
+        const changed2 = CREATE_ONLY_FIELDS.filter((field) => createOnly[field] !== createdWith[field]);
+        if (changed2.length) {
+          const names = changed2.map((field) => `\`${field}\``).join(" and ");
+          throw new AnthropicError(`Cannot change ${names} on a thread: the server keeps the \`system\` and \`tools\` the thread was created with. To change them, start a new thread from \`thread.params\`.` + (changed2.includes("tools") ? " To add or remove tools on this thread, send `tool_addition` or `tool_removal` blocks in a `system` message." : ""));
         }
       }, _ThreadState_requestOptions = function _ThreadState_requestOptions2(overrides, { stream: stream2 }) {
         const options = { ...this.options, ...definedEntries(overrides) };
@@ -30864,12 +30864,12 @@ var init_MessageStream = __esm({
             }
             return this._emit("error", new AnthropicError(String(error62)));
           });
-          __classPrivateFieldSet(this, _MessageStream_connectedPromise, new Promise((resolve4, reject) => {
-            __classPrivateFieldSet(this, _MessageStream_resolveConnectedPromise, resolve4, "f");
+          __classPrivateFieldSet(this, _MessageStream_connectedPromise, new Promise((resolve5, reject) => {
+            __classPrivateFieldSet(this, _MessageStream_resolveConnectedPromise, resolve5, "f");
             __classPrivateFieldSet(this, _MessageStream_rejectConnectedPromise, reject, "f");
           }), "f");
-          __classPrivateFieldSet(this, _MessageStream_endPromise, new Promise((resolve4, reject) => {
-            __classPrivateFieldSet(this, _MessageStream_resolveEndPromise, resolve4, "f");
+          __classPrivateFieldSet(this, _MessageStream_endPromise, new Promise((resolve5, reject) => {
+            __classPrivateFieldSet(this, _MessageStream_resolveEndPromise, resolve5, "f");
             __classPrivateFieldSet(this, _MessageStream_rejectEndPromise, reject, "f");
           }), "f");
           __classPrivateFieldGet(this, _MessageStream_connectedPromise, "f").catch(() => {
@@ -31061,11 +31061,11 @@ var init_MessageStream = __esm({
          *   const message = await stream.emitted('message') // rejects if the stream errors
          */
         emitted(event) {
-          return new Promise((resolve4, reject) => {
+          return new Promise((resolve5, reject) => {
             __classPrivateFieldSet(this, _MessageStream_catchingPromiseCreated, true, "f");
             if (event !== "error")
               this.once("error", reject);
-            this.once(event, resolve4);
+            this.once(event, resolve5);
           });
         }
         async done() {
@@ -31400,7 +31400,7 @@ var init_MessageStream = __esm({
                 if (done) {
                   return { value: void 0, done: true };
                 }
-                return new Promise((resolve4, reject) => readQueue.push({ resolve: resolve4, reject })).then((chunk2) => chunk2 ? { value: chunk2, done: false } : { value: void 0, done: true });
+                return new Promise((resolve5, reject) => readQueue.push({ resolve: resolve5, reject })).then((chunk2) => chunk2 ? { value: chunk2, done: false } : { value: void 0, done: true });
               }
               const chunk = pushQueue.shift();
               return { value: chunk, done: false };
@@ -36795,8 +36795,8 @@ var init_client = __esm({
           const given = { apiKey, authToken, ...opts };
           const passed = CREDENTIAL_OPTIONS.filter((name) => given[name] != null);
           if (passed.length > 1) {
-            const list = (names) => names.map((name) => `\`${name}\``).join(", ");
-            throw new TypeError(`Pass at most one of ${list(CREDENTIAL_OPTIONS)}. Received ${list(passed)}.`);
+            const list2 = (names) => names.map((name) => `\`${name}\``).join(", ");
+            throw new TypeError(`Pass at most one of ${list2(CREDENTIAL_OPTIONS)}. Received ${list2(passed)}.`);
           }
           const [passedName] = passed;
           const env = passedName != null ? null : {
@@ -40631,7 +40631,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve4.call(this, root, ref);
+      let _sch = resolve5.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a4 = root.localRefs) === null || _a4 === void 0 ? void 0 : _a4[ref];
         const { schemaId } = this.opts;
@@ -40658,7 +40658,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve4(root, ref) {
+    function resolve5(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -41522,7 +41522,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve4(baseURI, relativeURI, options) {
+    function resolve5(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -41558,50 +41558,50 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize2(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative2, options, skipNormalization) {
+    function resolveComponent(base, relative3, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse6(serialize2(base, options), options);
-        relative2 = parse6(serialize2(relative2, options), options);
+        relative3 = parse6(serialize2(relative3, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative2.scheme) {
-        target.scheme = relative2.scheme;
-        target.userinfo = relative2.userinfo;
-        target.host = relative2.host;
-        target.port = relative2.port;
-        target.path = removeDotSegments(relative2.path || "");
-        target.query = relative2.query;
+      if (!options.tolerant && relative3.scheme) {
+        target.scheme = relative3.scheme;
+        target.userinfo = relative3.userinfo;
+        target.host = relative3.host;
+        target.port = relative3.port;
+        target.path = removeDotSegments(relative3.path || "");
+        target.query = relative3.query;
       } else {
-        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
-          target.userinfo = relative2.userinfo;
-          target.host = relative2.host;
-          target.port = relative2.port;
-          target.path = removeDotSegments(relative2.path || "");
-          target.query = relative2.query;
+        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
+          target.userinfo = relative3.userinfo;
+          target.host = relative3.host;
+          target.port = relative3.port;
+          target.path = removeDotSegments(relative3.path || "");
+          target.query = relative3.query;
         } else {
-          if (!relative2.path) {
+          if (!relative3.path) {
             target.path = base.path;
-            if (relative2.query !== void 0) {
-              target.query = relative2.query;
+            if (relative3.query !== void 0) {
+              target.query = relative3.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative2.path[0] === "/") {
-              target.path = removeDotSegments(relative2.path);
+            if (relative3.path[0] === "/") {
+              target.path = removeDotSegments(relative3.path);
             } else {
               const baseHasAuthority = base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0;
               if (baseHasAuthority && !base.path) {
-                target.path = "/" + relative2.path;
+                target.path = "/" + relative3.path;
               } else if (!base.path) {
-                target.path = relative2.path;
+                target.path = relative3.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
               }
               target.path = base.scheme === void 0 && !baseHasAuthority && target.path[0] !== "/" ? removeDotSegmentsRelative(target.path) : removeDotSegments(target.path);
             }
-            target.query = relative2.query;
+            target.query = relative3.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -41609,7 +41609,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative2.fragment;
+      target.fragment = relative3.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -41913,7 +41913,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve4,
+      resolve: resolve5,
       resolveComponent,
       equal,
       serialize: serialize2,
@@ -45161,7 +45161,7 @@ var require__ = __commonJS({
 });
 
 // src/cli.ts
-var import_promises5 = require("node:fs/promises");
+var import_promises6 = require("node:fs/promises");
 var import_node_crypto3 = require("node:crypto");
 var import_node_util = require("node:util");
 var import_node_url = require("node:url");
@@ -50233,7 +50233,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve4) {
+function isRecursive(inst, stack, resolve5) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -50243,7 +50243,7 @@ function isRecursive(inst, stack, resolve4) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve4);
+      const answer = isRecursive(child, stack, resolve5);
       if (answer > result)
         result = answer;
     }
@@ -50254,7 +50254,7 @@ function isRecursive(inst, stack, resolve4) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve4) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve5) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -50318,7 +50318,7 @@ function isRecursive(inst, stack, resolve4) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve4 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve5 ? inst._zod.innerType : void 0);
       merge3(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -61371,8 +61371,8 @@ var contributors = {
 function aggregateChecks(schema) {
   const agg = {};
   const def = schema._zod.def;
-  const list = schema._zod.traits.has("$ZodCheck") ? [schema, ...def.checks ?? []] : def.checks ?? [];
-  for (const ch of list)
+  const list2 = schema._zod.traits.has("$ZodCheck") ? [schema, ...def.checks ?? []] : def.checks ?? [];
+  for (const ch of list2)
     contributors[ch._zod.def.check]?.(agg, ch._zod.def);
   const bag = schema._zod.bag;
   if (bag.minimum !== void 0)
@@ -64692,21 +64692,21 @@ function visit(schema, fnOrHandlers) {
       case "object": {
         const oldShape = def.shape;
         const keys = Object.keys(oldShape);
-        let changed = false;
+        let changed2 = false;
         const newShape = {};
         for (const k of keys) {
           const mapped = run(oldShape[k]);
           if (mapped !== oldShape[k])
-            changed = true;
+            changed2 = true;
           newShape[k] = mapped;
         }
         let newCatchall = def.catchall;
         if (def.catchall) {
           newCatchall = run(def.catchall);
           if (newCatchall !== def.catchall)
-            changed = true;
+            changed2 = true;
         }
-        return changed ? clone(s, { ...def, shape: newShape, catchall: newCatchall }) : s;
+        return changed2 ? clone(s, { ...def, shape: newShape, catchall: newCatchall }) : s;
       }
       case "array": {
         const mapped = run(def.element);
@@ -64714,21 +64714,21 @@ function visit(schema, fnOrHandlers) {
       }
       case "tuple": {
         const oldItems = def.items;
-        let changed = false;
+        let changed2 = false;
         const newItems = [];
         for (const item of oldItems) {
           const mapped = run(item);
           if (mapped !== item)
-            changed = true;
+            changed2 = true;
           newItems.push(mapped);
         }
         let newRest = def.rest;
         if (def.rest) {
           newRest = run(def.rest);
           if (newRest !== def.rest)
-            changed = true;
+            changed2 = true;
         }
-        return changed ? clone(s, { ...def, items: newItems, rest: newRest }) : s;
+        return changed2 ? clone(s, { ...def, items: newItems, rest: newRest }) : s;
       }
       case "record":
       case "map": {
@@ -64742,15 +64742,15 @@ function visit(schema, fnOrHandlers) {
       }
       case "union": {
         const oldOptions = def.options;
-        let changed = false;
+        let changed2 = false;
         const newOptions = [];
         for (const opt of oldOptions) {
           const mapped = run(opt);
           if (mapped !== opt)
-            changed = true;
+            changed2 = true;
           newOptions.push(mapped);
         }
-        return changed ? clone(s, { ...def, options: newOptions }) : s;
+        return changed2 ? clone(s, { ...def, options: newOptions }) : s;
       }
       case "intersection": {
         const newLeft = run(def.left);
@@ -65086,8 +65086,8 @@ function riskRules(changes, risk) {
       classes.push(area.class);
     }
   }
-  const lines = changes.reduce((sum, c) => sum + changedLines(c.patch), 0), files = changes.length;
-  const size = sizeClass(lines, files, risk);
+  const lines = changes.reduce((sum, c) => sum + changedLines(c.patch), 0), files2 = changes.length;
+  const size = sizeClass(lines, files2, risk);
   const areaClass = classes.length ? highest(classes) : null;
   const hits = ruleHits(changes.map((c) => ({ path: c.path, status: c.status ?? "modified" })));
   return {
@@ -65098,7 +65098,7 @@ function riskRules(changes, risk) {
     areaClass,
     floor: highest([...classes, size, hits.length ? ruleFloorClass : "low"]),
     lines,
-    files
+    files: files2
   };
 }
 async function classifyRisk(changes, risk, assessor, parts = [changes]) {
@@ -65203,8 +65203,8 @@ var OpenAIRiskAssessor = class {
   }
 };
 var aboveThreshold = (cls, risk) => cls === "critical" || riskRank(cls) > riskRank(risk.autoMergeUpTo);
-function sizeClass(lines, files, risk) {
-  return lines > risk.maxMediumRiskLines || files > (risk.maxMediumRiskFiles ?? defaultMaxMediumRiskFiles) ? "high" : lines > risk.maxLowRiskLines ? "medium" : "low";
+function sizeClass(lines, files2, risk) {
+  return lines > risk.maxMediumRiskLines || files2 > (risk.maxMediumRiskFiles ?? defaultMaxMediumRiskFiles) ? "high" : lines > risk.maxLowRiskLines ? "medium" : "low";
 }
 function sizeRaisedClass(record2, risk) {
   const size = sizeClass(record2.lines, record2.files ?? 0, risk);
@@ -65214,7 +65214,7 @@ function sizeRaisedClass(record2, risk) {
   return record2.source !== "builtin" && record2.source !== "error" && size === record2.class && riskRank(size) > riskRank(before);
 }
 function describeRisk(record2, risk) {
-  const files = record2.files ?? 0, above = aboveThreshold(record2.class, risk), size = sizeClass(record2.lines, files, risk);
+  const files2 = record2.files ?? 0, above = aboveThreshold(record2.class, risk), size = sizeClass(record2.lines, files2, risk);
   const verdict = risk.mode === "observe" ? `${above ? "Liegt \xFCber" : "Liegt innerhalb"} der Grenze f\xFCr automatisches Mergen (\`${risk.autoMergeUpTo}\`); nur beobachtet, ohne Wirkung auf den Merge.` : above ? `Liegt \xFCber der Grenze f\xFCr automatisches Mergen (\`${risk.autoMergeUpTo}\`)${record2.class === "critical" ? "; critical wird nie automatisch gemergt" : ""}. Die Factory mergt nicht selbst, ein Mensch muss freigeben.` : `Liegt innerhalb der Grenze f\xFCr automatisches Mergen (\`${risk.autoMergeUpTo}\`).`;
   const cause = {
     builtin: "Grund: Der PR \xE4ndert eingebaute kritische Pfade der Factory.",
@@ -65230,7 +65230,7 @@ function describeRisk(record2, risk) {
   const hits = record2.source === "builtin" || record2.source === "error" ? [] : record2.ruleHits ?? [];
   const ruleLine = hits.length ? `
 - Feste Regel: ${[...new Set(hits.map((h) => ruleNames[h.rule]))].join(", ")} (${hits.slice(0, 5).map((h) => h.path).join(", ")}); das ist unabh\xE4ngig von KI-Bewertung und Bereichen mindestens \`${ruleFloorClass}\`.` : "";
-  const sizeLine = `Umfang: ${record2.lines} ge\xE4nderte Zeilen${record2.files === void 0 ? "" : ` in ${files} ${files === 1 ? "Datei" : "Dateien"}`}. Allein nach Gr\xF6\xDFe w\xE4re das \`${size}\` (${limits}); ` + (raised ? `die Gr\xF6\xDFe hat die Klasse auf \`${size}\` angehoben.` : "die Gr\xF6\xDFe hat die Klasse nicht bestimmt.");
+  const sizeLine = `Umfang: ${record2.lines} ge\xE4nderte Zeilen${record2.files === void 0 ? "" : ` in ${files2} ${files2 === 1 ? "Datei" : "Dateien"}`}. Allein nach Gr\xF6\xDFe w\xE4re das \`${size}\` (${limits}); ` + (raised ? `die Gr\xF6\xDFe hat die Klasse auf \`${size}\` angehoben.` : "die Gr\xF6\xDFe hat die Klasse nicht bestimmt.");
   return `**Risikoklasse: ${record2.class}.** ${verdict}
 
 - ${cause}${ruleLine}${contentLine}
@@ -69725,258 +69725,6 @@ function actionId(action, policyVersion2) {
 }
 var executionId = (repo, issue2, attempt) => hash2({ repo, issue: issue2.number, version: taskVersion(issue2), attempt }).slice(0, 32);
 
-// src/runtime/validation-contract.ts
-var digest = external_exports.string().regex(/^[a-f0-9]{64}$/);
-var sha = external_exports.string().regex(/^[a-f0-9]{40}$/);
-var reserved = /^(?:PATH|HOME|USER|SHELL|CI|NODE_OPTIONS|NODE_PATH|DATABASE_URL|COMPOSE_PROJECT_NAME|COMPOSE_FILE|DOCKER_HOST|DOCKER_CONTEXT|LD_.+|GITHUB_.+|GH_.+|ACTIONS_.+|RUNNER_.+|OPENAI_.+|ANTHROPIC_.+|AI_API_KEY|FACTORY_.+|AWS_.+|NPM_CONFIG_.+)$/i;
-var generatedEntry = external_exports.strictObject({
-  command: external_exports.string().min(1).max(200).regex(/^[\w.@:=+/-]+(?: [\w.@:=+/-]+)*$/, "Generated command must be a fixed string without shell metacharacters"),
-  paths: external_exports.string().max(200).regex(/^[\w.@+-][\w.@+/-]*$/, "Generated paths must be relative").refine((p) => !p.split("/").some((part) => part === ".." || part === "." || part === "" || part === ".git"), "Generated paths must stay inside the repository").array().min(1).max(10)
-});
-var validationPlanSchema = external_exports.strictObject({
-  version: external_exports.literal(1).default(1),
-  profile: external_exports.enum(["npm", "npm-docker", "maven"]).default("npm"),
-  /** Maven only: the JDK the validator installs. Absent means the runner's default JDK. */
-  javaVersion: external_exports.enum(["17", "21", "25"]).optional(),
-  timeoutMinutes: external_exports.number().int().min(1).max(30).default(20),
-  composeProjectPrefix: external_exports.string().regex(/^[a-z][a-z0-9-]{0,30}-(?:ci|test|validation)$/).default("sf-validation"),
-  /** Generated files the repository checks in: each command is rerun and must leave its paths as they are. No default. */
-  generated: generatedEntry.array().max(3).optional(),
-  environment: external_exports.record(
-    external_exports.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine((k) => !reserved.test(k), "Reserved validation environment key"),
-    external_exports.string().max(1e3).refine((v) => !v.includes("${{"), "Only literal test values are allowed")
-  ).default({})
-}).refine((p) => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6e3, "Validation plan limit").refine((p) => p.profile === "maven" || p.javaVersion === void 0, "javaVersion applies to the maven profile only");
-var validationCheckSchema = external_exports.strictObject({
-  name: external_exports.enum(["install", "test", "build", "browser-install", "browser", "compose-config", "docker-start", "docker-smoke", "docker-stop", "generated", "source-integrity"]),
-  status: external_exports.enum(["passed", "failed", "skipped"]),
-  exitCode: external_exports.number().int().min(-1).max(255).nullable()
-});
-var validationReportSchema = external_exports.strictObject({
-  version: external_exports.literal(1),
-  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
-  taskId: external_exports.string().max(200),
-  taskVersion: digest,
-  baseSha: sha,
-  artifactHash: digest,
-  planHash: digest,
-  workflowRunId: external_exports.number().int().positive().safe(),
-  sourceRunId: external_exports.number().int().positive().safe(),
-  runAttempt: external_exports.literal(1),
-  status: external_exports.enum(["passed", "failed", "unsupported", "invalid"]),
-  checks: validationCheckSchema.array().max(11),
-  reason: external_exports.enum(["CHECKS_COMPLETED", "CHECK_FAILED", "NO_PUBLISHABLE_CHANGES", "UNSUPPORTED_PROJECT", "VALIDATION_SETUP_FAILED", "SOURCE_CHANGED"]),
-  modelSecretPresent: external_exports.literal(false),
-  workspaceUnchanged: external_exports.boolean()
-});
-
-// src/llm/router.ts
-var routeRecordSchema = external_exports.discriminatedUnion("used", [
-  external_exports.strictObject({
-    used: external_exports.literal(true),
-    purpose: external_exports.enum(["coding", "review", "risk", "planner"]),
-    choice: external_exports.string().max(40),
-    confidence: external_exports.number().min(0).max(1),
-    model: external_exports.string().max(100)
-  }),
-  external_exports.strictObject({
-    used: external_exports.literal(false),
-    purpose: external_exports.enum(["coding", "review", "risk", "planner"]),
-    reason: external_exports.enum(["no-key", "low-confidence", "unavailable", "invalid-answer"]),
-    /** HTTP status or a fixed transport code when Jev could not be asked. */
-    code: external_exports.string().regex(/^[A-Z0-9_]{1,40}$/).nullable(),
-    choice: external_exports.string().max(40).nullable(),
-    confidence: external_exports.number().min(0).max(1).nullable(),
-    model: external_exports.string().max(100)
-  })
-]);
-var decisionSchema = external_exports.object({ answers: external_exports.object({ route: external_exports.object({
-  choice: external_exports.string(),
-  confidence: external_exports.number().min(0).max(1).optional(),
-  probabilities: external_exports.record(external_exports.string(), external_exports.number()).optional()
-}) }) });
-var routerAlertWindowMs = 6 * 36e5;
-var outcomes = /* @__PURE__ */ new WeakMap();
-var routeOutcome = (value) => value && typeof value === "object" ? outcomes.get(value) : void 0;
-var pct = (confidence) => `${Math.round(confidence * 100)} %`;
-var skipDe = {
-  "no-key": "kein Jev-Schl\xFCssel im Broker",
-  unavailable: "Jev nicht erreichbar",
-  "invalid-answer": "keine verwertbare Antwort von Jev",
-  "low-confidence": "Jev zu unsicher"
-};
-var skipEn = {
-  "no-key": "no Jev key on the broker",
-  unavailable: "Jev was unreachable",
-  "invalid-answer": "Jev gave no usable answer",
-  "low-confidence": "Jev's choice was below the minimum probability"
-};
-function routeNoteDe(outcome) {
-  if (!outcome) return "";
-  const { record: record2, candidate } = outcome;
-  if (outcome.ran === "candidate" && record2.used && candidate)
-    return `Modellwahl: Der Model Router (Jev) w\xE4hlte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ""}) mit ${pct(record2.confidence)} Wahrscheinlichkeit.`;
-  if (record2.used) return `Modellwahl: Der Model Router w\xE4hlte \`${record2.choice}\`, der Kandidat konnte nicht laufen; gepr\xFCft haben die konfigurierten Modelle.`;
-  return `Modellwahl: ohne Model Router (${skipDe[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}); gepr\xFCft haben die konfigurierten Modelle.`;
-}
-function routeNoteEn(record2, agent) {
-  if (record2.used && agent) return `**Model:** chosen by the model router (Jev): \`${record2.choice}\` (${agent.agent}, ${agent.model}, ${agent.reasoningEffort}), ${pct(record2.confidence)} probability.`;
-  if (record2.used) return `**Model:** the model router chose \`${record2.choice}\`; the configured agents run.`;
-  return `**Model:** the configured agents; the model router was not used (${skipEn[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}).`;
-}
-
-// src/runtime/usage.ts
-var count = external_exports.number().int().min(0).max(1e12);
-var tokensSchema = external_exports.strictObject({ input: count, output: count, cacheRead: count, cacheWrite: count });
-var usageRecordSchema = external_exports.strictObject({
-  contractVersion: external_exports.literal("1.0"),
-  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
-  worker: external_exports.enum(["codex", "claude"]),
-  model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
-  effort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]),
-  source: external_exports.enum(["proxy", "codex-session"]).nullable(),
-  requests: count.nullable(),
-  tokens: tokensSchema.nullable(),
-  costUsd: external_exports.number().min(0).max(1e5).nullable(),
-  turns: count.nullable(),
-  durationMs: count.nullable(),
-  outcome: external_exports.string().regex(/^[a-z_]{1,60}$/).nullable(),
-  budgetUsd: external_exports.number().positive().max(1e3).nullable(),
-  budgetReached: external_exports.boolean()
-});
-function usageNoteEn(record2) {
-  const cost = record2.costUsd === null ? "cost unknown" : `$${record2.costUsd.toFixed(2)}`;
-  const tokens = record2.tokens ? `, ${thousandsEn(record2.tokens.input + record2.tokens.cacheRead + record2.tokens.cacheWrite)} input / ${thousandsEn(record2.tokens.output)} output tokens` : "";
-  const turns = record2.turns === null ? "" : `, ${record2.turns} turns`;
-  const stop = record2.budgetReached ? ` (stopped at the $${(record2.budgetUsd ?? 0).toFixed(2)} cap)` : "";
-  return `**Usage:** ${cost}${tokens}${turns}${stop}.`;
-}
-var thousandsEn = (value) => value >= 1e6 ? `${(value / 1e6).toFixed(1)}M` : value >= 1e3 ? `${Math.round(value / 1e3)}k` : String(value);
-
-// src/runtime/contract.ts
-var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
-var digest2 = external_exports.string().regex(/^[a-f0-9]{64}$/);
-var baseRefSchema = external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/).refine((v) => !v.includes("..") && !v.includes("//") && !v.endsWith("/") && !v.endsWith(".lock") && !v.startsWith("refs/"));
-var executorWorkflowSchema = external_exports.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}\.ya?ml$/);
-var executionKey = external_exports.string().regex(/^[a-f0-9]{32}$/);
-var releaseSchema = external_exports.strictObject({
-  factorySha: sha2,
-  harnessSha: sha2,
-  workflowHash: digest2,
-  deploymentName: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
-  buildId: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
-  taskQueue: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
-  schemaVersion: external_exports.literal(1)
-});
-var admissionSchema = external_exports.strictObject({ input: workerInputSchema, actionId: digest2, policyHash: digest2 });
-var readyApprovalSchema = external_exports.strictObject({ eventId: external_exports.number().int().positive().safe(), actor: external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/), createdAt: external_exports.iso.datetime() });
-var snapshotSchema = external_exports.strictObject({
-  version: external_exports.literal(1),
-  repositoryId: external_exports.number().int().positive().safe(),
-  repository: external_exports.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
-  release: releaseSchema,
-  admission: admissionSchema,
-  baseSha: sha2,
-  baseRef: baseRefSchema.optional(),
-  executorWorkflow: executorWorkflowSchema.optional(),
-  allowedPaths: external_exports.array(external_exports.string().min(1).max(500)).min(1).max(100).optional(),
-  readyApproval: readyApprovalSchema.optional(),
-  validationPlan: validationPlanSchema.optional(),
-  specHash: digest2,
-  configHash: digest2,
-  requireHumanGate: external_exports.boolean()
-});
-var routedAgentSchema = external_exports.strictObject({ agent: external_exports.enum(["codex", "claude"]), model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]) });
-var codingRouteSchema = external_exports.strictObject({ route: routeRecordSchema.nullable(), agent: routedAgentSchema.nullable() });
-var observationSchema = external_exports.strictObject({
-  issueNumber: external_exports.number().int().positive(),
-  executionId: executionKey,
-  workflowId: external_exports.string().min(1).max(200),
-  runId: external_exports.uuid(),
-  status: external_exports.enum(["running", "completed", "failed", "cancelled", "timed_out"]),
-  phase: external_exports.enum(["starting", "awaiting-approval", "authorizing", "running", "publishing", "completed", "cancelled"]),
-  binding: digest2,
-  createdAt: external_exports.iso.datetime(),
-  result: workerResultSchema.nullable(),
-  /** For a blocked result: what the independent validation found, from the broker's own bound report. */
-  validation: external_exports.strictObject({
-    status: external_exports.enum(["passed", "failed", "unsupported", "invalid"]),
-    reason: external_exports.string().regex(/^[A-Z_]{1,40}$/),
-    failed: external_exports.strictObject({ name: external_exports.string().regex(/^[a-z-]{1,30}$/), exitCode: external_exports.number().int().nullable() }).array().max(10),
-    runId: external_exports.number().int().positive().safe()
-  }).optional(),
-  /**
-   * The model router's decision for this coding execution (router.coding), for the status comment. Broker-internal: the
-   * HTTP API leaves it out, so clients of earlier releases keep parsing their observations.
-   */
-  route: external_exports.strictObject({ record: routeRecordSchema, agent: routedAgentSchema.nullable() }).optional(),
-  /** Token usage and cost of this execution's agent run, once recorded; broker-internal like route. */
-  usage: usageRecordSchema.optional()
-});
-var RuntimeAdmissionRejected = class extends Error {
-  constructor(code) {
-    super(code);
-    this.code = code;
-    this.name = "RuntimeAdmissionRejected";
-  }
-  code;
-};
-var admissionCode = (error62) => error62 instanceof Error && /^[A-Z][A-Z_]+$/.test(error62.message) ? error62.message : null;
-
-// src/state/content-trust.ts
-function untrustedEdit(issue2, since = issue2.managedAt ?? issue2.createdAt) {
-  const floor = since ? Date.parse(since) : Number.NEGATIVE_INFINITY;
-  return issue2.contentEdits?.find((e) => !e.trusted && !(Date.parse(e.at) <= floor));
-}
-var untrustedEditReason = (edit) => `Task text was changed after its approval by ${edit.actor ? `@${edit.actor}` : "an unknown account"}, who has no write access`;
-
-// src/runtime/ready-approval.ts
-async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected, rework, origin) {
-  if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("READY_APPROVAL_REQUIRED");
-  const ordered = [...events].sort((a, b) => a.id - b.id);
-  const grant = ordered.filter((e) => e.event === "labeled").at(-1);
-  if (!grant) throw new Error("READY_APPROVAL_REQUIRED");
-  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
-  let proof;
-  if (parsed.success && await canApprove(parsed.data.actor)) {
-    proof = parsed.data;
-    if (untrustedEdit(issue2) || untrustedEdit(issue2, proof.createdAt)) throw new Error("READY_CONTENT_CHANGED");
-  } else if (origin && trustedActors.includes(grant.actor)) {
-    if (untrustedEdit(issue2)) throw new Error("READY_CONTENT_CHANGED");
-    proof = await origin();
-  } else throw new Error("READY_ACTOR_NOT_AUTHORIZED");
-  if (expected && hash2(proof) !== hash2(expected)) throw new Error("READY_APPROVAL_CHANGED");
-  const later = ordered.filter((e) => e.id > grant.id);
-  const taken = later.length === 1 && later[0].event === "unlabeled" && trustedActors.includes(later[0].actor);
-  const consumed = expected && taken && issue2.labels.includes("harness:running");
-  const carried = rework && hash2(proof) === hash2(rework) && taken && ["harness:running", "harness:failed", "harness:blocked"].some((l) => issue2.labels.includes(l));
-  if (later.length && !consumed && !carried || !issue2.labels.includes("harness:ready") && !consumed && !carried) throw new Error("READY_APPROVAL_REVOKED");
-  return proof;
-}
-async function authorizeOriginReady(origin, events, canApprove, trustedActors) {
-  const ordered = [...events].sort((a, b) => a.id - b.id);
-  const grant = ordered.filter((e) => e.event === "labeled").at(-1);
-  if (!grant) throw new Error("READY_APPROVAL_REQUIRED");
-  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
-  if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error("READY_ACTOR_NOT_AUTHORIZED");
-  if (untrustedEdit(origin) || untrustedEdit(origin, parsed.data.createdAt)) throw new Error("READY_CONTENT_CHANGED");
-  if (ordered.some((e) => e.id > grant.id && !trustedActors.includes(e.actor))) throw new Error("READY_APPROVAL_REVOKED");
-  return parsed.data;
-}
-async function authorizeManagedLabel(issue2, events, canApprove, trustedActors, origin) {
-  if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("MANAGED_GRANT_REQUIRED");
-  const grant = [...events].sort((a, b) => a.id - b.id).filter((e) => e.event === "labeled").at(-1);
-  if (!grant) throw new Error("MANAGED_GRANT_REQUIRED");
-  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
-  if (parsed.success && await canApprove(parsed.data.actor)) {
-    if (untrustedEdit(issue2) || untrustedEdit(issue2, parsed.data.createdAt)) throw new Error("MANAGED_CONTENT_CHANGED");
-    return parsed.data;
-  }
-  if (!origin || !trustedActors.includes(grant.actor)) throw new Error("MANAGED_ACTOR_NOT_AUTHORIZED");
-  if (untrustedEdit(issue2)) throw new Error("MANAGED_CONTENT_CHANGED");
-  return origin();
-}
-
 // src/merge/contract.ts
 var needsHumanLabel = "sf:needs-human";
 var mergeReviewSchema = external_exports.strictObject({
@@ -70141,43 +69889,12 @@ function acceptanceCriteria(body) {
   return section.split(/\r?\n/).map((l) => l.replace(/^\s*[-*]\s*(?:\[[ x]\]\s*)?/i, "").trim()).filter(Boolean).slice(0, 20);
 }
 
-// src/state/protected-paths.ts
-var pathPatterns = [
-  // `.github`, `.github/workflows/test.yml`, `.gitmodules`; `.gitignore`/`.gitattributes` are ordinary files (controla#124).
-  /(?<![\w.-])\.git(?:hub|modules)(?:\/[\w./*-]*)?(?![\w-])/gi,
-  /(?<![\w.-])\.(?:codex|agents|squad|copilot|claude)\/[\w./*-]*/gi,
-  /(?<![\w.-])(?:AGENTS\.md|CODEOWNERS)(?![\w.-])/gi
-];
-var ciPatterns = [
-  /\b(?:neue[nrs]?|eigene[nrs]?|zusätzliche[nrs]?|separate[nrs]?|weitere[nrs]?)\s+(?:CI|GitHub[- ]Actions)[- ](?:Job|Workflow)s?\b/gi,
-  /\b(?:new|separate|dedicated|additional|own)\s+(?:CI|GitHub Actions)[- ](?:job|workflow)s?\b/gi,
-  /\b(?:add|create|extend|change|modify|edit)(?:s|ing)?\s+(?:a\s+|an\s+|the\s+)?(?:CI|GitHub Actions)[- ](?:job|workflow)s?\b/gi
-];
-var outOfScopeHeading = /^#{1,6}\s*(?:Nicht enthalten|Nicht Teil|Außerhalb des Umfangs|Out of scope|Not in scope|Non-goals|Not included)\b/i;
-var outOfScopeLine = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:Nicht enthalten|Nicht Teil|Out of scope|Not in scope|Not included)\b/i;
-var prohibitionLine = /(?<![\p{L}\d_])(?:nicht ändern|nicht anfassen|nicht verändern|keine (?:Änderungen|Änderung)|unverändert|ändern wir|ergänzen wir|von Hand|beachten|befolgen|do not (?:change|edit|touch|modify)|don't (?:change|edit|touch|modify)|must not (?:change|edit|touch|modify)|never (?:change|edit|touch|modify)|no changes? (?:to|in)|leave [^.]* unchanged|follow)(?![\p{L}\d_])/iu;
-function inScope(text) {
-  const kept = [];
-  let skipping = false;
-  for (const line of text.split(/\r?\n/)) {
-    if (/^#{1,6}\s/.test(line)) skipping = outOfScopeHeading.test(line);
-    if (!skipping && !outOfScopeLine.test(line) && !prohibitionLine.test(line)) kept.push(line);
-  }
-  return kept.join("\n");
+// src/state/content-trust.ts
+function untrustedEdit(issue2, since = issue2.managedAt ?? issue2.createdAt) {
+  const floor = since ? Date.parse(since) : Number.NEGATIVE_INFINITY;
+  return issue2.contentEdits?.find((e) => !e.trusted && !(Date.parse(e.at) <= floor));
 }
-function protectedPathRequests(text) {
-  const scoped = inScope(text);
-  const found = [];
-  for (const pattern of [...pathPatterns, ...ciPatterns]) for (const m of scoped.matchAll(pattern)) found.push({ at: m.index, value: m[0] });
-  const seen = /* @__PURE__ */ new Set();
-  return found.sort((a, b) => a.at - b.at).map((f) => f.value).filter((v) => !seen.has(v.toLowerCase()) && !!seen.add(v.toLowerCase())).slice(0, 5);
-}
-var protectedPathBlockPrefix = "Task requires changes to protected paths";
-function protectedPathBlockReason(title, body) {
-  const found = protectedPathRequests(`${title}
-${body}`);
-  return found.length ? `${protectedPathBlockPrefix} the coding worker may not edit (${found.map((f) => `\`${f.replaceAll("`", "")}\``).join(", ")})` : void 0;
-}
+var untrustedEditReason = (edit) => `Task text was changed after its approval by ${edit.actor ? `@${edit.actor}` : "an unknown account"}, who has no write access`;
 
 // src/policies/engine.ts
 var defaults2 = {
@@ -70256,6 +69973,495 @@ function evaluate(action, ctx) {
   if (rule === "deny") return deny(`Policy forbids ${action.kind}`);
   if (rule === "approval" && !ctx.approved) return decide("approval", "Maintainer approval required for this exact action and task version");
   return decide("allow", ctx.approved ? "Concrete action approved by a repository maintainer" : "Permitted by configured autonomy policy");
+}
+
+// src/workers/execute-delegation.ts
+async function authorizeDelegation(github, config2, issueNumber, id) {
+  if (!config2.factory.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") throw new Error("Worker execution disabled by configuration");
+  const issue2 = await github.getIssue(issueNumber);
+  const comments = await github.comments(issueNumber);
+  const events = comments.flatMap((c) => {
+    const e = decodeEvent(c, config2.manager.trustedActors);
+    return e ? [e] : [];
+  });
+  const previous = events.find((e) => e.data.type === "result" && e.data.result.executionId === id);
+  const event = events.find((e) => e.data.type === "intent" && e.data.input.executionId === id);
+  if (event?.data.type !== "intent") throw new Error("No trusted manager intent for this execution");
+  const input2 = workerInputSchema.parse(event.data.input);
+  if (input2.repository.toLowerCase() !== github.repository.toLowerCase() || input2.issueNumber !== issueNumber) throw new Error("Worker repository/issue mismatch");
+  const { attempt, actionId: delegatedId } = event.data;
+  const delegation = (kind) => ({
+    kind,
+    issueNumber,
+    taskVersion: input2.taskVersion,
+    attempt,
+    status: null,
+    priority: null,
+    followup: null,
+    reason: "Revalidate original delegation"
+  });
+  const original = [delegation(attempt === 0 ? "start_worker" : "retry_worker"), delegation(attempt === 0 ? "retry_worker" : "start_worker")].find((a) => actionId(a, policyVersion(config2)) === delegatedId) ?? delegation(attempt === 0 ? "start_worker" : "retry_worker");
+  let approved = false;
+  for (const c of comments) {
+    const command = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
+    if (command?.[2] === event.data.actionId && await github.canApprove(c.author)) approved = command[1] === "approve";
+  }
+  const rule = permission(config2, original.kind);
+  const workerEnabled = input2.worker === "codex" ? config2.workers.coding && config2.workers.coding.enabled : config2.workers.test.enabled;
+  const policyChanged = !workerEnabled || actionId(original, policyVersion(config2)) !== event.data.actionId || rule === "deny" || rule === "approval" && !approved;
+  const explicitlyBlocked = issue2.labels.includes("harness:blocked") && !currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
+  const stale = policyChanged || explicitlyBlocked || issue2.state !== "open" || !issue2.labels.includes("harness:managed") || taskVersion(issue2) !== input2.taskVersion;
+  const cancelled = stale ? workerResultSchema.parse({
+    contractVersion: "1.0",
+    executionId: id,
+    issueNumber,
+    status: "cancelled",
+    summary: "Task, policy or approval changed after delegation",
+    artifacts: [],
+    error: null,
+    proposedActions: []
+  }) : null;
+  return { input: input2, cancelled, previous: previous?.data.type === "result" ? previous.data.result : null };
+}
+async function persistResult(github, result, correlationId) {
+  await github.writeEvent(result.issueNumber, { version: 1, key: `result:${result.executionId}`, at: (/* @__PURE__ */ new Date()).toISOString(), correlationId, data: { type: "result", result } });
+}
+async function executeDelegation(github, config2, issueNumber, id, correlationId, harness) {
+  const { input: input2, cancelled, previous } = await authorizeDelegation(github, config2, issueNumber, id);
+  if (previous) return previous;
+  let result;
+  if (cancelled) result = cancelled;
+  else {
+    if (input2.worker !== "test") throw new Error("Codex delegation requires isolated coding workflow");
+    try {
+      result = workerResultSchema.parse(await harness.execute(input2));
+    } catch {
+      result = workerResultSchema.parse({
+        contractVersion: "1.0",
+        executionId: id,
+        issueNumber,
+        status: "failed",
+        summary: "Harness invocation failed",
+        artifacts: [],
+        error: "Runtime unavailable or invalid result",
+        proposedActions: []
+      });
+    }
+    if (result.executionId !== id || result.issueNumber !== issueNumber) throw new Error("Harness adapter returned an unrelated delegation result");
+  }
+  if (Buffer.byteLength(JSON.stringify(result)) > input2.limits.maxOutputBytes) throw new Error("Worker output exceeds contract resource limit");
+  await persistResult(github, result, correlationId);
+  return result;
+}
+
+// src/workers/coding.ts
+var sha = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var codingArtifactSchema = external_exports.strictObject({
+  contractVersion: external_exports.literal("3.0"),
+  baseSha: sha,
+  result: external_exports.strictObject({
+    contractVersion: external_exports.literal("2.0"),
+    executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+    taskId: external_exports.string().max(200),
+    taskVersion: external_exports.string().regex(/^[a-f0-9]{64}$/),
+    status: external_exports.enum(["success", "failed", "blocked", "needs_approval", "cancelled", "timed_out"]),
+    summary: external_exports.string().min(1).max(2e3),
+    artifacts: external_exports.array(external_exports.string().max(2e3)).max(20),
+    error: external_exports.string().max(2e3).nullable()
+  }),
+  changes: external_exports.array(external_exports.strictObject({
+    path: external_exports.string().min(1).max(500),
+    content: external_exports.string().max(6666668).nullable(),
+    mode: external_exports.enum(["100644", "100755"])
+  })).max(100)
+});
+var protectedPathSegment = /^(\.git.*|\.codex|\.agents|\.squad|\.copilot|\.claude|agents\.md|codeowners)$/i;
+var allowedGitFile = /^\.git(ignore|attributes)$/i;
+function isProtectedArtifactPath(path4) {
+  return path4.split("/").some((p) => protectedPathSegment.test(p) && !allowedGitFile.test(p));
+}
+function validateChanges(artifact) {
+  const seen = /* @__PURE__ */ new Set();
+  let total = 0;
+  for (const change of artifact.changes) {
+    const parts = change.path.split("/");
+    if (change.path.includes("\\") || change.path.includes(":") || [...change.path].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) || parts.some((p) => !p || p === "." || p === ".." || p.endsWith(".") || p.endsWith(" ") || protectedPathSegment.test(p) && !allowedGitFile.test(p))) throw new Error(`Protected or invalid artifact path: ${JSON.stringify(change.path)}`);
+    const key = change.path.toLowerCase();
+    if (seen.has(key)) throw new Error("Duplicate artifact path");
+    seen.add(key);
+    if (change.content !== null) {
+      const bytes = Buffer.from(change.content, "base64");
+      if (bytes.toString("base64") !== change.content) throw new Error("Invalid artifact encoding");
+      total += bytes.length;
+    }
+  }
+  if (total > 5e6) throw new Error("Artifact exceeds publication limit");
+}
+var smallPullRequestGuidance = "\n\nFactory working rule, small pull requests: keep this change to the one concern of this task. Change only what the task and its acceptance criteria need: no drive-by refactoring, renaming, reformatting, dependency upgrades or unrelated fixes, even where they look worthwhile; mention them in your summary instead. If the task bundles several independent concerns or is too large for one reviewable change, do not build one large change: make no changes, report `blocked` and name in your summary how to split it into follow-up tasks, one concern each.";
+var riskIsolationGuidance = "\n\nFactory working rule, isolate risk: pull requests that change authentication, permissions or roles, anything involving money (payments, billing, prices, invoices, credits) or data migrations need a person to approve the merge; everything else merges automatically. If this task mixes such a risky part with routine work that is useful and correct on its own, do not build one mixed change: make no changes, report `blocked` and start your summary with `Risk split:` followed by the routine part and the risky part; the Factory then creates the two tasks. If the risky part cannot be separated, or the task is only the risky part, implement it and keep the risky change as small as possible.";
+var scopeGuidance = (config2) => !config2.workers.coding || !config2.workers.coding.smallPullRequests ? "" : smallPullRequestGuidance + (config2.merge.risk.enabled && config2.merge.risk.mode === "enforce" ? riskIsolationGuidance : "");
+var testSecretGuidance = "\n\nFactory working rule, test secrets: test and example values for tokens, API keys, passwords, private keys, connection strings and similar must be obvious placeholders (for example `test-token`, `dummy-api-key`, `not-a-real-password`) or be assembled at runtime from harmless parts. Never use realistic vendor formats: known key prefixes, high-entropy strings of real key length, PEM blocks or real-looking connection strings with credentials. This applies to tests, fixtures, examples, docs and seed data. If existing code validates a specific secret format, build the test value at runtime (string concatenation or `repeat`) instead of writing a literal that looks real.";
+var workingRules = (config2) => scopeGuidance(config2) + testSecretGuidance;
+var taskId = (repository, issue2) => `github:${repository}#${issue2}`;
+async function prepareCoding(github, config2, repository, issue2, id, correlationId) {
+  const auth2 = await authorizeDelegation(github, config2, issue2, id);
+  if (auth2.previous) return null;
+  if (auth2.cancelled) {
+    await persistResult(github, auth2.cancelled, correlationId);
+    return null;
+  }
+  if (auth2.input.worker !== "codex" || !config2.workers.coding || !config2.workers.coding.enabled) throw new Error("Coding worker disabled");
+  const base = await repository.base();
+  sha.parse(base.sha);
+  return { base, request: {
+    contractVersion: "3.0",
+    executionId: id,
+    worker: "codex",
+    task: {
+      id: taskId(github.repository, issue2),
+      version: auth2.input.taskVersion,
+      description: auth2.input.description.length + workingRules(config2).length <= 2e4 ? auth2.input.description + workingRules(config2) : auth2.input.description,
+      acceptanceCriteria: auth2.input.acceptanceCriteria,
+      contextReferences: auth2.input.contextReferences
+    },
+    baseSha: base.sha,
+    allowedActions: ["edit_workspace", "run_commands"],
+    model: config2.workers.coding.model,
+    effort: config2.workers.coding.reasoningEffort,
+    limits: { timeoutMinutes: auth2.input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5e6 }
+  } };
+}
+async function publishCoding(github, config2, repository, issue2, id, correlationId, base, source) {
+  const auth2 = await authorizeDelegation(github, config2, issue2, id);
+  if (auth2.previous) return auth2.previous;
+  let result = auth2.cancelled;
+  if (!result) {
+    if (auth2.input.worker !== "codex") throw new Error("Not a coding delegation");
+    try {
+      const artifact = codingArtifactSchema.parse(source);
+      if (artifact.baseSha !== base.sha || artifact.result.executionId !== id || artifact.result.taskVersion !== auth2.input.taskVersion || artifact.result.taskId !== taskId(github.repository, issue2)) throw new Error("Unrelated coding artifact");
+      validateChanges(artifact);
+      const status = artifact.result.status === "timed_out" ? "failed" : artifact.result.status;
+      const artifacts = [];
+      if (status === "success" && artifact.changes.length) artifacts.push(await repository.publish(
+        base,
+        artifact,
+        issue2,
+        config2.workers.coding ? config2.workers.coding.validationWorkflow : null
+      ));
+      result = workerResultSchema.parse({
+        contractVersion: "1.0",
+        executionId: id,
+        issueNumber: issue2,
+        status: status === "success" && !artifact.changes.length ? "blocked" : status,
+        summary: artifact.result.summary,
+        artifacts,
+        error: artifact.result.error,
+        proposedActions: []
+      });
+    } catch {
+      result = workerResultSchema.parse({
+        contractVersion: "1.0",
+        executionId: id,
+        issueNumber: issue2,
+        status: "failed",
+        summary: "Coding run or publication failed",
+        artifacts: [],
+        error: "Missing, invalid or unpublishable coding result",
+        proposedActions: []
+      });
+    }
+  }
+  await persistResult(github, result, correlationId);
+  return result;
+}
+
+// src/runtime/validation-contract.ts
+var digest = external_exports.string().regex(/^[a-f0-9]{64}$/);
+var sha2 = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var reserved = /^(?:PATH|HOME|USER|SHELL|CI|NODE_OPTIONS|NODE_PATH|DATABASE_URL|COMPOSE_PROJECT_NAME|COMPOSE_FILE|DOCKER_HOST|DOCKER_CONTEXT|LD_.+|GITHUB_.+|GH_.+|ACTIONS_.+|RUNNER_.+|OPENAI_.+|ANTHROPIC_.+|AI_API_KEY|FACTORY_.+|AWS_.+|NPM_CONFIG_.+)$/i;
+var generatedEntry = external_exports.strictObject({
+  command: external_exports.string().min(1).max(200).regex(/^[\w.@:=+/-]+(?: [\w.@:=+/-]+)*$/, "Generated command must be a fixed string without shell metacharacters"),
+  paths: external_exports.string().max(200).regex(/^[\w.@+-][\w.@+/-]*$/, "Generated paths must be relative").refine((p) => !p.split("/").some((part) => part === ".." || part === "." || part === "" || part === ".git"), "Generated paths must stay inside the repository").array().min(1).max(10),
+  /**
+   * The coding job reruns the command after the agent, with network and the locked dependencies installed, and adopts
+   * the changes inside `paths` into the same change (SF #281). No default: plans without it keep their hash.
+   */
+  regenerate: external_exports.literal(true).optional()
+}).refine((e) => !e.regenerate || !e.paths.some(isProtectedArtifactPath), "Regenerated paths may not name protected files (.github, agent instructions, CODEOWNERS)");
+var validationPlanSchema = external_exports.strictObject({
+  version: external_exports.literal(1).default(1),
+  profile: external_exports.enum(["npm", "npm-docker", "maven"]).default("npm"),
+  /** Maven only: the JDK the validator installs. Absent means the runner's default JDK. */
+  javaVersion: external_exports.enum(["17", "21", "25"]).optional(),
+  timeoutMinutes: external_exports.number().int().min(1).max(30).default(20),
+  composeProjectPrefix: external_exports.string().regex(/^[a-z][a-z0-9-]{0,30}-(?:ci|test|validation)$/).default("sf-validation"),
+  /** Generated files the repository checks in: each command is rerun and must leave its paths as they are. No default. */
+  generated: generatedEntry.array().max(3).optional(),
+  environment: external_exports.record(
+    external_exports.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine((k) => !reserved.test(k), "Reserved validation environment key"),
+    external_exports.string().max(1e3).refine((v) => !v.includes("${{"), "Only literal test values are allowed")
+  ).default({})
+}).refine((p) => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6e3, "Validation plan limit").refine((p) => p.profile === "maven" || p.javaVersion === void 0, "javaVersion applies to the maven profile only").refine((p) => p.profile !== "maven" || !p.generated?.some((e) => e.regenerate), "regenerate applies to the npm profiles only");
+var validationCheckSchema = external_exports.strictObject({
+  name: external_exports.enum(["install", "test", "build", "browser-install", "browser", "compose-config", "docker-start", "docker-smoke", "docker-stop", "generated", "source-integrity"]),
+  status: external_exports.enum(["passed", "failed", "skipped"]),
+  exitCode: external_exports.number().int().min(-1).max(255).nullable()
+});
+var validationReportSchema = external_exports.strictObject({
+  version: external_exports.literal(1),
+  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  taskId: external_exports.string().max(200),
+  taskVersion: digest,
+  baseSha: sha2,
+  artifactHash: digest,
+  planHash: digest,
+  workflowRunId: external_exports.number().int().positive().safe(),
+  sourceRunId: external_exports.number().int().positive().safe(),
+  runAttempt: external_exports.literal(1),
+  status: external_exports.enum(["passed", "failed", "unsupported", "invalid"]),
+  checks: validationCheckSchema.array().max(11),
+  reason: external_exports.enum(["CHECKS_COMPLETED", "CHECK_FAILED", "NO_PUBLISHABLE_CHANGES", "UNSUPPORTED_PROJECT", "VALIDATION_SETUP_FAILED", "SOURCE_CHANGED"]),
+  modelSecretPresent: external_exports.literal(false),
+  workspaceUnchanged: external_exports.boolean()
+});
+
+// src/llm/router.ts
+var routeRecordSchema = external_exports.discriminatedUnion("used", [
+  external_exports.strictObject({
+    used: external_exports.literal(true),
+    purpose: external_exports.enum(["coding", "review", "risk", "planner"]),
+    choice: external_exports.string().max(40),
+    confidence: external_exports.number().min(0).max(1),
+    model: external_exports.string().max(100)
+  }),
+  external_exports.strictObject({
+    used: external_exports.literal(false),
+    purpose: external_exports.enum(["coding", "review", "risk", "planner"]),
+    reason: external_exports.enum(["no-key", "low-confidence", "unavailable", "invalid-answer"]),
+    /** HTTP status or a fixed transport code when Jev could not be asked. */
+    code: external_exports.string().regex(/^[A-Z0-9_]{1,40}$/).nullable(),
+    choice: external_exports.string().max(40).nullable(),
+    confidence: external_exports.number().min(0).max(1).nullable(),
+    model: external_exports.string().max(100)
+  })
+]);
+var decisionSchema = external_exports.object({ answers: external_exports.object({ route: external_exports.object({
+  choice: external_exports.string(),
+  confidence: external_exports.number().min(0).max(1).optional(),
+  probabilities: external_exports.record(external_exports.string(), external_exports.number()).optional()
+}) }) });
+var routerAlertWindowMs = 6 * 36e5;
+var outcomes = /* @__PURE__ */ new WeakMap();
+var routeOutcome = (value) => value && typeof value === "object" ? outcomes.get(value) : void 0;
+var pct = (confidence) => `${Math.round(confidence * 100)} %`;
+var skipDe = {
+  "no-key": "kein Jev-Schl\xFCssel im Broker",
+  unavailable: "Jev nicht erreichbar",
+  "invalid-answer": "keine verwertbare Antwort von Jev",
+  "low-confidence": "Jev zu unsicher"
+};
+var skipEn = {
+  "no-key": "no Jev key on the broker",
+  unavailable: "Jev was unreachable",
+  "invalid-answer": "Jev gave no usable answer",
+  "low-confidence": "Jev's choice was below the minimum probability"
+};
+function routeNoteDe(outcome) {
+  if (!outcome) return "";
+  const { record: record2, candidate } = outcome;
+  if (outcome.ran === "candidate" && record2.used && candidate)
+    return `Modellwahl: Der Model Router (Jev) w\xE4hlte \`${candidate.id}\` (${candidate.model}${candidate.reasoningEffort ? `, ${candidate.reasoningEffort}` : ""}) mit ${pct(record2.confidence)} Wahrscheinlichkeit.`;
+  if (record2.used) return `Modellwahl: Der Model Router w\xE4hlte \`${record2.choice}\`, der Kandidat konnte nicht laufen; gepr\xFCft haben die konfigurierten Modelle.`;
+  return `Modellwahl: ohne Model Router (${skipDe[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}); gepr\xFCft haben die konfigurierten Modelle.`;
+}
+function routeNoteEn(record2, agent) {
+  if (record2.used && agent) return `**Model:** chosen by the model router (Jev): \`${record2.choice}\` (${agent.agent}, ${agent.model}, ${agent.reasoningEffort}), ${pct(record2.confidence)} probability.`;
+  if (record2.used) return `**Model:** the model router chose \`${record2.choice}\`; the configured agents run.`;
+  return `**Model:** the configured agents; the model router was not used (${skipEn[record2.reason]}${record2.reason === "low-confidence" && record2.confidence !== null ? `, ${pct(record2.confidence)}` : ""}).`;
+}
+
+// src/runtime/usage.ts
+var count = external_exports.number().int().min(0).max(1e12);
+var tokensSchema = external_exports.strictObject({ input: count, output: count, cacheRead: count, cacheWrite: count });
+var usageRecordSchema = external_exports.strictObject({
+  contractVersion: external_exports.literal("1.0"),
+  executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  worker: external_exports.enum(["codex", "claude"]),
+  model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  effort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]),
+  source: external_exports.enum(["proxy", "codex-session"]).nullable(),
+  requests: count.nullable(),
+  tokens: tokensSchema.nullable(),
+  costUsd: external_exports.number().min(0).max(1e5).nullable(),
+  turns: count.nullable(),
+  durationMs: count.nullable(),
+  outcome: external_exports.string().regex(/^[a-z_]{1,60}$/).nullable(),
+  budgetUsd: external_exports.number().positive().max(1e3).nullable(),
+  budgetReached: external_exports.boolean()
+});
+function usageNoteEn(record2) {
+  const cost = record2.costUsd === null ? "cost unknown" : `$${record2.costUsd.toFixed(2)}`;
+  const tokens = record2.tokens ? `, ${thousandsEn(record2.tokens.input + record2.tokens.cacheRead + record2.tokens.cacheWrite)} input / ${thousandsEn(record2.tokens.output)} output tokens` : "";
+  const turns = record2.turns === null ? "" : `, ${record2.turns} turns`;
+  const stop = record2.budgetReached ? ` (stopped at the $${(record2.budgetUsd ?? 0).toFixed(2)} cap)` : "";
+  return `**Usage:** ${cost}${tokens}${turns}${stop}.`;
+}
+var thousandsEn = (value) => value >= 1e6 ? `${(value / 1e6).toFixed(1)}M` : value >= 1e3 ? `${Math.round(value / 1e3)}k` : String(value);
+
+// src/runtime/contract.ts
+var sha3 = external_exports.string().regex(/^[a-f0-9]{40}$/);
+var digest2 = external_exports.string().regex(/^[a-f0-9]{64}$/);
+var baseRefSchema = external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/).refine((v) => !v.includes("..") && !v.includes("//") && !v.endsWith("/") && !v.endsWith(".lock") && !v.startsWith("refs/"));
+var executorWorkflowSchema = external_exports.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}\.ya?ml$/);
+var executionKey = external_exports.string().regex(/^[a-f0-9]{32}$/);
+var releaseSchema = external_exports.strictObject({
+  factorySha: sha3,
+  harnessSha: sha3,
+  workflowHash: digest2,
+  deploymentName: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
+  buildId: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),
+  taskQueue: external_exports.string().regex(/^[a-z][a-z0-9-]{2,100}$/),
+  schemaVersion: external_exports.literal(1)
+});
+var admissionSchema = external_exports.strictObject({ input: workerInputSchema, actionId: digest2, policyHash: digest2 });
+var readyApprovalSchema = external_exports.strictObject({ eventId: external_exports.number().int().positive().safe(), actor: external_exports.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/), createdAt: external_exports.iso.datetime() });
+var snapshotSchema = external_exports.strictObject({
+  version: external_exports.literal(1),
+  repositoryId: external_exports.number().int().positive().safe(),
+  repository: external_exports.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+  release: releaseSchema,
+  admission: admissionSchema,
+  baseSha: sha3,
+  baseRef: baseRefSchema.optional(),
+  executorWorkflow: executorWorkflowSchema.optional(),
+  allowedPaths: external_exports.array(external_exports.string().min(1).max(500)).min(1).max(100).optional(),
+  readyApproval: readyApprovalSchema.optional(),
+  validationPlan: validationPlanSchema.optional(),
+  specHash: digest2,
+  configHash: digest2,
+  requireHumanGate: external_exports.boolean()
+});
+var routedAgentSchema = external_exports.strictObject({ agent: external_exports.enum(["codex", "claude"]), model: external_exports.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), reasoningEffort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]) });
+var codingRouteSchema = external_exports.strictObject({ route: routeRecordSchema.nullable(), agent: routedAgentSchema.nullable() });
+var observationSchema = external_exports.strictObject({
+  issueNumber: external_exports.number().int().positive(),
+  executionId: executionKey,
+  workflowId: external_exports.string().min(1).max(200),
+  runId: external_exports.uuid(),
+  status: external_exports.enum(["running", "completed", "failed", "cancelled", "timed_out"]),
+  phase: external_exports.enum(["starting", "awaiting-approval", "authorizing", "running", "publishing", "completed", "cancelled"]),
+  binding: digest2,
+  createdAt: external_exports.iso.datetime(),
+  result: workerResultSchema.nullable(),
+  /** For a blocked result: what the independent validation found, from the broker's own bound report. */
+  validation: external_exports.strictObject({
+    status: external_exports.enum(["passed", "failed", "unsupported", "invalid"]),
+    reason: external_exports.string().regex(/^[A-Z_]{1,40}$/),
+    failed: external_exports.strictObject({ name: external_exports.string().regex(/^[a-z-]{1,30}$/), exitCode: external_exports.number().int().nullable() }).array().max(10),
+    runId: external_exports.number().int().positive().safe()
+  }).optional(),
+  /**
+   * The model router's decision for this coding execution (router.coding), for the status comment. Broker-internal: the
+   * HTTP API leaves it out, so clients of earlier releases keep parsing their observations.
+   */
+  route: external_exports.strictObject({ record: routeRecordSchema, agent: routedAgentSchema.nullable() }).optional(),
+  /** Token usage and cost of this execution's agent run, once recorded; broker-internal like route. */
+  usage: usageRecordSchema.optional()
+});
+var RuntimeAdmissionRejected = class extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+    this.name = "RuntimeAdmissionRejected";
+  }
+  code;
+};
+var admissionCode = (error62) => error62 instanceof Error && /^[A-Z][A-Z_]+$/.test(error62.message) ? error62.message : null;
+
+// src/runtime/ready-approval.ts
+async function authorizeReadyLabel(issue2, events, canApprove, trustedActors, expected, rework, origin) {
+  if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("READY_APPROVAL_REQUIRED");
+  const ordered = [...events].sort((a, b) => a.id - b.id);
+  const grant = ordered.filter((e) => e.event === "labeled").at(-1);
+  if (!grant) throw new Error("READY_APPROVAL_REQUIRED");
+  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  let proof;
+  if (parsed.success && await canApprove(parsed.data.actor)) {
+    proof = parsed.data;
+    if (untrustedEdit(issue2) || untrustedEdit(issue2, proof.createdAt)) throw new Error("READY_CONTENT_CHANGED");
+  } else if (origin && trustedActors.includes(grant.actor)) {
+    if (untrustedEdit(issue2)) throw new Error("READY_CONTENT_CHANGED");
+    proof = await origin();
+  } else throw new Error("READY_ACTOR_NOT_AUTHORIZED");
+  if (expected && hash2(proof) !== hash2(expected)) throw new Error("READY_APPROVAL_CHANGED");
+  const later = ordered.filter((e) => e.id > grant.id);
+  const taken = later.length === 1 && later[0].event === "unlabeled" && trustedActors.includes(later[0].actor);
+  const consumed = expected && taken && issue2.labels.includes("harness:running");
+  const carried = rework && hash2(proof) === hash2(rework) && taken && ["harness:running", "harness:failed", "harness:blocked"].some((l) => issue2.labels.includes(l));
+  if (later.length && !consumed && !carried || !issue2.labels.includes("harness:ready") && !consumed && !carried) throw new Error("READY_APPROVAL_REVOKED");
+  return proof;
+}
+async function authorizeOriginReady(origin, events, canApprove, trustedActors) {
+  const ordered = [...events].sort((a, b) => a.id - b.id);
+  const grant = ordered.filter((e) => e.event === "labeled").at(-1);
+  if (!grant) throw new Error("READY_APPROVAL_REQUIRED");
+  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (!parsed.success || !await canApprove(parsed.data.actor)) throw new Error("READY_ACTOR_NOT_AUTHORIZED");
+  if (untrustedEdit(origin) || untrustedEdit(origin, parsed.data.createdAt)) throw new Error("READY_CONTENT_CHANGED");
+  if (ordered.some((e) => e.id > grant.id && !trustedActors.includes(e.actor))) throw new Error("READY_APPROVAL_REVOKED");
+  return parsed.data;
+}
+async function authorizeManagedLabel(issue2, events, canApprove, trustedActors, origin) {
+  if (issue2.state !== "open" || !issue2.labels.includes("harness:managed")) throw new Error("MANAGED_GRANT_REQUIRED");
+  const grant = [...events].sort((a, b) => a.id - b.id).filter((e) => e.event === "labeled").at(-1);
+  if (!grant) throw new Error("MANAGED_GRANT_REQUIRED");
+  const parsed = readyApprovalSchema.safeParse({ eventId: grant.id, actor: grant.actor, createdAt: grant.createdAt });
+  if (parsed.success && await canApprove(parsed.data.actor)) {
+    if (untrustedEdit(issue2) || untrustedEdit(issue2, parsed.data.createdAt)) throw new Error("MANAGED_CONTENT_CHANGED");
+    return parsed.data;
+  }
+  if (!origin || !trustedActors.includes(grant.actor)) throw new Error("MANAGED_ACTOR_NOT_AUTHORIZED");
+  if (untrustedEdit(issue2)) throw new Error("MANAGED_CONTENT_CHANGED");
+  return origin();
+}
+
+// src/state/protected-paths.ts
+var pathPatterns = [
+  // `.github`, `.github/workflows/test.yml`, `.gitmodules`; `.gitignore`/`.gitattributes` are ordinary files (controla#124).
+  /(?<![\w.-])\.git(?:hub|modules)(?:\/[\w./*-]*)?(?![\w-])/gi,
+  /(?<![\w.-])\.(?:codex|agents|squad|copilot|claude)\/[\w./*-]*/gi,
+  /(?<![\w.-])(?:AGENTS\.md|CODEOWNERS)(?![\w.-])/gi
+];
+var ciPatterns = [
+  /\b(?:neue[nrs]?|eigene[nrs]?|zusätzliche[nrs]?|separate[nrs]?|weitere[nrs]?)\s+(?:CI|GitHub[- ]Actions)[- ](?:Job|Workflow)s?\b/gi,
+  /\b(?:new|separate|dedicated|additional|own)\s+(?:CI|GitHub Actions)[- ](?:job|workflow)s?\b/gi,
+  /\b(?:add|create|extend|change|modify|edit)(?:s|ing)?\s+(?:a\s+|an\s+|the\s+)?(?:CI|GitHub Actions)[- ](?:job|workflow)s?\b/gi
+];
+var outOfScopeHeading = /^#{1,6}\s*(?:Nicht enthalten|Nicht Teil|Außerhalb des Umfangs|Out of scope|Not in scope|Non-goals|Not included)\b/i;
+var outOfScopeLine = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:Nicht enthalten|Nicht Teil|Out of scope|Not in scope|Not included)\b/i;
+var prohibitionLine = /(?<![\p{L}\d_])(?:nicht ändern|nicht anfassen|nicht verändern|keine (?:Änderungen|Änderung)|unverändert|ändern wir|ergänzen wir|von Hand|beachten|befolgen|do not (?:change|edit|touch|modify)|don't (?:change|edit|touch|modify)|must not (?:change|edit|touch|modify)|never (?:change|edit|touch|modify)|no changes? (?:to|in)|leave [^.]* unchanged|follow)(?![\p{L}\d_])/iu;
+function inScope(text) {
+  const kept = [];
+  let skipping = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^#{1,6}\s/.test(line)) skipping = outOfScopeHeading.test(line);
+    if (!skipping && !outOfScopeLine.test(line) && !prohibitionLine.test(line)) kept.push(line);
+  }
+  return kept.join("\n");
+}
+function protectedPathRequests(text) {
+  const scoped = inScope(text);
+  const found = [];
+  for (const pattern of [...pathPatterns, ...ciPatterns]) for (const m of scoped.matchAll(pattern)) found.push({ at: m.index, value: m[0] });
+  const seen = /* @__PURE__ */ new Set();
+  return found.sort((a, b) => a.at - b.at).map((f) => f.value).filter((v) => !seen.has(v.toLowerCase()) && !!seen.add(v.toLowerCase())).slice(0, 5);
+}
+var protectedPathBlockPrefix = "Task requires changes to protected paths";
+function protectedPathBlockReason(title, body) {
+  const found = protectedPathRequests(`${title}
+${body}`);
+  return found.length ? `${protectedPathBlockPrefix} the coding worker may not edit (${found.map((f) => `\`${f.replaceAll("`", "")}\``).join(", ")})` : void 0;
 }
 
 // src/state/reconstruct.ts
@@ -70346,8 +70552,8 @@ function reconstruct(snapshot2, config2, now = /* @__PURE__ */ new Date()) {
       const at = (events.find((e) => e.data.type === "result" && e.data.result.executionId === lastRefused.input.executionId) ?? { at: lastRefused.at }).at;
       const until = new Date(new Date(at).getTime() + admissionBackoffMinutes(refused.length) * 6e4).toISOString();
       const cleared = !!snapshot2.clearedRefusals?.includes(lastRefused.rejected);
-      const changed = cleared || !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at || !!issue2.managedAt && issue2.managedAt > at;
-      refusal = { code: lastRefused.rejected, at, refusals: refused.length, until, waiting: !changed && now.toISOString() < until };
+      const changed2 = cleared || !!lastRefused.rejectedPolicy && lastRefused.rejectedPolicy !== policyVersion(config2) || !!issue2.readyAt && issue2.readyAt > at || !!issue2.managedAt && issue2.managedAt > at;
+      refusal = { code: lastRefused.rejected, at, refusals: refused.length, until, waiting: !changed2 && now.toISOString() < until };
     }
     const criteria = acceptanceCriteria(issue2.body);
     const deps = dependencies(issue2.body);
@@ -70831,9 +71037,9 @@ var oneLine2 = (text, max) => {
 };
 function riskDetail(record2, risk) {
   const source = { ai: "KI-Bewertung", builtin: "eingebaute kritische Pfade", areas: "konfigurierte Bereiche", error: "Bewertung fehlgeschlagen" }[record2.source];
-  const files = record2.files === void 0 ? "" : ` in ${record2.files} ${record2.files === 1 ? "Datei" : "Dateien"}`;
+  const files2 = record2.files === void 0 ? "" : ` in ${record2.files} ${record2.files === 1 ? "Datei" : "Dateien"}`;
   const size = sizeClass(record2.lines, record2.files ?? 0, risk);
-  const sizeText = `Umfang: ${record2.lines} ge\xE4nderte Zeilen${files}; ${sizeRaisedClass(record2, risk) ? `die Gr\xF6\xDFe hat die Klasse auf ${size} angehoben` : "die Gr\xF6\xDFe hat die Klasse nicht bestimmt"}.`;
+  const sizeText = `Umfang: ${record2.lines} ge\xE4nderte Zeilen${files2}; ${sizeRaisedClass(record2, risk) ? `die Gr\xF6\xDFe hat die Klasse auf ${size} angehoben` : "die Gr\xF6\xDFe hat die Klasse nicht bestimmt"}.`;
   return [
     `Risikoklasse: ${record2.class} (Quelle: ${source})`,
     sizeText,
@@ -70914,7 +71120,7 @@ var SlackSink = class {
   async send(channel, notification) {
     if (!this.token) throw new Error("Slack token missing");
     const delay = this.lastCall + 1100 - Date.now();
-    if (delay > 0) await new Promise((resolve4) => setTimeout(resolve4, delay));
+    if (delay > 0) await new Promise((resolve5) => setTimeout(resolve5, delay));
     this.lastCall = Date.now();
     const text = `${labels[notification.event]}
 ${notification.repository ? `Repository: ${notification.repository}
@@ -71432,19 +71638,19 @@ var Manager = class {
    */
   async recover(tasks, report) {
     if (this.config.execution.engine !== "temporal" || this.config.execution.dryRun || this.config.autonomy.profile === "advisory") return false;
-    let changed = false;
+    let changed2 = false;
     for (const task of tasks) {
       for (const execution of task.executions.filter((e) => !e.runtime && !e.run && !e.result)) {
         try {
           await this.admit(execution.input, execution.actionId);
-          changed = true;
+          changed2 = true;
         } catch (error62) {
           const code = admissionCode(error62);
           report.errors.push(`Recovery of execution ${execution.input.executionId} on #${task.issue.number} failed${code ? ` (${code})` : ""}; the intent remains unresolved`);
         }
       }
     }
-    return changed;
+    return changed2;
   }
   /**
    * A task whose text someone without write access changed after its approval is no longer approved work. The Manager
@@ -71452,7 +71658,7 @@ var Manager = class {
    * the new text and applies the label again. The policy denies such a task regardless, also where nothing is removed.
    */
   async withdrawEdited(tasks, report) {
-    let changed = false;
+    let changed2 = false;
     for (const task of tasks.filter((t) => t.issue.state === "open")) {
       const edit = untrustedEdit(task.issue);
       if (!edit) continue;
@@ -71462,9 +71668,9 @@ var Manager = class {
       if (this.config.execution.dryRun || this.config.autonomy.profile === "advisory") continue;
       await this.github.updateIssue(task.issue.number, { labels: task.issue.labels.filter((l) => l !== managedLabel && l !== "harness:ready") });
       await this.github.writeComment?.(task.issue.number, `**Software Factory: approval withdrawn.** ${reason} (${edit.at}). The Factory no longer works on this issue. A maintainer reviews the current title and description and applies \`${managedLabel}\` again to approve them.`);
-      changed = true;
+      changed2 = true;
     }
-    return changed;
+    return changed2;
   }
   /** Keeps the one readable status comment of each managed task current. Never fails a reconciliation. */
   async publishStatus(report) {
@@ -71819,85 +72025,6 @@ function summary(report) {
   ].join("\n");
 }
 
-// src/workers/execute-delegation.ts
-async function authorizeDelegation(github, config2, issueNumber, id) {
-  if (!config2.factory.enabled || config2.execution.dryRun || config2.autonomy.profile === "advisory") throw new Error("Worker execution disabled by configuration");
-  const issue2 = await github.getIssue(issueNumber);
-  const comments = await github.comments(issueNumber);
-  const events = comments.flatMap((c) => {
-    const e = decodeEvent(c, config2.manager.trustedActors);
-    return e ? [e] : [];
-  });
-  const previous = events.find((e) => e.data.type === "result" && e.data.result.executionId === id);
-  const event = events.find((e) => e.data.type === "intent" && e.data.input.executionId === id);
-  if (event?.data.type !== "intent") throw new Error("No trusted manager intent for this execution");
-  const input2 = workerInputSchema.parse(event.data.input);
-  if (input2.repository.toLowerCase() !== github.repository.toLowerCase() || input2.issueNumber !== issueNumber) throw new Error("Worker repository/issue mismatch");
-  const { attempt, actionId: delegatedId } = event.data;
-  const delegation = (kind) => ({
-    kind,
-    issueNumber,
-    taskVersion: input2.taskVersion,
-    attempt,
-    status: null,
-    priority: null,
-    followup: null,
-    reason: "Revalidate original delegation"
-  });
-  const original = [delegation(attempt === 0 ? "start_worker" : "retry_worker"), delegation(attempt === 0 ? "retry_worker" : "start_worker")].find((a) => actionId(a, policyVersion(config2)) === delegatedId) ?? delegation(attempt === 0 ? "start_worker" : "retry_worker");
-  let approved = false;
-  for (const c of comments) {
-    const command = c.body.trim().match(/^\/harness (approve|revoke) ([a-f0-9]{64})$/);
-    if (command?.[2] === event.data.actionId && await github.canApprove(c.author)) approved = command[1] === "approve";
-  }
-  const rule = permission(config2, original.kind);
-  const workerEnabled = input2.worker === "codex" ? config2.workers.coding && config2.workers.coding.enabled : config2.workers.test.enabled;
-  const policyChanged = !workerEnabled || actionId(original, policyVersion(config2)) !== event.data.actionId || rule === "deny" || rule === "approval" && !approved;
-  const explicitlyBlocked = issue2.labels.includes("harness:blocked") && !currentAutomaticBlock(issue2, events, config2.manager.trustedActors);
-  const stale = policyChanged || explicitlyBlocked || issue2.state !== "open" || !issue2.labels.includes("harness:managed") || taskVersion(issue2) !== input2.taskVersion;
-  const cancelled = stale ? workerResultSchema.parse({
-    contractVersion: "1.0",
-    executionId: id,
-    issueNumber,
-    status: "cancelled",
-    summary: "Task, policy or approval changed after delegation",
-    artifacts: [],
-    error: null,
-    proposedActions: []
-  }) : null;
-  return { input: input2, cancelled, previous: previous?.data.type === "result" ? previous.data.result : null };
-}
-async function persistResult(github, result, correlationId) {
-  await github.writeEvent(result.issueNumber, { version: 1, key: `result:${result.executionId}`, at: (/* @__PURE__ */ new Date()).toISOString(), correlationId, data: { type: "result", result } });
-}
-async function executeDelegation(github, config2, issueNumber, id, correlationId, harness) {
-  const { input: input2, cancelled, previous } = await authorizeDelegation(github, config2, issueNumber, id);
-  if (previous) return previous;
-  let result;
-  if (cancelled) result = cancelled;
-  else {
-    if (input2.worker !== "test") throw new Error("Codex delegation requires isolated coding workflow");
-    try {
-      result = workerResultSchema.parse(await harness.execute(input2));
-    } catch {
-      result = workerResultSchema.parse({
-        contractVersion: "1.0",
-        executionId: id,
-        issueNumber,
-        status: "failed",
-        summary: "Harness invocation failed",
-        artifacts: [],
-        error: "Runtime unavailable or invalid result",
-        proposedActions: []
-      });
-    }
-    if (result.executionId !== id || result.issueNumber !== issueNumber) throw new Error("Harness adapter returned an unrelated delegation result");
-  }
-  if (Buffer.byteLength(JSON.stringify(result)) > input2.limits.maxOutputBytes) throw new Error("Worker output exceeds contract resource limit");
-  await persistResult(github, result, correlationId);
-  return result;
-}
-
 // src/workers/harness-client.ts
 var import_node_child_process = require("node:child_process");
 var import_node_path = require("node:path");
@@ -72112,7 +72239,7 @@ var HarnessProcessClient = class {
       operation: input2.operation
     };
     if (!validateRequest(request2)) throw new Error("Delegation cannot be represented by Harness contract 2.0");
-    const raw = await new Promise((resolve4, reject) => {
+    const raw = await new Promise((resolve5, reject) => {
       const env = {};
       for (const key of ["SystemRoot", "WINDIR", "TEMP", "TMP"]) if (process.env[key]) env[key] = process.env[key];
       const child = (0, import_node_child_process.spawn)(process.execPath, [this.entrypoint, "run"], { env, windowsHide: true, shell: false });
@@ -72139,7 +72266,7 @@ var HarnessProcessClient = class {
       child.on("close", (code) => {
         clearTimeout(timer);
         if (code !== 0 || exceeded) reject(new Error("Harness process failed or exceeded output limit"));
-        else resolve4(output2);
+        else resolve5(output2);
       });
       child.stdin.end(JSON.stringify(request2));
     });
@@ -72241,125 +72368,6 @@ Software Factory execution: \`${id}\`. Generated by the isolated Codex Harness. 
   }
 };
 
-// src/workers/coding.ts
-var sha3 = external_exports.string().regex(/^[a-f0-9]{40}$/);
-var codingArtifactSchema = external_exports.strictObject({
-  contractVersion: external_exports.literal("3.0"),
-  baseSha: sha3,
-  result: external_exports.strictObject({
-    contractVersion: external_exports.literal("2.0"),
-    executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
-    taskId: external_exports.string().max(200),
-    taskVersion: external_exports.string().regex(/^[a-f0-9]{64}$/),
-    status: external_exports.enum(["success", "failed", "blocked", "needs_approval", "cancelled", "timed_out"]),
-    summary: external_exports.string().min(1).max(2e3),
-    artifacts: external_exports.array(external_exports.string().max(2e3)).max(20),
-    error: external_exports.string().max(2e3).nullable()
-  }),
-  changes: external_exports.array(external_exports.strictObject({
-    path: external_exports.string().min(1).max(500),
-    content: external_exports.string().max(6666668).nullable(),
-    mode: external_exports.enum(["100644", "100755"])
-  })).max(100)
-});
-var protectedPathSegment = /^(\.git.*|\.codex|\.agents|\.squad|\.copilot|\.claude|agents\.md|codeowners)$/i;
-var allowedGitFile = /^\.git(ignore|attributes)$/i;
-function validateChanges(artifact) {
-  const seen = /* @__PURE__ */ new Set();
-  let total = 0;
-  for (const change of artifact.changes) {
-    const parts = change.path.split("/");
-    if (change.path.includes("\\") || change.path.includes(":") || [...change.path].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) || parts.some((p) => !p || p === "." || p === ".." || p.endsWith(".") || p.endsWith(" ") || protectedPathSegment.test(p) && !allowedGitFile.test(p))) throw new Error(`Protected or invalid artifact path: ${JSON.stringify(change.path)}`);
-    const key = change.path.toLowerCase();
-    if (seen.has(key)) throw new Error("Duplicate artifact path");
-    seen.add(key);
-    if (change.content !== null) {
-      const bytes = Buffer.from(change.content, "base64");
-      if (bytes.toString("base64") !== change.content) throw new Error("Invalid artifact encoding");
-      total += bytes.length;
-    }
-  }
-  if (total > 5e6) throw new Error("Artifact exceeds publication limit");
-}
-var smallPullRequestGuidance = "\n\nFactory working rule, small pull requests: keep this change to the one concern of this task. Change only what the task and its acceptance criteria need: no drive-by refactoring, renaming, reformatting, dependency upgrades or unrelated fixes, even where they look worthwhile; mention them in your summary instead. If the task bundles several independent concerns or is too large for one reviewable change, do not build one large change: make no changes, report `blocked` and name in your summary how to split it into follow-up tasks, one concern each.";
-var riskIsolationGuidance = "\n\nFactory working rule, isolate risk: pull requests that change authentication, permissions or roles, anything involving money (payments, billing, prices, invoices, credits) or data migrations need a person to approve the merge; everything else merges automatically. If this task mixes such a risky part with routine work that is useful and correct on its own, do not build one mixed change: make no changes, report `blocked` and start your summary with `Risk split:` followed by the routine part and the risky part; the Factory then creates the two tasks. If the risky part cannot be separated, or the task is only the risky part, implement it and keep the risky change as small as possible.";
-var scopeGuidance = (config2) => !config2.workers.coding || !config2.workers.coding.smallPullRequests ? "" : smallPullRequestGuidance + (config2.merge.risk.enabled && config2.merge.risk.mode === "enforce" ? riskIsolationGuidance : "");
-var testSecretGuidance = "\n\nFactory working rule, test secrets: test and example values for tokens, API keys, passwords, private keys, connection strings and similar must be obvious placeholders (for example `test-token`, `dummy-api-key`, `not-a-real-password`) or be assembled at runtime from harmless parts. Never use realistic vendor formats: known key prefixes, high-entropy strings of real key length, PEM blocks or real-looking connection strings with credentials. This applies to tests, fixtures, examples, docs and seed data. If existing code validates a specific secret format, build the test value at runtime (string concatenation or `repeat`) instead of writing a literal that looks real.";
-var workingRules = (config2) => scopeGuidance(config2) + testSecretGuidance;
-var taskId = (repository, issue2) => `github:${repository}#${issue2}`;
-async function prepareCoding(github, config2, repository, issue2, id, correlationId) {
-  const auth2 = await authorizeDelegation(github, config2, issue2, id);
-  if (auth2.previous) return null;
-  if (auth2.cancelled) {
-    await persistResult(github, auth2.cancelled, correlationId);
-    return null;
-  }
-  if (auth2.input.worker !== "codex" || !config2.workers.coding || !config2.workers.coding.enabled) throw new Error("Coding worker disabled");
-  const base = await repository.base();
-  sha3.parse(base.sha);
-  return { base, request: {
-    contractVersion: "3.0",
-    executionId: id,
-    worker: "codex",
-    task: {
-      id: taskId(github.repository, issue2),
-      version: auth2.input.taskVersion,
-      description: auth2.input.description.length + workingRules(config2).length <= 2e4 ? auth2.input.description + workingRules(config2) : auth2.input.description,
-      acceptanceCriteria: auth2.input.acceptanceCriteria,
-      contextReferences: auth2.input.contextReferences
-    },
-    baseSha: base.sha,
-    allowedActions: ["edit_workspace", "run_commands"],
-    model: config2.workers.coding.model,
-    effort: config2.workers.coding.reasoningEffort,
-    limits: { timeoutMinutes: auth2.input.limits.timeoutMinutes, maxFiles: 100, maxPatchBytes: 5e6 }
-  } };
-}
-async function publishCoding(github, config2, repository, issue2, id, correlationId, base, source) {
-  const auth2 = await authorizeDelegation(github, config2, issue2, id);
-  if (auth2.previous) return auth2.previous;
-  let result = auth2.cancelled;
-  if (!result) {
-    if (auth2.input.worker !== "codex") throw new Error("Not a coding delegation");
-    try {
-      const artifact = codingArtifactSchema.parse(source);
-      if (artifact.baseSha !== base.sha || artifact.result.executionId !== id || artifact.result.taskVersion !== auth2.input.taskVersion || artifact.result.taskId !== taskId(github.repository, issue2)) throw new Error("Unrelated coding artifact");
-      validateChanges(artifact);
-      const status = artifact.result.status === "timed_out" ? "failed" : artifact.result.status;
-      const artifacts = [];
-      if (status === "success" && artifact.changes.length) artifacts.push(await repository.publish(
-        base,
-        artifact,
-        issue2,
-        config2.workers.coding ? config2.workers.coding.validationWorkflow : null
-      ));
-      result = workerResultSchema.parse({
-        contractVersion: "1.0",
-        executionId: id,
-        issueNumber: issue2,
-        status: status === "success" && !artifact.changes.length ? "blocked" : status,
-        summary: artifact.result.summary,
-        artifacts,
-        error: artifact.result.error,
-        proposedActions: []
-      });
-    } catch {
-      result = workerResultSchema.parse({
-        contractVersion: "1.0",
-        executionId: id,
-        issueNumber: issue2,
-        status: "failed",
-        summary: "Coding run or publication failed",
-        artifacts: [],
-        error: "Missing, invalid or unpublishable coding result",
-        proposedActions: []
-      });
-    }
-  }
-  await persistResult(github, result, correlationId);
-  return result;
-}
-
 // src/merge/github.ts
 var import_yaml2 = __toESM(require_dist(), 1);
 
@@ -72398,18 +72406,18 @@ var describe3 = (entry) => `${entry.version}${entry.host && entry.host !== regis
 function lockfileSummary(path4, before, after, patchLines) {
   const old = packages(before), next = packages(after);
   if (!old || !next) return null;
-  const added = [], changed = [], removed = [];
+  const added = [], changed2 = [], removed = [];
   for (const [name, entry] of next) {
     const previous = old.get(name);
     if (!previous) added.push(`+ ${name} ${describe3(entry)}`);
-    else if (previous.version !== entry.version || previous.host !== entry.host) changed.push(`~ ${name} ${describe3(previous)} -> ${describe3(entry)}`);
+    else if (previous.version !== entry.version || previous.host !== entry.host) changed2.push(`~ ${name} ${describe3(previous)} -> ${describe3(entry)}`);
   }
   for (const [name, entry] of old) if (!next.has(name)) removed.push(`- ${name} ${describe3(entry)}`);
   const foreign = [...next.values()].filter((e) => e.host && e.host !== registryHost && e.host !== "link").length;
-  const lines = [...added, ...changed, ...removed];
+  const lines = [...added, ...changed2, ...removed];
   return [
     `Generierte npm-Lockdatei ${path4} (${patchLines} ge\xE4nderte Zeilen, Rohdiff ausgelassen).`,
-    `Pakete: ${added.length} neu, ${changed.length} ge\xE4ndert, ${removed.length} entfernt; ${foreign} Pakete au\xDFerhalb von ${registryHost}.`,
+    `Pakete: ${added.length} neu, ${changed2.length} ge\xE4ndert, ${removed.length} entfernt; ${foreign} Pakete au\xDFerhalb von ${registryHost}.`,
     ...lines.slice(0, maxListed),
     ...lines.length > maxListed ? [`[\u2026 ${lines.length - maxListed} weitere Eintr\xE4ge nicht aufgef\xFChrt \u2026]`] : []
   ].join("\n");
@@ -72538,8 +72546,8 @@ var GitHubMergePort = class {
   /** `maxBytes` bounds the whole loaded context; a context larger than one review part is split by merge/parts.ts. */
   async context(facts, maxFiles, maxBytes) {
     const { data: comparison } = await this.api.repos.compareCommitsWithBasehead({ ...this.target, basehead: `${facts.base}...${facts.head}`, per_page: 1 });
-    const files = comparison.files ?? [];
-    if (!files.length || files.length > maxFiles) throw new Error("Change set exceeds review file limit");
+    const files2 = comparison.files ?? [];
+    if (!files2.length || files2.length > maxFiles) throw new Error("Change set exceeds review file limit");
     const read = async (path4, ref, optional2 = false) => {
       try {
         const { data } = await this.api.repos.getContent({ ...this.target, path: path4, ref });
@@ -72554,7 +72562,7 @@ var GitHubMergePort = class {
     };
     const instructions = await read("AGENTS.md", facts.base, true);
     const changes = [];
-    for (const file2 of files) {
+    for (const file2 of files2) {
       if (isLockfile(file2.filename) && (file2.status === "added" || file2.status === "modified" || file2.status === "removed")) {
         const before = file2.status === "added" ? "" : await read(file2.filename, facts.base);
         const after = file2.status === "removed" ? "" : await read(file2.filename, facts.head);
@@ -72585,7 +72593,7 @@ var GitHubMergePort = class {
     for (let i = 0; i < 15; i++) {
       const { data } = await this.api.pulls.get({ ...this.target, pull_number: number4 });
       if (data.head.sha !== head) return data.head.sha;
-      await new Promise((resolve4) => setTimeout(resolve4, 1e3));
+      await new Promise((resolve5) => setTimeout(resolve5, 1e3));
     }
     throw new Error("Branch update pending; next run will recover");
   }
@@ -72807,9 +72815,9 @@ function reviewParts(input2, maxBytes, maxParts) {
   }
   if (bins.length > maxParts) throw new Error(partsLimitError);
   const order = new Map(input2.changes.map((c, i) => [c.path, i]));
-  const parts = bins.map((b) => b.changes.sort((x, y) => order.get(x.path) - order.get(y.path))).sort((a, b) => order.get(a[0].path) - order.get(b[0].path)).map((own2, i, list) => {
+  const parts = bins.map((b) => b.changes.sort((x, y) => order.get(x.path) - order.get(y.path))).sort((a, b) => order.get(a[0].path) - order.get(b[0].path)).map((own2, i, list2) => {
     const paths = new Set(own2.map((c) => c.path));
-    return { ...input2, changes: own2, part: { index: i + 1, total: list.length, otherFiles: overview.filter((f) => !paths.has(f.path)) } };
+    return { ...input2, changes: own2, part: { index: i + 1, total: list2.length, otherFiles: overview.filter((f) => !paths.has(f.path)) } };
   });
   if (parts.some((p) => reviewBytes(p) > maxBytes)) throw new Error(contextLimitError);
   return parts;
@@ -73817,7 +73825,7 @@ var import_node_os = require("node:os");
 var import_node_path2 = require("node:path");
 var limit2 = (text) => text.length > 2e4 ? text.slice(-2e4) : text;
 function runProcess(command, args, stdin, timeoutMs = 6e5, env) {
-  return new Promise((resolve4, reject) => {
+  return new Promise((resolve5, reject) => {
     const child = (0, import_node_child_process2.spawn)(command, args, { stdio: ["pipe", "pipe", "pipe"], env: env ?? process.env });
     let stdout = "", stderr = "";
     child.stdout.on("data", (chunk) => {
@@ -73836,7 +73844,7 @@ function runProcess(command, args, stdin, timeoutMs = 6e5, env) {
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolve4({ code: code ?? 1, stdout, stderr });
+      resolve5({ code: code ?? 1, stdout, stderr });
     });
     child.stdin.on("error", () => {
     });
@@ -73979,11 +73987,11 @@ function archive(sourceDir) {
   const child = (0, import_node_child_process3.spawn)("git", ["-C", sourceDir, "archive", "--format=tar", "HEAD"], { stdio: ["ignore", "pipe", "ignore"] });
   const stream2 = new import_node_stream.PassThrough({ highWaterMark: 1 << 20 });
   child.stdout.pipe(stream2);
-  const done = new Promise((resolve4) => {
-    child.on("close", (code) => resolve4(code ?? 1));
+  const done = new Promise((resolve5) => {
+    child.on("close", (code) => resolve5(code ?? 1));
     child.on("error", () => {
       stream2.destroy();
-      resolve4(1);
+      resolve5(1);
     });
   });
   return { stream: stream2, done };
@@ -74281,9 +74289,9 @@ async function probeCodex(key, model2, fetcher = fetch) {
   }
   return response.status === 429 && /insufficient_quota/.test(code) ? "exhausted" : "available";
 }
-var runCommand = (command, args, env, timeoutMs) => new Promise((resolve4) => {
+var runCommand = (command, args, env, timeoutMs) => new Promise((resolve5) => {
   const child = (0, import_node_child_process4.execFile)(command, args, { env, timeout: timeoutMs, maxBuffer: 1 << 20 }, (error62, stdout) => {
-    resolve4({ code: error62 ? typeof error62.code === "number" ? error62.code : 1 : 0, stdout: String(stdout) });
+    resolve5({ code: error62 ? typeof error62.code === "number" ? error62.code : 1 : 0, stdout: String(stdout) });
   });
   child.stdin?.end();
 });
@@ -74401,17 +74409,17 @@ async function fingerprint(root, paths) {
 }
 async function snapshot(root, paths) {
   const listed = (0, import_node_child_process5.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...paths], { cwd: root, encoding: "utf8", maxBuffer: 1e7 });
-  const files = /* @__PURE__ */ new Map();
+  const files2 = /* @__PURE__ */ new Map();
   for (const path4 of listed.split("\0").filter(Boolean)) {
     const full = await regularPath(root, path4);
     try {
       const stat3 = await (0, import_promises4.lstat)(full);
-      if (stat3.isFile()) files.set(path4, { data: await (0, import_promises4.readFile)(full), mode: stat3.mode & 73 });
+      if (stat3.isFile()) files2.set(path4, { data: await (0, import_promises4.readFile)(full), mode: stat3.mode & 73 });
     } catch (e) {
       if (!(e && typeof e === "object" && "code" in e && e.code === "ENOENT")) throw e;
     }
   }
-  return files;
+  return files2;
 }
 async function restore(root, before, after) {
   for (const path4 of after.keys()) if (!before.has(path4)) await (0, import_promises4.unlink)(await regularPath(root, path4));
@@ -74506,18 +74514,18 @@ async function runCodingValidation(options) {
       for (const entry of plan.generated) {
         const was = await snapshot(root, entry.paths), remaining = Math.floor(budget - (Date.now() - started) / 1e3);
         const exitCode = remaining > 0 ? await command("generated", entry.command.split(" "), Math.min(600, remaining), environment).catch(() => -1) : -1;
-        const now = await snapshot(root, entry.paths), changed = [.../* @__PURE__ */ new Set([...was.keys(), ...now.keys()])].filter((path4) => {
+        const now = await snapshot(root, entry.paths), changed2 = [.../* @__PURE__ */ new Set([...was.keys(), ...now.keys()])].filter((path4) => {
           const a = was.get(path4), b = now.get(path4);
           return !a || !b || !a.data.equals(b.data) || a.mode !== b.mode;
         }).sort();
-        if (changed.length) {
-          messages.push(`generated files out of date: run \`${entry.command}\` (${changed.slice(0, 20).join(", ")}${changed.length > 20 ? ", ..." : ""})`);
+        if (changed2.length) {
+          messages.push(`generated files out of date: run \`${entry.command}\` (${changed2.slice(0, 20).join(", ")}${changed2.length > 20 ? ", ..." : ""})`);
           await (options.writable ?? ((work) => work()))(() => restore(root, was, now)).catch(() => {
             messages.push("generated files could not be restored");
           });
         }
         if (exitCode !== 0) messages.push(`generated command \`${entry.command}\` failed with exit code ${exitCode}`);
-        if (exitCode !== 0 || changed.length) ok = false;
+        if (exitCode !== 0 || changed2.length) ok = false;
       }
       report.checks.push({ name: "generated", status: ok ? "passed" : "failed", exitCode: ok ? 0 : 1 });
       if (!ok) await options.note?.("generated", messages.join("\n") + "\n").catch(() => void 0);
@@ -74596,10 +74604,105 @@ function hostedValidationCommand(target, logs) {
   };
 }
 
-// src/cli.ts
-var import_promises6 = require("node:fs/promises");
+// src/runtime/regenerate.ts
+var import_promises5 = require("node:fs/promises");
 var import_node_path5 = require("node:path");
 var import_node_child_process6 = require("node:child_process");
+var regenerateCommandSeconds = 300;
+var regenerationFailure = "GENERATED_FILES_FAILED";
+async function regularFile(root, path4) {
+  const full = (0, import_node_path5.resolve)(root, path4), part = (0, import_node_path5.relative)(root, full);
+  if (!part || part.startsWith("..") || (0, import_node_path5.isAbsolute)(part)) throw new Error("INVALID_REGENERATION_PATH");
+  for (let current = (0, import_node_path5.dirname)(full); current !== root; current = (0, import_node_path5.dirname)(current)) if ((await (0, import_promises5.lstat)(current)).isSymbolicLink()) throw new Error("NON_REGULAR_REGENERATION_PATH");
+  return full;
+}
+async function files(root) {
+  const listed = (0, import_node_child_process6.execFileSync)("git", ["-c", `safe.directory=${root}`, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", maxBuffer: 5e7 });
+  const result = /* @__PURE__ */ new Map();
+  for (const path4 of listed.split("\0").filter(Boolean)) {
+    try {
+      const full = await regularFile(root, path4), stat3 = await (0, import_promises5.lstat)(full);
+      if (stat3.isSymbolicLink()) throw new Error("NON_REGULAR_REGENERATION_PATH");
+      if (stat3.isFile()) result.set(path4, { data: await (0, import_promises5.readFile)(full), mode: stat3.mode & 73 });
+    } catch (e) {
+      if (!(e && typeof e === "object" && "code" in e && e.code === "ENOENT")) throw e;
+    }
+  }
+  return result;
+}
+function changed(before, after) {
+  return [.../* @__PURE__ */ new Set([...before.keys(), ...after.keys()])].filter((path4) => {
+    const a = before.get(path4), b = after.get(path4);
+    return !a || !b || !a.data.equals(b.data) || a.mode !== b.mode;
+  }).sort();
+}
+var inside = (path4, roots) => roots.some((root) => path4 === root || path4.startsWith(`${root}/`));
+var list = (paths) => `${paths.slice(0, 10).join(", ")}${paths.length > 10 ? ", ..." : ""}`;
+async function regenerateCodingArtifact(options) {
+  const plan = validationPlanSchema.parse(options.plan), original = codingArtifactSchema.parse(options.artifact), log = options.log ?? (() => void 0);
+  const entries = (plan.generated ?? []).filter((e) => e.regenerate);
+  const unchanged = { artifact: original, regenerated: [], commands: [], failure: null };
+  if (!entries.length || original.result.status !== "success" || !original.changes.length) return unchanged;
+  const root = (0, import_node_path5.resolve)(options.target), environment = { ...plan.environment, CI: "true" };
+  const block = (reason) => {
+    log(`::warning::Generated files were not regenerated: ${reason}`);
+    const note = `
+
+Software Factory: the declared generated files could not be regenerated after the run (${reason}). Nothing was adopted.`;
+    return { artifact: codingArtifactSchema.parse({ ...original, result: {
+      ...original.result,
+      status: "blocked",
+      summary: `${original.result.summary.slice(0, 2e3 - Math.min(note.length, 1e3))}${note.slice(0, 1e3)}`,
+      error: `${regenerationFailure}: ${reason}`.slice(0, 2e3)
+    } }), regenerated: [], commands: [], failure: reason };
+  };
+  try {
+    const installed = await options.command("regenerate-install", ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], regenerateCommandSeconds, environment).catch(() => -1);
+    if (installed !== 0) {
+      log("::warning::Installing the locked dependencies failed; generated files were not regenerated");
+      return unchanged;
+    }
+    const start = await files(root);
+    let current = start;
+    for (const entry of entries) {
+      const exitCode = await options.command("regenerate", entry.command.split(" "), regenerateCommandSeconds, environment).catch(() => -1);
+      if (exitCode !== 0) return block(`\`${entry.command}\` ${exitCode === 124 || exitCode === 137 ? `timed out after ${regenerateCommandSeconds} s` : `failed with exit code ${exitCode}`}`);
+      const next = await files(root), outside = changed(current, next).filter((path4) => !inside(path4, entry.paths));
+      if (outside.length) return block(`\`${entry.command}\` changed files outside its declared paths: ${list(outside)}`);
+      current = next;
+    }
+    const regenerated = changed(start, current);
+    if (!regenerated.length) {
+      log("Generated files were already up to date");
+      return { ...unchanged, commands: entries.map((e) => e.command) };
+    }
+    const changes = new Map(original.changes.map((c) => [c.path, c]));
+    for (const path4 of regenerated) {
+      const file2 = current.get(path4);
+      changes.set(path4, { path: path4, content: file2 ? file2.data.toString("base64") : null, mode: file2 && file2.mode ? "100755" : "100644" });
+    }
+    const parsed = codingArtifactSchema.safeParse({ ...original, changes: [...changes.values()] });
+    if (!parsed.success) return block(`the regenerated change exceeds the artifact limits (${changes.size} files)`);
+    try {
+      validateChanges(parsed.data);
+    } catch (e) {
+      return block(e instanceof Error ? e.message : "invalid regenerated change");
+    }
+    const note = `
+
+Software Factory regenerated after the run: ${entries.map((e) => `\`${e.command}\``).join(", ")} (${list(regenerated)}).`;
+    const summary2 = `${original.result.summary.slice(0, 2e3 - Math.min(note.length, 1e3))}${note.slice(0, 1e3)}`;
+    for (const path4 of regenerated) log(`Regenerated ${path4}`);
+    return { artifact: codingArtifactSchema.parse({ ...parsed.data, result: { ...parsed.data.result, summary: summary2 } }), regenerated, commands: entries.map((e) => e.command), failure: null };
+  } catch (e) {
+    return block(e instanceof Error && /^[A-Z_]+$/.test(e.message) ? e.message : "the workspace could not be read");
+  }
+}
+
+// src/cli.ts
+var import_promises7 = require("node:fs/promises");
+var import_node_path6 = require("node:path");
+var import_node_child_process7 = require("node:child_process");
 async function main(args = process.argv.slice(2)) {
   const { values, positionals } = (0, import_node_util.parseArgs)({ args, allowPositionals: true, options: {
     repository: { type: "string" },
@@ -74620,7 +74723,7 @@ async function main(args = process.argv.slice(2)) {
     let credential2 = "api-key";
     if (request2.fallbacks) {
       const chosen = await selectAgent(request2, providerProbe(process.env));
-      await (0, import_promises5.writeFile)(values.output ?? "coding-agent.json", JSON.stringify(chosen.selection));
+      await (0, import_promises6.writeFile)(values.output ?? "coding-agent.json", JSON.stringify(chosen.selection));
       const label2 = (a) => `${a.worker}${a.credential === "subscription" ? " subscription" : ""}`;
       for (const skipped of chosen.selection.skipped) console.log(`Skipped ${label2(skipped)} (${skipped.model}): ${skipped.reason}`);
       if (!chosen.request || !chosen.selection.selected) throw new Error("No coding agent can run: every provider reported used-up credit or refused the key");
@@ -74630,7 +74733,7 @@ async function main(args = process.argv.slice(2)) {
     }
     const text = JSON.stringify(request2);
     const validation = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN || "{}"));
-    await (0, import_promises5.appendFile)(process.env.GITHUB_OUTPUT, `request=${text}
+    await (0, import_promises6.appendFile)(process.env.GITHUB_OUTPUT, `request=${text}
 execution-id=${request2.executionId}
 base-sha=${request2.baseSha}
 validation=${JSON.stringify(validation)}
@@ -74642,31 +74745,61 @@ credential=${credential2}
     if (process.platform !== "linux" || process.env.GITHUB_ACTIONS !== "true" || !await isFreshValidationRunner() || process.env.GITHUB_RUN_ATTEMPT !== "1") throw new Error("Validation requires a fresh hosted job");
     if (!/^[1-9][0-9]{0,15}$/.test(process.env.GITHUB_RUN_ID ?? "") || !/^[1-9][0-9]{0,15}$/.test(process.env.SF_SOURCE_RUN_ID ?? "")) throw new Error("Invalid validation run identity");
     for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AI_API_KEY", "GITHUB_APP_PRIVATE_KEY", "FACTORY_MANAGER_TOKEN"]) if (process.env[key]) throw new Error("Validation secret boundary violation");
-    if (!values.file || !values.source || !values.output || (await (0, import_promises6.stat)(values.file)).size > 7e6) throw new Error("Invalid validation files");
+    if (!values.file || !values.source || !values.output || (await (0, import_promises7.stat)(values.file)).size > 7e6) throw new Error("Invalid validation files");
     const request2 = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ""));
     const plan = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN ?? "{}"));
-    const artifact = await materializeCodingArtifact(values.source, JSON.parse(await (0, import_promises5.readFile)(values.file, "utf8")), request2);
-    (0, import_node_child_process6.execFileSync)("sudo", ["-n", "chown", "-R", "sf-validator:sf-validator", (0, import_node_path5.resolve)(values.source)]);
-    const output2 = (0, import_node_path5.resolve)(values.output);
-    await (0, import_promises6.mkdir)((0, import_node_path5.dirname)(output2), { recursive: true });
+    const artifact = await materializeCodingArtifact(values.source, JSON.parse(await (0, import_promises6.readFile)(values.file, "utf8")), request2);
+    (0, import_node_child_process7.execFileSync)("sudo", ["-n", "chown", "-R", "sf-validator:sf-validator", (0, import_node_path6.resolve)(values.source)]);
+    const output2 = (0, import_node_path6.resolve)(values.output);
+    await (0, import_promises7.mkdir)((0, import_node_path6.dirname)(output2), { recursive: true });
     const report = await runCodingValidation({
-      target: (0, import_node_path5.resolve)(values.source),
+      target: (0, import_node_path6.resolve)(values.source),
       artifact,
       plan,
       workflowRunId: Number(process.env.GITHUB_RUN_ID),
       sourceRunId: Number(process.env.SF_SOURCE_RUN_ID),
       hosted: true,
-      command: hostedValidationCommand((0, import_node_path5.resolve)(values.source), (0, import_node_path5.resolve)((0, import_node_path5.dirname)(output2), "logs")),
-      note: (name, text) => (0, import_promises5.appendFile)((0, import_node_path5.resolve)((0, import_node_path5.dirname)(output2), "logs", `${name}.log`), text),
-      writable: hostedWritable((0, import_node_path5.resolve)(values.source))
+      command: hostedValidationCommand((0, import_node_path6.resolve)(values.source), (0, import_node_path6.resolve)((0, import_node_path6.dirname)(output2), "logs")),
+      note: (name, text) => (0, import_promises6.appendFile)((0, import_node_path6.resolve)((0, import_node_path6.dirname)(output2), "logs", `${name}.log`), text),
+      writable: hostedWritable((0, import_node_path6.resolve)(values.source))
     });
-    await (0, import_promises5.writeFile)(output2, JSON.stringify(report, null, 2));
+    await (0, import_promises6.writeFile)(output2, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ validation: report.status, executionId: report.executionId, originalModelStatus: artifact.result.status }));
+    return;
+  }
+  if (command === "regenerate-coding-artifact") {
+    if (process.platform !== "linux" || process.env.GITHUB_ACTIONS !== "true" || !await isFreshValidationRunner()) throw new Error("Validation requires a fresh hosted job");
+    for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "AI_API_KEY", "GITHUB_APP_PRIVATE_KEY", "FACTORY_MANAGER_TOKEN"]) if (process.env[key]) throw new Error("Validation secret boundary violation");
+    if (!values.file || !values.source || !values.output || (await (0, import_promises7.stat)(values.file)).size > 7e6) throw new Error("Invalid validation files");
+    const request2 = codingExecutionSchema.parse(JSON.parse(process.env.SF_CODING_REQUEST ?? ""));
+    const plan = validationPlanSchema.parse(JSON.parse(process.env.SF_VALIDATION_PLAN ?? "{}"));
+    const output2 = (0, import_node_path6.resolve)(values.output);
+    await (0, import_promises7.mkdir)((0, import_node_path6.dirname)(output2), { recursive: true });
+    const artifact = await materializeCodingArtifact(values.source, JSON.parse(await (0, import_promises6.readFile)(values.file, "utf8")), request2);
+    (0, import_node_child_process7.execFileSync)("sudo", ["-n", "chown", "-R", "sf-validator:sf-validator", (0, import_node_path6.resolve)(values.source)]);
+    const result = await regenerateCodingArtifact({
+      target: (0, import_node_path6.resolve)(values.source),
+      artifact,
+      plan,
+      log: (line) => console.log(line),
+      command: hostedValidationCommand((0, import_node_path6.resolve)(values.source), (0, import_node_path6.resolve)((0, import_node_path6.dirname)(output2), "logs"))
+    });
+    await (0, import_promises6.writeFile)(output2, JSON.stringify(result.artifact));
+    if (process.env.GITHUB_STEP_SUMMARY && (result.regenerated.length || result.failure)) await (0, import_promises6.appendFile)(process.env.GITHUB_STEP_SUMMARY, result.failure ? `### Generated files
+
+Not regenerated: ${result.failure}
+` : `### Generated files
+
+Regenerated by ${result.commands.map((c) => `\`${c}\``).join(", ")}:
+
+${result.regenerated.map((p) => `- ${p}`).join("\n")}
+`);
+    console.log(JSON.stringify({ regenerated: result.regenerated.length, failure: result.failure, status: result.artifact.result.status }));
     return;
   }
   if (command === "validate") {
     if (!values.file) throw new Error("validate requires --file");
-    loadConfig(await (0, import_promises5.readFile)(values.file, "utf8"));
+    loadConfig(await (0, import_promises6.readFile)(values.file, "utf8"));
     console.log("Configuration valid");
     return;
   }
@@ -74676,7 +74809,7 @@ credential=${credential2}
   let config2 = loadConfig(await github.readConfig(values["config-path"]));
   if (values["dry-run"]) config2 = configSchema.parse({ ...config2, execution: { ...config2.execution, dryRun: true } });
   if (!config2.factory.enabled) {
-    if (values["dry-run"] && process.env.SF_SANITY_REPORT) await (0, import_promises5.writeFile)(
+    if (values["dry-run"] && process.env.SF_SANITY_REPORT) await (0, import_promises6.writeFile)(
       process.env.SF_SANITY_REPORT,
       JSON.stringify({
         formatVersion: 1,
@@ -74689,7 +74822,7 @@ credential=${credential2}
       })
     );
     console.log(JSON.stringify({ outcome: "disabled" }));
-    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises5.appendFile)(process.env.GITHUB_STEP_SUMMARY, "# Software Factory\n\nGlobally disabled. No repository changes.\n");
+    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises6.appendFile)(process.env.GITHUB_STEP_SUMMARY, "# Software Factory\n\nGlobally disabled. No repository changes.\n");
     return;
   }
   if (process.env.GITHUB_ACTIONS !== "true" && !values["allow-local-writes"] && !config2.execution.dryRun && config2.autonomy.profile !== "advisory") {
@@ -74708,7 +74841,7 @@ credential=${credential2}
       const mutationFree = config2.execution.dryRun || config2.autonomy.profile === "advisory";
       const target = decision.deploy ? resolveTarget(config2) : null;
       const writeSummary = async (text) => {
-        if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises5.appendFile)(process.env.GITHUB_STEP_SUMMARY, text);
+        if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises6.appendFile)(process.env.GITHUB_STEP_SUMMARY, text);
       };
       if (command === "deploy-plan") {
         let reason = decision.deploy ? mutationFree ? "mutation-free" : null : decision.reason;
@@ -74717,7 +74850,7 @@ credential=${credential2}
           console.log(`::warning title=Software Factory deploy::Deployment skipped: missing ${target.missing.join(", ")} (Actions secrets or deploy.* configuration).`);
         }
         const ready = decision.deploy && !reason;
-        if (process.env.GITHUB_OUTPUT) await (0, import_promises5.appendFile)(process.env.GITHUB_OUTPUT, `deploy=${ready}
+        if (process.env.GITHUB_OUTPUT) await (0, import_promises6.appendFile)(process.env.GITHUB_OUTPUT, `deploy=${ready}
 sha=${decision.deploy ? decision.sha : ""}
 `);
         if (!ready) await writeSummary(deploySummary(null, decision.deploy ? { deploy: false, reason, sha: decision.sha } : decision, config2.deploy.environment));
@@ -74801,7 +74934,7 @@ sha=${decision.deploy ? decision.sha : ""}
       if (!/^[1-9]\d*$/.test(issue2) || !/^[a-f0-9]{32}$/.test(id)) throw new Error("Invalid worker issue or execution ID");
       if (command === "prepare-coding") {
         const prepared = await prepareCoding(github, config2, new CodingRepository(repository, process.env.GITHUB_TOKEN ?? ""), Number(issue2), id, correlationId);
-        if (process.env.GITHUB_OUTPUT) await (0, import_promises5.appendFile)(process.env.GITHUB_OUTPUT, prepared ? `ready=true
+        if (process.env.GITHUB_OUTPUT) await (0, import_promises6.appendFile)(process.env.GITHUB_OUTPUT, prepared ? `ready=true
 request=${JSON.stringify(prepared.request)}
 base-sha=${prepared.base.sha}
 base-branch=${prepared.base.branch}
@@ -74812,7 +74945,7 @@ base-branch=${prepared.base.branch}
       if (command === "publish-coding") {
         let artifact = null;
         if (process.env.SF_ARTIFACT) {
-          const source = await (0, import_promises5.readFile)(process.env.SF_ARTIFACT, "utf8").catch(() => "null");
+          const source = await (0, import_promises6.readFile)(process.env.SF_ARTIFACT, "utf8").catch(() => "null");
           if (Buffer.byteLength(source) <= 7e6) {
             try {
               artifact = JSON.parse(source);
@@ -74855,7 +74988,7 @@ base-branch=${prepared.base.branch}
       ) : void 0,
       notifications: new SlackSink(process.env.SLACK_BOT_TOKEN ?? "")
     }).run();
-    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises5.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));
+    if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises6.appendFile)(process.env.GITHUB_STEP_SUMMARY, summary(report));
     console.log(JSON.stringify({
       correlationId,
       outcome: report.outcome,
@@ -74864,7 +74997,7 @@ base-branch=${prepared.base.branch}
       errors: report.errors,
       nextSteps: report.nextSteps
     }));
-    if (config2.execution.dryRun && process.env.SF_SANITY_REPORT) await (0, import_promises5.writeFile)(process.env.SF_SANITY_REPORT, JSON.stringify({
+    if (config2.execution.dryRun && process.env.SF_SANITY_REPORT) await (0, import_promises6.writeFile)(process.env.SF_SANITY_REPORT, JSON.stringify({
       formatVersion: 1,
       mutationFree: true,
       passed: report.errors.length === 0,
@@ -74883,7 +75016,7 @@ base-branch=${prepared.base.branch}
 }
 var runnerPoolMarker = "/etc/sf-runner-pool";
 var runnerPoolMarkerContent = "software-factory ephemeral runner pool\n";
-async function isFreshValidationRunner(env = process.env, readMarker = () => (0, import_promises5.readFile)(runnerPoolMarker, "utf8")) {
+async function isFreshValidationRunner(env = process.env, readMarker = () => (0, import_promises6.readFile)(runnerPoolMarker, "utf8")) {
   if (env.RUNNER_ENVIRONMENT === "github-hosted") return true;
   if (env.RUNNER_ENVIRONMENT !== "self-hosted") return false;
   return readMarker().then((content) => content === runnerPoolMarkerContent, () => false);
@@ -74894,7 +75027,7 @@ async function handleError(error62) {
   const httpStatus2 = error62 instanceof Error && "status" in error62 && typeof error62.status === "number" ? error62.status : null;
   const category = error62 instanceof Error ? error62.name.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "UnknownError";
   console.error(JSON.stringify({ error: safe2, category, httpStatus: httpStatus2 }));
-  if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises5.appendFile)(process.env.GITHUB_STEP_SUMMARY, `# Software Factory failed
+  if (process.env.GITHUB_STEP_SUMMARY) await (0, import_promises6.appendFile)(process.env.GITHUB_STEP_SUMMARY, `# Software Factory failed
 
 ${safe2.replace(/[<>`]/g, "")}
 
