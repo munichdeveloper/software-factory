@@ -29,6 +29,7 @@ execution:
   workerTimeoutMinutes: 30
   dispatchGraceMinutes: 10
   engine: temporal
+  rework: true
 llm:
   provider: static
   model: gpt-4.1-mini
