@@ -23,6 +23,10 @@ export interface CodingRepositoryPort {
 const protectedPathSegment = /^(\.git.*|\.codex|\.agents|\.squad|\.copilot|\.claude|agents\.md|codeowners)$/i;
 /** Plain ignore and attribute files are ordinary project files; `.git/`, `.github/`, `.gitmodules` and the rest stay protected (controla#124). */
 const allowedGitFile = /^\.git(ignore|attributes)$/i;
+/** Whether a repository path names a file no artifact may change (`.github/`, agent instructions, CODEOWNERS, ...). */
+export function isProtectedArtifactPath(path: string): boolean {
+  return path.split('/').some(p => protectedPathSegment.test(p) && !allowedGitFile.test(p));
+}
 export function validateChanges(artifact: CodingArtifact): void {
   const seen = new Set<string>();
   let total = 0;

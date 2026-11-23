@@ -34,6 +34,22 @@ Repositories that check in generated files (for example a bundle built from `src
 
 `command` is a fixed string split on spaces, without shell metacharacters; `paths` are relative, without `..`. After the other checks (and only if they passed) the validator runs each command with the same account and limits as the other project commands, then compares the listed paths with the applied change. A difference, or a failing command, makes the `generated` check `failed` (`CHECK_FAILED`, so `execution.rework` applies) and `generated.log` says e.g. "generated files out of date: run `npm run bundle`" with the paths. The check only verifies: the regenerated files are restored, never adopted, and source integrity is unchanged.
 
+#### Regeneration after the run
+
+The coding worker runs offline without installed dependencies, so it can never run such a command itself. An entry with `"regenerate": true` lets the Factory do it (SF #281):
+
+```json
+{ "generated": [{ "command": "npm run bundle", "paths": ["bundle"], "regenerate": true }] }
+```
+
+After the agent and the Harness's lockfile step, and before the artifact is uploaded, the coding job checks out the base again, applies the artifact, installs the locked dependencies (`npm ci --ignore-scripts`) and runs each marked command in order, as the separate `sf-validator` account with an empty environment and network, at most 300 s per command. Changes inside the entry's `paths` are added to the artifact; the result's summary (and so the PR body) and the job summary name the commands and files. The independent validation still runs every entry as its `generated` check and restores the files; after regeneration the outputs match and the check passes.
+
+- A command that fails or times out, or that changes a file outside its declared `paths`, adopts nothing: the result ends `blocked` with error `GENERATED_FILES_FAILED: <reason>`.
+- A failing `npm ci` adopts nothing and blocks nothing: the validation's `install` check reports it, so `execution.rework` applies.
+- Only `success` results with changes are regenerated. Entries without the flag (a lint command, say) stay checks only.
+- `regenerate` applies to the npm profiles; paths naming `.github/`, agent instruction files or CODEOWNERS are refused by the plan schema.
+- If the step itself breaks, the agent's artifact is published unchanged and the `generated` check reports the stale files as before.
+
 ## Boundaries and evidence
 
 Project commands run as a separate `sf-validator` account with an empty inherited environment, a fixed executable path, `CI=true`, a unique Compose project name and the allowlisted literal test values. Environment control keys, model keys, broker keys and GitHub/AWS credential names are rejected. Checkout credentials are not persisted. The validator reusable workflow declares no secrets; its parent forwards the model key only to the coding job. The Docker profile grants Docker access only on its disposable hosted VM: this is a trusted-repository test boundary, not a hostile-code sandbox or permission to use production credentials. Tests can access the network and supply-chain services. Read-only workflow tokens remain platform credentials, not model or broker credentials.
