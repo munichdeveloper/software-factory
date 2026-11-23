@@ -163,6 +163,7 @@ const fakeDocker = `#!/usr/bin/env bash
 log="$FAKE_DOCKER_LOG"
 [ "$1 $2" = "compose version" ] && exit 0
 [ "$1 $2" = "image prune" ] && { echo "prune $*" >> "$log"; exit 0; }
+[ "$1 $2" = "builder prune" ] && { echo "prune $*" >> "$log"; exit 0; }
 dir=""; prev=""
 for arg in "$@"; do [ "$prev" = "--project-directory" ] && dir="$arg"; prev="$arg"; done
 case " $* " in
@@ -234,7 +235,8 @@ describe('docker-ssh deployment', () => {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     expect((await readdir(join(root, 'srv', 'app', 'releases'))).sort()).toEqual(shas.slice(-2).sort());
-    expect(await readFile(log, 'utf8')).toContain('prune image prune --force --filter label=com.docker.compose.project=app');
+    expect(await readFile(log, 'utf8')).toContain('prune image prune --all --force --filter label=com.docker.compose.project=app');
+    expect(await readFile(log, 'utf8')).toContain('prune builder prune --force --filter until=72h');
   });
 
   it('still deploys when an old release cannot be pruned and names it in the log', async () => {
