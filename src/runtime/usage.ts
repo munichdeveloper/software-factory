@@ -49,6 +49,8 @@ export interface UsageEntry {
   priceSource?: PriceSource | 'agent' | null;
   /** The agent's own estimate (Claude Code), kept when the tokens were priced instead. */
   agentEstimateUsd?: number | null;
+  /** The task of the run, for the cost evaluation (#231); not stored with the usage. */
+  task?: { description: string; acceptanceCriteria: string[] };
 }
 
 /** Thresholds of the usage alerts; from the broker's environment, so no repository configuration hash changes. */
@@ -128,7 +130,8 @@ export function usageEntry(snapshot: RunSnapshot, runId: number, value: unknown,
   const priced = priceCall(parsed.data.model, parsed.data.tokens);
   const record = priced.costUsd === null ? parsed.data : { ...parsed.data, costUsd: Math.min(100000, Math.round(priced.costUsd * 1e6) / 1e6) };
   return { repositoryId: snapshot.repositoryId, repository: snapshot.repository, issueNumber: snapshot.admission.input.issueNumber, runId, record, billing,
-    priceSource: priced.priceSource ?? (parsed.data.costUsd === null ? null : 'agent'), agentEstimateUsd: parsed.data.costUsd };
+    priceSource: priced.priceSource ?? (parsed.data.costUsd === null ? null : 'agent'), agentEstimateUsd: parsed.data.costUsd,
+    task: { description: snapshot.admission.input.description, acceptanceCriteria: snapshot.admission.input.acceptanceCriteria } };
 }
 
 /** One English line for the status comment: what the latest attempt cost. */

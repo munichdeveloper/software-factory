@@ -8,7 +8,8 @@ import { hash } from '../state/identity.js';
 import { validationReportSchema, type ValidationReport } from './validation-contract.js';
 import type { Finding, FindingKind, SanityStore } from './sanity.js';
 import type { LlmCallRecord, LlmVerdictRecord } from '../llm/analytics.js';
-import { tokensOf, type AnalyticsCall, type AnalyticsIssue, type AnalyticsVerdict } from './analytics.js';
+import { tokensOf, type AnalyticsCall, type AnalyticsIssue, type AnalyticsVerdict, type StoredCostReport } from './analytics.js';
+import { costJudgementSchema, costReportSchema, type CostEvalInput, type CostEvalRow, type CostMetrics, type CostReport } from './cost-eval.js';
 import { outcomeClasses, type Outcome, type OutcomeResult, type PendingOutcome, type WaitKind, type WaitPhase } from './outcomes.js';
 import { escalationMarker } from './coding-context.js';
 import type { RuntimeEvent, RuntimeEventStore, RuntimeEventType, StoredRuntimeEvent } from './events.js';
@@ -85,6 +86,13 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
         id bigserial PRIMARY KEY, repository text NOT NULL, step text NOT NULL, pr_number integer, issue_number integer,
         decision text NOT NULL, rejected boolean NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS factory_analytics_verdicts_time ON factory_analytics_verdicts(recorded_at);
+      CREATE TABLE IF NOT EXISTS factory_analytics_cost_evals (
+        execution_id text NOT NULL, eval_model text NOT NULL, shadow boolean NOT NULL, repository text, issue_number integer,
+        model text, effort text, cost_usd double precision, outcome text, metrics jsonb, judgement jsonb, error text,
+        state text NOT NULL DEFAULT 'pending', recorded_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(execution_id, eval_model));
+      CREATE INDEX IF NOT EXISTS factory_analytics_cost_evals_time ON factory_analytics_cost_evals(recorded_at);
+      CREATE TABLE IF NOT EXISTS factory_analytics_cost_reports (
+        week text PRIMARY KEY, model text NOT NULL, report jsonb, error text, recorded_at timestamptz NOT NULL DEFAULT now());
       ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS price_source text;
       ALTER TABLE factory_runtime_usage ADD COLUMN IF NOT EXISTS agent_estimate_usd double precision;
       CREATE TABLE IF NOT EXISTS factory_runtime_events (
@@ -127,6 +135,44 @@ export class RuntimeStore implements SanityStore, RuntimeEventStore {
     const { rows } = await this.pool.query<{ repository: string; step: string; pr_number: number | null; issue_number: number | null; decision: string; rejected: boolean; recorded_at: Date }>(
       'SELECT repository,step,pr_number,issue_number,decision,rejected,recorded_at FROM factory_analytics_verdicts WHERE recorded_at >= $1 ORDER BY recorded_at LIMIT 50000', [since]);
     return rows.map(r => ({ repository: r.repository, step: r.step, prNumber: r.pr_number, issueNumber: r.issue_number, decision: r.decision, rejected: r.rejected, at: r.recorded_at.toISOString() }));
+  }
+  /** Cost evaluation (#231): one row per execution and evaluating model, claimed before the model is asked. */
+  async claimCostEval(executionId: string, evalModel: string, shadow: boolean): Promise<boolean> {
+    const { rowCount } = await this.pool.query('INSERT INTO factory_analytics_cost_evals(execution_id,eval_model,shadow) VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [executionId, evalModel, shadow]);
+    return (rowCount ?? 0) > 0;
+  }
+  async saveCostEval(row: Omit<CostEvalRow, 'at'>): Promise<void> {
+    await this.pool.query(`UPDATE factory_analytics_cost_evals SET repository=$3, issue_number=$4, model=$5, effort=$6, cost_usd=$7, outcome=$8, metrics=$9,
+      judgement=$10, error=$11, state='done', recorded_at=now() WHERE execution_id=$1 AND eval_model=$2`, [row.executionId, row.evalModel, row.repository, row.issueNumber,
+      row.model, row.effort, row.costUsd, row.outcome, JSON.stringify(row.metrics), row.judgement ? JSON.stringify(row.judgement) : null, row.error]);
+  }
+  async previousAttempts(repositoryId: number, issueNumber: number, executionId: string): Promise<CostEvalInput['previous']> {
+    const { rows } = await this.pool.query<{ model: string; effort: string; cost_usd: number | null; outcome: string | null }>(
+      `SELECT record->>'model' AS model, record->>'effort' AS effort, cost_usd, record->>'outcome' AS outcome FROM factory_runtime_usage
+        WHERE repository_id=$1 AND issue_number=$2 AND execution_id<>$3 AND recorded_at <= (SELECT coalesce(max(recorded_at), now()) FROM factory_runtime_usage WHERE repository_id=$1 AND execution_id=$3)
+        ORDER BY recorded_at LIMIT 20`, [repositoryId, issueNumber, executionId]);
+    return rows.map(r => ({ model: r.model, effort: r.effort, costUsd: r.cost_usd === null ? null : Number(r.cost_usd), outcome: r.outcome }));
+  }
+  async costEvals(since: Date): Promise<CostEvalRow[]> {
+    const { rows } = await this.pool.query<{ repository: string; issue_number: number; execution_id: string; model: string; effort: string; cost_usd: number | null;
+      outcome: string | null; metrics: unknown; judgement: unknown; eval_model: string; shadow: boolean; error: string | null; recorded_at: Date }>(
+      `SELECT repository,issue_number,execution_id,model,effort,cost_usd,outcome,metrics,judgement,eval_model,shadow,error,recorded_at FROM factory_analytics_cost_evals
+        WHERE state='done' AND recorded_at >= $1 ORDER BY recorded_at LIMIT 20000`, [since]);
+    return rows.map(r => { const judgement = costJudgementSchema.safeParse(r.judgement);
+      return { repository: r.repository, issueNumber: r.issue_number, executionId: r.execution_id, model: r.model, effort: r.effort,
+        costUsd: r.cost_usd === null ? null : Number(r.cost_usd), outcome: r.outcome, metrics: r.metrics as CostMetrics, judgement: judgement.success ? judgement.data : null,
+        evalModel: r.eval_model, shadow: r.shadow, error: r.error, at: r.recorded_at.toISOString() }; });
+  }
+  async saveCostReport(week: string, model: string, report: CostReport | null, error: string | null): Promise<void> {
+    await this.pool.query(`INSERT INTO factory_analytics_cost_reports(week,model,report,error) VALUES($1,$2,$3,$4)
+      ON CONFLICT (week) DO UPDATE SET model=EXCLUDED.model, report=EXCLUDED.report, error=EXCLUDED.error, recorded_at=now()`, [week, model, report ? JSON.stringify(report) : null, error]);
+  }
+  async latestCostReport(): Promise<StoredCostReport | null> {
+    const { rows } = await this.pool.query<{ week: string; model: string; report: unknown; error: string | null; recorded_at: Date }>(
+      'SELECT week,model,report,error,recorded_at FROM factory_analytics_cost_reports ORDER BY week DESC LIMIT 1');
+    if (!rows[0]) return null;
+    const report = costReportSchema.safeParse(rows[0].report);
+    return { week: rows[0].week, model: rows[0].model, report: report.success ? report.data : null, error: rows[0].error, at: rows[0].recorded_at.toISOString() };
   }
   /** Title, state and merge of the issues the analytics name; written only when they changed. */
   async upsertAnalyticsIssues(repository: string, issues: AnalyticsIssue[]): Promise<void> {

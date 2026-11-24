@@ -35,6 +35,7 @@ import { EventWebhooks } from './webhooks.js';
 import { SlackSanityAlerts } from '../notifications/sanity-alerts.js';
 import { CreditAlerts } from './credit-alerts.js';
 import { dailyUsageReport, UsageAlerts, usageThresholds } from './usage.js';
+import { CostEvaluator, costEvalSettings, weeklyCostReport } from './cost-eval.js';
 import { SubscriptionCap, subscriptionMaxRunsPerDay } from './subscription.js';
 import { LlmCallMeter, setLlmCallMeter } from '../llm/meter.js';
 import { listenAddresses } from './listen.js';
@@ -162,6 +163,9 @@ export async function main(args = process.argv.slice(2)) {
   // a report of the previous day is posted each morning. The broker's own model calls are counted against loops.
   const usageChannel = process.env.FACTORY_USAGE_ALERT_CHANNEL, usageSink = process.env.SLACK_BOT_TOKEN && usageChannel ? new SlackSanityAlerts(process.env.SLACK_BOT_TOKEN) : undefined;
   const usageAlerts = new UsageAlerts(store, usageSink, usageChannel, usageThresholds(process.env));
+  // Cost evaluation of every coding run (#231): Sonnet per run against absolute yardsticks, Opus once a week across all
+  // verdicts; FACTORY_COST_EVAL=off turns it off, FACTORY_COST_EVAL_SHADOW_MODEL adds a calibration model (e.g. Haiku).
+  const costEvaluator = new CostEvaluator(store, claude, costEvalSettings(process.env), usageSink, usageChannel);
   // Cost analytics: the broker's own model calls (review, risk, planner) are stored with their step, pull request and
   // issue; prices are list prices, FACTORY_MODEL_PRICES adds or overrides models (e.g. OpenAI fallbacks).
   configurePrices(process.env);
@@ -227,7 +231,8 @@ export async function main(args = process.argv.slice(2)) {
         id => store.validation(repository.repositoryId, id),
         async (_snapshot, selection) => { try { await creditAlerts?.observe(item.repository, selection); } catch { /* an alert never fails a run */ } },
         routing,
-        async entry => { try { await usageAlerts.observe(entry); } catch { /* an alert never fails a run */ } },
+        async entry => { try { await usageAlerts.observe(entry); } catch { /* an alert never fails a run */ }
+          void costEvaluator.evaluate(entry, entry.task ?? null); },
         { allowed: async name => { try { return await subscriptionCap.allowed(name); } catch { return false; } } },
         // Survey of related work before a first attempt (SF #255): GitHub facts, condensed by Claude Haiku with the
         // broker's key; without the key only the overlap facts. FACTORY_RECONCILE=off turns it off.
@@ -353,11 +358,14 @@ export async function main(args = process.argv.slice(2)) {
     }, () => bindings.map(b => b.repository.release.taskQueue), runtimeSink, runtimeChannel);
     const watch = setInterval(() => { void workers.check().catch(() => undefined); }, 60000);
     watch.unref();
-    const report = usageSink && usageChannel ? setInterval(() => { void dailyUsageReport(store, usageSink, usageChannel, new Date()).catch(() => undefined); }, 600000) : undefined;
-    report?.unref();
+    const report = setInterval(() => {
+      if (usageSink && usageChannel) void dailyUsageReport(store, usageSink, usageChannel, new Date()).catch(() => undefined);
+      if (costEvalSettings(process.env).enabled) void weeklyCostReport(store, claude, new Date(), process.env.FACTORY_COST_REPORT_MODEL || 'claude-opus-5-5', usageSink, usageChannel).catch(() => undefined);
+    }, 600000);
+    report.unref();
     console.log(JSON.stringify({ service: 'factory-runtime', port, addresses, reconcileIntervalSeconds: interval, repositories: bindings.map(b => b.repository.repositoryId) }));
     await new Promise<void>(resolve => {
-      const stop = () => { void life.stopped(); clearInterval(watch); stopRunners(); if (report) clearInterval(report); void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
+      const stop = () => { void life.stopped(); clearInterval(watch); stopRunners(); clearInterval(report); void stopSchedule().finally(() => Promise.all(servers.map(server => new Promise<void>(done => server.close(() => done())))).then(() => resolve())); };
       process.once('SIGINT', stop); process.once('SIGTERM', stop);
     });
   } finally { await connection.close(); await store.pool.end(); }
