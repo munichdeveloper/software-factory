@@ -108,6 +108,7 @@ Wie bei der Laufüberwachung kosten sie **keine zusätzlichen GitHub-Aufrufe**.
 | `start_resumed` | ein abgelehnter Start läuft wieder an | Code der Ablehnung, Auslöser (`cause_cleared` / `backoff` / `manual`) |
 | `run_failed` | Ergebnis `failed` / `cancelled` | Fehlercode, Infrastrukturfehler ja/nein, verbleibende Versuche |
 | `attention_required` | kein automatischer Schritt mehr möglich | Grund: `retries_exhausted`, `rework_exhausted`, `blocked_without_pr`, `awaiting_pr_without_progress` |
+| `start_held` | freigegebene, startbereite Aufgabe wird im Abgleich nicht gestartet, obwohl ein Slot frei ist (SF #313) | Code (`PLANNER_NOT_PROPOSED`, `PLANNER_HELD`, `PLANNING_<Code>`, `POLICY_DENIED`, `STALE_PROPOSAL`, `ACTION_LIMIT_REACHED`, `APPROVAL_REQUIRED`, `START_NOT_EXECUTED`, `START_FAILED`, `TASK_CHANGED_DURING_START`, `RECONCILIATION_ABORTED`), `since` (seit wann derselbe Grund gilt). Der Code steht auch als `reason` im Queue-Eintrag (`GET /v1/queue`, Stufe `queued`) und im Statuskommentar. Hält derselbe Grund 30 Minuten, geht einmal je Task-Version und Code eine Meldung über die Regel `attention_required` an Slack. |
 
 Regeln:
 

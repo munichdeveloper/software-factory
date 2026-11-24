@@ -128,8 +128,8 @@ function runs(task: Task): QueueRun[] {
 }
 
 function entry(task: Task, config: Config, snapshot: Snapshot, repository: string, rejection: string | undefined, waitsForSlot: boolean,
-  merges: ReadonlyMap<number, MergeProgress>): QueueEntry {
-  const { stage } = statusView(task, config, { repository, readyIsGrant: !!snapshot.readyIsGrant, rejection, queued: waitsForSlot });
+  merges: ReadonlyMap<number, MergeProgress>, hold?: string): QueueEntry {
+  const { stage } = statusView(task, config, { repository, readyIsGrant: !!snapshot.readyIsGrant, rejection, queued: waitsForSlot, hold });
   const active = task.executions.find(e => e.active), result = task.latest?.result;
   const label = task.issue.labels.find(l => priorityLabels.includes(l));
   const startedAt = active ? active.runtime?.createdAt ?? active.run?.createdAt ?? active.at : null;
@@ -142,6 +142,8 @@ function entry(task: Task, config: Config, snapshot: Snapshot, repository: strin
   const reason = stage === 'blocked' && task.blockReason ? task.blockReason
     : stage === 'refused' || stage === 'awaiting-grant' ? fixedCode(rejection ?? (task.refusal?.waiting ? task.refusal.code : null))
     : ['retry', 'failed', 'blocked'].includes(stage) ? fixedCode(task.latest?.runtime?.validation?.reason) ?? fixedCode(result?.error) ?? (result ? result.status.toUpperCase() : null)
+    // A startable task the last reconciliation did not start, and why (software-factory#313).
+    : stage === 'queued' && !waitsForSlot ? fixedCode(hold)
     : null;
   return {
     issueNumber: task.issue.number, title: task.issue.title, url: `https://github.com/${repository}/issues/${task.issue.number}`, stage,
@@ -160,11 +162,11 @@ function entry(task: Task, config: Config, snapshot: Snapshot, repository: strin
  * ran at least once (so a finished run can be seen with its merge).
  */
 export function queueEntries(snapshot: Snapshot, config: Config, report: RunReport, repository: string, rejections: ReadonlyMap<number, string> = new Map(), now = new Date(),
-  merges: ReadonlyMap<number, MergeProgress> = new Map()): QueueEntry[] {
+  merges: ReadonlyMap<number, MergeProgress> = new Map(), holds: ReadonlyMap<number, string> = new Map()): QueueEntry[] {
   const slotWaits = new Set(report.decisions.filter(d => d.decision.reason === 'Maximum parallel workers reached').map(d => d.action.issueNumber));
   const recent = (t: Task) => t.issue.state === 'open' || (now.getTime() - Date.parse(t.issue.updatedAt) < closedWindowMs && t.executions.some(e => !e.rejected));
   return reconstruct(snapshot, config, now).filter(recent)
-    .map(t => entry(t, config, snapshot, repository, rejections.get(t.issue.number), slotWaits.has(t.issue.number), merges))
+    .map(t => entry(t, config, snapshot, repository, rejections.get(t.issue.number), slotWaits.has(t.issue.number), merges, holds.get(t.issue.number)))
     .sort((a, b) => stageOrder[a.stage] - stageOrder[b.stage] || (priorityOrder[a.priority ?? 'normal'] - priorityOrder[b.priority ?? 'normal'])
       || a.since.localeCompare(b.since) || a.issueNumber - b.issueNumber);
 }
@@ -193,10 +195,10 @@ export class QueueBoard {
   }
   /** After a reconciliation that completed. Never throws: the queue view must not fail a reconciliation. */
   observed(target: Target, config: Config, snapshot: Snapshot | undefined, report: RunReport, rejections?: ReadonlyMap<number, string>,
-    merges?: ReadonlyMap<number, MergeProgress>) {
+    merges?: ReadonlyMap<number, MergeProgress>, holds?: ReadonlyMap<number, string>) {
     try {
       const now = this.now();
-      const entries = snapshot ? queueEntries(snapshot, config, report, target.repository, rejections, now, merges) : [];
+      const entries = snapshot ? queueEntries(snapshot, config, report, target.repository, rejections, now, merges, holds) : [];
       const active = snapshot ? reconstruct(snapshot, config, now).reduce((n, t) => n + t.executions.filter(e => e.active).length, 0) : 0;
       this.repositories.set(target.repositoryId, { repositoryId: target.repositoryId, repository: target.repository, observedAt: now.toISOString(),
         outcome: report.outcome, failure: null, reconcilingSince: null, slots: snapshot ? { active, max: config.execution.maxParallelWorkers } : null, entries,

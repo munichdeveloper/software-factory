@@ -46,6 +46,13 @@ export class Manager {
   get settledSnapshot(): Snapshot | undefined { return this.settled ?? this.observed; }
   /** Definite admission refusals of the last run, by issue: their codes. */
   get lastRejections(): ReadonlyMap<number, string> { return new Map(this.rejections.map(r => [r.issueNumber, r.code])); }
+  /**
+   * Startable tasks the last run did not start, with the fixed reason (software-factory#313): the task is open, unblocked,
+   * has not run in its current version, carries its grant and a worker slot is free, yet no start happened. A refusal of the
+   * runtime is not repeated here (it has its own report); everything else that kept the task back is, so it is never silent.
+   */
+  private holds = new Map<number, string>();
+  get lastHolds(): ReadonlyMap<number, string> { return new Map(this.holds); }
   /** Refusals of the runtime's preflight in the last run: before any intent, so the journal does not know them. */
   get lastPreflightRefusals(): ReadonlyMap<number, string> { return new Map(this.rejections.filter(r => !r.recorded).map(r => [r.issueNumber, r.code])); }
   private async snapshot(): Promise<Snapshot> {
@@ -167,7 +174,7 @@ export class Manager {
         // A closed task that never had a status comment does not get one after the fact.
         if (task.issue.state === 'closed' && !existing.length) continue;
         const { body, awaitsGrant } = statusView(task, this.config, { repository: this.github.repository, readyIsGrant: !!snapshot.readyIsGrant,
-          rejection: this.rejections.find(r => r.issueNumber === task.issue.number)?.code,
+          rejection: this.rejections.find(r => r.issueNumber === task.issue.number)?.code, hold: this.holds.get(task.issue.number),
           queued: report.decisions.some(d => d.action.issueNumber === task.issue.number && d.decision.reason === 'Maximum parallel workers reached') });
         if (awaitsGrant && task.issue.state === 'open') this.grantWaits.push({ number: task.issue.number, title: task.issue.title,
           after: task.latest?.input.executionId });
@@ -178,11 +185,20 @@ export class Manager {
   /**
    * `refused` closes an `allow` the runtime turned down before any intent existed; its reason is the runtime's fixed
    * code and its key names the code, so each action and code is journaled once, not on every reconciliation (#128).
+   * A start's `allow` and `refused` also name the grant they were decided under (software-factory#313): the action ID
+   * leaves the planner's reason out, so after a refusal every later start of the same task version had the same key,
+   * and a person's new grant that the runtime refused again left no trace on the issue.
    */
-  private async audit(action: Action, outcome: 'allow' | 'deny' | 'approval' | 'executed' | 'refused', reason: string): Promise<void> {
+  private async audit(action: Action, outcome: 'allow' | 'deny' | 'approval' | 'executed' | 'refused', reason: string, grant?: string): Promise<void> {
     if (!this.config.reporting.persistDecisions || this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return;
     const id = actionId(action, policyVersion(this.config));
-    await this.event(action.issueNumber, `decision:${id}:${outcome}${outcome === 'refused' ? `:${reason}` : ''}`, { type: 'decision', action: JSON.stringify(action), outcome, reason });
+    const granted = grant && ['allow', 'refused'].includes(outcome) && ['start_worker', 'retry_worker'].includes(action.kind) ? `:grant-${grant}` : '';
+    await this.event(action.issueNumber, `decision:${id}:${outcome}${outcome === 'refused' ? `:${reason}` : ''}${granted}`, { type: 'decision', action: JSON.stringify(action), outcome, reason });
+  }
+  /** The grant a start is decided under, as digits of its time: the person's `harness:ready`, else `harness:managed`. */
+  private grantMark(task: Task, snapshot: Snapshot): string | undefined {
+    const at = snapshot.readyIsGrant ? task.issue.readyAt : task.issue.managedAt;
+    return at?.replace(/\D/g, '').slice(0, 17) || undefined;
   }
   private async execute(action: Action, task: Task, snapshot: Snapshot): Promise<boolean> {
     const live = await this.github.getIssue(task.issue.number);
@@ -307,10 +323,36 @@ export class Manager {
       default: throw new Error(`Unsupported action: ${action.kind}`);
     }
   }
+  /**
+   * Why each startable task did not start in this run (software-factory#313). Before, only an executed or refused start
+   * left a trace: a planner that did not propose the task, a failed planning call, a denied or failed start and a run that
+   * stopped early were silent, and the decision journal writes each action once, so a ready task could wait for hours with
+   * nothing on the issue, in the queue or in Slack. Tasks that wait for a slot, a grant, a refusal's backoff or anything
+   * the status comment already names are not holds.
+   */
+  private heldStarts(tasks: Task[], snapshot: Snapshot, proposals: Action[],
+    run: { outcomes: ReadonlyMap<number, string>; started: ReadonlySet<number>; planningFailure?: string; aborted: boolean }): Map<number, string> {
+    const holds = new Map<number, string>();
+    if (this.config.execution.dryRun || this.config.autonomy.profile === 'advisory') return holds;
+    const busy = tasks.filter(t => t.executions.some(e => e.active) || run.started.has(t.issue.number)).length;
+    if (busy >= this.config.execution.maxParallelWorkers) return holds;
+    const refused = new Set(this.rejections.map(r => r.issueNumber));
+    for (const t of tasks) {
+      const n = t.issue.number;
+      if (run.started.has(n) || refused.has(n) || !startable(t, !!snapshot.readyIsGrant)) continue;
+      const proposed = proposals.filter(a => a.issueNumber === n);
+      const code = run.outcomes.get(n)
+        ?? (proposed.some(a => a.kind === 'transition' && a.status === 'blocked') ? 'PLANNER_HELD'
+        : proposed.some(a => ['start_worker', 'retry_worker'].includes(a.kind)) ? (run.aborted ? 'RECONCILIATION_ABORTED' : 'START_NOT_EXECUTED')
+        : run.planningFailure ? `PLANNING_${run.planningFailure}`.slice(0, 64) : run.aborted ? 'RECONCILIATION_ABORTED' : 'PLANNER_NOT_PROPOSED');
+      if (code !== 'WAITS_FOR_SLOT') holds.set(n, code);
+    }
+    return holds;
+  }
   async run(): Promise<RunReport> {
-    const started = this.now();
-    this.rejections = []; this.grantWaits = []; this.settled = undefined;
-    const report: RunReport = { correlationId: this.options.correlationId, startedAt: started.toISOString(), durationMs: 0,
+    const began = this.now();
+    this.rejections = []; this.grantWaits = []; this.settled = undefined; this.holds = new Map();
+    const report: RunReport = { correlationId: this.options.correlationId, startedAt: began.toISOString(), durationMs: 0,
       outcome: 'success', tasks: 0, decisions: [], errors: [], blockers: [], nextSteps: [] };
     if (!this.config.factory.enabled) { report.outcome = 'disabled'; return report; }
     let snapshot = await this.snapshot();
@@ -333,9 +375,15 @@ export class Manager {
     }
     const entries: { action: Action; source: 'reconcile' | 'planner' | 'worker' }[] = reconciliationPlan(tasks).map(action => ({ action, source: 'reconcile' }));
     const eligible = tasks.filter(t => t.issue.state === 'open' && !t.blocked && !t.hasClosingMerge && !t.executions.some(e => e.active));
+    // What kept a startable task back in this run, by issue (software-factory#313); see heldStarts.
+    const outcomes = new Map<number, string>(), started = new Set<number>();
+    let planningFailure: string | undefined, aborted = false;
     if (eligible.length && this.config.llm.maxCalls > 0) {
       try { entries.push(...planSchema.parse(await this.planner.plan(eligible, this.config)).actions.map(action => ({ action: ownFields(action), source: 'planner' as const }))); }
-      catch (error) { report.errors.push(`LLM planning failed (${planningCode(error)}); deterministic reconciliation remains available (no unvalidated actions executed)`); }
+      catch (error) {
+        planningFailure = planningCode(error);
+        report.errors.push(`LLM planning failed (${planningFailure}); deterministic reconciliation remains available (no unvalidated actions executed)`);
+      }
     }
     for (const t of tasks) {
       if (t.latest?.result) entries.push(...t.latest.result.proposedActions.map(action => ({ action, source: 'worker' as const })));
@@ -364,7 +412,8 @@ export class Manager {
       const id = actionId(action, policyVersion(this.config));
       if (seen.has(id)) continue;
       seen.add(id);
-      if (this.now().getTime() - started.getTime() > this.config.manager.timeoutMinutes * 60000) { report.errors.push('Manager time budget exhausted'); break; }
+      const starting = ['start_worker', 'retry_worker'].includes(action.kind);
+      if (this.now().getTime() - began.getTime() > this.config.manager.timeoutMinutes * 60000) { report.errors.push('Manager time budget exhausted'); aborted = true; break; }
       try {
         // Refresh every proposal: concurrent human changes, dependency closure and new PRs invalidate stale facts.
         snapshot = await this.snapshot();
@@ -376,13 +425,17 @@ export class Manager {
           approved: await this.hasApproval(action.issueNumber, id) });
         const record = { action, decision, executed: false };
         report.decisions.push(record);
-        await this.audit(action, decision.outcome, decision.reason);
+        const grant = this.grantMark(task, snapshot);
+        await this.audit(action, decision.outcome, decision.reason, grant);
+        if (starting && decision.outcome !== 'allow') outcomes.set(action.issueNumber, deniedCode(decision.reason));
         if (decision.outcome === 'approval') report.nextSteps.push(`Approve #${action.issueNumber} by commenting: /harness approve ${id}`);
         if (decision.outcome !== 'allow' || this.config.execution.dryRun) continue;
         const rejectionsBefore = this.rejections.length;
+        if (starting) outcomes.set(action.issueNumber, 'START_NOT_EXECUTED');
         record.executed = await this.execute(action, task, snapshot);
         const refused = this.rejections.slice(rejectionsBefore).find(r => !r.recorded && r.issueNumber === action.issueNumber);
-        if (refused && /^[A-Z][A-Z0-9_]{0,79}$/.test(refused.code)) await this.audit(action, 'refused', refused.code);
+        if (refused && /^[A-Z][A-Z0-9_]{0,79}$/.test(refused.code)) await this.audit(action, 'refused', refused.code, grant);
+        if (starting && record.executed) { started.add(action.issueNumber); outcomes.delete(action.issueNumber); }
         if (record.executed) {
           budget.actions++;
           if (action.kind === 'create_followup') { budget.newIssues++; (budget.followupOrigins ??= []).push(action.issueNumber); }
@@ -393,10 +446,14 @@ export class Manager {
         // Only fixed policy codes are disclosed; external API or database messages never reach the report.
         const code = admissionCode(error);
         report.errors.push(`Action ${action.kind} on #${action.issueNumber} failed (HTTP ${status}${code ? `, ${code}` : ''}); durable intents preserved for recovery`);
+        if (starting) outcomes.set(action.issueNumber, error instanceof Error && /^(Task|Block) changed during execution/.test(error.message) ? 'TASK_CHANGED_DURING_START' : 'START_FAILED');
         // Fail closed for the rest of this run: a mutation may have succeeded before an API error.
+        aborted = true;
         break;
       }
     }
+    this.holds = this.heldStarts(tasks, snapshot, entries.map(e => e.action), { outcomes, started, planningFailure, aborted });
+    for (const [n, code] of this.holds) report.blockers.push(`#${n}: startable but not started (${code})`);
     await this.publishStatus(report);
     for (const r of this.rejections) {
       report.blockers.push(`#${r.issueNumber}: runtime admission rejected (${r.code}); ${r.recorded ? 'the execution was closed as cancelled' : 'no execution was created'}`);
@@ -410,7 +467,21 @@ export class Manager {
       catch { report.errors.push('Slack notification reconciliation failed; repository actions remain committed'); }
     }
     if (report.errors.length) report.outcome = 'partial';
-    report.durationMs = this.now().getTime() - started.getTime();
+    report.durationMs = this.now().getTime() - began.getTime();
     return report;
   }
+}
+
+/** A first start the Factory would make now: open, unblocked, not run in this version, nothing pending, grant present. */
+function startable(t: Task, readyIsGrant: boolean): boolean {
+  return t.issue.state === 'open' && !t.blocked && !t.latest && !t.hasOpenPR && !t.hasClosingMerge && !t.executions.some(e => e.active) &&
+    !t.refusal?.waiting && t.issue.labels.includes(managedLabel) && (!readyIsGrant || t.issue.labels.includes('harness:ready'));
+}
+/** The fixed code of a start the policy did not allow; a full slot is a normal wait, not a hold. */
+function deniedCode(reason: string): string {
+  if (reason === 'Maximum parallel workers reached') return 'WAITS_FOR_SLOT';
+  if (reason === 'Maximum actions per run reached') return 'ACTION_LIMIT_REACHED';
+  if (reason === 'Task changed since proposal or approval' || reason.startsWith('Initial execution must use') || reason.startsWith('Retry proposal is not bound')) return 'STALE_PROPOSAL';
+  if (reason.startsWith('Maintainer approval required')) return 'APPROVAL_REQUIRED';
+  return 'POLICY_DENIED';
 }
