@@ -30,10 +30,11 @@ export async function storedSelection(effects: EffectPort, executionId: string, 
     apply: async () => ({ selection: await read() }) })).selection;
 }
 /** A ZIP of Actions that holds exactly the one named small JSON file. */
-export function decodeSingleJson(bytes: Uint8Array, name: string): unknown {
+export const usageArchiveLimit = 300000;
+export function decodeSingleJson(bytes: Uint8Array, name: string, maxSize = 60000): unknown {
   let count = 0;
   const files = unzipSync(bytes, { filter: entry => {
-    if (++count !== 1 || entry.name !== name || entry.originalSize > 60000 || entry.originalSize < 2) throw new Error('UNEXPECTED_ARCHIVE_ENTRY');
+    if (++count !== 1 || entry.name !== name || entry.originalSize > maxSize || entry.originalSize < 2) throw new Error('UNEXPECTED_ARCHIVE_ENTRY');
     return true;
   } });
   if (count !== 1 || !files[name]) throw new Error('MISSING_ARCHIVE_ENTRY');
@@ -242,8 +243,9 @@ export class ActionsCodingExecutor implements CodingExecutionPort {
     if (!this.onUsage) return;
     try {
       const match = artifacts.filter(a => a.name === `coding-usage-${snapshot.admission.input.executionId}`);
-      if (match.length !== 1 || match[0]!.expired || match[0]!.size_in_bytes > 100000) return;
-      const entry = usageEntry(snapshot, runId, decodeSingleJson(await this.download(target, match[0]!.id, 100000, 'USAGE_ARCHIVE_LIMIT'), 'usage.json'), billing);
+      // usage.json carries the run's insight (trace, change size) since harness #19, bounded there to 150 kB.
+      if (match.length !== 1 || match[0]!.expired || match[0]!.size_in_bytes > usageArchiveLimit) return;
+      const entry = usageEntry(snapshot, runId, decodeSingleJson(await this.download(target, match[0]!.id, usageArchiveLimit, 'USAGE_ARCHIVE_LIMIT'), 'usage.json', usageArchiveLimit), billing);
       if (entry) await this.onUsage(entry);
     } catch (error) {
       console.warn(JSON.stringify({ event: 'factory-usage', repository: snapshot.repository, executionId: snapshot.admission.input.executionId,

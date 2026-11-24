@@ -70449,6 +70449,20 @@ function routeNoteEn(record2, agent) {
 // src/runtime/usage.ts
 var count = external_exports.number().int().min(0).max(1e12);
 var tokensSchema = external_exports.strictObject({ input: count, output: count, cacheRead: count, cacheWrite: count });
+var pathPattern = /^[A-Za-z0-9._@+/-]{1,300}$/;
+var insightSchema = external_exports.strictObject({
+  trace: external_exports.array(external_exports.strictObject({
+    turn: count,
+    tool: external_exports.string().regex(/^[A-Za-z0-9_.-]{1,60}$/),
+    target: external_exports.string().regex(pathPattern).nullable(),
+    error: external_exports.boolean()
+  })).max(1e3),
+  traceTruncated: external_exports.boolean(),
+  firstRequestInputTokens: count.nullable(),
+  outputTokensPerTurn: external_exports.array(count).max(1e3),
+  diff: external_exports.array(external_exports.strictObject({ path: external_exports.string().min(1).max(500), added: count.nullable(), removed: count.nullable() })).max(200).nullable(),
+  diffTruncated: external_exports.boolean()
+});
 var usageRecordSchema = external_exports.strictObject({
   contractVersion: external_exports.literal("1.0"),
   executionId: external_exports.string().regex(/^[a-f0-9]{32}$/),
@@ -70463,7 +70477,8 @@ var usageRecordSchema = external_exports.strictObject({
   durationMs: count.nullable(),
   outcome: external_exports.string().regex(/^[a-z_]{1,60}$/).nullable(),
   budgetUsd: external_exports.number().positive().max(1e3).nullable(),
-  budgetReached: external_exports.boolean()
+  budgetReached: external_exports.boolean(),
+  insight: insightSchema.optional()
 });
 function usageNoteEn(record2) {
   const cost = record2.costUsd === null ? "cost unknown" : `$${record2.costUsd.toFixed(2)}`;

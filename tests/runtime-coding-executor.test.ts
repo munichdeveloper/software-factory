@@ -348,6 +348,15 @@ describe('spend cap and token usage', () => {
     await h.poll(); h.finish(); expect(await h.poll()).toEqual({ artifact: artifact() });
     expect(foreign).toEqual([]);
   });
+  it('reads a usage record with a large insight (harness #19) beyond the old 60 kB entry limit', async () => {
+    const insight = { trace: Array.from({ length: 1000 }, (_, i) => ({ turn: i, tool: 'Read', target: `src/components/feature/${'x'.repeat(60)}/file-${i}.tsx`, error: false })),
+      traceTruncated: false, firstRequestInputTokens: 17000, outputTokensPerTurn: [1], diff: null, diffTruncated: false };
+    expect(JSON.stringify(insight).length).toBeGreaterThan(60000);
+    const seen: UsageEntry[] = [];
+    const f = fixture(snapshot, withUsage({ ...usage(), insight }), undefined, undefined, undefined, async entry => { seen.push(entry); });
+    await f.poll(); f.finish(); await f.poll();
+    expect(seen[0]?.record.insight?.trace).toHaveLength(1000);
+  });
 });
 
 it('adds the survey of related work to a first attempt once and never to a rework (SF #255)', async () => {
