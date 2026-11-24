@@ -13,6 +13,9 @@ const generatedEntry = z.strictObject({
    */
   regenerate: z.literal(true).optional(),
 }).refine(e => !e.regenerate || !e.paths.some(isProtectedArtifactPath), 'Regenerated paths may not name protected files (.github, agent instructions, CODEOWNERS)');
+const environmentKey = z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine(k => !reserved.test(k), 'Reserved validation environment key');
+/** A disposable, empty Postgres for the tests. Absent by default, so plans without it keep their hash. */
+const postgresService = z.strictObject({ version: z.number().int().min(12).max(18), env: environmentKey });
 export const validationPlanSchema = z.strictObject({
   version: z.literal(1).default(1), profile: z.enum(['npm', 'npm-docker', 'maven']).default('npm'),
   /** Maven only: the JDK the validator installs. Absent means the runner's default JDK. */
@@ -21,20 +24,24 @@ export const validationPlanSchema = z.strictObject({
   composeProjectPrefix: z.string().regex(/^[a-z][a-z0-9-]{0,30}-(?:ci|test|validation)$/).default('sf-validation'),
   /** Generated files the repository checks in: each command is rerun and must leave its paths as they are. No default. */
   generated: generatedEntry.array().max(3).optional(),
-  environment: z.record(z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).refine(k => !reserved.test(k), 'Reserved validation environment key'),
+  /** Test infrastructure the validation starts before install/test (npm profiles only). */
+  services: z.strictObject({ postgres: postgresService.optional() }).optional(),
+  environment: z.record(environmentKey,
     z.string().max(1000).refine(v => !v.includes('${{'), 'Only literal test values are allowed')).default({}),
 }).refine(p => Object.keys(p.environment).length <= 30 && Buffer.byteLength(JSON.stringify(p)) < 6000, 'Validation plan limit')
+  .refine(p => !p.services?.postgres || p.profile !== 'maven', 'services.postgres applies to the npm profiles only')
+  .refine(p => !p.services?.postgres || !(p.services.postgres.env in p.environment), 'services.postgres.env must not repeat an environment key')
   .refine(p => p.profile === 'maven' || p.javaVersion === undefined, 'javaVersion applies to the maven profile only')
   .refine(p => p.profile !== 'maven' || !p.generated?.some(e => e.regenerate), 'regenerate applies to the npm profiles only');
 export type ValidationPlan = z.infer<typeof validationPlanSchema>;
 export const defaultValidationPlan = () => validationPlanSchema.parse({});
-export const validationCheckSchema = z.strictObject({ name: z.enum(['install', 'test', 'build', 'browser-install', 'browser', 'compose-config', 'docker-start', 'docker-smoke', 'docker-stop', 'generated', 'source-integrity']),
+export const validationCheckSchema = z.strictObject({ name: z.enum(['install', 'test', 'build', 'browser-install', 'browser', 'compose-config', 'docker-start', 'docker-smoke', 'docker-stop', 'database-start', 'database-stop', 'generated', 'source-integrity']),
   status: z.enum(['passed', 'failed', 'skipped']), exitCode: z.number().int().min(-1).max(255).nullable() });
 export const validationReportSchema = z.strictObject({
   version: z.literal(1), executionId: z.string().regex(/^[a-f0-9]{32}$/), taskId: z.string().max(200), taskVersion: digest, baseSha: sha,
   artifactHash: digest, planHash: digest, workflowRunId: z.number().int().positive().safe(), sourceRunId: z.number().int().positive().safe(), runAttempt: z.literal(1),
-  status: z.enum(['passed', 'failed', 'unsupported', 'invalid']), checks: validationCheckSchema.array().max(11),
-  reason: z.enum(['CHECKS_COMPLETED', 'CHECK_FAILED', 'NO_PUBLISHABLE_CHANGES', 'UNSUPPORTED_PROJECT', 'VALIDATION_SETUP_FAILED', 'SOURCE_CHANGED']),
+  status: z.enum(['passed', 'failed', 'unsupported', 'invalid']), checks: validationCheckSchema.array().max(13),
+  reason: z.enum(['CHECKS_COMPLETED', 'CHECK_FAILED', 'NO_PUBLISHABLE_CHANGES', 'UNSUPPORTED_PROJECT', 'VALIDATION_SETUP_FAILED', 'SOURCE_CHANGED', 'TEST_INFRASTRUCTURE_FAILED']),
   modelSecretPresent: z.literal(false), workspaceUnchanged: z.boolean(),
 });
 export type ValidationReport = z.infer<typeof validationReportSchema>;
@@ -45,7 +52,7 @@ export function bindValidation(report: ValidationReport, artifact: CodingArtifac
     workflowRunId !== undefined && (report.workflowRunId !== workflowRunId || report.sourceRunId !== workflowRunId)) throw new Error('UNRELATED_VALIDATION_REPORT');
   if (report.status === 'invalid') throw new Error('INVALID_VALIDATION_SOURCE');
   if (report.status === 'passed') {
-    const required = ['install', 'test', 'build', 'source-integrity', ...(plan.generated?.length ? ['generated'] : []), ...(plan.profile === 'npm-docker' ? ['compose-config', 'docker-start', 'docker-smoke', 'docker-stop'] : [])];
+    const required = ['install', 'test', 'build', 'source-integrity', ...(plan.services?.postgres ? ['database-start', 'database-stop'] : []), ...(plan.generated?.length ? ['generated'] : []), ...(plan.profile === 'npm-docker' ? ['compose-config', 'docker-start', 'docker-smoke', 'docker-stop'] : [])];
     if (!report.workspaceUnchanged || new Set(report.checks.map(c => c.name)).size !== report.checks.length || report.checks.some(c => c.status === 'failed') ||
       required.some(name => !report.checks.some(c => c.name === name && c.status === 'passed' && c.exitCode === 0))) throw new Error('INCONSISTENT_VALIDATION_REPORT');
   }

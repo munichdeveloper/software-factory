@@ -14,6 +14,7 @@ function quoted(text: string): string {
 const validationReasons: Record<string, string> = {
   CHECK_FAILED: 'at least one check failed', NO_PUBLISHABLE_CHANGES: 'the worker produced no changes', UNSUPPORTED_PROJECT: 'this project type is not supported by the validation',
   VALIDATION_SETUP_FAILED: 'the validation environment could not be set up', SOURCE_CHANGED: 'the checks modified the source files', CHECKS_COMPLETED: 'all checks completed',
+  TEST_INFRASTRUCTURE_FAILED: 'the test infrastructure the validation plan requests (services.postgres) did not start; no rework is started, fix the validation plan or runner and retry',
 };
 
 /**
