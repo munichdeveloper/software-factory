@@ -1,6 +1,7 @@
 import type { Snapshot } from '../types.js';
 import { hash } from '../state/identity.js';
 import type { Outcome, OutcomeReader, OutcomeResult, PendingOutcome, WaitPhase } from './outcomes.js';
+import type { CostEvalRow, CostReport } from './cost-eval.js';
 
 /**
  * Cost analytics for software-factory-monitor (Johannes, 2026-11-19): what each issue cost until its pull request was
@@ -12,7 +13,7 @@ import type { Outcome, OutcomeReader, OutcomeResult, PendingOutcome, WaitPhase }
  * snapshots each reconciliation already fetched (no extra GitHub request). The view is served at GET /v1/analytics to
  * the monitor token, like the job queue; it carries issue titles and is never sent to Slack or logs.
  */
-export type AnalyticsStep = 'coding' | 'review' | 'risk' | 'planner' | 'reconcile';
+export type AnalyticsStep = 'coding' | 'review' | 'risk' | 'planner' | 'reconcile' | 'cost-eval';
 export interface AnalyticsTokens { input: number; output: number; cacheRead: number; cacheWrite: number }
 export interface AnalyticsCall {
   repository: string; step: AnalyticsStep; issueNumber: number | null; prNumber: number | null; executionId: string | null;
@@ -143,8 +144,15 @@ export interface AnalyticsView {
   weekly: { week: string; step: AnalyticsStep; costUsd: number }[];
   models: AnalyticsModelRow[];
   features: AnalyticsFeature[];
+  /**
+   * Cost evaluation of every coding run in the period (#231): verdict, fair cost, avoidable dollars by category, fixed
+   * metrics; shadow rows are the calibration model's judgement of the same run. Absent from stores without the table.
+   */
+  costEvals?: CostEvalRow[];
+  /** The latest weekly look across all verdicts (Opus). */
+  costReport?: StoredCostReport | null;
 }
-const steps: AnalyticsStep[] = ['coding', 'review', 'risk', 'planner', 'reconcile'];
+const steps: AnalyticsStep[] = ['coding', 'review', 'risk', 'planner', 'reconcile', 'cost-eval'];
 const round = (value: number) => Math.round(value * 10000) / 10000;
 /** Monday (UTC) of the week of an instant, as YYYY-MM-DD. */
 export function weekOf(at: string): string {
@@ -194,7 +202,7 @@ export function analyticsView(calls: AnalyticsCall[], issues: (AnalyticsIssue & 
     const f = features.get(k) ?? { repository: info?.repository ?? c.repository, issueNumber: c.issueNumber, title: info?.title ?? null,
       url: `https://github.com/${info?.repository ?? c.repository}/issues/${c.issueNumber}`,
       state: info?.mergedAt ? 'merged' : info?.state === 'closed' ? 'closed' : 'open', prNumber: info?.prNumber ?? null, mergedAt: info?.mergedAt ?? null,
-      mergedBy: info?.mergedBy ?? null, costUsd: 0, costInRange: 0, unknownCostCalls: 0, steps: { coding: 0, review: 0, risk: 0, planner: 0, reconcile: 0 },
+      mergedBy: info?.mergedBy ?? null, costUsd: 0, costInRange: 0, unknownCostCalls: 0, steps: { coding: 0, review: 0, risk: 0, planner: 0, reconcile: 0, 'cost-eval': 0 },
       codingRuns: 0, failedCodingRuns: 0, lastActivity: c.at, calls: [] } satisfies AnalyticsFeature;
     f.costUsd += c.costUsd ?? 0; if (inRange(c.at)) f.costInRange += c.costUsd ?? 0;
     if (c.costUsd === null) f.unknownCostCalls++;
@@ -232,7 +240,11 @@ export interface AnalyticsStore {
   analyticsIssues(): Promise<(AnalyticsIssue & { repository: string })[]>;
   /** Merge review decisions since `since`; optional (stores before the router evaluation have none). */
   analyticsVerdicts?(since: Date): Promise<AnalyticsVerdict[]>;
+  /** Cost evaluations of coding runs since `since` and the latest weekly report (#231); optional for older stores. */
+  costEvals?(since: Date): Promise<CostEvalRow[]>;
+  latestCostReport?(): Promise<StoredCostReport | null>;
 }
+export interface StoredCostReport { week: string; model: string; report: CostReport | null; error: string | null; at: string }
 /** How far back calls are read for the per-issue totals of a period: a feature's earlier attempts belong to it. */
 export const analyticsLookbackDays = 120;
 /** The view for GET /v1/analytics?days=N&repository=owner/name (days 1..365, default 30). */
@@ -242,5 +254,8 @@ export async function loadAnalytics(store: AnalyticsStore, query: URLSearchParam
   if (repository && !/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(repository)) throw new Error('INVALID_REPOSITORY');
   const from = new Date(now.getTime() - days * 86400000);
   const calls = await store.analyticsCalls(new Date(from.getTime() - analyticsLookbackDays * 86400000));
-  return analyticsView(calls, await store.analyticsIssues(), { from, to: new Date(now.getTime() + 1), repository: repository || null, now });
+  const view = analyticsView(calls, await store.analyticsIssues(), { from, to: new Date(now.getTime() + 1), repository: repository || null, now });
+  if (!store.costEvals) return view;
+  const costEvals = (await store.costEvals(from)).filter(r => !repository || r.repository === repository);
+  return { ...view, costEvals, costReport: store.latestCostReport ? await store.latestCostReport() : null };
 }

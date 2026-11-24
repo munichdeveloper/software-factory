@@ -161,6 +161,17 @@ describe('analytics view', () => {
     expect(view.from).toBe('2025-11-19T00:00:00.000Z');
     expect(since!.toISOString()).toBe('2025-07-22T00:00:00.000Z');
     await expect(loadAnalytics(store, new URLSearchParams('repository=a b/c'))).rejects.toThrow('INVALID_REPOSITORY');
+    expect(view.costEvals).toBeUndefined();
+  });
+  it('adds the cost evaluations of the period and the latest weekly report (#231)', async () => {
+    const evalRow = (repository: string) => ({ repository, issueNumber: 1, executionId: 'a'.repeat(32), model: 'm', effort: 'high', costUsd: 1, outcome: 'success',
+      metrics: {} as never, judgement: null, evalModel: 'claude-sonnet-5-5', shadow: false, error: null, at: '2026-11-18T00:00:00.000Z' });
+    const report = { week: '2026-11-09', model: 'claude-opus-5-5', report: { summary: 'x', patterns: [] }, error: null, at: '2026-11-16T07:00:00.000Z' };
+    const store = { analyticsCalls: async () => [call({})], analyticsIssues: async () => [issue({})],
+      costEvals: async () => [evalRow('owner/repo'), evalRow('owner/other')], latestCostReport: async () => report };
+    const view = await loadAnalytics(store, new URLSearchParams('repository=owner/repo'), new Date('2026-11-19T00:00:00Z'));
+    expect(view.costEvals?.map(r => r.repository)).toEqual(['owner/repo']);
+    expect(view.costReport).toEqual(report);
   });
 });
 
