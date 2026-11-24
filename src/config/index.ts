@@ -323,7 +323,7 @@ export const configSchema = z.strictObject({
   // FACTORY_WEBHOOK_SECRET. Optional without a default, so the configuration hash of existing repositories stays.
   webhooks: z.array(z.strictObject({
     url: z.url({ protocol: /^https$/ }).max(500),
-    events: z.array(z.enum(['validation_failed', 'start_refused', 'start_resumed', 'run_failed', 'rescue_started', 'attention_required'])).min(1).max(6)
+    events: z.array(z.enum(['validation_failed', 'start_refused', 'start_resumed', 'run_failed', 'rescue_started', 'attention_required', 'start_held'])).min(1).max(7)
   })).max(5).optional() }).prefault({}),
   monitoring: monitoringSchema.partial().optional(),
   router: routerSchema.optional()

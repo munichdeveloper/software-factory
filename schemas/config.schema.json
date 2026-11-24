@@ -1234,7 +1234,7 @@
               },
               "events": {
                 "minItems": 1,
-                "maxItems": 6,
+                "maxItems": 7,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -1244,7 +1244,8 @@
                     "start_resumed",
                     "run_failed",
                     "rescue_started",
-                    "attention_required"
+                    "attention_required",
+                    "start_held"
                   ]
                 }
               }

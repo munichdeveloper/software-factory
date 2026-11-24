@@ -13,7 +13,7 @@ import { admissionBackoffMinutes, clearableRefusals, rescueMarker, infrastructur
  * Slack or a webhook. Every event has a key from its type, the execution and its code: deriving it again on the next
  * reconciliation stores nothing new.
  */
-export const runtimeEventTypes = ['validation_failed', 'start_refused', 'start_resumed', 'run_failed', 'rescue_started', 'attention_required'] as const;
+export const runtimeEventTypes = ['validation_failed', 'start_refused', 'start_resumed', 'run_failed', 'rescue_started', 'attention_required', 'start_held'] as const;
 export type RuntimeEventType = typeof runtimeEventTypes[number];
 export type EventValue = string | number | boolean | null | { name: string; exitCode: number | null }[];
 export interface RuntimeEvent {
@@ -103,6 +103,28 @@ export interface RuntimeEventStore {
   claimUsageAlert(key: string, kind: string): Promise<boolean>;
 }
 
+/**
+ * A startable task that is not started (software-factory#313) is posted to Slack once it has been held back this long for
+ * the same reason; shorter holds (one planner pass, a start that failed once) resolve on their own.
+ */
+export const heldAlertAfterMs = 30 * 60000;
+type Held = { code: string; version: string; at: string };
+/**
+ * Holds of one reconciliation as events: the key names the task version and the code, so a hold that persists is stored
+ * once; `since` is when this hold was first seen (kept across reconciliations, reset when the code or the text changes).
+ */
+export function heldEvents(tasks: Task[], holds: ReadonlyMap<number, string>, before: ReadonlyMap<number, Held>, now: Date): { events: RuntimeEvent[]; next: Map<number, Held> } {
+  const events: RuntimeEvent[] = [], next = new Map<number, Held>();
+  for (const task of tasks.filter(t => t.issue.state === 'open')) {
+    const n = task.issue.number, held = code(holds.get(n)), earlier = before.get(n);
+    if (!held) continue;
+    const at = earlier?.code === held && earlier.version === task.version ? earlier.at : now.toISOString();
+    next.set(n, { code: held, version: task.version, at });
+    events.push({ key: `start_held:${n}:${task.version.slice(0, 16)}:${held}`, type: 'start_held', issueNumber: n, taskVersion: task.version,
+      executionId: null, at, data: { code: held, since: at } });
+  }
+  return { events, next };
+}
 /** Only facts this recent are posted: the first reconciliation after a deploy records older ones silently. */
 export const notifyWithinMs = 6 * 3600000;
 const attentionText: Record<typeof attentionReasons[number], string> = {
@@ -122,6 +144,10 @@ export function eventText(repository: string, e: RuntimeEvent): string {
   if (e.type === 'attention_required') {
     return `SF braucht dich: ${repository}#${e.issueNumber}\nDie Factory kommt nicht mehr automatisch weiter: ${attentionText[e.data.reason as typeof attentionReasons[number]] ?? String(e.data.reason)} ` +
       `(${String(e.data.attempts)} Versuch(e)${e.data.error ? `, letzter Fehler ${String(e.data.error)}` : ''}).\n${issue}`;
+  }
+  if (e.type === 'start_held') {
+    return `SF startet nicht: ${repository}#${e.issueNumber}\nDie Aufgabe ist freigegeben und startbereit, wird aber seit ${String(e.data.since).slice(0, 16).replace('T', ' ')} UTC nicht gestartet. ` +
+      `Grund: ${String(e.data.code)}. Die Factory versucht es bei jedem Abgleich erneut.\n${issue}`;
   }
   if (e.type === 'start_refused') {
     return `SF Starts abgelehnt: ${repository}\nCode ${String(e.data.code)}; das betrifft alle Issues des Repositories. ${refusalHint[String(e.data.code)] ?? ''}`.trim() +
@@ -175,19 +201,24 @@ export function pendingRefusals(tasks: Task[], pre: RuntimeEvent[], before: Read
 export class RuntimeEvents {
   /** Preflight refusals of the previous reconciliation per repository (in memory: a broker restart starts over). */
   private preflight = new Map<number, Map<number, { code: string; version: string; at: string }>>();
+  /** Holds of the previous reconciliation per repository, with when each was first seen (in memory, like the refusals). */
+  private held = new Map<number, Map<number, Held>>();
   constructor(private store: RuntimeEventStore, private now: () => Date = () => new Date(), private alerts?: SanityAlertSink, private webhooks?: EventWebhooks) {}
   async observed(target: { repositoryId: number; repository: string }, config: Config, snapshot: Snapshot | undefined,
-    refused: ReadonlyMap<number, string> = new Map()): Promise<RuntimeEvent[]> {
+    refused: ReadonlyMap<number, string> = new Map(), holds: ReadonlyMap<number, string> = new Map()): Promise<RuntimeEvent[]> {
     if (!snapshot) return [];
     try {
       const tasks = reconstruct(snapshot, config, this.now());
       const pre = preflightEvents(tasks, refused, this.preflight.get(target.repositoryId) ?? new Map(), this.now());
       this.preflight.set(target.repositoryId, pendingRefusals(tasks, pre, this.preflight.get(target.repositoryId) ?? new Map()));
-      const found = [...deriveEvents(tasks), ...pre];
+      const held = heldEvents(tasks, holds, this.held.get(target.repositoryId) ?? new Map(), this.now());
+      this.held.set(target.repositoryId, held.next);
+      const found = [...deriveEvents(tasks), ...pre, ...held.events];
       const added = found.length ? await this.store.recordEvents(target.repositoryId, target.repository, found) : [];
       if (added.length) console.log(JSON.stringify({ event: 'factory-runtime-events', repositoryId: target.repositoryId,
         added: added.map(e => ({ type: e.type, issue: e.issueNumber, ...(e.data.code ? { code: e.data.code } : {}), ...(e.data.reason ? { reason: e.data.reason } : {}) })) }));
       await this.notify(target, config, added);
+      await this.notifyHeld(target, config, held.events);
       return added;
     } catch {
       console.warn(JSON.stringify({ event: 'factory-runtime-events-failed', repositoryId: target.repositoryId }));
@@ -199,6 +230,20 @@ export class RuntimeEvents {
    * what needs a person (attention_required) and for refusals that stop a whole repository; every event stays in the
    * store and the monitor. At most once: a message lost to Slack is not repeated.
    */
+  /**
+   * A hold that lasted heldAlertAfterMs is posted once per task version and code, as a message that needs attention
+   * (the rule notifications.slack.events.attention_required, so no new configuration key is needed).
+   */
+  async notifyHeld(target: { repositoryId: number; repository: string }, config: Config, held: RuntimeEvent[]) {
+    const slack = config.notifications.slack, rule = slack.events.attention_required, channel = rule?.channel ?? slack.channel;
+    if (!this.alerts || !slack.enabled || !rule?.enabled || !channel) return;
+    for (const e of held) {
+      if (this.now().getTime() - Date.parse(e.at) < heldAlertAfterMs) continue;
+      if (!await this.store.claimUsageAlert(`${target.repositoryId}:${e.key}`, 'start_held')) continue;
+      try { await this.alerts.post(channel, eventText(target.repository, e)); }
+      catch { console.warn(JSON.stringify({ event: 'factory-runtime-event-alert-failed', repositoryId: target.repositoryId, type: e.type })); }
+    }
+  }
   async notify(target: { repositoryId: number; repository: string }, config: Config, added: RuntimeEvent[]) {
     // Webhooks get every new event their rule names, also the ones Slack leaves out; stale ones (first reconciliation
     // after a deploy) are only stored, as for Slack.

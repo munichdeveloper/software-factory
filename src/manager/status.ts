@@ -55,7 +55,22 @@ function blocked(task: Task, repository: string, readyIsGrant: boolean, config: 
  */
 export const queueStages = ['starting', 'running', 'awaiting-approval', 'queued', 'awaiting-grant', 'retry', 'refused', 'blocked', 'awaiting-pr', 'failed', 'closed'] as const;
 export type QueueStage = typeof queueStages[number];
-export type StatusContext = { repository: string; readyIsGrant: boolean; rejection?: string; queued?: boolean };
+export type StatusContext = { repository: string; readyIsGrant: boolean; rejection?: string; queued?: boolean;
+  /** Why the last reconciliation did not start this startable task (software-factory#313), a fixed code. */
+  hold?: string };
+/** What a hold means, in the status comment's words; unknown codes are named as they are. */
+const holdReasons: Record<string, string> = {
+  PLANNER_NOT_PROPOSED: 'the planner did not propose this task for a start',
+  PLANNER_HELD: 'the planner held it back for its current text',
+  START_NOT_EXECUTED: 'the start was allowed but did not happen',
+  START_FAILED: 'the start failed with an error',
+  TASK_CHANGED_DURING_START: 'the task changed while it was being started; it is offered again with its current text',
+  RECONCILIATION_ABORTED: 'the reconciliation stopped early after an error in another action',
+  STALE_PROPOSAL: 'the planner proposed it for an older text or attempt',
+  ACTION_LIMIT_REACHED: 'the reconciliation reached its action limit (manager.maxActions)',
+  APPROVAL_REQUIRED: 'the start needs a maintainer approval of this exact action',
+  POLICY_DENIED: 'the autonomy policy did not allow the start',
+};
 /**
  * The one readable comment of a managed task: what the Factory is doing with it, why it is not progressing and what
  * exactly it needs from a person. Lifecycle facts, fixed codes and links come from the Factory's own records. Worker
@@ -134,6 +149,11 @@ export function statusView(task: Task, config: Config, context: StatusContext): 
     stage = left ? 'retry' : 'failed';
   } else if (task.hasOpenPR) { stage = 'awaiting-pr'; state = ['A pull request for this task is open.']; needs = 'Review and merge the pull request.'; }
   else if (context.readyIsGrant && !task.issue.labels.includes('harness:ready')) { state = ['Ready to run. **Waiting only for the grant.**']; needs = grant; awaitsGrant = true; stage = 'awaiting-grant'; }
+  else if (context.hold && !context.queued) {
+    const why = holdReasons[context.hold] ?? (context.hold.startsWith('PLANNING_') ? 'planning failed' : 'see the code');
+    state = [`Startable, but **not started in the last reconciliation** (\`${context.hold}\`: ${why}). The Factory tries again on every reconciliation.`];
+    needs = 'Nothing yet. If this stays for long, the broker reports it as needing attention.';
+  }
   else state = [context.queued ? 'Queued: all worker slots are in use. It starts when one is free.' : 'Queued; starts on the next reconciliation.'];
   // Which agent the running or latest coding execution uses, when the model router was asked (router.coding).
   const routed = (running ?? task.latest)?.runtime?.route;
