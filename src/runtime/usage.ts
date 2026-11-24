@@ -11,13 +11,28 @@ import { priceCall, type PriceSource } from '../llm/analytics.js';
  */
 const count = z.number().int().min(0).max(1e12);
 const tokensSchema = z.strictObject({ input: count, output: count, cacheRead: count, cacheWrite: count });
+/**
+ * What the run did (dev-agent-harness src/insight.ts, harness #19), for the cost evaluation (#231): the tool trace
+ * without inputs or outputs, the fixed context of the first request, output tokens per turn and the change size. Optional,
+ * so records of older harness releases stay valid.
+ */
+const pathPattern = /^[A-Za-z0-9._@+/-]{1,300}$/;
+export const insightSchema = z.strictObject({
+  trace: z.array(z.strictObject({ turn: count, tool: z.string().regex(/^[A-Za-z0-9_.-]{1,60}$/), target: z.string().regex(pathPattern).nullable(),
+    error: z.boolean() })).max(1000),
+  traceTruncated: z.boolean(), firstRequestInputTokens: count.nullable(), outputTokensPerTurn: z.array(count).max(1000),
+  diff: z.array(z.strictObject({ path: z.string().min(1).max(500), added: count.nullable(), removed: count.nullable() })).max(200).nullable(),
+  diffTruncated: z.boolean()
+});
+export type UsageInsight = z.infer<typeof insightSchema>;
 export const usageRecordSchema = z.strictObject({
   contractVersion: z.literal('1.0'), executionId: z.string().regex(/^[a-f0-9]{32}$/), worker: z.enum(['codex', 'claude']),
   model: z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/), effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']),
   source: z.enum(['proxy', 'codex-session']).nullable(), requests: count.nullable(), tokens: tokensSchema.nullable(),
   costUsd: z.number().min(0).max(100000).nullable(), turns: count.nullable(), durationMs: count.nullable(),
   outcome: z.string().regex(/^[a-z_]{1,60}$/).nullable(),
-  budgetUsd: z.number().positive().max(1000).nullable(), budgetReached: z.boolean()
+  budgetUsd: z.number().positive().max(1000).nullable(), budgetReached: z.boolean(),
+  insight: insightSchema.optional()
 });
 export type UsageRecord = z.infer<typeof usageRecordSchema>;
 

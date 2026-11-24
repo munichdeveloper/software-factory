@@ -74,6 +74,11 @@ describe('usage records and reports', () => {
     expect(usageEntry(snapshot, 5, record(), 'subscription')?.billing).toBe('subscription');
     expect(usageEntry(snapshot, 5, record({ executionId: 'b'.repeat(32) }))).toBeNull();
     expect(usageEntry(snapshot, 5, { ...record(), extra: 1 })).toBeNull();
+    // Harness #19: the optional insight (trace, fixed context, change size) is kept; a malformed one rejects the record.
+    const insight = { trace: [{ turn: 1, tool: 'Read', target: 'src/a.ts', error: false }, { turn: 2, tool: 'Bash', target: 'npm', error: true }],
+      traceTruncated: false, firstRequestInputTokens: 17000, outputTokensPerTurn: [40, 300], diff: [{ path: 'src/a.ts', added: 3, removed: 1 }], diffTruncated: false };
+    expect(usageEntry(snapshot, 5, { ...record(), insight })?.record.insight).toEqual(insight);
+    expect(usageEntry(snapshot, 5, { ...record(), insight: { ...insight, trace: [{ turn: 1, tool: 'Read', target: 'has space', error: false }] } })).toBeNull();
   });
   it('writes the status line and the daily report', async () => {
     expect(usageNoteEn(record())).toBe('**Usage:** $3.40, 951k input / 30k output tokens, 39 turns.');
